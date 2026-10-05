@@ -16,13 +16,20 @@ import {
   type NationalItem,
   type NationalSource,
 } from "../_shared/national-news.ts";
+import {
+  bearerToken,
+  isServiceRoleToken,
+  probeAuthAdmin,
+} from "./service-role.ts";
 
 /**
  * Thompson Times national-news press. Independent of newspaper-press:
  * a failure here never blocks or rewrites a sports edition.
  *
  * Callers: pg_cron with the anon key, or a signed-in reader. Writes with
- * the service role. Secret: XAI_API_KEY (already on the project).
+ * the service role. `{ "refresh": true }` is service-role only (trimmed
+ * SUPABASE_SERVICE_ROLE_KEY, or a bearer JWT whose verified role is
+ * service_role). Secret: XAI_API_KEY (already on the project).
  */
 
 const CORS: Record<string, string> = {
@@ -42,7 +49,7 @@ You receive CLUSTER briefs: events already grouped across conservative-leaning s
 Pick the 6 to 8 most important NATIONAL stories for this edition.
 - Importance: government, war and diplomacy, the courts, the economy, the border, elections, major disasters. Not sports, not celebrity, not culture-war bait unless it is actual news.
 - Reject duplicates, day-old process pieces, and anything that is really an opinion column.
-- For each pick write a clean newspaper headline (no outlet name, no question-mark tease) and a 2–3 sentence factual summary in neutral newspaper voice. Put each sentence in the `paragraphs` array (one sentence per string). Also set `summary` to those paragraphs joined by spaces. Do not editorialize. Do not invent facts that are not in the cluster.
+- For each pick write a clean newspaper headline (no outlet name, no question-mark tease) and a 2–3 sentence factual summary in neutral newspaper voice. Put each sentence in the \`paragraphs\` array (one sentence per string). Also set \`summary\` to those paragraphs joined by spaces. Do not editorialize. Do not invent facts that are not in the cluster.
 - sourceItemId must be one of the item ids in that cluster. Prefer the conservative outlet's straight-news piece (Fox, WSJ, Examiner, Post) over the wire; use AP or Reuters only when they are the clearest account.
 - credit is the outlets that filed it, conservative first, like "Fox News, WSJ" or "WSJ, AP".
 
@@ -164,15 +171,24 @@ Deno.serve(async (req: Request) => {
   if (!url || !key) return json({ ok: false, error: "Missing Supabase env" }, 500);
   const supabase = createClient(url, key);
 
-  const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
-  const service = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-  let refresh = false;
+  const token = bearerToken(req.headers.get("Authorization"));
+  const service = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "").trim();
+  const anon = (Deno.env.get("SUPABASE_ANON_KEY") ?? "").trim();
+  let wantsRefresh = false;
   try {
     const body = (await req.json()) as { refresh?: unknown };
-    refresh = body?.refresh === true && Boolean(service) && token === service;
+    wantsRefresh = body?.refresh === true;
   } catch {
-    refresh = false;
+    wantsRefresh = false;
   }
+  const refresh = wantsRefresh && await isServiceRoleToken(token, service, {
+    verifyClaims: async (jwt) => {
+      const { data, error } = await supabase.auth.getClaims(jwt);
+      if (error || !data?.claims) return null;
+      return data.claims as Record<string, unknown>;
+    },
+    probeAdmin: (jwt) => probeAuthAdmin(url, jwt, service || anon || jwt),
+  });
 
   const press = nationalPress();
   const { data: existing } = await supabase
