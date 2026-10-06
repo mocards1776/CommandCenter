@@ -100,8 +100,8 @@ try {
   assert(err instanceof Error && /NFL7/.test(err.message), "overflow guard names the tall folio");
 }
 
-const nflDesk = planRecapsScorePages(9);
-assert(nflDesk.length === 1 && nflDesk[0]!.count === 9 && nflDesk[0]!.wraps, "a 9-final NFL board stays on the recaps desk");
+const nflDesk = planRecapsScorePages(6);
+assert(nflDesk.length === 1 && nflDesk[0]!.count === 6 && nflDesk[0]!.wraps, "a 6-final NFL board stays on the recaps desk");
 const nflWeek = planRecapsScorePages(16);
 assert(nflWeek.length >= 2 && nflWeek[0]!.count < 16, "a 16-final NFL week flows leftover boxes to the next folio");
 assert(nflWeek.reduce((n, p) => n + p.count, 0) === 16, "split NFL recaps pages keep every final");

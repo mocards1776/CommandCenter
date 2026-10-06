@@ -1476,7 +1476,22 @@ function favoritePages(
   const full = restPool.filter(hasStoryCopy);
   const thin = restPool.filter((c) => !hasStoryCopy(c));
   let thinCursor = 0;
-  const newsPacks = packSportNewsPages(full);
+  const newsPacks: GameWrapCard[][] = [];
+  let newsBuf: GameWrapCard[] = [];
+  const flushNews = () => {
+    if (!newsBuf.length) return;
+    newsPacks.push(...packSportNewsPages(newsBuf));
+    newsBuf = [];
+  };
+  for (const card of full) {
+    if (isGameWrap(card) || isRecapStory(card)) {
+      flushNews();
+      newsPacks.push([card]);
+    } else {
+      newsBuf.push(card);
+    }
+  }
+  flushNews();
   for (let i = 0; i < newsPacks.length; i += 1) {
     const slice = newsPacks[i]!;
     const primary = slice[0]!;

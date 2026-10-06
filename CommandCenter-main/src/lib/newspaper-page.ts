@@ -95,7 +95,7 @@ export function estimateScoreGridHeight(games: number, cols = 3, rowPx = 118): n
 }
 
 const RECAPS_HERO_PX = 80;
-const RECAPS_WRAPS_PX = 420;
+const RECAPS_WRAPS_PX = 720;
 
 /**
  * Split a recaps-desk score grid so the first folio keeps the wrap briefs
