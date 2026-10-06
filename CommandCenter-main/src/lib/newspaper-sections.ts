@@ -757,7 +757,8 @@ export function pickFrontUnderLead(pool: GameWrapCard[], lead: GameWrapCard | nu
     return !day || day >= latestDay;
   };
   const freshResults = playable.filter((c) => isClubGameResult(c) && freshEnough(c));
-  const candidates = freshResults.length ? freshResults : playable.filter(freshEnough);
+  const wins = freshResults.filter((c) => c.won === true);
+  const candidates = wins.length ? wins : freshResults.length ? freshResults : playable.filter(freshEnough);
   const score = (card: GameWrapCard) =>
     (isFavoriteGameResult(card) && favoriteKeyFitsCard(card.favoriteKey, card)
       ? 100 + favoriteDeskWeight(card.favoriteKey)

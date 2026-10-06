@@ -1315,6 +1315,7 @@ assert(
     status: "Final",
     scoreLine: "KC 30  ·  LV 27",
     when: "2026-10-04T20:25:00Z",
+    won: true,
     photo: "https://example.com/chiefs.jpg",
     body: "Kansas City held off Las Vegas on Sunday. ".repeat(12),
   });
@@ -1329,6 +1330,7 @@ assert(
     status: "Final",
     scoreLine: "DAL 34  ·  HOU 30",
     when: "2026-10-04T20:00:00Z",
+    won: true,
     photo: "https://example.com/cowboys.jpg",
     body: "Dallas rallied in Houston on Sunday. ".repeat(12),
   });
@@ -1347,8 +1349,23 @@ assert(
     body: "Missouri snapped the skid. ".repeat(12),
   });
   assert(latestClubResultDay([bluesSat, chiefsSun, cowboysSun]) === "2026-10-04", "Sunday is the latest club game day");
-  const under = pickFrontUnderLead([mizzouLead, bluesSat, chiefsSun, cowboysSun], mizzouLead);
-  assert(under?.id === "wire-nfl-401872976", `A1 under the lead is Sunday's Chiefs, not Saturday's Blues (got ${under?.headline ?? "none"})`);
+  const lionsSun = card({
+    id: "box-football/nfl-401872978",
+    headline: "Young, McMillan connect for 2 TDs to lead Panthers past Lions 32-26",
+    favoriteKey: "nfl-det",
+    followed: true,
+    teamName: "Lions",
+    sportLabel: "NFL",
+    leaguePath: "football/nfl",
+    status: "Final",
+    scoreLine: "DET 26  ·  CAR 32",
+    when: "2026-10-05T00:20:00Z",
+    won: false,
+    photo: "https://example.com/lions.jpg",
+    body: "Carolina held off Detroit on Sunday night. ".repeat(12),
+  });
+  const under = pickFrontUnderLead([mizzouLead, bluesSat, chiefsSun, cowboysSun, lionsSun], mizzouLead);
+  assert(under?.id === "wire-nfl-401872976", `A1 under the lead is Sunday's Chiefs win, not Saturday's Blues or a Sunday loss (got ${under?.headline ?? "none"})`);
   const onlySaturday = pickFrontUnderLead([mizzouLead, bluesSat], mizzouLead);
   assert(onlySaturday?.id === "wire-nhl-401892439", "a Saturday club result may run when it is the freshest game day");
 }
