@@ -1132,15 +1132,9 @@ function mlbSideTable(side: MlbBoxSide, x: number, y: number, w: number, paint: 
   return parts.join("");
 }
 
-function splitDecisionLine(line: string): [string, string] {
-  const parts = line.split(" · ").filter(Boolean);
-  if (parts.length <= 3) return [line, ""];
-  return [parts.slice(0, 3).join(" · "), parts.slice(3).join(" · ")];
-}
-
 function decisionsHeight(rows: MlbDecision[]): number {
   if (!rows.length) return 0;
-  return 252;
+  return 16 + rows.length * 58 + 86;
 }
 
 function decisionsBlock(
@@ -1153,36 +1147,40 @@ function decisionsBlock(
   homePaint: string,
 ): string {
   const labels: Record<MlbDecision["role"], string> = { W: "WIN", L: "LOSS", S: "SAVE" };
-  const inner = w - CARD_IN * 2;
-  const colW = inner / Math.max(rows.length, 1);
-  const photo = 40;
+  const photo = 42;
+  const rowH = 58;
+  const labelW = 52;
   const parts: string[] = [];
   rows.forEach((row, i) => {
-    const colX = x + CARD_IN + colW * i;
+    const ry = y + 12 + i * rowH;
     const paint = row.teamAbbrev === card.away.abbrev ? awayPaint : homePaint;
-    const [top, bot] = splitDecisionLine(row.line);
-    const photoX = colX + 2;
-    const textX = photoX + photo + 8;
+    const photoX = x + CARD_IN + labelW;
+    const textX = photoX + photo + 10;
     parts.push(
-      text(labels[row.role], colX + colW / 2, y + 20, {
+      text(labels[row.role], x + CARD_IN, ry + 26, {
         size: 11,
         fill: "#8b93a7",
-        anchor: "middle",
         weight: 700,
-        spacing: 1.8,
+        spacing: 1.6,
       }),
     );
-    parts.push(playerPhoto(row.photoData, photoX, y + 30, photo, row.name));
-    parts.push(text(row.name, textX, y + 46, { size: 14, fill: paint, weight: 700 }));
+    parts.push(playerPhoto(row.photoData, photoX, ry + 4, photo, row.name));
+    parts.push(text(row.name, textX, ry + 22, { size: 16, fill: paint, weight: 700 }));
     if (row.record) {
-      parts.push(text(row.record, textX, y + 64, { size: 13, fill: "#f7f4ee", weight: 600 }));
+      parts.push(
+        text(row.record, x + w - CARD_IN, ry + 22, {
+          size: 14,
+          fill: "#f7f4ee",
+          anchor: "end",
+          weight: 600,
+        }),
+      );
     }
-    parts.push(text(top, textX, y + 82, { size: 11, fill: "#c5cce0", weight: 500 }));
-    if (bot) {
-      parts.push(text(bot, textX, y + 98, { size: 11, fill: "#c5cce0", weight: 500 }));
+    if (row.line) {
+      parts.push(text(row.line, textX, ry + 42, { size: 12, fill: "#c5cce0", weight: 500 }));
     }
   });
-  const infoY = y + 124;
+  const infoY = y + 12 + rows.length * rowH + 6;
   parts.push(
     `<line x1="${x + CARD_IN}" y1="${infoY}" x2="${x + w - CARD_IN}" y2="${infoY}" stroke="rgba(255,255,255,0.10)"/>`,
   );
@@ -1194,13 +1192,13 @@ function decisionsBlock(
     .filter(Boolean)
     .join("  ·  ");
   if (line1) {
-    parts.push(text(line1, x + w / 2, infoY + 22, { size: 12, fill: "#c5cce0", anchor: "middle", weight: 500 }));
+    parts.push(text(line1, x + w / 2, infoY + 20, { size: 12, fill: "#c5cce0", anchor: "middle", weight: 500 }));
   }
   if (line2) {
-    parts.push(text(line2, x + w / 2, infoY + 42, { size: 12, fill: "#c5cce0", anchor: "middle", weight: 500 }));
+    parts.push(text(line2, x + w / 2, infoY + 38, { size: 12, fill: "#c5cce0", anchor: "middle", weight: 500 }));
   }
   if (card.weather) {
-    parts.push(text(card.weather, x + w / 2, infoY + 62, { size: 12, fill: "#a8b0c2", anchor: "middle", weight: 500 }));
+    parts.push(text(card.weather, x + w / 2, infoY + 56, { size: 12, fill: "#a8b0c2", anchor: "middle", weight: 500 }));
   }
   return parts.join("");
 }
@@ -1376,11 +1374,11 @@ export function renderFinalSvg(card: FinalCard): string {
     const standH = hasStandings && !hasDecisions ? standingsHeight(standings, splitWp, card.sport === "nhl") : 0;
     const decisionH = hasDecisions ? decisionsHeight(decisions) : 0;
     const slimWp = card.sport === "mlb" && !splitWp;
-    const chartH = splitWp ? (splitWithDecisions ? 168 : 214) : slimWp ? 88 : 220;
+    const chartH = splitWp ? (splitWithDecisions ? 186 : 214) : slimWp ? 88 : 220;
     const wpH = hasWp ? (slimWp ? 34 : 56) + chartH + (slimWp ? 16 : 34) : 0;
-    const blockH = Math.max(wpH, standH, decisionH, splitWp ? 252 : 0);
-    const decisionW = splitWithDecisions ? Math.round((fullW - GAP) * 0.58) : hasWp ? halfW : fullW;
-    const wpW = splitWithDecisions ? fullW - GAP - decisionW : splitWp ? halfW : fullW;
+    const blockH = Math.max(wpH, standH, decisionH, splitWp ? 276 : 0);
+    const decisionW = hasDecisions ? (hasWp ? halfW : fullW) : 0;
+    const wpW = splitWp ? halfW : fullW;
     const wpX = M;
     const decX = hasWp ? wpX + wpW + GAP : M;
     if (hasWp) {

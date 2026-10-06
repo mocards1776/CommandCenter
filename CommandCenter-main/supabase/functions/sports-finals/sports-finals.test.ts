@@ -998,6 +998,7 @@ assert.match(soxSvg, />SAVE</);
 assert.match(soxSvg, /S\. Burke/);
 assert.match(soxSvg, /E\. Sabrowski/);
 assert.match(soxSvg, /G\. Taylor/);
+assert.match(soxSvg, /5\.1 IP · 1 H · 1 ER · 6 K · 1 BB/);
 assert.match(soxSvg, /Tue, Oct 6, 1:20 AM CT  ·  Game 1 of 2/);
 assert.match(soxSvg, /Progressive Field  ·  Mon, Oct 5, 4:00 PM CT/);
 assert.match(soxSvg, /Monday, Oct 5 at 4:00 PM/);
