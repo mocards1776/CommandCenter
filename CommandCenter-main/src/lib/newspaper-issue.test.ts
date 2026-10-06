@@ -1,7 +1,14 @@
 /**
  * Run with: node --experimental-strip-types src/lib/newspaper-issue.test.ts
  */
-import { asPrintedIssue, ISSUE_VERSION, retainCachedIssues, slimIssue } from "./newspaper-issue.ts";
+import {
+  asPrintedIssue,
+  issueCacheKey,
+  issueCacheOwner,
+  ISSUE_VERSION,
+  retainCachedIssues,
+  slimIssue,
+} from "./newspaper-issue.ts";
 
 function assert(cond: unknown, msg: string) {
   if (!cond) throw new Error(`FAIL: ${msg}`);
@@ -61,5 +68,13 @@ const keepWriting = retainCachedIssues(
   now,
 );
 assert(keepWriting.length === 1, "the issue being written is always kept");
+
+assert(issueCacheKey("user-a", "2026-10-05-evening") === "user-a\t2026-10-05-evening", "cache key is user then press");
+assert(issueCacheOwner("user-a\t2026-10-05-evening") === "user-a", "owner is the left side");
+assert(issueCacheOwner("2026-10-05-evening") === null, "a bare press id is not a per-user key");
+assert(
+  issueCacheKey("user-a", "2026-10-05-evening") !== issueCacheKey("user-b", "2026-10-05-evening"),
+  "two accounts do not share an edition file",
+);
 
 console.log("newspaper-issue ok");

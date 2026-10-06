@@ -2,6 +2,7 @@ import { supabase } from "./supabase";
 import { asPrintedIssue, ISSUE_VERSION, slimIssue, type PrintedIssue } from "./newspaper-issue";
 import { filterRecentFiledIssues, EDITION_LOOKBACK_MS, type FiledIssueMeta } from "./newspaper-editions";
 import type { EditorRequest } from "./newspaper-editor";
+import { ISSUE_QUERY_COLUMNS, ISSUE_SHELL_COLUMNS } from "./newspaper-payload";
 
 function filed(data: { version?: unknown; status?: unknown } | null, error: unknown): boolean {
   return !error && !!data && data.status === "ready" && data.version === ISSUE_VERSION;
@@ -9,24 +10,52 @@ function filed(data: { version?: unknown; status?: unknown } | null, error: unkn
 
 /** Stories only, so the filed edition can open before the desks arrive. */
 export async function readRemoteStories(id: string): Promise<unknown[] | null> {
+  const shell = await readRemoteIssueShell(id);
+  return shell?.stories ?? null;
+}
+
+/** Stories + print clock, no desks. A1 can set from this. */
+export async function readRemoteIssueShell(id: string): Promise<PrintedIssue | null> {
   const { data, error } = await supabase
     .from("newspaper_issues")
-    .select("version, status, stories")
+    .select(ISSUE_SHELL_COLUMNS)
     .eq("id", id)
     .maybeSingle();
   if (!filed(data, error) || !data || !Array.isArray(data.stories)) return null;
-  return data.stories;
+  return asPrintedIssue(id, data.version, data.stories, [], { printedAt: data.printed_at });
 }
 
 /** Desks and art for an edition already on screen. */
 export async function readRemoteQueries(id: string): Promise<PrintedIssue["queries"] | null> {
   const { data, error } = await supabase
     .from("newspaper_issues")
-    .select("version, status, queries")
+    .select(ISSUE_QUERY_COLUMNS)
     .eq("id", id)
     .maybeSingle();
   if (!filed(data, error) || !data || !Array.isArray(data.queries)) return null;
   return (data.queries as unknown[]).filter(isQuery);
+}
+
+/** A newly ready press, while the Times is open. iOS will not fire this if the app is closed. */
+export function subscribeReadyIssues(onReady: (row: FiledIssueMeta) => void): () => void {
+  const channel = supabase
+    .channel("tt-newspaper-issues")
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "newspaper_issues" },
+      (payload) => {
+        const row = (payload.new ?? null) as { id?: unknown; status?: unknown; printed_at?: unknown } | null;
+        if (!row || row.status !== "ready" || typeof row.id !== "string") return;
+        onReady({
+          id: row.id,
+          printedAt: typeof row.printed_at === "string" ? row.printed_at : "",
+        });
+      },
+    )
+    .subscribe();
+  return () => {
+    void supabase.removeChannel(channel);
+  };
 }
 
 function isQuery(value: unknown): value is PrintedIssue["queries"][number] {
