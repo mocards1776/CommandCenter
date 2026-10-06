@@ -365,7 +365,7 @@ export function WeatherReport({
       </div>
       ) : null}
 
-      {showToday && outlook.length ? (
+      {(showToday || showOutlook) && outlook.length ? (
         <ol className="wx-outlook" style={{ ["--n" as string]: String(outlook.length) }}>
           {outlook.map((d) => (
             <li key={d.date} className={d.precipChance >= 50 ? "wet" : undefined}>
@@ -384,7 +384,7 @@ export function WeatherReport({
       ) : null}
 
       {showOutlook ? (
-        <div className="wx-bottom" data-tt-flow="">
+        <div className="wx-bottom" data-tt-keep="">
           <TenDayChart days={days} />
         </div>
       ) : null}

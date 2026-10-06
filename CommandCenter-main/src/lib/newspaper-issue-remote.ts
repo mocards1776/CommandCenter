@@ -1,5 +1,5 @@
 import { supabase } from "./supabase";
-import { asFiledQueries, asPrintedIssue, ISSUE_VERSION, slimIssue, type PrintedIssue } from "./newspaper-issue";
+import { asFiledQueries, asPrintedIssue, ISSUE_VERSION, peekProofIssue, slimIssue, type PrintedIssue } from "./newspaper-issue";
 import { filterRecentFiledIssues, EDITION_LOOKBACK_MS, type FiledIssueMeta } from "./newspaper-editions";
 import type { EditorRequest } from "./newspaper-editor";
 import { ISSUE_QUERY_COLUMNS, ISSUE_SHELL_COLUMNS } from "./newspaper-payload";
@@ -16,6 +16,8 @@ export async function readRemoteStories(id: string): Promise<unknown[] | null> {
 
 /** Stories + print clock, no desks. A1 can set from this. */
 export async function readRemoteIssueShell(id: string): Promise<PrintedIssue | null> {
+  const planted = peekProofIssue(id);
+  if (planted) return { ...planted, queries: [] };
   const { data, error } = await supabase
     .from("newspaper_issues")
     .select(ISSUE_SHELL_COLUMNS)
@@ -27,6 +29,8 @@ export async function readRemoteIssueShell(id: string): Promise<PrintedIssue | n
 
 /** Desks and art for an edition already on screen. */
 export async function readRemoteQueries(id: string): Promise<PrintedIssue["queries"] | null> {
+  const planted = peekProofIssue(id);
+  if (planted) return planted.queries;
   const { data, error } = await supabase
     .from("newspaper_issues")
     .select(ISSUE_QUERY_COLUMNS)
@@ -63,6 +67,8 @@ export function subscribeReadyIssues(onReady: (row: FiledIssueMeta) => void): ()
 
 /** The edition already on the press, if the desk has finished it. */
 export async function readRemoteIssue(id: string): Promise<PrintedIssue | null> {
+  const planted = peekProofIssue(id);
+  if (planted) return planted;
   const { data, error } = await supabase
     .from("newspaper_issues")
     .select("version, status, stories, queries, printed_at")

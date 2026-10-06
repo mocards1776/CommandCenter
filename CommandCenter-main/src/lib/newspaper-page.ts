@@ -132,7 +132,9 @@ export function clubFormIsThin(club: {
   leaders: unknown[];
   division: unknown[];
 }): boolean {
-  return club.stats.length === 0 && club.leaders.length === 0 && club.division.length === 0;
+  // A future slate with no current-season numbers — last year's table does
+  // not earn a full form card (Missouri basketball before tip-off).
+  return club.stats.length === 0 && club.leaders.length === 0;
 }
 
 /** Stat-grid columns that fill the last row instead of leaving grey cells. */

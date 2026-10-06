@@ -183,6 +183,10 @@ assert(
   "a card with only a future slate is thin",
 );
 assert(
+  clubFormIsThin({ stats: [], leaders: [], division: [{ team: "CLE" }] }),
+  "last year's table does not keep an empty basketball card",
+);
+assert(
   !clubFormIsThin({ stats: [{ label: "ERA" }], leaders: [], division: [] }),
   "a card with numbers is not thin",
 );

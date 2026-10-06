@@ -2528,8 +2528,33 @@ function stripFor(path: string, board: SectionBoard | null, edition: string): { 
   return [];
 }
 
-function boxGameKey(game: { id?: string | null; espnEventId?: string | null; away?: { abbrev?: string | null }; home?: { abbrev?: string | null }; day?: string | null }): string {
-  return game.id || game.espnEventId || `${game.away?.abbrev ?? ""}-${game.home?.abbrev ?? ""}-${game.day ?? ""}`;
+function boxGameKeys(game: {
+  id?: string | null;
+  espnEventId?: string | null;
+  gamePk?: string | number | null;
+  away?: { abbrev?: string | null };
+  home?: { abbrev?: string | null };
+  day?: string | null;
+}): string[] {
+  const pair = `${game.away?.abbrev ?? ""}-${game.home?.abbrev ?? ""}-${game.day ?? ""}`;
+  return [
+    ...new Set(
+      [game.id, game.espnEventId, game.gamePk != null ? String(game.gamePk) : null, pair !== "--" ? pair : null].filter(
+        (key): key is string => Boolean(key),
+      ),
+    ),
+  ];
+}
+
+function boxGameKey(game: {
+  id?: string | null;
+  espnEventId?: string | null;
+  gamePk?: string | number | null;
+  away?: { abbrev?: string | null };
+  home?: { abbrev?: string | null };
+  day?: string | null;
+}): string {
+  return boxGameKeys(game)[0] ?? "";
 }
 
 function deskFolio(page: SportFrontPage, focus: SportFrontPage["focus"], fallback: string): string {
@@ -2595,11 +2620,11 @@ function SportSectionFront({
   const mlbPost =
     mlb && Boolean(playoffs?.active || playoffs?.rounds.some((round) => round.series.length));
   const tables = mlbPost ? [] : rankStandings(standings).slice(0, 2);
-  const stripIds = new Set(frontStrips.flatMap((strip) => strip.games.map((g) => boxGameKey(g))));
-  const leadKey = leadGame ? boxGameKey(leadGame) : "";
+  const stripIds = new Set(frontStrips.flatMap((strip) => strip.games.flatMap((g) => boxGameKeys(g))));
+  const leadKeys = new Set(leadGame ? boxGameKeys(leadGame) : []);
   const otherScores = recent.filter((g) => {
-    const key = boxGameKey(g);
-    return key && key !== leadKey && !stripIds.has(key);
+    const keys = boxGameKeys(g);
+    return keys.length > 0 && keys.every((key) => !leadKeys.has(key) && !stripIds.has(key));
   });
   const fixtures = (board?.slate ?? []).filter((g) => !g.final && !g.live);
   const printableLeaders = leaders.filter(leaderGroupHasValidData).slice(0, 4);
