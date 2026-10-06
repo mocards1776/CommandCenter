@@ -5,30 +5,59 @@
  */
 import { cardFromSummary, type FinalCard } from "./card.ts";
 
+function espnHeadshot(id: string): { href: string } {
+  return { href: `https://a.espncdn.com/i/headshots/mlb/players/full/${id}.png` };
+}
+
 function batter(
   name: string,
   pos: string,
   stats: [string, string, string, string, string, string, string],
   starter = true,
+  id?: string,
 ) {
   return {
     starter,
-    athlete: { shortName: name, position: { abbreviation: pos } },
+    athlete: {
+      id,
+      shortName: name,
+      position: { abbreviation: pos },
+      headshot: id ? espnHeadshot(id) : undefined,
+    },
     stats,
   };
 }
 
-function pitcher(name: string, stats: [string, string, string, string, string, string], note?: string) {
+function pitcher(
+  name: string,
+  stats: [string, string, string, string, string, string],
+  note?: string,
+  id?: string,
+) {
   return {
     starter: Boolean(note),
-    athlete: { shortName: name, position: { abbreviation: "P" } },
+    athlete: {
+      id,
+      shortName: name,
+      position: { abbreviation: "P" },
+      headshot: id ? espnHeadshot(id) : undefined,
+    },
     stats,
     notes: note ? [{ text: note }] : [],
   };
 }
 
+const CHW_LOGOS = [
+  { href: "https://a.espncdn.com/i/teamlogos/mlb/500/chw.png", rel: ["full", "default"] },
+  { href: "https://a.espncdn.com/i/teamlogos/mlb/500-dark/chw.png", rel: ["full", "dark"] },
+];
+const CLE_LOGOS = [
+  { href: "https://a.espncdn.com/i/teamlogos/mlb/500/cle.png", rel: ["full", "default"] },
+  { href: "https://a.espncdn.com/i/teamlogos/mlb/500-dark/cle.png", rel: ["full", "dark"] },
+];
+
 export function whiteSoxGuardiansPlayoffFixture(): FinalCard {
-  return cardFromSummary("mlb", "401810002", {
+  const card = cardFromSummary("mlb", "401810002", {
     header: {
       id: "401810002",
       season: { year: 2026, type: 3 },
@@ -38,6 +67,7 @@ export function whiteSoxGuardiansPlayoffFixture(): FinalCard {
           date: "2026-10-05T21:00Z",
           venue: { fullName: "Progressive Field" },
           notes: [{ headline: "ALDS - Game 2" }],
+          attendance: 32050,
           competitors: [
             {
               homeAway: "away",
@@ -51,6 +81,7 @@ export function whiteSoxGuardiansPlayoffFixture(): FinalCard {
                 displayName: "Chicago White Sox",
                 color: "27251f",
                 alternateColor: "c4ced4",
+                logos: CHW_LOGOS,
               },
             },
             {
@@ -58,18 +89,25 @@ export function whiteSoxGuardiansPlayoffFixture(): FinalCard {
               score: "3",
               hits: 4,
               errors: 1,
-              linescores: [2, 0, 0, 0, 0, 0, 1, 0, 0],
+              linescores: [2, 0, 0, 0, 0, 0, 0, 1, 0],
               team: {
                 id: "5",
                 abbreviation: "CLE",
                 displayName: "Cleveland Guardians",
                 color: "00385d",
                 alternateColor: "e31937",
+                logos: CLE_LOGOS,
               },
             },
           ],
         },
       ],
+    },
+    gameInfo: {
+      venue: { fullName: "Progressive Field" },
+      attendance: 32050,
+      gameDuration: "3:06",
+      weather: { temp: "61", condition: "Clear", wind: "13 mph, In From CF" },
     },
     seasonseries: [
       {
@@ -140,28 +178,28 @@ export function whiteSoxGuardiansPlayoffFixture(): FinalCard {
               type: "batting",
               labels: ["AB", "R", "H", "RBI", "HR", "BB", "K"],
               athletes: [
-                batter("S. Antonacci", "LF", ["4", "0", "0", "0", "0", "0", "1"]),
-                batter("C. Teel", "C", ["4", "1", "1", "0", "0", "0", "2"]),
-                batter("M. Vargas", "3B", ["2", "1", "1", "0", "0", "2", "0"]),
-                batter("M. Murakami", "1B", ["4", "0", "1", "0", "0", "0", "1"]),
-                batter("A. Benintendi", "DH", ["4", "0", "0", "0", "0", "0", "2"]),
-                batter("R. Grichuk", "DH", ["1", "1", "1", "1", "0", "0", "0"], false),
-                batter("T. Peters", "CF", ["2", "0", "0", "0", "0", "0", "1"]),
-                batter("T. Pham", "PH", ["1", "0", "0", "0", "0", "0", "0"], false),
-                batter("B. Doyle", "CF", ["1", "0", "0", "0", "0", "0", "0"], false),
-                batter("B. Montgomery", "RF", ["4", "1", "2", "2", "0", "0", "2"]),
-                batter("C. Meidroth", "2B", ["4", "0", "1", "1", "0", "0", "1"]),
-                batter("C. Montgomery", "SS", ["3", "0", "0", "0", "0", "1", "2"]),
+                batter("S. Antonacci", "LF", ["4", "0", "0", "0", "0", "0", "1"], true, "5207167"),
+                batter("C. Teel", "C", ["4", "1", "1", "0", "0", "0", "2"], true, "4743772"),
+                batter("M. Vargas", "3B", ["2", "1", "1", "0", "0", "2", "0"], true, "42453"),
+                batter("M. Murakami", "1B", ["4", "0", "1", "0", "0", "0", "1"], true, "4872595"),
+                batter("A. Benintendi", "DH", ["4", "0", "0", "0", "0", "0", "2"], true, "34986"),
+                batter("R. Grichuk", "DH", ["1", "1", "1", "1", "0", "0", "0"], false, "31399"),
+                batter("T. Peters", "CF", ["2", "0", "0", "0", "0", "0", "1"], true, "5085893"),
+                batter("T. Pham", "PH", ["1", "0", "0", "0", "0", "0", "0"], false, "31208"),
+                batter("B. Doyle", "CF", ["1", "0", "0", "0", "0", "0", "0"], false, "42462"),
+                batter("B. Montgomery", "RF", ["4", "1", "2", "2", "0", "0", "2"], true, "4950345"),
+                batter("C. Meidroth", "2B", ["4", "0", "1", "1", "0", "0", "1"], true, "5136929"),
+                batter("C. Montgomery", "SS", ["3", "0", "0", "0", "0", "1", "2"], true, "4872685"),
               ],
             },
             {
               type: "pitching",
               labels: ["IP", "H", "R", "ER", "BB", "K"],
               athletes: [
-                pitcher("A. Kay", ["0.1", "1", "2", "2", "1", "0"]),
-                pitcher("S. Newcomb", ["2.0", "1", "0", "0", "1", "3"]),
-                pitcher("S. Burke", ["5.1", "1", "1", "1", "1", "6"], "W"),
-                pitcher("G. Taylor", ["1.1", "1", "0", "0", "1", "1"]),
+                pitcher("A. Kay", ["0.1", "1", "2", "2", "1", "0"], undefined, "40947"),
+                pitcher("S. Newcomb", ["2.0", "1", "0", "0", "1", "3"], undefined, "33856"),
+                pitcher("S. Burke", ["5.1", "1", "1", "1", "1", "6"], "W, 1-0", "4867679"),
+                pitcher("G. Taylor", ["1.1", "1", "0", "0", "0", "0"], "S, 2", "4927630"),
               ],
             },
           ],
@@ -173,25 +211,25 @@ export function whiteSoxGuardiansPlayoffFixture(): FinalCard {
               type: "batting",
               labels: ["AB", "R", "H", "RBI", "HR", "BB", "K"],
               athletes: [
-                batter("S. Kwan", "CF", ["3", "1", "1", "0", "0", "0", "0"]),
-                batter("J. Ramirez", "3B", ["4", "1", "0", "0", "0", "0", "2"]),
-                batter("C. DeLautter", "RF", ["4", "0", "2", "0", "0", "1", "0"]),
-                batter("J. Adell", "DH", ["3", "0", "1", "1", "0", "0", "2"]),
-                batter("N. Lowe", "1B", ["4", "0", "0", "0", "0", "0", "2"]),
-                batter("A. Martinez", "LF", ["3", "0", "0", "0", "0", "1", "1"]),
-                batter("T. Bazzana", "2B", ["4", "0", "0", "0", "0", "0", "1"]),
-                batter("B. Bailey", "C", ["3", "0", "0", "0", "0", "0", "1"]),
-                batter("P. Rocchio", "SS", ["3", "0", "0", "0", "0", "0", "0"]),
+                batter("S. Kwan", "CF", ["3", "1", "1", "0", "0", "0", "0"], true, "41996"),
+                batter("J. Ramirez", "3B", ["4", "1", "0", "0", "0", "0", "2"], true, "32801"),
+                batter("C. DeLautter", "RF", ["4", "0", "2", "0", "0", "1", "0"], true, "4619649"),
+                batter("J. Adell", "DH", ["3", "0", "1", "1", "0", "0", "2"], true, "40854"),
+                batter("N. Lowe", "1B", ["4", "0", "0", "0", "0", "0", "2"], true, "40538"),
+                batter("A. Martinez", "LF", ["3", "0", "0", "0", "0", "1", "1"], true, "42497"),
+                batter("T. Bazzana", "2B", ["4", "0", "0", "0", "0", "0", "1"], true, "5007707"),
+                batter("B. Bailey", "C", ["3", "0", "0", "0", "0", "0", "1"], true, "4345843"),
+                batter("P. Rocchio", "SS", ["3", "0", "0", "0", "0", "0", "0"], true, "41217"),
               ],
             },
             {
               type: "pitching",
               labels: ["IP", "H", "R", "ER", "BB", "K"],
               athletes: [
-                pitcher("G. Williams", ["5.0", "4", "2", "2", "3", "11"]),
-                pitcher("E. Sabrowski", ["0.2", "1", "2", "2", "1", "0"]),
-                pitcher("S. Armstrong", ["1.1", "0", "0", "0", "0", "1"]),
-                pitcher("C. Smith", ["1.0", "0", "0", "0", "0", "1"]),
+                pitcher("G. Williams", ["5.0", "4", "2", "2", "3", "11"], undefined, "4345076"),
+                pitcher("E. Sabrowski", ["0.2", "1", "2", "2", "1", "0"], "L, 0-1", "5194333"),
+                pitcher("S. Armstrong", ["1.1", "0", "0", "0", "0", "1"], undefined, "33499"),
+                pitcher("C. Smith", ["1.0", "0", "0", "0", "0", "1"], undefined, "4987924"),
               ],
             },
           ],
@@ -228,4 +266,7 @@ export function whiteSoxGuardiansPlayoffFixture(): FinalCard {
       { homeWinPercentage: 0, playId: "b9" },
     ],
   });
+  card.daySlot = "Game 1 of 2";
+  card.sentAt = "2026-10-06T06:20:00Z";
+  return card;
 }

@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { cardFromSummary, finalCaption, formatFinalsTimestamp, highlightFromBox, pickCardLogoHref, pickMlbPerformers, starsFromLanding, statMagnitude } from "./card.ts";
+import { cardFromSummary, daySlotFromScoreboard, daySlotLabel, finalCaption, formatFinalsTimestamp, formatGameStart, highlightFromBox, parseLinescores, parsePitchingDecision, pickCardLogoHref, pickMlbDecisions, pickMlbPerformers, starsFromLanding, statMagnitude } from "./card.ts";
 import { mapMlbWinProbability, mlbInningLabels, mlbPlayRefs, mlbWinProbDomain } from "./mlb-win-probability.ts";
 import { mapThreeStars } from "./nhl-stars.ts";
 import { formatBestOf, formatPlayoffSeriesLine, mlbPlayoffFromSummary } from "./series.ts";
@@ -100,6 +100,16 @@ assert.ok(
       { href: "https://a.espncdn.com/i/teamlogos/mlb/500-dark/sd.png", rel: ["full", "dark"] },
     ],
   })?.includes("500-dark/sd.png"),
+);
+assert.match(
+  pickCardLogoHref({ id: "4", abbreviation: "CHW" }, "mlb") ?? "",
+  /mlb\/500-dark\/chw\.png/,
+  "construct ESPN 500-dark when the summary omits logos[]",
+);
+assert.deepEqual(parseLinescores([0, 0, 0, 1, 0, 3, 0, 0, 0]), [0, 0, 0, 1, 0, 3, 0, 0, 0]);
+assert.deepEqual(
+  parseLinescores([{ displayValue: "2" }, { displayValue: "0" }, { hits: 1 }, { value: 1 }]),
+  [2, 0, null, 1],
 );
 
 assert.deepEqual(parseScope(undefined), { favorites: true, ruwt: true, all: false });
@@ -442,6 +452,11 @@ assert.match(svg, />2-2</);
 assert.match(svg, />3-1</);
 assert.match(svg, /Thu, Oct 1, 7:15 PM CT/);
 assert.match(svg, /PIT -2\.5 did not cover/);
+{
+  const stamped = renderFinalSvg({ ...card, sentAt: "2026-10-06T06:20:00Z", daySlot: "Game 1 of 1" });
+  assert.match(stamped, /Tue, Oct 6, 1:20 AM CT  ·  Game 1 of 1/);
+  assert.match(stamped, /Thu, Oct 1, 7:15 PM CT/);
+}
 assert.match(svg, /opacity="0\.38"/);
 assert.doesNotMatch(svg, /Finals and Stats/);
 assert.doesNotMatch(svg, /Last play|yard line|Field map|chains/i);
@@ -586,6 +601,24 @@ assert.equal(spreadOutcome(-2.5, 17, 14), "covered");
 assert.equal(spreadOutcome(-3, 20, 17), "push");
 assert.equal(spreadOutcome(-2.5, 24, 27), "not covered");
 assert.equal(formatFinalsTimestamp("2026-10-04T17:00Z"), "Sun, Oct 4, 12:00 PM CT");
+assert.equal(formatGameStart("2026-10-05T21:00Z"), "Mon, Oct 5, 4:00 PM CT");
+assert.deepEqual(parsePitchingDecision("W, 1-0"), { role: "W", record: "1-0" });
+assert.deepEqual(parsePitchingDecision("L, 0-1, B, 1"), { role: "L", record: "0-1" });
+assert.deepEqual(parsePitchingDecision("S, 2"), { role: "S", record: "0-0-2 SV" });
+assert.equal(daySlotLabel(1, 2), "Game 1 of 2");
+assert.equal(
+  daySlotFromScoreboard(
+    {
+      events: [
+        { id: "401907991", date: "2026-10-05T21:00Z" },
+        { id: "401907986", date: "2026-10-06T00:00Z" },
+      ],
+    },
+    "401907991",
+    "20261005",
+  ),
+  "Game 1 of 2",
+);
 
 const covered = oddsFromSummary(
   {
@@ -932,6 +965,23 @@ assert.deepEqual(soxGuardians.mlbBox?.batting.away.labels, ["AB", "R", "H", "RBI
 assert.deepEqual(soxGuardians.mlbBox?.pitching.home.labels, ["IP", "H", "R", "ER", "BB", "K"]);
 assert.ok((soxGuardians.mlbBox?.batting.away.rows.length ?? 0) >= 11, "full CHW batting order");
 assert.ok((soxGuardians.mlbBox?.pitching.away.rows.length ?? 0) >= 4, "full CHW pitching staff");
+assert.deepEqual(soxGuardians.away.linescores, [0, 0, 0, 1, 0, 3, 0, 0, 0]);
+assert.deepEqual(soxGuardians.home.linescores, [2, 0, 0, 0, 0, 0, 0, 1, 0]);
+assert.match(soxGuardians.away.logoUrl ?? "", /500-dark\/chw/);
+assert.match(soxGuardians.home.logoUrl ?? "", /500-dark\/cle/);
+assert.ok(
+  soxGuardians.leaders.every((row) => row.photoUrl?.startsWith("https://")),
+  "key performers carry ESPN headshot URLs",
+);
+assert.deepEqual(
+  pickMlbDecisions(soxGuardians.mlbBox!).map((row) => row.role),
+  ["W", "L", "S"],
+);
+assert.equal(soxGuardians.daySlot, "Game 1 of 2");
+assert.equal(soxGuardians.sentAt, "2026-10-06T06:20:00Z");
+assert.equal(soxGuardians.attendance, 32050);
+assert.equal(soxGuardians.duration, "3:06");
+assert.match(soxGuardians.weather ?? "", /61° · Clear/);
 const soxSvg = renderFinalSvg(soxGuardians);
 assert.match(soxSvg, /S\. Antonacci/);
 assert.match(soxSvg, /C\. DeLautter/);
@@ -942,6 +992,32 @@ assert.match(soxSvg, new RegExp(`font-size="${MLB_BOX_STAT_SIZE}"[^>]*>11<`));
 assert.ok(MLB_BOX_NAME_SIZE >= 20 && MLB_BOX_STAT_SIZE >= 20, "box type must stay phone-readable");
 const soxH = Number(/<svg [^>]*height="(\d+(?:\.\d+)?)"/.exec(soxSvg)?.[1] ?? 0);
 assert.ok(soxH > 1350 && soxH <= FINALS_ALERT_TARGET_HEIGHT + 500, `full-box MLB card height ${soxH}`);
+assert.match(soxSvg, />WIN</);
+assert.match(soxSvg, />LOSS</);
+assert.match(soxSvg, />SAVE</);
+assert.match(soxSvg, /S\. Burke/);
+assert.match(soxSvg, /E\. Sabrowski/);
+assert.match(soxSvg, /G\. Taylor/);
+assert.match(soxSvg, /5\.1 IP · 1 H · 1 ER · 6 K · 1 BB/);
+assert.match(soxSvg, /Tue, Oct 6, 1:20 AM CT  ·  Game 1 of 2/);
+assert.match(soxSvg, /Progressive Field  ·  Mon, Oct 5, 4:00 PM CT/);
+assert.match(soxSvg, /Monday, Oct 5 at 4:00 PM/);
+{
+  const wpX = Number(/x="(\d+(?:\.\d+)?)"[^>]*>Win probability</.exec(soxSvg)?.[1] ?? 0);
+  const winX = Number(/x="(\d+(?:\.\d+)?)"[^>]*>WIN</.exec(soxSvg)?.[1] ?? 0);
+  assert.ok(wpX > 0 && winX > wpX, `W/L/S should sit right of WP (wp x=${wpX}, win x=${winX})`);
+}
+{
+  const withArt = structuredClone(soxGuardians);
+  withArt.away.logoData = "data:image/png;base64,aaa";
+  withArt.home.logoData = "data:image/png;base64,bbb";
+  for (const row of withArt.leaders) row.photoData = "data:image/png;base64,ccc";
+  const artSvg = renderFinalSvg(withArt);
+  assert.match(artSvg, /<image href="data:image\/png;base64,aaa"/);
+  assert.match(artSvg, /<image href="data:image\/png;base64,bbb"/);
+  assert.match(artSvg, /<image href="data:image\/png;base64,ccc"/);
+  assert.doesNotMatch(artSvg, /logoHalo|logo-plate|<ellipse/);
+}
 
 assert.equal(TELEGRAM_GRAPHIC_METHOD, "sendDocument");
 {
