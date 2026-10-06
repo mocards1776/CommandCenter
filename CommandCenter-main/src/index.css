@@ -1362,7 +1362,9 @@ mark.rss-hl {
   zoom: var(--tt-fit, 1);
   margin: 0;
   padding: 14px 18px 18px;
-  overflow-x: clip;
+  /* visible, not clip/hidden: those make overflow-y compute to auto and
+     create a nested iOS scroller that blanks the left column. */
+  overflow: visible;
   touch-action: pan-y;
   display: flex;
   flex-direction: column;
@@ -1372,6 +1374,13 @@ mark.rss-hl {
     var(--w-paper);
   color: var(--w-ink);
   box-shadow: 0 0 40px rgba(0, 0, 0, 0.35);
+}
+.wsj-pager.tt-fit-transform .wsj-sheet {
+  zoom: 1;
+}
+.newspaper-root .wsj-pager.tt-fit-scaled .wsj-rail {
+  position: static !important;
+  top: auto;
 }
 
 .tt-spread {
@@ -1476,6 +1485,38 @@ mark.rss-hl {
 .tt-editions-label {
   letter-spacing: 0.2em;
   color: var(--w-ink-soft);
+}
+.tt-editions-current {
+  color: var(--w-ink);
+  box-shadow: inset 0 -1px 0 var(--w-rule);
+}
+.tt-editions-more {
+  position: relative;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--w-ink-soft);
+  font-weight: 600;
+}
+.tt-editions-more summary {
+  cursor: pointer;
+  list-style: none;
+}
+.tt-editions-more summary::-webkit-details-marker {
+  display: none;
+}
+.tt-editions-menu {
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 4px);
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--w-paper);
+  border: 1px solid var(--w-rule);
+  white-space: nowrap;
 }
 .tt-editions button {
   appearance: none;
@@ -2648,8 +2689,8 @@ li.counting .tt-count.card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 296px;
   gap: 0 var(--w-gutter);
-  align-items: stretch;
-  flex: 1;
+  align-items: start;
+  flex: 0 0 auto;
   min-height: 0;
 }
 .wsj-front-main {
@@ -2659,7 +2700,7 @@ li.counting .tt-count.card {
   gap: 18px;
 }
 .wsj-front-under {
-  margin-top: auto;
+  margin-top: 12px;
   padding-top: 12px;
   border-top: 1px solid var(--w-hair);
 }
@@ -8286,7 +8327,10 @@ li.counting .tt-count.card {
    Zoom, not a transform, so a sheet taller than the screen scrolls its full height. */
 @supports not (zoom: 1) {
   .wsj-page {
-    overflow-x: auto;
+    overflow-x: hidden;
+  }
+  .wsj-sheet {
+    zoom: 1;
   }
 }
 .newspaper-root .wsj-shelved {
@@ -9000,7 +9044,7 @@ li.counting .tt-count.card {
   grid-template-columns: minmax(0, 1fr);
   flex: 0 0 auto;
   gap: 18px;
-  align-items: stretch;
+  align-items: start;
 }
 .tt-front-lead,
 .tt-front-side {
@@ -9013,7 +9057,7 @@ li.counting .tt-count.card {
 }
 .tt-front-grid.with-side {
   grid-template-columns: minmax(0, 1.7fr) minmax(260px, 1fr);
-  align-items: stretch;
+  align-items: start;
 }
 .tt-front-lead {
   display: flex;
@@ -9026,7 +9070,7 @@ li.counting .tt-count.card {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin-top: auto;
+  margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid var(--w-hair);
 }
@@ -9279,7 +9323,7 @@ li.counting .tt-count.card {
 }
 .tt-front-lead,
 .tt-front-side {
-  overflow-x: clip;
+  overflow: visible;
 }
 .tt-front-lead .tt-recap-photo.wide img,
 .wsj-inside-story .tt-recap-photo.wide img,

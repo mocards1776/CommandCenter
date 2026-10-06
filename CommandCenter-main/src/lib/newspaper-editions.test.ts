@@ -4,6 +4,7 @@
  */
 import {
   backEditionNote,
+  editionFolioLine,
   editionPickerLabel,
   filterRecentFiledIssues,
   isIssueWithinLookback,
@@ -81,5 +82,14 @@ assert(
     "Evening · Midday · Morning",
   "local + remote reprints still print one button per slot",
 );
+
+assert(editionFolioLine("2026-10-06-midday") === "MIDDAY · OCT 6", "today's midday folio is one edition + date");
+assert(editionFolioLine("2026-10-05-evening") === "EVENING · OCT 5", "an older evening folio keeps its own date");
+assert(editionFolioLine("2026-10-06-morning") === "MORNING · OCT 6", "morning folio is that slot only");
+const standLine = recent.map((r) => editionPickerLabel(r.id, recent)).join(" · ");
+assert(standLine === "Midday · Morning · Sun. Evening · Oct 4", "the 24h stand still lists other slots");
+assert(editionFolioLine("2026-10-05-midday") === "MIDDAY · OCT 5", "folio never concatenates the stand");
+assert(!editionFolioLine("2026-10-05-midday").includes("Morning"), "folio does not mention morning");
+assert(!editionFolioLine("2026-10-05-midday").includes("Evening"), "folio does not mention evening");
 
 console.log("newspaper-editions ok");

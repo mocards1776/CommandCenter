@@ -92,6 +92,16 @@ export function editionPickerLabel(id: string, recent: FiledIssueMeta[]): string
 }
 
 /**
+ * Masthead folio for the edition on the page — one slot, that issue's date.
+ * Never concatenates the 24-hour stand (Midday · Morning · Mon. Evening · Oct 5).
+ */
+export function editionFolioLine(id: string): string {
+  const parsed = parsePressId(id);
+  if (!parsed) return id;
+  return `${SLOT_WORD[parsed.slot].toUpperCase()} · ${monthDay(parsed.day).toUpperCase()}`;
+}
+
+/**
  * One button per edition slot. Local + remote reprints of the same
  * morning / midday / evening were painting
  * EVENING · EVENING · MIDDAY · MIDDAY · MORNING.
