@@ -1886,7 +1886,10 @@ export async function fetchSectionBoard(path: string, edition: string): Promise<
     const rest = await Promise.all(restDays.map((d) => espnBoard(path, `&dates=${ymd(d)}`)));
     const round = rest.flatMap((board, i) => boardGames(path, board, restDays[i]!));
     return {
-      results: past.filter((g) => g.final || g.live).sort(byStart),
+      results: uniqueGames([
+        ...past.filter((g) => g.final || g.live),
+        ...boardGames(path, ahead, day).filter((g) => g.final || g.live),
+      ]).sort(byStart),
       slate: uniqueGames([...first, ...round].filter((g) => !g.final && !g.live)).sort(byStart),
     };
   }

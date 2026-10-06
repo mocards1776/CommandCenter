@@ -257,6 +257,15 @@ export function favoriteKeyForGame(
   return "";
 }
 
+/** Photo + copy beats a long box wrap with no cut. */
+export function frontCardWeight(card: GameWrapCard): number {
+  return (card.photo ? 2_000 : 0) + (isBoxStub(card) ? 0 : 800) + Math.min(800, card.body?.length ?? 0);
+}
+
+export function preferFrontCard(a: GameWrapCard, b: GameWrapCard): GameWrapCard {
+  return frontCardWeight(a) >= frontCardWeight(b) ? a : b;
+}
+
 /** Never open on a box stub when a photo recap (even a holdover) is on file. */
 export function pickSectionFrontLead(
   wraps: GameWrapCard[],
@@ -265,12 +274,18 @@ export function pickSectionFrontLead(
   newsLead?: GameWrapCard,
 ): GameWrapCard | undefined {
   const quality = wraps.filter((c) => !isBoxStub(c) && (Boolean(c.photo) || (c.body?.length ?? 0) >= 280));
+  const pictured = quality.filter((c) => Boolean(c.photo));
+  const picturedFresh = pictured.filter((c) => !c.holdover);
+  const picturedPost = pictured.filter((c) => c.postseason);
   const qualityFresh = quality.filter((c) => !c.holdover);
   const qualityPost = quality.filter((c) => c.postseason);
   const nonStubFresh = wraps.filter((c) => !c.holdover && !isBoxStub(c));
   const nonStub = wraps.filter((c) => !isBoxStub(c));
   const freshWraps = wraps.filter((c) => !c.holdover);
   return (
+    picturedFresh[0] ??
+    picturedPost[0] ??
+    pictured[0] ??
     qualityFresh[0] ??
     qualityPost[0] ??
     quality[0] ??
@@ -282,6 +297,63 @@ export function pickSectionFrontLead(
     newsLead ??
     pool[0]
   );
+}
+
+/** Last-match brief from a club snapshot — logo art, not an empty hole. */
+export function lastMatchCardFromChip(opts: {
+  key: string;
+  name: string;
+  shortName: string;
+  logo: string | null;
+  leaguePath: string;
+  sportLabel: string;
+  last: { label: string; detail: string | null; when: string | null; won: boolean | null };
+}): GameWrapCard {
+  const raw = opts.last.label.replace(/\s+/g, " ").trim();
+  const away = /^\s*@/i.test(raw);
+  const opp = raw.replace(/^(vs|@)\s+/i, "").trim() || "their last opponent";
+  const venue = away ? "at" : "vs";
+  const score = opts.last.detail;
+  const verb = opts.last.won === true ? "beat" : opts.last.won === false ? "fell to" : "played";
+  const headline = score
+    ? `${opts.shortName} ${verb} ${opp} ${score}`
+    : `${opts.shortName} ${venue} ${opp}`;
+  const whenBit = opts.last.when ? ` (${opts.last.when})` : "";
+  const follow =
+    opts.last.won === true
+      ? `${opts.shortName} take the points and turn to the next Championship fixture.`
+      : opts.last.won === false
+        ? `${opts.shortName} will look to bounce back in the next Championship fixture.`
+        : `The last Championship result is on the sheet.`;
+  const body = score
+    ? `${opts.name} ${verb} ${opp} ${score}${whenBit}. ${follow}`
+    : `${opts.name} played ${opp}${whenBit}. ${follow}`;
+  return {
+    id: `last-${opts.key}-${raw}-${score ?? "final"}`.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+    favoriteKey: opts.key,
+    followed: true,
+    teamName: opts.shortName,
+    teamHref: "/",
+    sportLabel: opts.sportLabel,
+    leaguePath: opts.leaguePath,
+    headline,
+    dek: score,
+    body,
+    scoreLine: score,
+    when: opts.last.when,
+    won: opts.last.won,
+    gameHref: null,
+    wrapHref: null,
+    feedUrl: null,
+    gameId: null,
+    stats: [],
+    leaders: [],
+    teamStats: [],
+    division: [],
+    photo: opts.logo,
+    caption: `${opts.name} ${venue} ${opp}.`,
+    status: "Final",
+  };
 }
 
 function isFreshSectionLead(card: GameWrapCard, path: string, edition: string): boolean {

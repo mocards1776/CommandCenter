@@ -14,6 +14,7 @@ import {
   isWrapLead,
   orderSportRecaps,
   isEflChampionshipStory,
+  lastMatchCardFromChip,
   orderSportSectionFront,
   sportFillerReason,
   storyFitsSection,
@@ -394,6 +395,50 @@ const mlbPhotoLead = orderSportSectionFront(
   "2026-10-05-evening",
 );
 assert(mlbPhotoLead[0]?.id === "league-nlds-g2", "a photo postseason recap leads over a box-wrap stub");
+
+const longBoxNoArt = card({
+  id: "box-miz-long",
+  headline: "Missouri 45, Florida 17",
+  wrapKind: "espn",
+  favoriteKey: "cfb-mizzou",
+  followed: true,
+  leaguePath: "football/college-football",
+  sportLabel: "CFB",
+  scoreLine: "MIZ 45 · FLA 17",
+  when: "2026-10-04T16:00:00Z",
+  body: "Missouri scored early and never let Florida back in. ".repeat(12),
+});
+const photoAp = card({
+  id: "ap-miz-photo",
+  headline: "No. 25 Missouri trounces No. 8 Florida 45-17",
+  favoriteKey: "cfb-mizzou",
+  followed: true,
+  leaguePath: "football/college-football",
+  sportLabel: "CFB",
+  scoreLine: "MIZ 45 · FLA 17",
+  when: "2026-10-04T16:00:00Z",
+  photo: "https://example.com/miz-wide.jpg",
+  body: "Missouri jumped on Florida in Columbia.",
+});
+const photoBeatsBox = orderSportSectionFront(
+  [longBoxNoArt, photoAp],
+  "football/college-football",
+  "2026-10-05-evening",
+);
+assert(photoBeatsBox[0]?.id === "ap-miz-photo", "a photo recap leads over a long box wrap with no cut");
+
+const last = lastMatchCardFromChip({
+  key: "eng-wrexham",
+  name: "Wrexham AFC",
+  shortName: "Wrexham",
+  logo: "https://example.com/wrex.png",
+  leaguePath: "soccer/eng.2",
+  sportLabel: "EFL",
+  last: { label: "@ Oxford", detail: "1–0", when: "Sat Oct 3", won: true },
+});
+assert(/Wrexham/i.test(last.headline) && /Oxford/i.test(last.headline), "last-match card names both clubs");
+assert(last.photo === "https://example.com/wrex.png", "last-match card keeps the club crest");
+assert((last.body?.length ?? 0) > 40, "last-match card has recap copy");
 
 assert(
   favoriteKeyForGame(

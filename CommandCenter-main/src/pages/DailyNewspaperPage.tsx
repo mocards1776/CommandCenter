@@ -235,7 +235,9 @@ import {
 import {
   favoriteKeyForGame,
   groupSportRecaps,
+  lastMatchCardFromChip,
   orderSportSectionFront,
+  preferFrontCard,
   sameGameStory,
   wrapBriefCopy,
 } from "@/lib/newspaper-sport-desk";
@@ -260,6 +262,7 @@ import {
   visibleFavorites,
   type SportsFavorite,
   type TeamDetail,
+  type TeamSnapshot,
 } from "@/lib/sports";
 import { cn } from "@/lib/utils";
 import { fetchYesterdayRecap } from "@/lib/yesterday-recap";
@@ -2335,7 +2338,16 @@ function gameForCard(card: GameWrapCard, games: BoxGame[], clubs: ClubDesk[]): B
   );
 }
 
-function mergeFrontStories(page: SportFrontPage, board: SectionBoard | null, edition: string): GameWrapCard[] {
+function mergeFrontStories(
+  page: SportFrontPage,
+  board: SectionBoard | null,
+  edition: string,
+  fill?: {
+    leftover?: GameWrapCard[];
+    snaps?: TeamSnapshot[];
+    coaches?: FavoriteCoachTile[];
+  },
+): GameWrapCard[] {
   const filed = page.articles
     .map((a) => a.card)
     .filter((c) => c.headline)
@@ -2343,7 +2355,7 @@ function mergeFrontStories(page: SportFrontPage, board: SectionBoard | null, edi
       const key = favoriteKeyFromCopy(c, page.clubs);
       return key && key !== c.favoriteKey ? { ...c, favoriteKey: key, followed: true } : c;
     });
-  const extras: GameWrapCard[] = [];
+  const extras: GameWrapCard[] = [...(fill?.leftover ?? [])];
   if (board) {
     for (const g of [...(board.results ?? []), ...(board.prior ?? [])]) {
       const card = stampBoardCard(g, page.clubs);
@@ -2351,10 +2363,49 @@ function mergeFrontStories(page: SportFrontPage, board: SectionBoard | null, edi
       extras.push(card);
     }
   }
-  const pooled = [...filed];
-  for (const extra of extras) {
-    if (pooled.some((s) => s.id === extra.id || sameGameStory(s, extra))) continue;
-    pooled.push(extra);
+  for (const tile of fill?.coaches ?? []) {
+    extras.push(...tile.headlines.filter((c) => c.headline));
+    const last = tile.lastGame;
+    const club = page.clubs.find((c) => c.key === tile.teamAbbrev || squash(c.shortName) === squash(tile.teamName ?? tile.teamAbbrev));
+    if (last && club) {
+      extras.push(
+        lastMatchCardFromChip({
+          key: club.key,
+          name: tile.teamName || club.shortName,
+          shortName: club.shortName,
+          logo: tile.teamLogo || club.logo,
+          leaguePath: page.path,
+          sportLabel: page.sectionTitle,
+          last: {
+            label: `${last.homeAway === "at" ? "@" : "vs"} ${last.opponent ?? "OPP"}`,
+            detail: last.score,
+            when: last.date,
+            won: last.result === "W" ? true : last.result === "L" ? false : null,
+          },
+        }),
+      );
+    }
+  }
+  for (const snap of fill?.snaps ?? []) {
+    if (!snap.lastGame) continue;
+    extras.push(
+      lastMatchCardFromChip({
+        key: snap.key,
+        name: snap.name,
+        shortName: snap.shortName,
+        logo: snap.logo,
+        leaguePath: page.path,
+        sportLabel: page.sectionTitle,
+        last: snap.lastGame,
+      }),
+    );
+  }
+  const pooled: GameWrapCard[] = [];
+  for (const extra of [...filed, ...extras]) {
+    if (!extra.headline) continue;
+    const hit = pooled.findIndex((s) => s.id === extra.id || sameGameStory(s, extra));
+    if (hit >= 0) pooled[hit] = preferFrontCard(pooled[hit]!, extra);
+    else pooled.push(extra);
   }
   return orderSportSectionFront(pooled, page.path, edition);
 }
@@ -2407,6 +2458,9 @@ function SportSectionFront({
   leaders,
   heisman,
   poll,
+  leftover,
+  snaps,
+  coaches,
   onTurn,
 }: {
   page: SportFrontPage;
@@ -2418,6 +2472,9 @@ function SportSectionFront({
   leaders: LeagueLeaderGroup[];
   heisman?: HeismanBoard | null;
   poll: CfbPollRow[];
+  leftover?: GameWrapCard[];
+  snaps?: TeamSnapshot[];
+  coaches?: FavoriteCoachTile[];
   onTurn: (folio: string) => void;
 }) {
   const open = useReader();
@@ -2428,7 +2485,7 @@ function SportSectionFront({
   const mlb = page.path === "baseball/mlb";
   const finals = football ? [...(board?.results ?? []), ...(board?.prior ?? [])] : board?.results ?? [];
   const recent = soccer || football ? [...finals].reverse() : finals;
-  const stories = mergeFrontStories(page, board, edition);
+  const stories = mergeFrontStories(page, board, edition, { leftover, snaps, coaches });
   const folios = Object.fromEntries(page.articles.map((a) => [a.card.id, a.folio]));
   const lead = stories[0] ?? null;
   const rest = stories.filter((c) => c !== lead);
@@ -3496,6 +3553,8 @@ function SportFront({
   sheets,
   leaders,
   heisman,
+  leftover,
+  snaps,
   onTurn,
 }: {
   page: SportFrontPage;
@@ -3512,6 +3571,8 @@ function SportFront({
   sheets: Record<string, ClubSheet>;
   leaders: LeagueLeaderGroup[];
   heisman?: HeismanBoard | null;
+  leftover?: GameWrapCard[];
+  snaps?: TeamSnapshot[];
   onTurn: (folio: string) => void;
 }) {
   const pollQ = useQuery({
@@ -3590,6 +3651,9 @@ function SportFront({
             leaders={leaders}
             heisman={heisman}
             poll={poll}
+            leftover={leftover}
+            snaps={snaps}
+            coaches={coaches}
             onTurn={onTurn}
           />
         ) : page.focus === "news" ? (
@@ -6394,6 +6458,14 @@ function NewspaperDesk() {
                   sheets={sheetsQ.data ?? {}}
                   leaders={leadersQ.data?.[page.path] ?? []}
                   heisman={page.path.includes("college-football") ? heismanQ.data ?? null : null}
+                  leftover={pages.flatMap((p) =>
+                    p.kind === "sport-front" && p.path === page.path
+                      ? p.articles.map((a) => a.card)
+                      : p.kind === "sport-inside" && p.path === page.path
+                        ? [p.primary, p.secondary].filter((c): c is GameWrapCard => Boolean(c))
+                        : [],
+                  )}
+                  snaps={(teamSnaps.data ?? []).filter((s) => page.clubs.some((c) => c.key === s.key))}
                   onTurn={goFolio}
                 />
               ) : page.kind === "national" ? (
@@ -6440,6 +6512,7 @@ function NewspaperDesk() {
       playerPaths,
       nightsByPath,
       coachesByPath,
+      teamSnaps.data,
       weatherQ.data,
       weatherFolio,
       press.label,
