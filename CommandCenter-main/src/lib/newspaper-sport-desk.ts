@@ -99,10 +99,28 @@ export function isEflChampionshipStory(card: GameWrapCard): boolean {
   return EFL_CLUB.test(text);
 }
 
+const CFB_OFF_DESK =
+  /\b(colts|commanders|jordan walker|nfl\b|world series|nlcs|alcs)\b/i;
+const CFB_SIGNAL = /\b(college|ncaa|sec\b|acc\b|big ten|big 12|mizzou|missouri tigers)\b/i;
+
 export function storyFitsSection(card: GameWrapCard, path: string): boolean {
   if (path === "soccer/eng.2") return isEflChampionshipStory(card);
-  if (!card.leaguePath) return true;
-  return card.leaguePath === path;
+  if (card.leaguePath && card.leaguePath !== path) return false;
+  if (path === "football/college-football") {
+    const text = hay(card);
+    if (CFB_OFF_DESK.test(text) && !CFB_SIGNAL.test(text)) return false;
+    if (!card.leaguePath && /\b(nfl|mlb|nhl|nba)\b/i.test(text) && !CFB_SIGNAL.test(text)) return false;
+  }
+  return !card.leaguePath || card.leaguePath === path;
+}
+
+export function relatedFitsSection(
+  item: { headline: string; source?: string | null; href?: string | null },
+  path: string,
+): boolean {
+  if (path !== "football/college-football") return true;
+  const text = `${item.headline} ${item.source ?? ""} ${item.href ?? ""}`;
+  return !(CFB_OFF_DESK.test(text) && !CFB_SIGNAL.test(text));
 }
 
 function eventIdOf(card: GameWrapCard): string | null {
@@ -273,12 +291,18 @@ export function preferFrontCard(a: GameWrapCard, b: GameWrapCard): GameWrapCard 
 }
 
 /** Never open on a box stub when a photo recap (even a holdover) is on file. */
+export function alreadyOnSectionA(card: GameWrapCard, ran: GameWrapCard[] = []): boolean {
+  return ran.some((a) => a.id === card.id || sameGameStory(a, card));
+}
+
 export function pickSectionFrontLead(
   wraps: GameWrapCard[],
   pool: GameWrapCard[],
   editorLead?: GameWrapCard,
   newsLead?: GameWrapCard,
+  alreadyOnA1: GameWrapCard[] = [],
 ): GameWrapCard | undefined {
+  const open = (cs: GameWrapCard[]) => cs.filter((c) => !alreadyOnSectionA(c, alreadyOnA1));
   const quality = wraps.filter((c) => !isBoxStub(c) && (isStoryPhoto(c.photo) || (c.body?.length ?? 0) >= 280));
   const pictured = quality.filter((c) => isStoryPhoto(c.photo));
   const picturedFresh = pictured.filter((c) => !c.holdover);
@@ -290,20 +314,23 @@ export function pickSectionFrontLead(
   const nonStub = wraps.filter((c) => !isBoxStub(c));
   const freshWraps = wraps.filter((c) => !c.holdover);
   return (
-    favOf(picturedFresh)[0] ??
-    favOf(qualityFresh)[0] ??
+    favOf(open(picturedFresh))[0] ??
+    favOf(open(qualityFresh))[0] ??
+    open(picturedFresh)[0] ??
+    open(picturedPost)[0] ??
+    open(pictured)[0] ??
+    open(qualityFresh)[0] ??
+    open(qualityPost)[0] ??
+    open(quality)[0] ??
+    open(nonStubFresh)[0] ??
+    open(nonStub)[0] ??
+    open(freshWraps)[0] ??
+    open(wraps)[0] ??
+    (editorLead && !alreadyOnSectionA(editorLead, alreadyOnA1) ? editorLead : undefined) ??
+    (newsLead && !alreadyOnSectionA(newsLead, alreadyOnA1) ? newsLead : undefined) ??
+    open(pool)[0] ??
     picturedFresh[0] ??
-    picturedPost[0] ??
-    pictured[0] ??
-    qualityFresh[0] ??
-    qualityPost[0] ??
-    quality[0] ??
-    nonStubFresh[0] ??
-    nonStub[0] ??
-    freshWraps[0] ??
     wraps[0] ??
-    editorLead ??
-    newsLead ??
     pool[0]
   );
 }
@@ -386,6 +413,7 @@ export function orderSportSectionFront(
   cards: GameWrapCard[],
   path: string,
   edition: string,
+  alreadyOnA1: GameWrapCard[] = [],
 ): GameWrapCard[] {
   const seen = new Set<string>();
   const unique = cards.filter((card) => {
@@ -401,7 +429,7 @@ export function orderSportSectionFront(
     .sort((a, b) => (a.editorRank ?? 99) - (b.editorRank ?? 99) || String(b.when ?? "").localeCompare(String(a.when ?? "")));
   const newsLead = news.find((card) => !isInjuryNote(card));
   const editorLead = pool.find((card) => card.editorFront === 0 && !isInjuryNote(card));
-  const lead = pickSectionFrontLead(wraps, pool, editorLead, newsLead);
+  const lead = pickSectionFrontLead(wraps, pool, editorLead, newsLead, alreadyOnA1);
   if (!lead) return [];
   const rest = pool.filter((card) => card.id !== lead.id);
   const withPhoto = rest.filter((card) => card.photo);

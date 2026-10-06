@@ -101,28 +101,31 @@ export function CfbFill({
   poll,
   standings,
   heisman,
+  compact,
 }: {
   poll: CfbPollRow[];
   standings: StandGroup[];
   heisman?: HeismanBoard | null;
+  compact?: boolean;
 }) {
   const sec = secStandingsGroup(standings);
+  const pollRows = compact ? poll.slice(0, 12) : poll;
   const hints = [
-    ...poll.map((row) => ({ name: row.name, abbrev: row.abbrev, logo: row.logo })),
+    ...pollRows.map((row) => ({ name: row.name, abbrev: row.abbrev, logo: row.logo })),
     ...(sec?.rows ?? []).map((row) => ({ name: row.name, abbrev: row.abbrev, logo: row.logo })),
   ];
-  const odds = heisman?.rows.length ? attachHeismanLogos(heisman, hints) : null;
-  if (!poll.length && !sec && !odds) return null;
-  const left = poll.length > 0 || odds != null;
+  const odds = !compact && heisman?.rows.length ? attachHeismanLogos(heisman, hints) : null;
+  if (!pollRows.length && !sec && !odds) return null;
+  const left = pollRows.length > 0 || odds != null;
   return (
     <div className={left && sec ? "tt-cfb-fill" : "tt-cfb-fill solo"}>
       {left ? (
         <div className="tt-cfb-fill-left">
-          {poll.length ? (
+          {pollRows.length ? (
             <section className="tt-cfb-poll" aria-label="AP Top 25">
               <h3 className="wsj-band-title">AP Top 25</h3>
               <ol>
-                {poll.map((row, i) => (
+                {pollRows.map((row, i) => (
                   <li key={`${row.rank}-${row.abbrev}`} {...(i >= 15 ? { "data-tt-trim": 90 + i } : {})}>
                     <i>#{row.rank}</i>
                     {row.logo ? <img src={row.logo} alt="" /> : null}

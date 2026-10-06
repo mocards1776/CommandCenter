@@ -1533,6 +1533,31 @@ assert(isGameWrapStory({ id: "box-football/college-football-401856708" }), "a bo
     boardA1?.kind === "favorites-front" && boardA1.lead?.id === "box-football/college-football-401856708",
     `A1 leads with the board's Mizzou recap, not a preseason sit-out (got ${boardA1 && boardA1.kind === "favorites-front" ? boardA1.lead?.headline : "no front"})`,
   );
+  const uga = card({
+    id: "wire-cfb-uga",
+    headline: "No. 5 Georgia holds off Vanderbilt",
+    teamName: "Georgia",
+    sportLabel: "College Football",
+    leaguePath: "football/college-football",
+    status: "Final",
+    scoreLine: "VAN 14 · UGA 24",
+    when: "2026-10-04T23:30:00Z",
+    body: "Georgia held off Vanderbilt in Athens. ".repeat(16),
+    photo: "https://example.com/uga.jpg",
+    sec: true,
+  });
+  const cfbPointerPaper = buildEdition({
+    stories: [boardMizzou, uga],
+    clubs: [
+      { key: "cfb-mizzou", shortName: "Mizzou", logo: null, leaguePath: "football/college-football", record: "4-1", standing: "8th in SEC", division: [], stats: [], leaders: [], upcoming: [] },
+    ],
+    edition: "2026-10-05-evening",
+  });
+  const cfb1 = cfbPointerPaper.pages.find((p) => p.kind === "sport-front" && p.section === "CFB" && p.focus === "front");
+  assert(
+    cfb1?.kind === "sport-front" && cfb1.articles[0]?.card.id === "wire-cfb-uga",
+    `CFB1 opens on the next-best wrap, not the A1 Mizzou reprint (got ${cfb1 && cfb1.kind === "sport-front" ? cfb1.articles[0]?.card.id : "no CFB front"})`,
+  );
 }
 
 const satCfb = card({

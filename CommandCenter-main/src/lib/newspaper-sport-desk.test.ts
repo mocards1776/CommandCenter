@@ -16,6 +16,7 @@ import {
   isEflChampionshipStory,
   lastMatchCardFromChip,
   orderSportSectionFront,
+  pickSectionFrontLead,
   sportFillerReason,
   storyFitsSection,
 } from "./newspaper-sport-desk.ts";
@@ -103,6 +104,41 @@ assert(sportFillerReason(listicle) === "listicle", "listicles spike");
 assert(sportFillerReason(preview, [wrap]) === "preview", "a preview of a played game spikes");
 assert(!isSportFiller(wrap), "a game wrap is never filler");
 assert(!storyFitsSection(nhlLeak, "football/nfl"), "wrong-sport copy stays out of NFL");
+assert(
+  !storyFitsSection(
+    card({
+      id: "news-colts",
+      headline: "Jonathan Taylor, Colts run past Commanders",
+      leaguePath: null,
+    }),
+    "football/college-football",
+  ),
+  "an NFL note stays off the CFB recaps desk",
+);
+assert(
+  !storyFitsSection(
+    card({
+      id: "news-walker",
+      headline: "Should the Cardinals be concerned about Jordan Walker?",
+      dek: "St. Louis Post-Dispatch",
+      leaguePath: null,
+    }),
+    "football/college-football",
+  ),
+  "a Cardinals baseball note stays off CFB",
+);
+assert(
+  storyFitsSection(
+    card({
+      id: "news-uga",
+      headline: "Georgia holds off Vanderbilt in Athens",
+      dek: "St. Louis Post-Dispatch",
+      leaguePath: "football/college-football",
+    }),
+    "football/college-football",
+  ),
+  "a Post-Dispatch CFB note still belongs on the CFB desk",
+);
 
 const attached = attachRelatedGameCopy([wrap, athletic, video]);
 const kept = attached.find((c) => c.id === "wire-nfl-kc");
@@ -137,6 +173,21 @@ const oregon = card({
 });
 const ordered = orderSportRecaps([oregon, bama, miz], "football/college-football");
 assert(ordered[0]?.id === "wire-cfb-miz", "Mizzou leads CFB recaps");
+assert(
+  pickSectionFrontLead([miz, bama, oregon], [miz, bama, oregon], undefined, undefined, [miz])?.id === "wire-cfb-ala" ||
+    pickSectionFrontLead(
+      [
+        { ...bama, photo: "https://example.com/b.jpg", body: "Alabama routed Mississippi State. ".repeat(20) },
+        miz,
+        oregon,
+      ],
+      [miz, bama, oregon],
+      undefined,
+      undefined,
+      [miz],
+    )?.id !== "wire-cfb-miz",
+  "CFB1 does not reprint the A1 Mizzou wrap as its lead",
+);
 assert(ordered[1]?.id === "wire-cfb-ala", "SEC games group after the favorite");
 assert(ordered[2]?.id === "wire-cfb-ore", "top non-SEC follows the SEC block");
 

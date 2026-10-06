@@ -237,11 +237,14 @@ import {
 } from "@/lib/newspaper-sections";
 import {
   favoriteKeyForGame,
+  alreadyOnSectionA,
   groupSportRecaps,
   lastMatchCardFromChip,
   orderSportSectionFront,
   preferFrontCard,
+  relatedFitsSection,
   sameGameStory,
+  storyFitsSection,
   wrapBriefCopy,
 } from "@/lib/newspaper-sport-desk";
 import {
@@ -393,6 +396,12 @@ function substantive(card: GameWrapCard, text: string): string {
   const t = squash(text);
   if (!t || t === squash(card.headline)) return "";
   return text;
+}
+
+function a1PointerLine(card: GameWrapCard): string {
+  const hed = card.headline.replace(/^No\.\s*\d+\s+/i, "").replace(/\s+/g, " ").trim();
+  const short = hed.split(/ to |,| — | – /)[0]?.replace(/\s+\d+\s*[–-]\s*\d+\s*$/, "").trim() || hed;
+  return card.favoriteKey === "cfb-mizzou" ? short.replace(/^Missouri\b/i, "Mizzou") : short;
 }
 
 function recapDek(card: GameWrapCard, sentences = 1): string {
@@ -1689,7 +1698,7 @@ function FrontPage({
             className="lead"
             card={pageLead}
             team={teamForCard(teams, pageLead)}
-            text={splitStoryCopy(copyOf(pageLead, pageLeadTeaser), 480).teaser}
+            text={splitStoryCopy(copyOf(pageLead, pageLeadTeaser), 1100).teaser}
             size="xl"
             cols={2}
             art="top"
@@ -2575,6 +2584,7 @@ function SportSectionFront({
   coaches,
   heisman,
   poll,
+  alreadyOnA1,
   onTurn,
 }: {
   page: SportFrontPage;
@@ -2589,6 +2599,7 @@ function SportSectionFront({
   leftover?: GameWrapCard[];
   snaps?: TeamSnapshot[];
   coaches?: FavoriteCoachTile[];
+  alreadyOnA1?: GameWrapCard[];
   onTurn: (folio: string) => void;
 }) {
   const open = useReader();
@@ -2601,8 +2612,9 @@ function SportSectionFront({
   const recent = soccer || football ? [...finals].reverse() : finals;
   const stories = mergeFrontStories(page, board, edition, { leftover, snaps, coaches });
   const folios = Object.fromEntries(page.articles.map((a) => [a.card.id, a.folio]));
-  const lead = stories[0] ?? null;
-  const rest = stories.filter((c) => c !== lead);
+  const pointer = stories.find((c) => alreadyOnSectionA(c, alreadyOnA1 ?? [])) ?? null;
+  const lead = stories.find((c) => !pointer || (c.id !== pointer.id && !sameGameStory(c, pointer))) ?? null;
+  const rest = stories.filter((c) => c !== lead && c !== pointer);
   const underLead = rest.slice(0, cfb || mlb ? 2 : 1);
   const railSeconds = rest.slice(underLead.length, underLead.length + (cfb || mlb ? 1 : 3));
   const more = rest.slice(underLead.length + railSeconds.length, underLead.length + railSeconds.length + (cfb || mlb ? 3 : 5));
@@ -2612,7 +2624,7 @@ function SportSectionFront({
     leagueClubs.find((c) => c.short && card.teamName?.toLowerCase().includes(c.short.toLowerCase()))?.logo ?? null;
   const frontStrips = strips.slice(0, cfb || mlb ? 1 : 2).map((strip) => ({
     ...strip,
-    games: strip.games.slice(0, cfb || mlb ? 8 : 10),
+    games: strip.games.slice(0, cfb ? 12 : mlb ? 8 : 10),
   }));
   const railGames = frontStrips.flatMap((s) => s.games);
   const favIds = new Set(leagueClubs.filter((c) => c.favorite).map((c) => c.id));
@@ -2635,6 +2647,13 @@ function SportSectionFront({
       {lead ? (
         <div className={cn("tt-front-grid", (underLead.length || railSeconds.length || railGames.length) && "with-side")}>
           <div className="tt-front-lead">
+            {pointer ? (
+              <p className="tt-section-pointer">
+                <button type="button" className="wsj-a" onClick={() => onTurn("A1")}>
+                  {a1PointerLine(pointer)}, page A1
+                </button>
+              </p>
+            ) : null}
             <Story
               className="lead"
               card={lead}
@@ -2655,14 +2674,19 @@ function SportSectionFront({
               </div>
             ) : null}
             {underLead.length ? (
-              <div className="tt-front-under" data-tt-flow="">
+              <div className="tt-front-under" data-tt-keep="">
                 {underLead.map((card) => (
                   <Story
                     key={card.id}
                     card={card}
-                    text={recapDek(card, 4)}
+                    text={
+                      recapDek(card, 4) ||
+                      wrapBriefCopy(card, 4) ||
+                      gameOf(card)?.recap?.blurb ||
+                      recapDek(card, 2)
+                    }
                     size="md"
-                    art="none"
+                    art={card.photo ? "top" : "none"}
                     readOn
                     chrome={false}
                     jump={folios[card.id] && folios[card.id] !== page.folio ? folios[card.id] : undefined}
@@ -2722,6 +2746,9 @@ function SportSectionFront({
                   </section>
                 ))}
               </div>
+            ) : null}
+            {cfb && (poll.length || standings.length) ? (
+              <CfbFill poll={poll} standings={standings} heisman={heisman} compact />
             ) : null}
           </div>
         </div>
@@ -2784,7 +2811,7 @@ function SportSectionFront({
           />
         </div>
       ) : null}
-      {cfb && (poll.length || standings.length) ? (
+      {cfb && !lead && (poll.length || standings.length) ? (
         <div data-tt-flow="">
           <CfbFill poll={poll} standings={standings} heisman={heisman} />
         </div>
@@ -3158,7 +3185,7 @@ function WrapPlayers({ card }: { card: GameWrapCard }) {
   );
 }
 
-function WrapBrief({ card, trim }: { card: GameWrapCard; trim?: number }) {
+function WrapBrief({ card, trim, path }: { card: GameWrapCard; trim?: number; path?: string }) {
   const lookup = useContext(GameLookup);
   const game = isSingleGameRecap(card) ? lookup(card) : null;
   const copy = wrapBriefCopy(card, 4);
@@ -3184,7 +3211,9 @@ function WrapBrief({ card, trim }: { card: GameWrapCard; trim?: number }) {
       {recap ? null : <WrapPlayers card={card} />}
       {card.related?.length ? (
         <ul className="tt-wrap-related">
-          {card.related.map((item) => (
+          {card.related
+            .filter((item) => !path || relatedFitsSection(item, path))
+            .map((item) => (
             <li key={item.id}>
               <em>{item.source || "Related"}</em>
               {item.headline}
@@ -3196,21 +3225,40 @@ function WrapBrief({ card, trim }: { card: GameWrapCard; trim?: number }) {
   );
 }
 
+function wrapColumnWeight(card: GameWrapCard): number {
+  return 90 + Math.min(420, Math.floor((card.body?.length ?? 0) / 8)) + (card.photo ? 160 : 0);
+}
+
+function balanceWrapColumns(cards: GameWrapCard[], n = 3): GameWrapCard[][] {
+  const cols = Array.from({ length: n }, () => [] as GameWrapCard[]);
+  const weights = Array.from({ length: n }, () => 0);
+  for (const card of cards) {
+    let i = 0;
+    for (let c = 1; c < n; c++) if ((weights[c] ?? 0) < (weights[i] ?? 0)) i = c;
+    cols[i]!.push(card);
+    weights[i] = (weights[i] ?? 0) + wrapColumnWeight(card);
+  }
+  return cols;
+}
+
 function WrapFlow({ cards, path }: { cards: GameWrapCard[]; path: string }) {
   if (!cards.length) return null;
-  const shown = cards.slice(0, 4);
-  const bands = groupSportRecaps(shown, path);
+  const shown: GameWrapCard[] = [];
+  for (const card of cards) {
+    if (!storyFitsSection(card, path)) continue;
+    if (shown.some((prev) => prev.id === card.id || sameGameStory(prev, card))) continue;
+    shown.push(card);
+    if (shown.length >= 9) break;
+  }
+  const cols = balanceWrapColumns(shown, 3);
   return (
     <div className="tt-wrap-flow">
-      {bands.map((band) => (
-        <section key={band.title} className="tt-wrap-band">
-          <h3 className="wsj-band-title">
-            {band.title} <em>{band.cards.length}</em>
-          </h3>
-          {band.cards.map((card, i) => (
-            <WrapBrief key={card.id} card={card} trim={45 + i} />
+      {cols.map((col, i) => (
+        <div key={i} className="tt-wrap-col">
+          {col.map((card, j) => (
+            <WrapBrief key={card.id} card={card} path={path} trim={45 + i * 10 + j} />
           ))}
-        </section>
+        </div>
       ))}
     </div>
   );
@@ -3229,14 +3277,25 @@ function ScoresDesk({
   edition: string;
 }) {
   const open = useReader();
-  const wrapCards = page.articles.map((a) => a.card).filter((c) => isGameWrap(c) || isRecapStory(c) || Boolean(c.scoreLine));
-  if (!board && !wrapCards.length) return <p className="wsj-empty">Setting the box scores…</p>;
+  const filedWraps = page.articles
+    .map((a) => a.card)
+    .filter((c) => storyFitsSection(c, page.path) && (isGameWrap(c) || isRecapStory(c) || Boolean(c.scoreLine)));
   const football = page.path.startsWith("football/");
   const college = page.path.includes("college-football");
   const flip = football || page.path.startsWith("soccer/");
   const current = flip ? [...(board?.results ?? [])].reverse() : board?.results ?? [];
   const prior = football && !college ? [...(board?.prior ?? [])].reverse() : [];
   const games = current.length ? current : prior;
+  const boardWraps = college
+    ? games.flatMap((g) => {
+        const card = boxStoryCard(g);
+        if (!card || !storyFitsSection(card, page.path)) return [];
+        if (filedWraps.some((prev) => prev.id === card.id || sameGameStory(prev, card))) return [];
+        return [card];
+      })
+    : [];
+  const wrapCards = [...filedWraps, ...boardWraps];
+  if (!board && !wrapCards.length) return <p className="wsj-empty">Setting the box scores…</p>;
   const behind = current.length ? prior : [];
   if (!games.length && !wrapCards.length) {
     return (
@@ -3708,6 +3767,7 @@ function SportFront({
   heisman,
   leftover,
   snaps,
+  alreadyOnA1,
   onTurn,
 }: {
   page: SportFrontPage;
@@ -3726,6 +3786,7 @@ function SportFront({
   heisman?: HeismanBoard | null;
   leftover?: GameWrapCard[];
   snaps?: TeamSnapshot[];
+  alreadyOnA1?: GameWrapCard[];
   onTurn: (folio: string) => void;
 }) {
   const pollQ = useQuery({
@@ -3811,6 +3872,7 @@ function SportFront({
             leftover={leftover}
             snaps={snaps}
             coaches={coaches}
+            alreadyOnA1={alreadyOnA1}
             onTurn={onTurn}
           />
         ) : page.focus === "news" ? (
@@ -6773,6 +6835,9 @@ function NewspaperDesk() {
                     page.path.includes("college-football") || page.path === "baseball/mlb" ? 4 : 2,
                   )}
                   snaps={(teamSnaps.data ?? []).filter((s) => page.clubs.some((c) => c.key === s.key))}
+                  alreadyOnA1={pages.flatMap((p) =>
+                    p.kind === "favorites-front" ? [p.lead, p.second, p.third].filter((c): c is GameWrapCard => Boolean(c)) : [],
+                  )}
                   onTurn={goFolio}
                 />
               ) : page.kind === "national" ? (

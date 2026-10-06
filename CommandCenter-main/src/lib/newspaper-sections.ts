@@ -1612,6 +1612,7 @@ function sportPages(
   withLeaders = false,
   postseason = false,
   withCoaches = false,
+  alreadyOnA1: GameWrapCard[] = [],
 ): {
   pages: (SportFrontPage | SportInsidePage)[];
   sportFolioByStory: Record<string, string>;
@@ -1646,7 +1647,7 @@ function sportPages(
     .filter((card) => !isGameWrap(card) && !isSportFiller(card, recapPool))
     .slice(0, SPORT_NEWS_CAP);
   const newsDay = editionNewsDay(edition);
-  const frontPool = orderSportSectionFront([...recapPool, ...newsPool], id.path, edition).filter((card) => {
+  const frontPool = orderSportSectionFront([...recapPool, ...newsPool], id.path, edition, alreadyOnA1).filter((card) => {
     // Last night's favorite wrap may lead its section. Older Section A
     // recaps already ran in A — do not reprint them on a later front.
     // Home-desk and Championship clubs always stay (Mizzou, Wrexham).
@@ -1661,9 +1662,17 @@ function sportPages(
   const FRONT_SHOW = 6;
   const frontShown = frontPool.slice(0, FRONT_SHOW);
   const shownIds = new Set(frontShown.map((card) => card.id));
-  const recapsLeft = recapPool.filter((card) => !shownIds.has(card.id));
+  let recapsLeft = recapPool.filter((card) => !shownIds.has(card.id));
   recapsLeft.forEach((card) => shownIds.add(card.id));
-  const newsLeft = newsPool.filter((card) => !shownIds.has(card.id));
+  let newsLeft = newsPool.filter((card) => !shownIds.has(card.id));
+  // CFB2 was leaving two cream columns when only four leftover wraps
+  // sat in a 3-col flow. Pull the next CFB notes onto the recaps desk.
+  if (id.path.includes("college-football") && recapsLeft.length < 6) {
+    const pulled = newsLeft.slice(0, 9 - recapsLeft.length);
+    recapsLeft = [...recapsLeft, ...pulled];
+    const pulledIds = new Set(pulled.map((card) => card.id));
+    newsLeft = newsLeft.filter((card) => !pulledIds.has(card.id));
+  }
   const storyFocuses = focuses.flatMap((f) => {
     if (!isStoryFocus(f)) return [];
     if (f === "recaps") return recapsLeft.length > 0 ? (["recaps"] as const) : [];
@@ -1911,9 +1920,17 @@ export function buildEdition(opts: {
     list.push(club);
     clubsBy.set(club.leaguePath, list);
   }
-  // Favorite-club copy still leads its sport front (Mizzou on CFB, Blues on
-  // NHL, Arsenal on EPL). Section A already ran it; the section front must
-  // not go looking for a lesser league item instead.
+  // A1 already ran the favorite wrap (Mizzou 45–17). The sport front opens
+  // on the next-best game and points back to A1 instead of reprinting it.
+  // editorFront() is only stamped picks — favoritePages may still put a
+  // club wrap on A1 with no editorFront, so read the composed A1 lead.
+  const a1Picks = editorFront(fresh);
+  const favorites = favoritePages(favoriteFresh, favoriteFresh, opts.clubs, a1Picks);
+  const a1Front = favorites.pages.find((p) => p.kind === "favorites-front");
+  const a1Ran =
+    a1Front?.kind === "favorites-front"
+      ? [a1Front.lead, a1Front.second, a1Front.third].filter((c): c is GameWrapCard => Boolean(c))
+      : a1Picks;
   const storiesBy = new Map<string, GameWrapCard[]>();
   for (const story of fresh) {
     if (!story.leaguePath) continue;
@@ -1934,12 +1951,13 @@ export function buildEdition(opts: {
       opts.leaderPaths?.includes(id.path) ?? false,
       opts.postseasonPaths?.includes(id.path) ?? false,
       opts.coachPaths?.includes(id.path) ?? false,
+      id.path.includes("college-football")
+        ? a1Ran.filter((card) => card.leaguePath === id.path)
+        : [],
     ),
   }));
   const sportFolioByStory: Record<string, string> = {};
   for (const part of sportPagesBuilt) Object.assign(sportFolioByStory, part.built.sportFolioByStory);
-
-  const favorites = favoritePages(favoriteFresh, favoriteFresh, opts.clubs, editorFront(fresh));
 
   const national = nationalPages(opts.national ?? null);
   // National News sits in B, right after Section A, when the edition has a
