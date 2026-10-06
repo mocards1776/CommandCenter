@@ -45,6 +45,7 @@ import {
   storyRank,
   sameSectionAStory,
   MIN_SECTION_PAGES,
+  paginateEditionDesks,
   orderSportSections,
   SECTION_A_TITLE,
   sortComingUp,
@@ -493,9 +494,14 @@ if (cont?.kind === "favorites-continue") {
   );
 }
 assert(
-  withJump.pages[1]?.kind === "favorites-clubs",
-  "A2 stays the clubs desk between the tease and the jump",
+  withJump.pages[1]?.kind === "favorites-clubs" && withJump.pages[1].weatherPart === "today",
+  "A2 is today's weather so the 10-day chart does not stretch the folio",
 );
+assert(
+  withJump.pages[2]?.kind === "favorites-clubs" && withJump.pages[2].weatherPart === "outlook",
+  "A3 is the outlook and clubs desk",
+);
+assert(cont?.folio === "A4", "the A1 jump continues on A4 after weather and clubs");
 
 const twice = buildEdition({
   stories: [lionsNote, { ...lionsNote, id: "wrap-lions-note" }],
@@ -1653,8 +1659,8 @@ assert(
   "the Chiefs recap still runs in Section A",
 );
 assert(
-  firstNfl?.kind === "sport-front" && firstNfl.articles.length <= 3,
-  "the section front holds three stories; overflow continues on later folios",
+  firstNfl?.kind === "sport-front" && firstNfl.articles.length <= 6,
+  "the section front holds up to six stories so a short CFB1 can fill to ~1480",
 );
 assert(
   recapsFirst.pages.some(
@@ -2143,5 +2149,32 @@ const eveningFiled = fileEditionStories({
 });
 assert(eveningFiled.some((c) => c.id === "wire-nfl-kc-vegas"), "Monday evening still files Sunday's Chiefs final");
 assert(eveningFiled.some((c) => c.id === "wire-nfl-dal-hou"), "Monday evening still files Sunday's Cowboys final");
+
+const cfbPaged = paginateEditionDesks(
+  buildEdition({
+    stories: [
+      card({
+        id: "wire-cfb-miz",
+        headline: "Mizzou 45, South Carolina 17",
+        favoriteKey: "cfb-mizzou",
+        followed: true,
+        teamName: "Missouri",
+        sportLabel: "College Football",
+        leaguePath: "football/college-football",
+        when: "2026-10-04T23:00:00Z",
+        body: "Missouri rolled in Columbia. ".repeat(20),
+      }),
+    ],
+    clubs: [mizzouCfb],
+    edition: "2026-10-05-evening",
+  }),
+  { "football/college-football": Array.from({ length: 12 }, () => ({ length: 14 })) },
+);
+const cfbTeams = cfbPaged.pages.filter((p) => p.kind === "sport-front" && p.section === "CFB" && p.focus === "teams");
+assert(cfbTeams.length >= 4, "twelve CFB tables become four standings folios");
+assert(
+  cfbTeams.every((p) => p.kind === "sport-front" && (p.standSlice?.count ?? 0) <= 3),
+  "each CFB standings folio holds at most three tables",
+);
 
 console.log("newspaper-sections ok");

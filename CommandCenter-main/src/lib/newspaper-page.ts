@@ -82,6 +82,50 @@ export function planSchedulePages<T extends { day: string }>(games: T[]): T[][] 
   return pages.length ? pages : [games];
 }
 
+/** One standings table: head plus compact rows. College tables run longer. */
+export const STAND_TABLE_HEAD_PX = 44;
+export const STAND_ROW_PX = 22;
+export const STAND_TABLE_GAP_PX = 16;
+/** College conferences are 12–16 rows; three tables fill a ~1480 folio. */
+export const STAND_TABLES_PER_PAGE_COLLEGE = 3;
+/** Pro divisions are shorter; four tables still sit under the soft cap. */
+export const STAND_TABLES_PER_PAGE_PRO = 4;
+/** League-news stories per folio after the section front. */
+export const NEWS_STORIES_PER_PAGE = 4;
+
+export function estimateStandingsHeight(groups: { rows: unknown[] }[]): number {
+  let h = 36;
+  for (const group of groups) {
+    h += STAND_TABLE_HEAD_PX + Math.max(group.rows.length, 1) * STAND_ROW_PX + STAND_TABLE_GAP_PX;
+  }
+  return h;
+}
+
+export function planStandingsPages(
+  groupCount: number,
+  tablesPerPage = STAND_TABLES_PER_PAGE_PRO,
+): { offset: number; count: number }[] {
+  const n = Math.max(groupCount, 0);
+  if (n <= 0) return [{ offset: 0, count: 0 }];
+  const size = Math.max(tablesPerPage, 1);
+  const pages: { offset: number; count: number }[] = [];
+  for (let offset = 0; offset < n; offset += size) {
+    pages.push({ offset, count: Math.min(size, n - offset) });
+  }
+  return pages;
+}
+
+export function planNewsPages(storyCount: number, perPage = NEWS_STORIES_PER_PAGE): { offset: number; count: number }[] {
+  const n = Math.max(storyCount, 0);
+  if (n <= 0) return [{ offset: 0, count: 0 }];
+  const size = Math.max(perPage, 1);
+  const pages: { offset: number; count: number }[] = [];
+  for (let offset = 0; offset < n; offset += size) {
+    pages.push({ offset, count: Math.min(size, n - offset) });
+  }
+  return pages;
+}
+
 export function pageExceedsCanvas(heightPx: number): boolean {
   return heightPx > PAGE_CANVAS.height;
 }

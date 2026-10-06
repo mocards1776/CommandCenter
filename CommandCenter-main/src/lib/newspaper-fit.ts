@@ -55,7 +55,7 @@ function restoreFlow(root: HTMLElement): void {
   }
 }
 
-const PACK_ROOTS = ".wsj-front, .tt-section-front, .tt-scores, .wsj-sport-solo";
+const PACK_ROOTS = ".wsj-front, .tt-section-front, .tt-scores, .wsj-sport-solo, .wx, .tt-stand-grid, .wsj-clubs-desk";
 
 function hideLastPackChild(root: HTMLElement): boolean {
   const flow = [...root.querySelectorAll<HTMLElement>(FLOW_SEL)].reverse().find((node) => !node.hidden);

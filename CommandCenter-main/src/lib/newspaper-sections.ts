@@ -53,6 +53,7 @@ import type { FavoritesBeezPage } from "./newspaper-beez.ts";
 import type { FavoritesRacesPage } from "./newspaper-races.ts";
 import { cleanNationalStories, packNationalPages, type NationalDesk, type NationalStory } from "./newspaper-national.ts";
 import { printsFavoriteCoaches } from "./newspaper-favorite-coaches.ts";
+import { NEWS_STORIES_PER_PAGE, planStandingsPages, STAND_TABLES_PER_PAGE_COLLEGE, STAND_TABLES_PER_PAGE_PRO } from "./newspaper-page.ts";
 
 /** Front-page teaser budgets — rest jumps to a real continuation folio. */
 const LEAD_TEASER = 1050;
@@ -163,6 +164,8 @@ export type FavoritesFrontPage = PageBase & {
 
 export type FavoritesClubsPage = PageBase & {
   kind: "favorites-clubs";
+  /** A2 is today's weather; the next folio is the outlook plus the clubs desk. */
+  weatherPart?: "today" | "outlook";
 };
 
 /** Deep club form pages that pad Section A to the minimum page count. */
@@ -260,6 +263,10 @@ export type SportFrontPage = PageBase & {
   clubs: ClubDesk[];
   upcoming: DeskFixture[];
   articles: { card: GameWrapCard; folio: string }[];
+  /** Which conference tables this standings folio prints. */
+  standSlice?: { offset: number; count: number };
+  /** Which leftover news stories this folio prints. */
+  newsSlice?: { offset: number; count: number };
 };
 
 export type SportInsidePage = PageBase & {
@@ -1382,9 +1389,10 @@ function favoritePages(
     if (card) favoriteFolioByStory[card.id] = "A1";
   }
 
-  // Every front jump lands on one page right after the clubs desk.
+  // Every front jump lands on one page after weather today (A2) and the
+  // outlook / clubs desk (A3). A2 used to hold both and ran past 1650.
   const jumps: { card: GameWrapCard; rest: string }[] = [];
-  const jumpFolio = "A3";
+  const jumpFolio = "A4";
   const maybeContinue = (
     card: GameWrapCard | null,
     budget: number,
@@ -1406,7 +1414,7 @@ function favoritePages(
           folio: jumpFolio,
           section: "A",
           sectionTitle: SECTION_A_TITLE,
-          sectionPage: 3,
+          sectionPage: 4,
           sectionCount: 0,
           continuedFrom: "A1",
           jumps,
@@ -1414,7 +1422,7 @@ function favoritePages(
         },
       ]
     : [];
-  let n = 3 + continues.length;
+  let n = 4 + continues.length;
 
   const inside: FavoritesInsidePage[] = [];
   const frontIds = new Set(
@@ -1479,13 +1487,24 @@ function favoritePages(
     thirdTeaser: thirdJump.teaser,
   };
 
-  const clubsPage: FavoritesClubsPage = {
+  const weatherToday: FavoritesClubsPage = {
     kind: "favorites-clubs",
     folio: "A2",
     section: "A",
     sectionTitle: SECTION_A_TITLE,
     sectionPage: 2,
     sectionCount: 0,
+    weatherPart: "today",
+  };
+
+  const weatherOutlook: FavoritesClubsPage = {
+    kind: "favorites-clubs",
+    folio: "A3",
+    section: "A",
+    sectionTitle: SECTION_A_TITLE,
+    sectionPage: 3,
+    sectionCount: 0,
+    weatherPart: "outlook",
   };
 
   const pages: (
@@ -1495,7 +1514,7 @@ function favoritePages(
     | FavoritesInsidePage
     | FavoritesContinuePage
     | FavoritesWatchPage
-  )[] = [front, clubsPage, ...continues, ...inside];
+  )[] = [front, weatherToday, weatherOutlook, ...continues, ...inside];
 
   // Pad to the minimum with deep club-form pages (standings + slate).
   const orderedClubs = [...clubs].sort(
@@ -1628,19 +1647,23 @@ function sportPages(
     const gameDay = card.when ? instantDay(card.when) : null;
     return Boolean(gameDay && gameDay === newsDay);
   });
-  // Three stories fill a ~1480 front with the lead art and score rail.
-  // The rest continue on recaps / news folios (CFB2, CFB3…), not a taller CFB1.
-  const FRONT_SHOW = 3;
+  // Six stories fill a ~1480 front (lead + under + rail + briefs). Three
+  // left CFB1 short (~1229) with cream under the lead column.
+  const FRONT_SHOW = 6;
   const frontShown = frontPool.slice(0, FRONT_SHOW);
   const shownIds = new Set(frontShown.map((card) => card.id));
   const recapsLeft = recapPool.filter((card) => !shownIds.has(card.id));
   recapsLeft.forEach((card) => shownIds.add(card.id));
   const newsLeft = newsPool.filter((card) => !shownIds.has(card.id));
-  const storyFocuses = focuses.filter((f) => {
-    if (!isStoryFocus(f)) return false;
-    if (f === "recaps") return recapsLeft.length > 0;
-    if (f === "news") return newsLeft.length > 0 || offseason;
-    return true;
+  const storyFocuses = focuses.flatMap((f) => {
+    if (!isStoryFocus(f)) return [];
+    if (f === "recaps") return recapsLeft.length > 0 ? (["recaps"] as const) : [];
+    if (f === "news") {
+      if (!newsLeft.length && !offseason) return [];
+      const n = Math.max(1, Math.ceil(newsLeft.length / NEWS_STORIES_PER_PAGE));
+      return Array.from({ length: n }, () => "news" as const);
+    }
+    return [f];
   });
   const refFocuses = focuses.filter((f) => !isStoryFocus(f));
   const inside: SportInsidePage[] = [];
@@ -1722,10 +1745,12 @@ function sportPages(
       folio: sportFolioByStory[card.id] ?? fallbackDesk(focus),
     }));
 
+  let newsCursor = 0;
   const pages = numbered.map((page, i) => {
     if (page.kind !== "sport-front") return page;
     const nextFront = numbered.slice(i + 1).find((p) => p.kind === "sport-front");
-    const pool =
+    let newsSlice: { offset: number; count: number } | undefined;
+    let pool =
       page.focus === "front"
         ? frontShown
         : page.focus === "news"
@@ -1733,9 +1758,17 @@ function sportPages(
           : page.focus === "recaps"
             ? recapsLeft
             : unique;
+    if (page.focus === "news") {
+      const offset = newsCursor;
+      const count = Math.min(NEWS_STORIES_PER_PAGE, Math.max(newsLeft.length - offset, 0));
+      newsSlice = { offset, count };
+      pool = newsLeft.slice(offset, offset + count);
+      newsCursor += count;
+    }
     return {
       ...page,
       sectionDesks,
+      newsSlice,
       turn: nextFront && nextFront.kind === "sport-front" ? { folio: nextFront.folio, focus: nextFront.focus } : null,
       articles: articlesFor(page.focus, pool),
     };
@@ -1960,4 +1993,71 @@ export function buildEdition(opts: {
     sportFolioByStory,
     favoriteFolioByStory: favorites.favoriteFolioByStory,
   };
+}
+
+function restampEditionPages(pages: EditionPage[]): EditionPage[] {
+  const counts = new Map<string, number>();
+  for (const page of pages) counts.set(page.section, (counts.get(page.section) ?? 0) + 1);
+  const seen = new Map<string, number>();
+  const numbered = pages.map((page) => {
+    const n = (seen.get(page.section) ?? 0) + 1;
+    seen.set(page.section, n);
+    return {
+      ...page,
+      folio: `${page.section}${n}`,
+      sectionPage: n,
+      sectionCount: counts.get(page.section) ?? n,
+    };
+  });
+  return numbered.map((page, i) => {
+    if (page.kind !== "sport-front") return page;
+    const sectionDesks = numbered.flatMap((p) =>
+      p.kind === "sport-front" && p.section === page.section ? [{ focus: p.focus, folio: p.folio }] : [],
+    );
+    const nextFront = numbered.slice(i + 1).find((p) => p.kind === "sport-front" && p.section === page.section);
+    return {
+      ...page,
+      sectionDesks,
+      turn: nextFront && nextFront.kind === "sport-front" ? { folio: nextFront.folio, focus: nextFront.focus } : null,
+    };
+  });
+}
+
+/**
+ * Split standings desks onto continuation folios once the tables are on file.
+ * Compose does not know the conference count; the client calls this after
+ * the standings query lands. Story folios before the first teams desk keep
+ * their place; later reference desks shift (CFB2 → CFB3…).
+ */
+export function paginateEditionDesks(
+  edition: Edition,
+  standingsByPath: Record<string, { length: number }[] | undefined> | null | undefined,
+): Edition {
+  const pages: EditionPage[] = [];
+  for (const page of edition.pages) {
+    if (page.kind === "sport-front" && page.focus === "teams") {
+      const n = standingsByPath?.[page.path]?.length ?? 0;
+      const per = page.path.includes("college-football") ? STAND_TABLES_PER_PAGE_COLLEGE : STAND_TABLES_PER_PAGE_PRO;
+      const slices = planStandingsPages(Math.max(n, 1), per);
+      for (const standSlice of slices) pages.push({ ...page, standSlice });
+      continue;
+    }
+    pages.push(page);
+  }
+  const restamped = restampEditionPages(pages);
+  const sportFolioByStory = { ...edition.sportFolioByStory };
+  for (const page of restamped) {
+    if (page.kind !== "sport-inside") continue;
+    sportFolioByStory[page.primary.id] = page.folio;
+    if (page.secondary) sportFolioByStory[page.secondary.id] = page.folio;
+  }
+  const sections = edition.sections.map((section) => {
+    const index = restamped.findIndex((page) => page.section === section.code);
+    return {
+      ...section,
+      pages: restamped.filter((page) => page.section === section.code).length,
+      index: index < 0 ? section.index : index,
+    };
+  });
+  return { ...edition, pages: restamped, sections, sportFolioByStory };
 }

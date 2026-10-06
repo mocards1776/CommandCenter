@@ -9,6 +9,8 @@ import {
   PAGE_FOOT_SLACK_PX,
   PAGE_INTERNAL_GAP_PX,
   PAGE_SOFT_CAP_H,
+  STAND_TABLES_PER_PAGE_COLLEGE,
+  STAND_TABLES_PER_PAGE_PRO,
   assertPagesFilled,
   assertPagesFitCanvas,
   estimateA1Height,
@@ -17,11 +19,14 @@ import {
   estimateScheduleHeight,
   estimateScoreGridHeight,
   estimateSportFrontHeight,
+  estimateStandingsHeight,
   frontPageLeftover,
   pageExceedsCanvas,
   pageExceedsSoftCap,
   pageHasBlankBand,
+  planNewsPages,
   planSchedulePages,
+  planStandingsPages,
 } from "./newspaper-page.ts";
 
 function assert(cond: unknown, msg: string) {
@@ -80,6 +85,26 @@ assert(frontH <= PAGE_BODY_PX, `NFL1 with a 15-game rail fits (${frontH} <= ${PA
 assert(!pageExceedsCanvas(PAGE_CHROME_PX + frontH), "NFL1 folio stays on the canvas");
 const dumpedFront = PAGE_CHROME_PX + estimateSportFrontHeight({ railGames: 15, extraStories: 18 });
 assert(pageExceedsSoftCap(dumpedFront), "dumping the section's leftover stories overflows 1650 and must paginate");
+
+const cfbTables = Array.from({ length: 12 }, (_, i) => ({ rows: Array.from({ length: 14 }, () => i) }));
+const dumpedStand = PAGE_CHROME_PX + estimateStandingsHeight(cfbTables);
+assert(pageExceedsSoftCap(dumpedStand), "all 12 CFB tables overflow 1650 and must paginate");
+const standPages = planStandingsPages(cfbTables.length, STAND_TABLES_PER_PAGE_COLLEGE);
+assert(standPages.length >= 4, "CFB standings continue onto later folios");
+assert(
+  standPages.every((page) => {
+    const slice = cfbTables.slice(page.offset, page.offset + page.count);
+    return PAGE_CHROME_PX + estimateStandingsHeight(slice) <= PAGE_SOFT_CAP_H;
+  }),
+  "each CFB standings folio stays under the soft cap",
+);
+assert(
+  standPages.reduce((n, page) => n + page.count, 0) === 12,
+  "standings slices cover every conference",
+);
+assert(planStandingsPages(2, STAND_TABLES_PER_PAGE_PRO).length === 1, "two pro tables stay on one folio");
+assert(planNewsPages(9).length === 3, "nine leftover news stories become three folios");
+assert(planNewsPages(0)[0]?.count === 0, "an empty news desk still has a placeholder slice");
 
 const a1H = estimateA1Height({ railItems: 2, hasLeadPhoto: true, fillRows: 3 });
 assert(a1H <= PAGE_BODY_PX, `A1 with photo, two rail wraps, and a kickoff fill fits (${a1H} <= ${PAGE_BODY_PX})`);

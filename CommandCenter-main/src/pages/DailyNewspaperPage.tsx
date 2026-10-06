@@ -80,7 +80,7 @@ import { RecapBox, RecapChrome, RecapPhoto } from "@/components/newspaper/GameRe
 import { frontPageLeftover, groupByDay, planSchedulePages } from "@/lib/newspaper-page";
 import { ReaderProvider } from "@/components/newspaper/PaperReader";
 import { useReader } from "@/components/newspaper/reader-context";
-import { CfbScheduleDesk } from "@/components/newspaper/CfbScheduleDesk";
+import { CfbFill, CfbScheduleDesk } from "@/components/newspaper/CfbScheduleDesk";
 import { HeadlineSave } from "@/components/newspaper/SaveMark";
 import { SavedDrawer } from "@/components/newspaper/SavedDrawer";
 import { SavedProvider } from "@/components/newspaper/saved-context";
@@ -227,6 +227,7 @@ import {
   isSingleGameRecap,
   missouriStoryCard,
   nationalStoryCard,
+  paginateEditionDesks,
   sortComingUp,
   storyBodyForJump,
   type ClubDesk,
@@ -625,7 +626,7 @@ function pageLabel(page: EditionPage): string {
     case "favorites-inside":
       return "Stories";
     case "favorites-clubs":
-      return "Your Clubs";
+      return page.weatherPart === "today" ? "Weather" : "Your Clubs";
     case "favorites-form":
       return "Club Form";
     case "favorites-continue":
@@ -1443,7 +1444,7 @@ function FrontRail({
           <h3>Inside Today</h3>
           <ul className="wsj-index">
             {sports.map((s, i) => (
-              <li key={s.code} {...(i >= 4 ? { "data-tt-trim": 12 + i } : {})}>
+              <li key={s.code} {...(i >= 5 ? { "data-tt-flow": "" } : i >= 4 ? { "data-tt-trim": 12 + i } : {})}>
                 <button type="button" onClick={() => onTurn(s.folio)}>
                   <span className="code">{s.code}</span>
                   <span className="t">
@@ -1494,7 +1495,7 @@ function FrontRail({
           <h3>Coming Up</h3>
           <ul className="wsj-upcoming">
             {comingUp.map((g, i) => (
-              <li key={g.id} style={tint(g.color)} data-tt-trim={16 + i}>
+              <li key={g.id} style={tint(g.color)} {...(i >= 4 ? { "data-tt-flow": "" } : { "data-tt-trim": 16 + i })}>
                 <TeamLogo src={g.logo} size="xs" />
                 <span className="t">
                   <strong>{g.team}</strong> {g.label}
@@ -1506,9 +1507,9 @@ function FrontRail({
         </section>
       ) : null}
 
-      {tables.map((t) => (
+      {tables.map((t, i) => (
+        <div key={`table-${t.fav.key}`} {...(i > 0 ? { "data-tt-flow": "" } : {})}>
         <AgateBox
-          key={`table-${t.fav.key}`}
           color={teamColor(t)}
           title={`${t.fav.shortName} · ${tableTitle(t.snap.standing)}`}
           rows={tableWindow(
@@ -1521,10 +1522,11 @@ function FrontRail({
             6,
           ).map((row) => ({ left: `${row.rank}. ${row.team}`, right: row.record, me: row.me }))}
         />
+        </div>
       ))}
 
       {waiting.length ? (
-        <section className="wsj-rail-block">
+        <section className="wsj-rail-block" data-tt-flow="">
           <h3>Countdown</h3>
           <ul className="tt-count-list">
             {waiting.map((t) => (
@@ -1581,6 +1583,7 @@ function FrontPage({
   comingUp,
   sections,
   folios,
+  clubsFolio = "A3",
   onTurn,
   leadContinue,
   secondContinue,
@@ -1601,6 +1604,7 @@ function FrontPage({
   comingUp: ComingUp[];
   sections: EditionSection[];
   folios: Record<string, string>;
+  clubsFolio?: string;
   onTurn: (folio: string) => void;
   leadContinue?: string;
   secondContinue?: string;
@@ -1633,7 +1637,7 @@ function FrontPage({
   const pageLead = pool[0] ?? null;
   const pageSecond = pool[1] ?? null;
   const pageThird = pool[2] ?? null;
-  const pageBriefs = pool.slice(3, 9);
+  const pageBriefs = pool.slice(3, 6);
   const pageLeadContinue = pageLead && pageLead.id === lead?.id ? leadContinue : folios[pageLead?.id ?? ""];
   const pageSecondContinue = pageSecond && pageSecond.id === second?.id ? secondContinue : folios[pageSecond?.id ?? ""];
   const pageThirdContinue = pageThird && pageThird.id === third?.id ? thirdContinue : folios[pageThird?.id ?? ""];
@@ -1648,7 +1652,7 @@ function FrontPage({
         <div className="wsj-front-grid">
           <div className="wsj-front-main">
             <DeskBoard teams={teams} title="Your clubs this edition" onTurn={onTurn} />
-            <TurnBar onTurn={onTurn} folio="A2" label="The clubs desk — every slate, table and leader" />
+            <TurnBar onTurn={onTurn} folio={clubsFolio} label="The clubs desk — every slate, table and leader" />
           </div>
           {rail}
         </div>
@@ -1747,7 +1751,7 @@ function FrontPage({
         colorFor={(c) => teamColor(teamForCard(teams, c))}
       />
       </div>
-      <TurnBar onTurn={onTurn} folio="A2" label="The clubs desk — every slate, table and leader" />
+      <TurnBar onTurn={onTurn} folio={clubsFolio} label="The clubs desk — every slate, table and leader" />
     </div>
   );
 }
@@ -2424,7 +2428,7 @@ function mergeFrontStories(
       const key = favoriteKeyFromCopy(c, page.clubs);
       return key && key !== c.favoriteKey ? { ...c, favoriteKey: key, followed: true } : c;
     });
-  const extras: GameWrapCard[] = frontPageLeftover(filed, fill?.leftover ?? [], 2);
+  const extras: GameWrapCard[] = frontPageLeftover(filed, fill?.leftover ?? [], page.path.includes("college-football") || page.path === "baseball/mlb" ? 4 : 2);
   if (board) {
     let added = 0;
     for (const g of [...(board.results ?? []), ...(board.prior ?? [])]) {
@@ -2531,6 +2535,8 @@ function SportSectionFront({
   leftover,
   snaps,
   coaches,
+  heisman,
+  poll,
   onTurn,
 }: {
   page: SportFrontPage;
@@ -2559,9 +2565,9 @@ function SportSectionFront({
   const folios = Object.fromEntries(page.articles.map((a) => [a.card.id, a.folio]));
   const lead = stories[0] ?? null;
   const rest = stories.filter((c) => c !== lead);
-  const underLead = rest.slice(0, 1);
-  const railSeconds = rest.slice(1, cfb || mlb ? 2 : 3);
-  const more = cfb || mlb ? [] : rest.slice(railSeconds.length + 1, railSeconds.length + 5);
+  const underLead = rest.slice(0, cfb || mlb ? 2 : 1);
+  const railSeconds = rest.slice(underLead.length, underLead.length + (cfb || mlb ? 1 : 3));
+  const more = rest.slice(underLead.length + railSeconds.length, underLead.length + railSeconds.length + (cfb || mlb ? 3 : 5));
   const leadGame = lead ? gameForCard(lead, recent, page.clubs) : null;
   const recapsFolio = deskFolio(page, "recaps", `${page.section}2`);
   const crestFor = (card: GameWrapCard) =>
@@ -2726,6 +2732,11 @@ function SportSectionFront({
           />
         </div>
       ) : null}
+      {cfb && (poll.length || standings.length) ? (
+        <div data-tt-flow="">
+          <CfbFill poll={poll} standings={standings} heisman={heisman} />
+        </div>
+      ) : null}
       {soccer || (mlb && otherScores.length) || (!cfb && !mlb && printableLeaders.length) ? (
       <div className="tt-front-fill">
         {mlb && otherScores.length ? (
@@ -2845,7 +2856,10 @@ function SportNewsDesk({
   const recent = page.path.startsWith("soccer/") || football ? [...finals].reverse() : finals;
   const gameById = new Map<string, BoxGame>();
   // Recaps of games your clubs played run in Section A; the league desk takes the rest.
-  const recapCards = recent
+  const newsContinue = (page.newsSlice?.offset ?? 0) > 0;
+  const recapCards = newsContinue
+    ? []
+    : recent
     .filter((g) => !involvesClub(g, page.clubs))
     .map((g) => {
       const card = boxStoryCard(g);
@@ -2875,7 +2889,7 @@ function SportNewsDesk({
   const withArt = stories.filter((c) => c.photo);
   const lead = withArt[0] ?? stories[0] ?? null;
   const seconds = stories.filter((c) => c !== lead && c.photo).slice(0, 2);
-  const briefs = stories.filter((c) => c !== lead && !seconds.includes(c)).slice(0, 8);
+  const briefs = stories.filter((c) => c !== lead && !seconds.includes(c)).slice(0, newsContinue ? 6 : 4);
   const crestFor = (card: GameWrapCard) =>
     leagueClubs.find((c) => c.short && card.teamName?.toLowerCase().includes(c.short.toLowerCase()))?.logo ?? null;
 
@@ -3560,12 +3574,16 @@ function StandingsDesk({
   const mine = (row: { id: string; name: string }) =>
     favIds.has(row.id) || favNames.some((n) => n && squash(row.name) === n);
   const ordered = rankStandings(standings);
-  const single = ordered.length === 1;
+  const slice = page.standSlice;
+  const shown = slice ? ordered.slice(slice.offset, slice.offset + slice.count) : ordered;
+  const single = shown.length === 1;
   return (
     <>
       <div className={cn("tt-stand-grid", single && "single")}>
-        {ordered.map((group) => (
-          <StandingsTable key={group.name} group={group} mine={mine} />
+        {shown.map((group) => (
+          <div key={group.name} data-tt-flow="">
+            <StandingsTable group={group} mine={mine} />
+          </div>
         ))}
       </div>
       {schedule}
@@ -6226,8 +6244,12 @@ function NewspaperDesk() {
   const raceDesk: RaceBriefsDesk | null =
     racesSample && scheduleDate ? sampleRaceBriefs(scheduleDate) : (racesQ.data ?? null);
   const edition = useMemo(
-    () => insertBeez(insertDayAhead(insertRaceBriefs(builtEdition, raceDesk), daySchedule), beezDesk),
-    [builtEdition, raceDesk, daySchedule, beezDesk],
+    () =>
+      paginateEditionDesks(
+        insertBeez(insertDayAhead(insertRaceBriefs(builtEdition, raceDesk), daySchedule), beezDesk),
+        standingsQ.data ?? {},
+      ),
+    [builtEdition, raceDesk, daySchedule, beezDesk, standingsQ.data],
   );
   const comingUp = useMemo<ComingUp[]>(
     () =>
@@ -6253,7 +6275,10 @@ function NewspaperDesk() {
     const page = pages[pageIndex];
     const names = heavyDesksForPage(page);
     if (names.length) releaseHeavy(names);
-  }, [pageIndex, pages, releaseHeavy]);  const weatherFolio = useMemo(() => pages.find((p) => p.kind === "favorites-clubs")?.folio ?? null, [pages]);
+  }, [pageIndex, pages, releaseHeavy]);  const weatherFolio = useMemo(
+    () => pages.find((p) => p.kind === "favorites-clubs" && (p.weatherPart ?? "today") === "today")?.folio ?? pages.find((p) => p.kind === "favorites-clubs")?.folio ?? null,
+    [pages],
+  );
   // A club's numbers print once in Section A — on the first story page it owns.
   const notebookByFolio = useMemo(() => {
     const seen = new Set<string>();
@@ -6501,6 +6526,7 @@ function NewspaperDesk() {
                   comingUp={comingUp}
                   sections={edition.sections}
                   folios={edition.favoriteFolioByStory}
+                  clubsFolio={pages.find((p) => p.kind === "favorites-clubs" && p.weatherPart === "outlook")?.folio ?? "A3"}
                   onTurn={goFolio}
                   leadContinue={page.leadContinue}
                   secondContinue={page.secondContinue}
@@ -6512,8 +6538,11 @@ function NewspaperDesk() {
                 />
               ) : page.kind === "favorites-clubs" ? (
                 <>
-                  <WeatherReport weather={weatherQ.data} />
-                  <ClubsDesk teams={teams} />
+                  <WeatherReport
+                    weather={weatherQ.data}
+                    part={page.weatherPart === "outlook" ? "outlook" : page.weatherPart === "today" ? "today" : "all"}
+                  />
+                  {page.weatherPart !== "today" ? <ClubsDesk teams={teams} /> : null}
                 </>
               ) : page.kind === "favorites-form" ? (
                 <div className="wsj-clubs-desk">
@@ -6575,6 +6604,7 @@ function NewspaperDesk() {
                           ? [p.primary, p.secondary].filter((c): c is GameWrapCard => Boolean(c))
                           : [],
                     ),
+                    page.path.includes("college-football") || page.path === "baseball/mlb" ? 4 : 2,
                   )}
                   snaps={(teamSnaps.data ?? []).filter((s) => page.clubs.some((c) => c.key === s.key))}
                   onTurn={goFolio}
