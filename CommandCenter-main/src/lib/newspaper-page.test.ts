@@ -221,6 +221,7 @@ assert(clubTickerRecord("4-0", true) === "4-0", "an in-season NFL record stays")
 assert(clubTickerRecord("77-85", true) === "77-85", "a finished MLB season stays on the ticker");
 assert(clubTickerRecord("0-0", true, "Opens Oct 22") === "Opens Oct 22", "a rolled 0-0 table is not a season");
 assert(clubOpensLabel("2026-11-03T18:00:00Z") === "Opens Nov 3", "opener ISO prints the Central calendar day");
+assert(clubOpensLabel("2026-11-03T00:00:00Z", "Tue Nov 3") === "Opens Nov 3", "the board chip wins over a midnight UTC stamp");
 assert(clubOpensLabel(null, "Tue Nov 3") === "Opens Nov 3", "a board chip still yields an opens line");
 
 assert(formStatColumns(6) === 3, "six stats fill two rows of three");

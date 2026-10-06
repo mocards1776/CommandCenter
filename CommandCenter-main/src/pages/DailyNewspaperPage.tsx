@@ -273,6 +273,7 @@ import {
   type TeamSnapshot,
 } from "@/lib/sports";
 import { cn } from "@/lib/utils";
+import { isPhonePreseasonNote } from "@/lib/newspaper-phone-cards";
 import { fetchYesterdayRecap } from "@/lib/yesterday-recap";
 
 /** How many stories get a full ESPN story pull rather than the wire stub. */
@@ -1725,13 +1726,41 @@ function FrontPage({
     return true;
   };
   const leadPoster = wantsPoster(pageLead);
-  const secondPoster = wantsPoster(pageSecond);
-  const thirdPoster = wantsPoster(pageThird);
-  const thin = (card: GameWrapCard | null, teaser: string | undefined, poster: boolean) =>
-    Boolean(card && !card.photo && !poster && !substantive(card, copyOf(card, teaser)));
-  const stack =
-    Boolean(pageSecond && pageThird) &&
-    (thin(pageSecond, pageSecondTeaser, secondPoster) || thin(pageThird, pageThirdTeaser, thirdPoster));
+  const underCandidates = [pageSecond, pageThird, ...pageBriefs].filter((c): c is GameWrapCard => Boolean(c));
+  const underLead =
+    underCandidates.find((c) => isFavoriteGameResult(c) && Boolean(c.photo)) ??
+    underCandidates.find((c) => isFavoriteGameResult(c)) ??
+    underCandidates.find((c) => !isPhonePreseasonNote(c) && Boolean(c.photo)) ??
+    underCandidates.find((c) => !isPhonePreseasonNote(c)) ??
+    pageSecond;
+  const underContinue =
+    underLead && underLead.id === second?.id
+      ? pageSecondContinue
+      : underLead && underLead.id === third?.id
+        ? pageThirdContinue
+        : folios[underLead?.id ?? ""];
+  const underTeaser =
+    underLead && underLead.id === second?.id
+      ? pageSecondTeaser
+      : underLead && underLead.id === third?.id
+        ? pageThirdTeaser
+        : undefined;
+  const underPoster = wantsPoster(underLead);
+  const flowed = underCandidates.filter((c) => c !== underLead);
+  const flowCard = flowed[0] ?? null;
+  const flowPoster = wantsPoster(flowCard);
+  const flowContinue =
+    flowCard && flowCard.id === third?.id
+      ? pageThirdContinue
+      : flowCard && flowCard.id === second?.id
+        ? pageSecondContinue
+        : folios[flowCard?.id ?? ""];
+  const flowTeaser =
+    flowCard && flowCard.id === third?.id
+      ? pageThirdTeaser
+      : flowCard && flowCard.id === second?.id
+        ? pageSecondTeaser
+        : undefined;
 
   return (
     <div className="wsj-front">
@@ -1751,38 +1780,38 @@ function FrontPage({
             jump={pageLeadContinue}
             onTurn={onTurn}
           />
-          {pageSecond ? (
+          {underLead ? (
             <div className="wsj-front-under" data-tt-keep="">
               <Story
                 className="under-lead"
-                card={pageSecond}
-                team={teamForCard(teams, pageSecond)}
+                card={underLead}
+                team={teamForCard(teams, underLead)}
                 text={
-                  recapDek(pageSecond, 4) ||
-                  wrapBriefCopy(pageSecond, 4) ||
-                  splitStoryCopy(copyOf(pageSecond, pageSecondTeaser), 480).teaser
+                  recapDek(underLead, 4) ||
+                  wrapBriefCopy(underLead, 4) ||
+                  splitStoryCopy(copyOf(underLead, underTeaser), 480).teaser
                 }
                 size="md"
                 cols={1}
-                art={pageSecond.photo || secondPoster ? "top" : "none"}
-                poster={secondPoster}
+                art={underLead.photo || underPoster ? "top" : "none"}
+                poster={underPoster}
                 chrome={false}
-                jump={pageSecondContinue}
+                jump={underContinue}
                 onTurn={onTurn}
               />
             </div>
           ) : null}
-          {pageThird ? (
-            <div className={cn("wsj-front-row", stack ? "stack" : "one")} data-tt-flow="">
+          {flowCard ? (
+            <div className="wsj-front-row one" data-tt-flow="">
               <Story
-                card={pageThird}
-                team={teamForCard(teams, pageThird)}
-                text={copyOf(pageThird, pageThirdTeaser)}
+                card={flowCard}
+                team={teamForCard(teams, flowCard)}
+                text={copyOf(flowCard, flowTeaser)}
                 size="md"
-                cols={stack ? 2 : 1}
-                art={stack ? "side" : "top"}
-                poster={thirdPoster}
-                jump={pageThirdContinue}
+                cols={1}
+                art="top"
+                poster={flowPoster}
+                jump={flowContinue}
                 onTurn={onTurn}
                 trim={24}
               />

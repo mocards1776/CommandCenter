@@ -142,14 +142,20 @@ export function clubTickerRecord(
 
 /** "Opens Nov 3" from an opener ISO or a board chip like "Tue Nov 3". */
 export function clubOpensLabel(iso?: string | null, when?: string | null): string | null {
+  const hit = when?.match(/[A-Z][a-z]{2}\s+\d{1,2}/);
+  if (hit) return `Opens ${hit[0]}`;
   if (iso) {
     const d = new Date(iso);
     if (!Number.isNaN(d.getTime())) {
-      return `Opens ${d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "America/Chicago" })}`;
+      const dateOnly = /T00:00:00/.test(iso);
+      return `Opens ${d.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        timeZone: dateOnly ? "America/New_York" : "America/Chicago",
+      })}`;
     }
   }
-  const hit = when?.match(/[A-Z][a-z]{2}\s+\d{1,2}/);
-  return hit ? `Opens ${hit[0]}` : null;
+  return null;
 }
 
 /** A club card with only a future slate — drop the empty form grid until it has numbers. */
