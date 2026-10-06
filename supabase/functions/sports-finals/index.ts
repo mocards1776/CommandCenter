@@ -33,8 +33,8 @@ import { sendTelegramPhoto } from "./telegram.ts";
  * The game-detail React view is the wrong share target: Tailwind cannot be
  * rasterized here. This function builds a post-game card from the same ESPN
  * summary (score, records, linescore, team stats, box leaders, win-probability
- * series, pregame odds) and sends it with sendDocument so Telegram does not
- * recompress the PNG. The live field stays off
+ * series, pregame odds) and sends it with sendPhoto (high-quality JPEG when
+ * we can encode one; PNG if it still fits the 10MB photo cap). The live field stays off
  * the graphic; the in-app NFL/CFB pages also hide it after the whistle.
  *
  * Secrets (never commit the token):

@@ -21,7 +21,14 @@ import {
 } from "./select.ts";
 import { tablesFromStandings, windowRows, shortGroupTitle } from "./standings.ts";
 import { whiteSoxGuardiansPlayoffFixture } from "./mlb-playoff-fixture.ts";
-import { sendTelegramPhoto, TELEGRAM_GRAPHIC_METHOD } from "./telegram.ts";
+import {
+  prepareTelegramPhoto,
+  sendTelegramPhoto,
+  TELEGRAM_GRAPHIC_METHOD,
+  TELEGRAM_JPEG_QUALITY,
+  TELEGRAM_JPEG_QUALITY_FLOOR,
+  TELEGRAM_PHOTO_MAX_BYTES,
+} from "./telegram.ts";
 import {
   FINALS_ALERT_TARGET_HEIGHT,
   FINALS_ALERT_WIDTH,
@@ -1019,30 +1026,79 @@ assert.match(soxSvg, /Monday, Oct 5 at 4:00 PM/);
   assert.doesNotMatch(artSvg, /logoHalo|logo-plate|<ellipse/);
 }
 
-assert.equal(TELEGRAM_GRAPHIC_METHOD, "sendDocument");
+assert.equal(TELEGRAM_GRAPHIC_METHOD, "sendPhoto");
+assert.ok(TELEGRAM_JPEG_QUALITY >= 95, "JPEG quality should stay at the high end");
+assert.ok(TELEGRAM_JPEG_QUALITY_FLOOR >= 92, "do not drop below practical high quality");
+assert.equal(TELEGRAM_PHOTO_MAX_BYTES, 10 * 1024 * 1024);
 {
-  const calls: { url: string; field: string; type: string }[] = [];
+  const png = new Uint8Array([137, 80, 78, 71, 1, 2, 3]);
+  const asPng = prepareTelegramPhoto(png, null);
+  assert.equal(asPng.mime, "image/png");
+  assert.equal(asPng.filename, "final.png");
+  assert.equal(asPng.quality, null);
+  assert.equal(asPng.bytes, png);
+
+  const jpegOut = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
+  let seenQuality = 0;
+  let seenBytes = 0;
+  const asJpeg = prepareTelegramPhoto(png, (src, quality) => {
+    seenBytes = src.byteLength;
+    seenQuality = quality;
+    assert.equal(src, png);
+    return jpegOut;
+  });
+  assert.equal(seenBytes, png.byteLength, "must not downscale before encode");
+  assert.equal(seenQuality, TELEGRAM_JPEG_QUALITY);
+  assert.equal(asJpeg.mime, "image/jpeg");
+  assert.equal(asJpeg.filename, "final.jpg");
+  assert.equal(asJpeg.quality, TELEGRAM_JPEG_QUALITY);
+  assert.equal(asJpeg.bytes, jpegOut);
+
+  const huge = new Uint8Array(TELEGRAM_PHOTO_MAX_BYTES + 8);
+  huge.set([137, 80, 78, 71]);
+  const oversizedJpeg = new Uint8Array(TELEGRAM_PHOTO_MAX_BYTES + 1);
+  const qualities: number[] = [];
+  const stepped = prepareTelegramPhoto(huge, (_src, quality) => {
+    qualities.push(quality);
+    return quality === TELEGRAM_JPEG_QUALITY ? oversizedJpeg : jpegOut;
+  });
+  assert.deepEqual(qualities, [TELEGRAM_JPEG_QUALITY, TELEGRAM_JPEG_QUALITY_FLOOR]);
+  assert.equal(stepped.quality, TELEGRAM_JPEG_QUALITY_FLOOR);
+  assert.equal(stepped.mime, "image/jpeg");
+}
+{
+  const calls: { url: string; field: string; type: string; name: string }[] = [];
   const orig = globalThis.fetch;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const form = init?.body as FormData;
-    const file = (form?.get("document") ?? form?.get("photo")) as Blob | null;
+    const file = (form?.get("document") ?? form?.get("photo")) as File | Blob | null;
     calls.push({
       url: String(input),
       field: form?.has("document") ? "document" : form?.has("photo") ? "photo" : "none",
       type: file && "type" in file ? String(file.type) : "",
+      name: file && "name" in file ? String((file as File).name) : "",
     });
     return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "Content-Type": "application/json" } });
   }) as typeof fetch;
   try {
-    await sendTelegramPhoto("tok", "857547432", new Uint8Array([137, 80, 78, 71]), "FINAL · MLB", null);
+    const jpegBytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
+    await sendTelegramPhoto(
+      "tok",
+      "857547432",
+      new Uint8Array([137, 80, 78, 71]),
+      "FINAL · MLB",
+      null,
+      () => jpegBytes,
+    );
   } finally {
     globalThis.fetch = orig;
   }
   assert.equal(calls.length, 1);
-  assert.match(calls[0]!.url, /\/sendDocument$/);
-  assert.doesNotMatch(calls[0]!.url, /sendPhoto/);
-  assert.equal(calls[0]!.field, "document");
-  assert.equal(calls[0]!.type, "image/png");
+  assert.match(calls[0]!.url, /\/sendPhoto$/);
+  assert.doesNotMatch(calls[0]!.url, /sendDocument/);
+  assert.equal(calls[0]!.field, "photo");
+  assert.equal(calls[0]!.type, "image/jpeg");
+  assert.equal(calls[0]!.name, "final.jpg");
 }
 
 const stars = mapThreeStars([
