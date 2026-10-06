@@ -404,12 +404,12 @@ export function pickExtractedBody(
       note: `Paywalled at the original; this is the ${outlet} account.`,
     };
   }
-  const brief = cleanExtractedCopy(rssFallback ?? preferred?.text ?? "");
+  // A paywall stub is not a story. Drop it; the RSS teaser still runs as the summary.
   return {
-    text: brief,
+    text: "",
     byline: preferred?.byline ?? null,
     imageUrl: preferred?.imageUrl ?? null,
-    note: brief ? "Full text was paywalled; printed from the RSS brief." : null,
+    note: null,
   };
 }
 
@@ -751,12 +751,69 @@ export function sameStory(a: string[], b: string[]): boolean {
   return false;
 }
 
+const ENTITY_RULES: { id: string; test: (t: string) => boolean }[] = [
+  { id: "b1-bomber", test: (t) => /\bb-?1\b/.test(t) && /\bbomber|lancer|pullout|withdraw/.test(t) },
+  {
+    id: "scotus-climate",
+    test: (t) =>
+      /\bsupreme court\b|\bscotus\b|\bjustices\b/.test(t) &&
+      /\bclimate|epa|emissions|clean power/.test(t),
+  },
+];
+
+/** Named events that word-overlap often misses (B-1 pullout, SCOTUS climate). */
+export function storyEntityKeys(title: string, extra = ""): string[] {
+  const t = `${title} ${extra}`.toLowerCase();
+  return ENTITY_RULES.filter((rule) => rule.test(t)).map((rule) => rule.id);
+}
+
+export function sameNationalEvent(
+  a: { title: string; snippet?: string | null },
+  b: { title: string; snippet?: string | null },
+): boolean {
+  const ea = storyEntityKeys(a.title, a.snippet ?? "");
+  const eb = storyEntityKeys(b.title, b.snippet ?? "");
+  if (ea.some((id) => eb.includes(id))) return true;
+  return sameStory(significantWords(a.title), significantWords(b.title));
+}
+
+const CAPTION_LEAD = /^(?:watch(?:\s+now)?|video|newsmakers?|tonight on)\b/i;
+const SPEAKER_CAPTION =
+  /^[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3}\s+(?:talks?|discusses|weighs in|breaks down)\b/;
+
+export function isLeadCaption(text: string): boolean {
+  const t = text.replace(/\s+/g, " ").trim();
+  if (!t || t.length > 220) return false;
+  if (CAPTION_LEAD.test(t)) return true;
+  if (SPEAKER_CAPTION.test(t)) return true;
+  return /\b(?:discusses?|talks? to|weighs in|breaks down)\b/i.test(t) && t.length < 160;
+}
+
+/** Drop a video-caption lede (e.g. a Gingrich Newsmakers line over a Hastert story). */
+export function stripLeadCaption(text: string): string {
+  const raw = (text ?? "").trim();
+  if (!raw) return raw;
+  const paras = newspaperParas(raw);
+  if (paras.length >= 2 && isLeadCaption(paras[0]!)) return paras.slice(1).join("\n\n");
+  const bits = splitNewspaperSentences(raw);
+  if (bits.length >= 2 && isLeadCaption(bits[0]!)) return bits.slice(1).join(" ");
+  return raw;
+}
+
+export function isPaywallStubNote(note: string | null | undefined): boolean {
+  return /full text was paywalled|printed from the rss brief/i.test(note ?? "");
+}
+
 /** One cluster per event. Items keep their outlet and feed rank. */
 export function clusterItems(items: NationalItem[]): NationalItem[][] {
   const groups: { words: string[]; items: NationalItem[] }[] = [];
   for (const item of items) {
     const words = significantWords(item.title);
-    const hit = groups.find((g) => sameStory(words, g.words));
+    const hit = groups.find(
+      (g) =>
+        sameStory(words, g.words) ||
+        sameNationalEvent({ title: item.title, snippet: item.snippet }, { title: g.items[0]!.title, snippet: g.items[0]!.snippet }),
+    );
     if (hit) {
       if (!hit.items.some((prev) => normalizeUrl(prev.url) === normalizeUrl(item.url))) {
         hit.items.push(item);
@@ -813,14 +870,25 @@ export function scoreCluster(items: NationalItem[], now = new Date()): Omit<Nati
     : 0.45;
   const popular = items.some((i) => i.kind === "popular");
   const wireConfirm = unique.some((i) => WIRE_OUTLETS.has(i.outlet));
-  const score = 14 * consensus + prominence + 18 * recency + (wireConfirm ? 6 : 0) + (popular ? 8 : 0);
+  const score = 20 * consensus + prominence + 14 * recency + (wireConfirm ? 8 : 0) + (popular ? 14 : 0);
   return { items, score, consensus, prominence, recency, popular, wireConfirm };
 }
 
+/** Cross-outlet coverage or a most-read hit — not a singleton sidebar. */
+export function isNationalLeadWorthy(cluster: NationalCluster): boolean {
+  return cluster.consensus >= 1.8 || cluster.popular || cluster.items.length >= 2;
+}
+
 export function rankClusters(items: NationalItem[], now = new Date()): NationalCluster[] {
-  return clusterItems(items)
+  const ranked = clusterItems(items)
     .map((group, i) => ({ id: `cl-${i + 1}`, ...scoreCluster(group, now) }))
     .sort((a, b) => b.score - a.score || b.items.length - a.items.length);
+  const leadAt = ranked.findIndex(isNationalLeadWorthy);
+  if (leadAt > 0) {
+    const [lead] = ranked.splice(leadAt, 1);
+    ranked.unshift(lead!);
+  }
+  return ranked;
 }
 
 /** Outlet pages to try for a full extract: chosen link, then conservative, then wires. */
@@ -885,9 +953,10 @@ function storyParagraphs(summary: string, filed?: unknown): string[] {
 
 export function storyFromCluster(cluster: NationalCluster): NationalStory {
   const pick = preferredItem(cluster.items);
-  const summary =
+  const summary = stripLeadCaption(
     sentences(pick.snippet ?? "", 3) ||
-    `${pick.title}.`;
+    `${pick.title}.`,
+  );
   const art = clusterArt(cluster.items, pick);
   return {
     id: cluster.id,
@@ -1036,6 +1105,39 @@ export function storiesFromEditor(
   return out;
 }
 
+/** Display-time clean: strip captions, drop paywall stubs, cluster-dedupe. */
+export function cleanNationalStories(stories: NationalStory[]): NationalStory[] {
+  const out: NationalStory[] = [];
+  for (const raw of stories) {
+    const summary = stripLeadCaption(raw.summary ?? "");
+    const paragraphs = (raw.paragraphs ?? []).map(stripLeadCaption).filter(Boolean);
+    const body = raw.body ? stripLeadCaption(raw.body) : null;
+    const paywalled = isPaywallStubNote(raw.bodyNote) || /full text was paywalled/i.test(`${summary} ${body ?? ""}`);
+    if (paywalled && !(body && body.length >= BODY_MIN)) {
+      if (!summary || /full text was paywalled/i.test(summary)) continue;
+    }
+    const story: NationalStory = {
+      ...raw,
+      summary,
+      paragraphs: paragraphs.length ? paragraphs : newspaperParas(summary),
+      body: paywalled && !(body && body.length >= BODY_MIN) ? null : body,
+      bodyNote: paywalled ? null : raw.bodyNote ?? null,
+    };
+    if (
+      out.some((prev) =>
+        sameNationalEvent(
+          { title: prev.headline, snippet: prev.summary },
+          { title: story.headline, snippet: story.summary },
+        ),
+      )
+    ) {
+      continue;
+    }
+    out.push(story);
+  }
+  return out;
+}
+
 export function asNationalDesk(row: {
   issue_id?: unknown;
   day?: unknown;
@@ -1066,15 +1168,19 @@ export function asNationalDesk(row: {
       source,
       typeof s.imageCredit === "string" ? s.imageCredit : null,
     );
-    const body = typeof s.body === "string" ? cleanExtractedCopy(s.body) : "";
+    const body = typeof s.body === "string" ? stripLeadCaption(cleanExtractedCopy(s.body)) : "";
     const byline = typeof s.byline === "string" ? s.byline.replace(/\s+/g, " ").trim() : "";
-    const bodyNote = typeof s.bodyNote === "string" ? s.bodyNote.replace(/\s+/g, " ").trim() : "";
+    const rawNote = typeof s.bodyNote === "string" ? s.bodyNote.replace(/\s+/g, " ").trim() : "";
+    const bodyNote = isPaywallStubNote(rawNote) ? "" : rawNote;
+    const grafs = paragraphs.map(stripLeadCaption).filter(Boolean);
+    const lead = stripLeadCaption(grafs.join(" ") || summary);
+    if (isPaywallStubNote(lead) || /full text was paywalled/i.test(lead)) continue;
     stories.push({
       id: typeof s.id === "string" ? s.id : hashId(s.url),
       headline: s.headline.trim(),
-      summary: paragraphs.join(" ") || summary,
-      paragraphs,
-      body: body.length >= 80 ? body : null,
+      summary: lead,
+      paragraphs: grafs.length ? grafs : newspaperParas(lead),
+      body: body.length >= 80 && !isPaywallStubNote(rawNote) ? body : body.length >= BODY_MIN ? body : null,
       byline: byline || null,
       bodyNote: bodyNote || null,
       url: s.url,
@@ -1087,6 +1193,8 @@ export function asNationalDesk(row: {
     });
   }
   if (!stories.length) return null;
+  const cleaned = cleanNationalStories(stories);
+  if (!cleaned.length) return null;
   const edition =
     row.edition === "morning" || row.edition === "midday" || row.edition === "evening"
       ? row.edition
@@ -1098,7 +1206,7 @@ export function asNationalDesk(row: {
     edition,
     label:
       edition === "morning" ? "Morning Edition" : edition === "midday" ? "Midday Edition" : "Evening Edition",
-    stories,
+    stories: cleaned,
     sources: Array.isArray(row.sources) ? (row.sources as FeedStatus[]) : [],
     editor: {
       model: typeof editor.model === "string" ? editor.model : null,

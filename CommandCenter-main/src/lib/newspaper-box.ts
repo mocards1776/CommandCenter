@@ -596,7 +596,14 @@ type EspnEventRaw = {
     };
     competitors?: EspnCompetitorRaw[];
     leaders?: EspnLeaderGroup[];
-    headlines?: { shortLinkText?: string; description?: string; type?: string }[];
+    headlines?: {
+      shortLinkText?: string;
+      description?: string;
+      type?: string;
+      image?: string;
+      images?: { url?: string }[];
+      video?: { thumbnail?: string }[];
+    }[];
     broadcasts?: { names?: string[] }[];
     details?: {
       scoringPlay?: boolean;
@@ -666,6 +673,20 @@ export function periodLabels(path: string, count: number): string[] {
   return out.slice(0, Math.max(count, baseball && count > 0 ? count : base.length));
 }
 
+function headlinePhoto(
+  head:
+    | {
+        image?: string;
+        images?: { url?: string }[];
+        video?: { thumbnail?: string }[];
+      }
+    | undefined,
+): string | null {
+  const url = head?.images?.find((img) => img.url)?.url ?? head?.image ?? head?.video?.find((v) => v.thumbnail)?.thumbnail;
+  if (!url || /teamlogos|\/team-logos\/|\/logos\//i.test(url)) return null;
+  return url;
+}
+
 function espnGame(path: string, ev: EspnEventRaw, day: string): BoxGame | null {
   const comp = ev.competitions?.[0];
   const awayC = comp?.competitors?.find((c) => c.homeAway === "away");
@@ -710,9 +731,10 @@ function espnGame(path: string, ev: EspnEventRaw, day: string): BoxGame | null {
     const top = g.leaders?.[0];
     if (!top?.athlete) continue;
     const name = top.athlete.shortName || top.athlete.displayName || "";
-    if (leaders.some((l) => l.name === name && l.label === g.shortDisplayName)) continue;
+    const label = boxLeaderLabel(g.shortDisplayName || g.displayName || "", path);
+    if (leaders.some((l) => l.name === name && l.label === label)) continue;
     leaders.push({
-      label: g.shortDisplayName || g.displayName || "",
+      label,
       id: top.athlete.id ?? null,
       name,
       line: top.displayValue ?? null,
@@ -740,6 +762,7 @@ function espnGame(path: string, ev: EspnEventRaw, day: string): BoxGame | null {
     };
   };
   const head = comp?.headlines?.[0];
+  const headPhoto = headlinePhoto(head);
   const scoring = (comp?.details ?? [])
     .filter((d) => d.scoringPlay)
     .map((d) => ({
@@ -767,7 +790,7 @@ function espnGame(path: string, ev: EspnEventRaw, day: string): BoxGame | null {
     scoring,
     recap:
       final && head?.shortLinkText
-        ? { headline: head.shortLinkText, blurb: head.description ?? null, html: null, photo: null, byline: null, url: null }
+        ? { headline: head.shortLinkText, blurb: head.description ?? null, html: null, photo: headPhoto, byline: null, url: null }
         : null,
     broadcasts: [...new Set((comp?.broadcasts ?? []).flatMap((b) => b.names ?? []))].slice(0, 3),
     gamePk: null,
@@ -815,6 +838,59 @@ export function fetchEspnSummary<T = unknown>(path: string, eventId: string): Pr
     .catch(() => null);
   summaries.set(key, { at: Date.now(), data });
   return data;
+}
+
+const HYDRATE_SIDE = /\b(missouri|mizzou|wrexham|wolverhampton|wolves)\b/i;
+
+function needsRecapHydrate(game: BoxGame): boolean {
+  if (!game.espnEventId || !game.final) return false;
+  if (game.recap?.photo && game.recap.html && game.recap.html.length >= 280) return false;
+  const sides = `${game.away.name} ${game.away.short} ${game.home.name} ${game.home.short}`;
+  return Boolean(game.round) || HYDRATE_SIDE.test(sides);
+}
+
+/** Favorite and postseason finals that still need the ESPN cut, including last week's board. */
+export function gamesNeedingRecap(board: SectionBoard): BoxGame[] {
+  const seen = new Set<string>();
+  const out: BoxGame[] = [];
+  for (const game of [...(board.results ?? []), ...(board.prior ?? [])]) {
+    if (!needsRecapHydrate(game)) continue;
+    const key = game.id || game.espnEventId || "";
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(game);
+  }
+  return out;
+}
+
+/** Pull the ESPN article cut onto favorite / postseason finals that the board left bare. */
+export async function hydrateSectionRecaps(board: SectionBoard): Promise<SectionBoard> {
+  const picks = gamesNeedingRecap(board).slice(0, 6);
+  if (!picks.length) return board;
+  const filled = await Promise.all(
+    picks.map(async (game) => {
+      const story = await fetchEspnRecapStory(game.path, game.espnEventId!);
+      if (!story) return game;
+      return {
+        ...game,
+        recap: {
+          headline: game.recap?.headline ?? `${game.away.short} ${game.away.score ?? ""}, ${game.home.short} ${game.home.score ?? ""}`.replace(/\s+/g, " ").trim(),
+          blurb: game.recap?.blurb ?? null,
+          html: story.html,
+          photo: story.photo ?? game.recap?.photo ?? null,
+          byline: story.byline ?? game.recap?.byline ?? null,
+          url: game.recap?.url ?? game.href,
+        },
+      };
+    }),
+  );
+  const byId = new Map(filled.map((game) => [game.id, game]));
+  const apply = (list: BoxGame[]) => list.map((game) => byId.get(game.id) ?? game);
+  return {
+    ...board,
+    results: apply(board.results),
+    prior: board.prior ? apply(board.prior) : board.prior,
+  };
 }
 
 /** Full ESPN game story for a recap headline, when the board only sent the blurb. */
@@ -967,6 +1043,7 @@ export function boxStoryCard(game: BoxGame): GameWrapCard | null {
   return {
     id: `box-${game.id}`,
     favoriteKey: "",
+    wrapKind: recap?.html && body && body.length >= 280 ? "espn" : recap?.html || recap?.photo ? "espn" : "box",
     teamName: winner?.short ?? game.home.short,
     teamHref: game.href ?? "/",
     sportLabel: game.league,
@@ -1347,6 +1424,49 @@ export type LeagueLeaderGroup = {
   rows: LeagueLeaderRow[];
 };
 
+const LEADER_ABBREV: Record<string, string> = {
+  rat: "Rating",
+  rating: "Rating",
+  per: "PER",
+  qbr: "QBR",
+  avg: "AVG",
+  era: "ERA",
+  ops: "OPS",
+  whip: "WHIP",
+};
+
+/** Print "Rating", not ESPN's "RAT". */
+export function leaderCategoryLabel(name: string, displayName?: string, abbreviation?: string): string {
+  const key = (abbreviation || name || displayName || "").toLowerCase().replace(/[^a-z]/g, "");
+  if (LEADER_ABBREV[key]) return LEADER_ABBREV[key];
+  if (displayName && displayName.length > 3) return displayName;
+  if (name && name.length > 3 && !/^[A-Z]{2,4}$/.test(name)) return name;
+  return displayName || abbreviation || name;
+}
+
+/** Box-score chip: MLB "RAT" is a batting mark, not the three-letter stub. */
+export function boxLeaderLabel(label: string, path?: string): string {
+  const key = label.toLowerCase().replace(/[^a-z]/g, "");
+  if (key === "rat" || key === "rating") {
+    return path === "baseball/mlb" ? "BAT" : "Rating";
+  }
+  return leaderCategoryLabel(label, label, label);
+}
+
+function parseLeaderValue(line: string): number | null {
+  const n = Number(String(line).replace(/[^\d.-]/g, ""));
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Hide a category when every printed line is empty or zero. */
+export function leaderGroupHasValidData(group: LeagueLeaderGroup): boolean {
+  if (!group.rows.length) return false;
+  const vals = group.rows.map((row) => parseLeaderValue(row.line));
+  if (vals.every((v) => v == null)) return false;
+  if (vals.every((v) => v === 0)) return false;
+  return true;
+}
+
 const LEADER_SKIP = /kickoff|puntreturn|punts|extrapoint|returnyards|netavg|longfield|kickreturn/i;
 const LEADER_FIRST = [
   "passingyards",
@@ -1486,7 +1606,7 @@ export async function fetchLeagueLeaders(path: string, categories?: number, rows
     .map((cat) => {
       const label = `${cat.name ?? ""} ${cat.displayName ?? ""} ${cat.abbreviation ?? ""}`;
       return {
-        category: cat.displayName!,
+        category: leaderCategoryLabel(cat.name ?? "", cat.displayName, cat.abbreviation),
         seasonType,
         rows: (cat.leaders ?? []).slice(0, rowCap).flatMap((row) => {
           const name = row.athlete?.shortName || row.athlete?.displayName || row.athlete?.fullName || "";
@@ -1505,7 +1625,7 @@ export async function fetchLeagueLeaders(path: string, categories?: number, rows
         }),
       };
     })
-    .filter((group) => group.rows.length > 0);
+    .filter((group) => group.rows.length > 0 && leaderGroupHasValidData(group));
 }
 
 function eventKey(game: BoxGame): string | null {
@@ -1612,6 +1732,97 @@ export function sortCfbDeskGames(games: BoxGame[]): BoxGame[] {
   });
 }
 
+export type CfbDayGroup = { key: string; label: string; games: BoxGame[] };
+
+function cfbDayKey(game: BoxGame): string {
+  if (game.day && /^\d{4}-\d{2}-\d{2}$/.test(game.day)) return game.day;
+  if (game.startIso) {
+    const d = new Date(game.startIso);
+    if (!Number.isNaN(d.getTime())) {
+      return d.toLocaleDateString("en-CA", { timeZone: CT });
+    }
+  }
+  return "undated";
+}
+
+function cfbDayHeader(key: string, game: BoxGame): string {
+  const iso = game.startIso || (key !== "undated" ? `${key}T17:00:00-05:00` : null);
+  if (!iso) return "Later";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "Later";
+  return d.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+    timeZone: CT,
+  });
+}
+
+/** Friday, then Saturday — each block labeled, Central time. */
+export function groupCfbGamesByDay(games: BoxGame[]): CfbDayGroup[] {
+  const groups = new Map<string, BoxGame[]>();
+  for (const game of sortCfbDeskGames(games)) {
+    const key = cfbDayKey(game);
+    const list = groups.get(key) ?? [];
+    list.push(game);
+    groups.set(key, list);
+  }
+  return [...groups.entries()].map(([key, dayGames]) => ({
+    key,
+    label: cfbDayHeader(key, dayGames[0]!),
+    games: dayGames,
+  }));
+}
+
+/** Scores printed in a recap hed — "edge Padres 3-2". */
+export function scoresInHeadline(headline: string): [number, number] | null {
+  const hit = headline.match(/(\d+)\s*[-–to]+\s*(\d+)/i);
+  if (!hit) return null;
+  return [Number(hit[1]), Number(hit[2])];
+}
+
+function recapTeamHay(card: { teamName?: string | null; headline?: string | null }): string {
+  return `${card.teamName ?? ""} ${card.headline ?? ""}`.toLowerCase();
+}
+
+function recapNamesGame(game: BoxGame, card: { teamName?: string | null; headline?: string | null }): boolean {
+  const hay = recapTeamHay(card);
+  return [game.away, game.home].some((side) => {
+    const names = [side.short, side.abbrev, side.name].filter(Boolean).map((n) => n.toLowerCase());
+    return names.some((n) => n.length >= 3 && hay.includes(n));
+  });
+}
+
+/**
+ * Pair a recap with the game it reports. Headline scores beat a same-series
+ * neighbor; a 30-hour window is too wide for a playoff set.
+ */
+export function gameMatchesRecap(
+  game: BoxGame,
+  card: { gameId?: string | null; headline?: string | null; teamName?: string | null; when?: string | null },
+): boolean {
+  const idHit =
+    Boolean(card.gameId) &&
+    (game.espnEventId === card.gameId || (game.gamePk != null && String(game.gamePk) === card.gameId));
+  const scores = scoresInHeadline(card.headline ?? "");
+  if (scores && game.away.score != null && game.home.score != null) {
+    const a = Number(game.away.score);
+    const h = Number(game.home.score);
+    const match = (a === scores[0] && h === scores[1]) || (a === scores[1] && h === scores[0]);
+    if (match && recapNamesGame(game, card)) return true;
+    if (!match && recapNamesGame(game, card)) return false;
+  }
+  if (idHit) return true;
+  if (!recapNamesGame(game, card) || !card.when) return false;
+  return game.day === instantDayOf(card.when);
+}
+
+function instantDayOf(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("en-CA", { timeZone: CT });
+}
+
 /** TV only. Unknown network stays blank — never the venue. */
 export function cfbNetworkLabel(game: BoxGame): string {
   return game.broadcasts.filter(Boolean).join(" · ");
@@ -1685,6 +1896,10 @@ export function footballWeeksBoard(opts: {
  * finals yet, last week.
  */
 export async function fetchSectionBoard(path: string, edition: string): Promise<SectionBoard> {
+  return hydrateSectionRecaps(await loadSectionBoard(path, edition));
+}
+
+async function loadSectionBoard(path: string, edition: string): Promise<SectionBoard> {
   const day = editionYmd(edition);
   const newsDay = editionNewsDay(day);
   const tomorrow = shiftDay(day, 1);
@@ -1750,7 +1965,10 @@ export async function fetchSectionBoard(path: string, edition: string): Promise<
     const rest = await Promise.all(restDays.map((d) => espnBoard(path, `&dates=${ymd(d)}`)));
     const round = rest.flatMap((board, i) => boardGames(path, board, restDays[i]!));
     return {
-      results: past.filter((g) => g.final || g.live).sort(byStart),
+      results: uniqueGames([
+        ...past.filter((g) => g.final || g.live),
+        ...boardGames(path, ahead, day).filter((g) => g.final || g.live),
+      ]).sort(byStart),
       slate: uniqueGames([...first, ...round].filter((g) => !g.final && !g.live)).sort(byStart),
     };
   }

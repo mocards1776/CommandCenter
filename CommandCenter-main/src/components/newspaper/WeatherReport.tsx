@@ -198,10 +198,11 @@ function HourlyChart({ hours }: { hours: WxHour[] }) {
   const line = hours.map((h, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(h.tempF).toFixed(1)}`).join("");
   const area = `${line}L${x(hours.length - 1)} ${base}L${x(0)} ${base}Z`;
   const marks = hours.map((_, i) => i).filter((i) => i % 3 === 0);
+  const hasRain = hours.some((h) => h.precipChance > 0);
   return (
     <figure className="wx-hourly">
       <figcaption>Next 24 hours</figcaption>
-      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Hourly temperature and chance of rain">
+      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={hasRain ? "Hourly temperature and chance of rain" : "Hourly temperature"}>
         <path d={area} className="wx-area" />
         <path d={line} className="wx-line" />
         {hours.map((h, i) =>
@@ -230,7 +231,13 @@ function HourlyChart({ hours }: { hours: WxHour[] }) {
         ))}
       </svg>
       <p className="wx-key">
-        <i className="wx-key-line" /> Temperature <i className="wx-key-pop" /> Chance of rain
+        <i className="wx-key-line" /> Temperature
+        {hasRain ? (
+          <>
+            {" "}
+            <i className="wx-key-pop" /> Chance of rain
+          </>
+        ) : null}
       </p>
     </figure>
   );
@@ -278,23 +285,32 @@ function TenDayChart({ days }: { days: WxDay[] }) {
   );
 }
 
-export function WeatherReport({ weather }: { weather: MarshfieldWeather | null | undefined }) {
+export function WeatherReport({
+  weather,
+  part = "all",
+}: {
+  weather: MarshfieldWeather | null | undefined;
+  part?: "today" | "outlook" | "all";
+}) {
   if (!weather || !weather.days.length) return null;
   const { current, days, hours, yesterday } = weather;
   const today = days[0]!;
   const moon = moonPhase(today.date);
   const outlook = days.slice(1, 8);
+  const showToday = part === "all" || part === "today";
+  const showOutlook = part === "all" || part === "outlook";
   return (
     <section className="wx" aria-label={`Weather for ${MARSHFIELD.place}`}>
       <header className="wx-head">
         <h2>
-          <span>The</span> Weather
+          <span>The</span> {part === "outlook" ? "Outlook" : "Weather"}
         </h2>
         <p>
           <b>{MARSHFIELD.place}</b> · {MARSHFIELD.county} · Observed {clock(weather.observedAt)}
         </p>
       </header>
 
+      {showToday ? (
       <div className="wx-top">
         <div className="wx-now">
           <SkyIcon sky={current.sky} size={112} title={current.summary} />
@@ -347,8 +363,9 @@ export function WeatherReport({ weather }: { weather: MarshfieldWeather | null |
         </div>
         <HourlyChart hours={hours} />
       </div>
+      ) : null}
 
-      {outlook.length ? (
+      {(showToday || showOutlook) && outlook.length ? (
         <ol className="wx-outlook" style={{ ["--n" as string]: String(outlook.length) }}>
           {outlook.map((d) => (
             <li key={d.date} className={d.precipChance >= 50 ? "wet" : undefined}>
@@ -366,8 +383,13 @@ export function WeatherReport({ weather }: { weather: MarshfieldWeather | null |
         </ol>
       ) : null}
 
-      <div className="wx-bottom">
-        <TenDayChart days={days} />
+      {showOutlook ? (
+        <div className="wx-bottom" data-tt-keep="">
+          <TenDayChart days={days} />
+        </div>
+      ) : null}
+
+      {showToday ? (
         <aside className="wx-almanac">
           <h3>Almanac</h3>
           <div className="wx-sunline">
@@ -411,7 +433,7 @@ export function WeatherReport({ weather }: { weather: MarshfieldWeather | null |
             </table>
           ) : null}
         </aside>
-      </div>
+      ) : null}
       <p className="wx-credit">Forecast data: Open-Meteo</p>
     </section>
   );

@@ -44,6 +44,36 @@ function nhlApiDevProxy(): Plugin {
         res.setHeader("Content-Type", "application/json; charset=utf-8");
         res.end(await upstream.text());
       });
+      // ESPN scoreboards are CORS-blocked from localhost; the VM can read them.
+      server.middlewares.use("/api/espn", async (req, res) => {
+        const url = new URL(req.url ?? "", "http://local");
+        const path = (url.searchParams.get("path") ?? "").replace(/^\/+/, "");
+        if (!path || path.includes("://")) {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ error: "bad path" }));
+          return;
+        }
+        const site = url.searchParams.get("site") === "3" ? "v3" : "v2";
+        const hosts = [
+          `https://site.api.espn.com/apis/site/${site}/sports`,
+          `https://site.web.api.espn.com/apis/site/${site}/sports`,
+        ];
+        for (const host of hosts) {
+          try {
+            const upstream = await fetch(`${host}/${path}`, { headers: { Accept: "application/json" } });
+            if (!upstream.ok) continue;
+            res.statusCode = 200;
+            res.setHeader("Content-Type", "application/json; charset=utf-8");
+            res.end(await upstream.text());
+            return;
+          } catch {
+            /* next host */
+          }
+        }
+        res.statusCode = 502;
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+        res.end(JSON.stringify({ error: "ESPN proxy failed" }));
+      });
     },
   };
 }

@@ -74,6 +74,35 @@ export function slimPrintedQuery(query: PrintedQuery): PrintedQuery {
 }
 
 /** Drop a stored row that is not this generation of the press file. */
+/** A headless proof can plant the filed edition on `window` when RLS blocks anon. */
+export function asProofIssue(raw: unknown, id: string): PrintedIssue | null {
+  if (!raw || typeof raw !== "object") return null;
+  const row = raw as {
+    id?: unknown;
+    version?: unknown;
+    status?: unknown;
+    stories?: unknown;
+    queries?: unknown;
+    printedAt?: unknown;
+    printed_at?: unknown;
+  };
+  const issueId = typeof row.id === "string" ? row.id : id;
+  if (issueId !== id) return null;
+  if (row.status != null && row.status !== "ready") return null;
+  const printedAt =
+    typeof row.printedAt === "string"
+      ? row.printedAt
+      : typeof row.printed_at === "string"
+        ? row.printed_at
+        : undefined;
+  return asPrintedIssue(id, row.version ?? ISSUE_VERSION, row.stories, row.queries ?? [], { printedAt });
+}
+
+export function peekProofIssue(id: string): PrintedIssue | null {
+  const raw = (globalThis as { __TT_PROOF_ISSUE__?: unknown }).__TT_PROOF_ISSUE__;
+  return asProofIssue(raw, id);
+}
+
 export function asPrintedIssue(
   id: string,
   version: unknown,

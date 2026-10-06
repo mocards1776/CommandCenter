@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import {
+  boxLeaderLabel,
   fetchMlbAgate,
+  formatFixtureWhen,
   type BoxGame,
   type BoxPerson,
   type BoxSide,
@@ -151,7 +153,7 @@ export function Leaders({ game, max = 3 }: { game: BoxGame; max?: number }) {
           <Face person={l} size="sm" />
           <span>
             <em>
-              {l.label}
+              {boxLeaderLabel(l.label, game.path)}
               {l.team ? ` · ${l.team}` : ""}
             </em>
             <b>
@@ -586,10 +588,12 @@ export function ScoreStrip({ games, onOpen }: { games: BoxGame[]; onOpen?: (game
   if (!games.length) return null;
   return (
     <ul className="tt-strip">
-      {games.map((g) => (
-        <li key={g.id}>
+      {games.map((g, i) => (
+        <li key={g.id} data-tt-trim={55 + i}>
           <button type="button" onClick={() => onOpen?.(g)} disabled={!g.recap && !onOpen}>
-            <span className="tt-strip-st">{gameClock(g)}</span>
+            <span className="tt-strip-st">
+              {g.final || g.live ? gameClock(g) : (g.startIso && formatFixtureWhen(g.startIso)) || gameClock(g)}
+            </span>
             {[g.away, g.home].map((s, i) => (
               <span key={i} className={cn("tt-strip-row", s.winner && "won")}>
                 <Mark src={s.logo} size="xs" />

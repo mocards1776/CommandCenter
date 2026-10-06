@@ -662,6 +662,25 @@ export type WireLeagueTally = {
   boxWraps: number;
 };
 
+/** Today's leftover bracket games, then today's finals — never a filler sentence. */
+export function postseasonRailGames(games: WireGame[], editionDay: string, cap = 6): WireGame[] {
+  const day = editionDay.slice(0, 10);
+  const slate = games.filter((g) => g.postseason && !g.preseason);
+  const upcoming = slate
+    .filter((g) => !g.final)
+    .sort((a, b) => String(a.startedAt ?? "").localeCompare(String(b.startedAt ?? "")));
+  const todayFinals = slate.filter((g) => g.final && g.day === day);
+  const out: WireGame[] = [];
+  const seen = new Set<string>();
+  for (const game of [...upcoming, ...todayFinals]) {
+    if (seen.has(game.id)) continue;
+    seen.add(game.id);
+    out.push(game);
+    if (out.length >= cap) break;
+  }
+  return out;
+}
+
 export function tallyWireGames(games: WireGame[]): WireLeagueTally[] {
   const by = new Map<string, WireLeagueTally>();
   for (const g of games) {

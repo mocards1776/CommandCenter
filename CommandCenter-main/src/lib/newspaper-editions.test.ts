@@ -8,6 +8,7 @@ import {
   filterRecentFiledIssues,
   isIssueWithinLookback,
   resolveEditionParam,
+  uniqueEditionStand,
 } from "./newspaper-editions.ts";
 
 function assert(cond: unknown, msg: string) {
@@ -37,10 +38,48 @@ assert(resolveEditionParam(null, recent) === "2026-10-05-midday", "defaults to t
 assert(resolveEditionParam("2026-10-05-morning", []) === null, "empty stand has no selection");
 
 assert(editionPickerLabel("2026-10-05-morning", recent) === "Morning", "same-day slot is just the name");
-assert(editionPickerLabel("2026-10-04-evening", recent) === "Sun. Evening", "yesterday gets a weekday");
+assert(editionPickerLabel("2026-10-04-evening", recent) === "Sun. Evening · Oct 4", "yesterday gets a weekday and date");
+const dupStand = filterRecentFiledIssues(
+  [morning, midday, { ...midday, printedAt: "2026-10-05T17:05:00.000Z" }, evening],
+  Date.parse("2026-10-05T23:00:00.000Z"),
+);
+assert(dupStand.filter((r) => r.id === "2026-10-05-midday").length === 1, "same day+slot prints once");
 assert(backEditionNote("2026-10-05-morning", morning.printedAt) === "You are reading the Morning Edition, printed 6:02 a.m.", "folio note uses the print clock");
 
 const justMorning = filterRecentFiledIssues([morning], Date.parse("2026-10-05T14:00:00.000Z"));
 assert(editionPickerLabel("2026-10-05-morning", justMorning) === "Morning", "one day on the stand needs no weekday");
+
+const doubled = uniqueEditionStand(
+  [
+    evening,
+    { ...evening, printedAt: "2026-10-05T22:04:00.000Z" },
+    midday,
+    { ...midday, printedAt: "2026-10-05T17:02:00.000Z" },
+    morning,
+    { ...morning, printedAt: "2026-10-05T11:03:00.000Z" },
+  ],
+  night,
+);
+assert(
+  doubled.map((r) => editionPickerLabel(r.id, doubled)).join(" · ") === "Evening · Midday · Morning",
+  `stand prints each slot once, got ${doubled.map((r) => editionPickerLabel(r.id, doubled)).join(" · ")}`,
+);
+
+const remotePlusLocal = uniqueEditionStand(
+  [
+    evening,
+    midday,
+    morning,
+    { ...evening, printedAt: "2026-10-05T22:12:00.000Z" },
+    { ...midday, printedAt: "2026-10-05T17:08:00.000Z" },
+    { ...morning, printedAt: "2026-10-05T11:10:00.000Z" },
+  ],
+  night,
+);
+assert(
+  remotePlusLocal.map((r) => editionPickerLabel(r.id, remotePlusLocal)).join(" · ") ===
+    "Evening · Midday · Morning",
+  "local + remote reprints still print one button per slot",
+);
 
 console.log("newspaper-editions ok");

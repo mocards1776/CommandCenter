@@ -8,8 +8,15 @@ import {
   dedupeBoxGames,
   dropBogusSameSlot,
   footballWeeksBoard,
+  gamesNeedingRecap,
   formatFixtureWhen,
   formatKickoffLine,
+  gameMatchesRecap,
+  groupCfbGamesByDay,
+  boxLeaderLabel,
+  leaderCategoryLabel,
+  leaderGroupHasValidData,
+  scoresInHeadline,
   gameClock,
   gameDay,
   looksLikeEspnZoneClock,
@@ -212,6 +219,60 @@ assertEqual(
   "11:00 AM",
   "upcoming clock never prints ESPN EDT",
 );
+
+assertEqual(leaderCategoryLabel("rating", "RAT", "RAT"), "Rating", "RAT prints as Rating");
+assertEqual(boxLeaderLabel("RAT", "baseball/mlb"), "BAT", "MLB box RAT prints as BAT");
+assertEqual(boxLeaderLabel("RAT", "basketball/nba"), "Rating", "NBA box RAT prints as Rating");
+assert(
+  !leaderGroupHasValidData({ category: "PER", rows: [{ name: "A", team: "UTA", line: "0.0", headshot: null }] }),
+  "all-zero PER is hidden",
+);
+assert(
+  leaderGroupHasValidData({ category: "Points", rows: [{ name: "A", team: "BOS", line: "31.2", headshot: null }] }),
+  "a real leader line stays",
+);
+
+const g1 = game({
+  id: "nlds-1",
+  day: "2026-10-04",
+  startIso: "2026-10-04T16:00:00Z",
+  espnEventId: "4018001",
+  gamePk: 8001,
+  final: true,
+  away: side({ id: "sd", abbrev: "SD", short: "Padres", name: "Padres", score: "2" }),
+  home: side({ id: "mil", abbrev: "MIL", short: "Brewers", name: "Brewers", score: "3" }),
+});
+const g2 = game({
+  id: "nlds-2",
+  day: "2026-10-05",
+  startIso: "2026-10-05T16:00:00Z",
+  espnEventId: "4018002",
+  gamePk: 8002,
+  final: true,
+  away: side({ id: "sd", abbrev: "SD", short: "Padres", name: "Padres", score: "3" }),
+  home: side({ id: "mil", abbrev: "MIL", short: "Brewers", name: "Brewers", score: "4" }),
+});
+assert(scoresInHeadline("Brewers edge Padres 3-2 in NLDS opener")?.[0] === 3, "hed scores parse");
+assert(gameMatchesRecap(g1, { headline: "Brewers edge Padres 3-2 in NLDS opener", teamName: "Brewers", when: "2026-10-04T16:00:00Z" }), "3-2 hed matches Game 1");
+assert(!gameMatchesRecap(g2, { headline: "Brewers edge Padres 3-2 in NLDS opener", teamName: "Brewers", when: "2026-10-04T16:00:00Z" }), "3-2 hed does not take Game 2's 4-3");
+
+const friSat = groupCfbGamesByDay([
+  game({
+    id: "sat-am",
+    path: "football/college-football",
+    day: "2026-10-03",
+    startIso: "2026-10-03T16:00:00Z",
+  }),
+  game({
+    id: "fri-late",
+    path: "football/college-football",
+    day: "2026-10-02",
+    startIso: "2026-10-03T01:15:00Z",
+  }),
+]);
+assert(friSat[0]?.games[0]?.id === "fri-late", "Friday night CT leads the week list");
+assert(/friday/i.test(friSat[0]?.label ?? ""), `Friday header, got ${friSat[0]?.label}`);
+assert(/saturday/i.test(friSat[1]?.label ?? ""), `Saturday header, got ${friSat[1]?.label}`);
 assertEqual(
   gameClock(
     game({
@@ -324,5 +385,19 @@ const thu = slateKickoff({
 assert(/^Thu\s/.test(thu) && /\d{1,2}:\d{2}/.test(thu), `kickoff is weekday + clock (${thu})`);
 assert(!/[AP]M/i.test(thu), "slate kickoff drops AM/PM to fit the time cell");
 assert(!/Oct/.test(thu), "slate kickoff drops the calendar date");
+
+const mizzouPrior = game({
+  id: "miz-fla",
+  path: "football/college-football",
+  final: true,
+  espnEventId: "401628001",
+  round: null,
+  away: side({ id: "142", abbrev: "MIZ", name: "Missouri", short: "Missouri" }),
+  home: side({ id: "57", abbrev: "FLA", name: "Florida", short: "Florida" }),
+});
+assert(
+  gamesNeedingRecap({ results: [], slate: [], prior: [mizzouPrior] }).some((g) => g.id === "miz-fla"),
+  "last week's Mizzou final still gets a recap cut",
+);
 
 console.log("newspaper-box ok");

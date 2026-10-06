@@ -8,7 +8,7 @@
  */
 
 import { truncateAtSentence } from "./newspaper-copy.ts";
-import { fetchSectionStandings, formatFixtureWhen, formatPaperDay, type StandGroup } from "./newspaper-box.ts";
+import { fetchSectionStandings, formatFixtureWhen, formatPaperDay, standingFromGroups, type StandGroup } from "./newspaper-box.ts";
 import { newspaperEspnGet } from "./newspaper-espn.ts";
 import { pickBestStoryImage } from "./newspaper-images.ts";
 import type { GameWrapCard } from "./newspaper-sports.ts";
@@ -925,7 +925,7 @@ async function fetchOneTile(ref: FavoriteCoachRef, standings: StandGroup[]): Pro
     seasonYear: null,
     record: total?.summary ?? null,
     conferenceRecord: vsconf?.summary ?? conferenceFromStandings(standings, teamId),
-    standing: team?.standingSummary ?? null,
+    standing: (teamId ? standingFromGroups(standings, teamId) : null) ?? team?.standingSummary ?? null,
     rank: apRank(team?.rank),
     pointsForAvg: pf != null ? pf.toFixed(1).replace(/\.0$/, "") : null,
     pointsAgainstAvg: pa != null ? pa.toFixed(1).replace(/\.0$/, "") : null,

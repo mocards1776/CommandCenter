@@ -1,9 +1,9 @@
 /**
- * Stage a filed edition so A1 can print before the heavy desks arrive.
+ * Stage a filed edition so A1 can print before the heaviest desks arrive.
  *
- * Wrap bodies, the raw scoreboard, and league-news dumps are megabytes.
- * They are not required to set the front page; later folios and the
- * full-story reader ask for them on demand.
+ * Wrap bodies and league-news dumps are megabytes and wait. The scoreboard
+ * is also large, but A1's lead is last night's favorite result — it lives
+ * on tt-board, so the front asks for that desk on the first paint.
  */
 
 import type { PrintedQuery } from "./newspaper-issue.ts";
@@ -47,10 +47,11 @@ export function mergeQueries(base: PrintedQuery[], extra: PrintedQuery[]): Print
   return [...byKey.values()];
 }
 
-/** Sport fronts and recap folios need the raw board for boxes. */
+/** A1, sport fronts, and recap folios need the raw board for the lead and boxes. */
 export function heavyDesksForPage(page: { kind: string } | null | undefined): HeavyDeskName[] {
   if (!page) return [];
   switch (page.kind) {
+    case "favorites-front":
     case "sport-front":
     case "sport-inside":
     case "favorites-inside":

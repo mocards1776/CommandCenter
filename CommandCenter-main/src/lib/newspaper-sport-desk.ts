@@ -3,7 +3,8 @@
  * per game, order the night, and attach a feature as a related item.
  */
 
-import { favoriteDeskWeight, gameWrapCovers, isGameWrapStory } from "./newspaper.ts";
+import { favoriteDeskWeight, gameWrapCovers, isGameWrapStory, isResultCopy } from "./newspaper.ts";
+import { scoresInHeadline } from "./newspaper-box.ts";
 import { isNewspaperSecGame } from "./newspaper-espn.ts";
 import { wrapBriefSentences } from "./newspaper-box-wrap.ts";
 import { storySource } from "./newspaper-source.ts";
@@ -61,7 +62,7 @@ export function isInjuryNote(card: GameWrapCard): boolean {
   if (isGameWrapCard(card)) return false;
   if (card.scoreLine && /\d/.test(card.scoreLine) && /\bfinal\b/i.test(card.status ?? "")) return false;
   const head = `${card.headline} ${card.dek ?? ""}`;
-  return /\binjur|surgery|questionable|doubtful|out for the season|season-ending|torn (?:acl|achilles)|dislocat|to have surgery\b/i.test(
+  return /\binjur|surgery|questionable|doubtful|out for the season|season-ending|torn (?:acl|achilles)|dislocat|to have surgery|expected back in|out \d+(?:-\d+)? weeks|sidelined|injured reserve|week-to-week|placed on ir\b/i.test(
     head,
   );
 }
@@ -84,9 +85,50 @@ export function isSportFiller(card: GameWrapCard, recaps: GameWrapCard[] = []): 
   return sportFillerReason(card, recaps) != null;
 }
 
+/** Championship clubs (and the league name). International / MLS stars are not EFL copy. */
+const EFL_CLUB =
+  /\b(wrexham|wolves|wolverhampton|leicester|southampton|ipswich|leeds|norwich|sheffield wednesday|sheffield united|west brom|coventry|middlesbrough|stoke|hull|bristol city|watford|swansea|cardiff|qpr|queens park|millwall|preston|blackburn|derby|portsmouth|oxford|plymouth|charlton|birmingham|sunderland|championship|efl)\b/i;
+const NOT_EFL =
+  /\b(messi|ronaldo|reyna|inter miami|mls|lafc|galaxy|premier league|champions league|liga mx)\b/i;
+
+/** True when the card is actually Championship / EFL news. */
+export function isEflChampionshipStory(card: GameWrapCard): boolean {
+  if (card.leaguePath && card.leaguePath !== "soccer/eng.2") return false;
+  const text = hay(card);
+  if (NOT_EFL.test(text) && !EFL_CLUB.test(text)) return false;
+  return EFL_CLUB.test(text);
+}
+
+const CFB_OFF_DESK =
+  /\b(colts|commanders|jordan walker|nfl\b|world series|nlcs|alcs)\b/i;
+const CFB_OTHER_SPORT =
+  /\b(soccer|usmnt|world cup|\bmls\b|premier league|nba\b|nhl\b)\b/i;
+const CFB_SIGNAL = /\b(college|ncaa|sec\b|acc\b|big ten|big 12|mizzou|missouri tigers)\b/i;
+
+function cfbDeskCopy(text: string): boolean {
+  if (CFB_OTHER_SPORT.test(text)) return false;
+  if (CFB_OFF_DESK.test(text) && !CFB_SIGNAL.test(text)) return false;
+  return true;
+}
+
 export function storyFitsSection(card: GameWrapCard, path: string): boolean {
-  if (!card.leaguePath) return true;
-  return card.leaguePath === path;
+  if (path === "soccer/eng.2") return isEflChampionshipStory(card);
+  if (card.leaguePath && card.leaguePath !== path) return false;
+  if (path === "football/college-football") {
+    const text = hay(card);
+    if (!cfbDeskCopy(text)) return false;
+    if (!card.leaguePath && /\b(nfl|mlb|nhl|nba)\b/i.test(text) && !CFB_SIGNAL.test(text)) return false;
+  }
+  return !card.leaguePath || card.leaguePath === path;
+}
+
+export function relatedFitsSection(
+  item: { headline: string; source?: string | null; href?: string | null },
+  path: string,
+): boolean {
+  if (path !== "football/college-football") return true;
+  const text = `${item.headline} ${item.source ?? ""} ${item.href ?? ""}`;
+  return cfbDeskCopy(text);
 }
 
 function eventIdOf(card: GameWrapCard): string | null {
@@ -199,22 +241,187 @@ export function isSecCard(card: GameWrapCard): boolean {
   return false;
 }
 
-function isFreshSectionLead(card: GameWrapCard, path: string, edition: string): boolean {
-  if (card.holdover) return false;
-  if (isGameWrapCard(card) || (card.scoreLine && /\d/.test(card.scoreLine))) {
-    return gameWrapCovers(card.when, edition, path);
+/** Times box-wrap stub — a two-sentence score line, not a filed recap. */
+export function isBoxStub(card: GameWrapCard): boolean {
+  if (card.wrapKind === "box") return true;
+  if (card.id.startsWith("box-") && !card.photo && (card.body?.length ?? 0) < 400) return true;
+  return false;
+}
+
+export function isWrapLead(card: GameWrapCard): boolean {
+  if (isGameWrapCard(card) || Boolean(card.scoreLine && /\d/.test(card.scoreLine))) return true;
+  if (scoresInHeadline(card.headline ?? "")) return true;
+  return isResultCopy({
+    headline: card.headline,
+    dek: card.dek,
+    status: card.status,
+    scoreLine: card.scoreLine,
+    type: card.id.startsWith("news-") || card.id.startsWith("league-") ? card.status : null,
+  });
+}
+
+const CLUB_ALIASES: Record<string, RegExp> = {
+  "cfb-mizzou": /mizzou|missouri/,
+  "eng-wrexham": /wrexham/,
+  "eng-wolves": /wolves|wolverhampton/,
+};
+
+export function favoriteKeyForGame(
+  game: { away: { short?: string | null; name?: string | null }; home: { short?: string | null; name?: string | null } },
+  clubs: { key: string; shortName: string }[],
+): string {
+  const sides = [game.away.short, game.away.name, game.home.short, game.home.name]
+    .map((s) => (s ?? "").toLowerCase().replace(/[^a-z0-9]/g, ""))
+    .filter(Boolean);
+  for (const club of clubs) {
+    const alias = CLUB_ALIASES[club.key];
+    if (alias && sides.some((s) => alias.test(s))) return club.key;
+    const n = club.shortName.toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (!n || n.length < 3) continue;
+    if (sides.some((s) => s === n || s.includes(n) || n.includes(s))) return club.key;
   }
+  return "";
+}
+
+/** Team crests are not a recap cut. */
+export function isStoryPhoto(url: string | null | undefined): boolean {
+  if (!url) return false;
+  return !/teamlogos|\/team-logos\/|\/logos\//i.test(url);
+}
+
+/** Photo + copy beats a long box wrap with no cut. */
+export function frontCardWeight(card: GameWrapCard): number {
+  return (isStoryPhoto(card.photo) ? 2_000 : 0) + (isBoxStub(card) ? 0 : 800) + Math.min(800, card.body?.length ?? 0);
+}
+
+export function preferFrontCard(a: GameWrapCard, b: GameWrapCard): GameWrapCard {
+  return frontCardWeight(a) >= frontCardWeight(b) ? a : b;
+}
+
+/** Never open on a box stub when a photo recap (even a holdover) is on file. */
+export function alreadyOnSectionA(card: GameWrapCard, ran: GameWrapCard[] = []): boolean {
+  return ran.some((a) => a.id === card.id || sameGameStory(a, card));
+}
+
+export function pickSectionFrontLead(
+  wraps: GameWrapCard[],
+  pool: GameWrapCard[],
+  editorLead?: GameWrapCard,
+  newsLead?: GameWrapCard,
+  alreadyOnA1: GameWrapCard[] = [],
+): GameWrapCard | undefined {
+  const open = (cs: GameWrapCard[]) => cs.filter((c) => !alreadyOnSectionA(c, alreadyOnA1));
+  const quality = wraps.filter((c) => !isBoxStub(c) && (isStoryPhoto(c.photo) || (c.body?.length ?? 0) >= 280));
+  const pictured = quality.filter((c) => isStoryPhoto(c.photo));
+  const picturedFresh = pictured.filter((c) => !c.holdover);
+  const picturedPost = pictured.filter((c) => c.postseason);
+  const qualityFresh = quality.filter((c) => !c.holdover);
+  const qualityPost = quality.filter((c) => c.postseason);
+  const favOf = (cs: GameWrapCard[]) => cs.filter((c) => c.favoriteKey || c.followed);
+  const nonStubFresh = wraps.filter((c) => !c.holdover && !isBoxStub(c));
+  const nonStub = wraps.filter((c) => !isBoxStub(c));
+  const freshWraps = wraps.filter((c) => !c.holdover);
+  return (
+    favOf(open(picturedFresh))[0] ??
+    favOf(open(qualityFresh))[0] ??
+    open(picturedFresh)[0] ??
+    open(picturedPost)[0] ??
+    open(pictured)[0] ??
+    open(qualityFresh)[0] ??
+    open(qualityPost)[0] ??
+    open(quality)[0] ??
+    open(nonStubFresh)[0] ??
+    open(nonStub)[0] ??
+    open(freshWraps)[0] ??
+    open(wraps)[0] ??
+    (editorLead && !alreadyOnSectionA(editorLead, alreadyOnA1) ? editorLead : undefined) ??
+    (newsLead && !alreadyOnSectionA(newsLead, alreadyOnA1) ? newsLead : undefined) ??
+    open(pool)[0] ??
+    picturedFresh[0] ??
+    wraps[0] ??
+    pool[0]
+  );
+}
+
+/** Last-match brief from a club snapshot — logo art, not an empty hole. */
+export function lastMatchCardFromChip(opts: {
+  key: string;
+  name: string;
+  shortName: string;
+  logo: string | null;
+  leaguePath: string;
+  sportLabel: string;
+  last: { label: string; detail: string | null; when: string | null; won: boolean | null };
+}): GameWrapCard {
+  const raw = opts.last.label.replace(/\s+/g, " ").trim();
+  const away = /^\s*@/i.test(raw);
+  const opp = raw.replace(/^(vs|@)\s+/i, "").trim() || "their last opponent";
+  const venue = away ? "at" : "vs";
+  const score = opts.last.detail;
+  const verb = opts.last.won === true ? "beat" : opts.last.won === false ? "fell to" : "played";
+  const headline = score
+    ? `${opts.shortName} ${verb} ${opp} ${score}`
+    : `${opts.shortName} ${venue} ${opp}`;
+  const whenBit = opts.last.when ? ` (${opts.last.when})` : "";
+  const follow =
+    opts.last.won === true
+      ? `${opts.shortName} take the points and turn to the next Championship fixture.`
+      : opts.last.won === false
+        ? `${opts.shortName} will look to bounce back in the next Championship fixture.`
+        : `The last Championship result is on the sheet.`;
+  const body = score
+    ? `${opts.name} ${verb} ${opp} ${score}${whenBit}. ${follow}`
+    : `${opts.name} played ${opp}${whenBit}. ${follow}`;
+  return {
+    id: `last-${opts.key}-${raw}-${score ?? "final"}`.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+    favoriteKey: opts.key,
+    followed: true,
+    teamName: opts.shortName,
+    teamHref: "/",
+    sportLabel: opts.sportLabel,
+    leaguePath: opts.leaguePath,
+    headline,
+    dek: score,
+    body,
+    scoreLine: score,
+    when: opts.last.when,
+    won: opts.last.won,
+    gameHref: null,
+    wrapHref: null,
+    feedUrl: null,
+    gameId: null,
+    stats: [],
+    leaders: [],
+    teamStats: [],
+    division: [],
+    photo: opts.logo,
+    caption: `${opts.name} ${venue} ${opp}.`,
+    status: "Final",
+  };
+}
+
+function isFreshSectionLead(card: GameWrapCard, path: string, edition: string): boolean {
+  if (isWrapLead(card)) {
+    if (!card.when) return true;
+    if (gameWrapCovers(card.when, edition, path) || card.holdover) return true;
+    if (card.postseason) return true;
+    if (card.status && /\brecap\b/i.test(card.status)) return true;
+    return false;
+  }
+  if (card.holdover) return false;
   return true;
 }
 
 /**
- * Section-front order: today's / last night's wraps and news, never a stale
- * holdover. An editor-fronted story still leads when it is in the window.
+ * Section-front order: today's / last night's wraps first (Josh's clubs,
+ * then current / ranked / postseason games), then editor news. A stale
+ * holdover never opens the section when a fresh game is on file.
  */
 export function orderSportSectionFront(
   cards: GameWrapCard[],
   path: string,
   edition: string,
+  alreadyOnA1: GameWrapCard[] = [],
 ): GameWrapCard[] {
   const seen = new Set<string>();
   const unique = cards.filter((card) => {
@@ -224,18 +431,13 @@ export function orderSportSectionFront(
   });
   const fresh = unique.filter((card) => isFreshSectionLead(card, path, edition));
   const pool = fresh.length ? fresh : unique;
-  const wraps = orderSportRecaps(
-    pool.filter((card) => isGameWrapCard(card) || Boolean(card.scoreLine && /\d/.test(card.scoreLine))),
-    path,
-  );
+  const wraps = orderSportRecaps(pool.filter(isWrapLead), path);
   const news = pool
-    .filter((card) => !isGameWrapCard(card) && !(card.scoreLine && /\d/.test(card.scoreLine)))
+    .filter((card) => !isWrapLead(card))
     .sort((a, b) => (a.editorRank ?? 99) - (b.editorRank ?? 99) || String(b.when ?? "").localeCompare(String(a.when ?? "")));
   const newsLead = news.find((card) => !isInjuryNote(card));
-  // An injury note never opens the section when a result is on the board —
-  // even if the editor fronted it.
   const editorLead = pool.find((card) => card.editorFront === 0 && !isInjuryNote(card));
-  const lead = editorLead ?? wraps[0] ?? newsLead ?? news[0] ?? pool[0];
+  const lead = pickSectionFrontLead(wraps, pool, editorLead, newsLead, alreadyOnA1);
   if (!lead) return [];
   const rest = pool.filter((card) => card.id !== lead.id);
   const withPhoto = rest.filter((card) => card.photo);

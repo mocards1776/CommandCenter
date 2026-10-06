@@ -276,6 +276,8 @@ export function htmlToNewspaperText(html: string): string {
  */
 export function restorePossessiveSpace(text: string): string {
   return text
+    // Playfair's straight tick sits off the letter; print a curly possessive.
+    .replace(/(\w)'/g, "$1’")
     .replace(/(\p{L}|\d)(['’])(?!(?:s|t|ll|re|ve|d|m)\b)(\p{L})/gu, "$1$2 $3")
     .replace(/(\p{L})(['’])(\d)/gu, "$1$2 $3");
 }
@@ -308,7 +310,6 @@ export function tidy(text: string): string {
       .trim(),
   );
 }
-
 /**
  * Cut a blurb at the last full sentence. Abbreviations (No., St., Mr.)
  * are not sentence ends. Incomplete tails are dropped.

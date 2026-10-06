@@ -121,9 +121,12 @@ export function recapPaint(color: string | null | undefined): string {
 export function recapPhotoKind(
   url: string | null | undefined,
   width?: number | null,
-): "wide" | "inset" | "none" {
+): "wide" | "fit" | "none" {
   if (!url) return "none";
-  if (width != null && width > 0 && width < RECAP_WIDE_MIN) return "inset";
+  const native = typeof width === "number" && width > 0 ? width : null;
+  // A small original must not be stretched to the column — the layout
+  // reflows beside the copy instead. Unknown width is treated as large.
+  if (native != null && native < RECAP_WIDE_MIN) return "fit";
   return "wide";
 }
 

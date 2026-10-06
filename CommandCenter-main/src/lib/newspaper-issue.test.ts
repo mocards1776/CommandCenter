@@ -4,9 +4,11 @@
 import {
   asFiledQueries,
   asPrintedIssue,
+  asProofIssue,
   issueCacheKey,
   issueCacheOwner,
   ISSUE_VERSION,
+  peekProofIssue,
   retainCachedIssues,
   slimIssue,
 } from "./newspaper-issue.ts";
@@ -85,5 +87,23 @@ assert(
   asPrintedIssue("2026-10-05-evening", ISSUE_VERSION, [{ id: "a" }], { desks: [desk] })?.queries.length === 1,
   "full-row reader accepts the desks sidecar",
 );
+
+const planted = asProofIssue(
+  {
+    id: "2026-10-05-evening",
+    version: ISSUE_VERSION,
+    status: "ready",
+    printed_at: "2026-10-06T03:11:13.699Z",
+    stories: [{ id: "box-cfb", headline: "No. 25 Missouri trounces No. 8 Florida 45-17" }],
+    queries: [{ key: ["2026-10-05-evening", "tt-weather-marshfield"], data: { days: [1] } }],
+  },
+  "2026-10-05-evening",
+);
+assert(planted?.stories.length === 1, "a planted proof issue keeps the filed stories");
+assert(planted?.queries.length === 1, "a planted proof issue keeps the desks");
+assert(asProofIssue({ id: "other", version: ISSUE_VERSION, stories: [] }, "2026-10-05-evening") === null, "wrong id is dropped");
+(globalThis as { __TT_PROOF_ISSUE__?: unknown }).__TT_PROOF_ISSUE__ = planted;
+assert(peekProofIssue("2026-10-05-evening")?.id === "2026-10-05-evening", "peek reads the planted edition");
+delete (globalThis as { __TT_PROOF_ISSUE__?: unknown }).__TT_PROOF_ISSUE__;
 
 console.log("newspaper-issue ok");

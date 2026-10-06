@@ -122,7 +122,7 @@ function SeriesLog({ tree }: { tree: MlbPlayoffTree }) {
     .sort((a, b) => Number(a.completed) - Number(b.completed));
   if (!series.length) return null;
   return (
-    <section className="tt-br-log">
+    <section className="tt-br-log" data-tt-flow="">
       <h4 className="wsj-band-title">Series by series</h4>
       <div className="tt-br-log-grid">
         {series.map((s) => (
@@ -156,11 +156,11 @@ function SeriesLog({ tree }: { tree: MlbPlayoffTree }) {
   );
 }
 
-export function PlayoffBracket({ tree }: { tree: MlbPlayoffTree }) {
+export function PlayoffBracket({ tree, compact }: { tree: MlbPlayoffTree; compact?: boolean }) {
   const ws = tree.rounds.find((r) => r.id === "ws")?.series[0] ?? null;
   const champ = ws?.completed ? ws[leader(ws) ?? "home"] : null;
   return (
-    <div className="tt-bracket">
+    <div className={cn("tt-bracket", compact && "compact")}>
       <header className="tt-br-head">
         <span>{tree.season}</span>
         <h3>Postseason Picture</h3>
@@ -184,7 +184,7 @@ export function PlayoffBracket({ tree }: { tree: MlbPlayoffTree }) {
           <LeagueHalf tree={tree} league="NL" side="r" />
         </div>
       </div>
-      <SeriesLog tree={tree} />
+      {compact ? null : <SeriesLog tree={tree} />}
     </div>
   );
 }

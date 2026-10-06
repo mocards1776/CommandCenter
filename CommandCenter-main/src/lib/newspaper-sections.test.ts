@@ -39,9 +39,15 @@ import {
   isPreviewStory,
   isBettingPreview,
   cannotLeadFront,
+  isFavoriteGameResult,
+  isFavoriteStory,
   isSectionAStory,
+  latestClubResultDay,
+  pickFrontUnderLead,
+  stampFavoriteKeys,
+  storyRank,
   sameSectionAStory,
-  MIN_SECTION_PAGES,
+  paginateEditionDesks,
   orderSportSections,
   SECTION_A_TITLE,
   sortComingUp,
@@ -54,6 +60,7 @@ import {
   type ClubDesk,
 } from "./newspaper-sections.ts";
 import { sampleNationalDesk } from "./newspaper-national.ts";
+import { isInjuryNote } from "./newspaper-sport-desk.ts";
 
 assert(favoriteDeskWeight("mlb-stl") === 100, "Cardinals are home desk");
 assert(favoriteDeskWeight("nhl-stl") === 100, "Blues are home desk");
@@ -133,6 +140,14 @@ assert(
 assert(
   isResultCopy({ headline: "Chiefs' Mahomes perfect on play-action passes in win vs. Dolphins" }),
   "a win story is a result",
+);
+assert(
+  isResultCopy({ headline: "No. 25 Missouri trounces No. 8 Florida 45-17 to snap 9-game skid" }),
+  "a trounces + score hed is a result",
+);
+assert(
+  isResultCopy({ headline: "Chourio's 2-run single with 2 outs in 9th lifts Brewers over Padres" }),
+  "a walk-off lift is a result",
 );
 
 const weekend = card({
@@ -223,8 +238,8 @@ const folios = paper.pages.map((page) => page.folio);
 assert(folios[0] === "A1", "section A opens the paper");
 assert(folios.includes("A2"), "section A has a clubs desk page");
 assert(folios.includes("NFL1") && folios.includes("NFL2") && folios.includes("NFL3"), "NFL opens with desk pages");
-assert(folios.includes("NFL4") && folios.includes("NFL5"), "NFL has schedule + form pages");
-assert(folios.includes("MLB1") && folios.includes("MLB5"), "MLB has a full five-page desk");
+assert(folios.includes("NFL4"), "NFL still has a schedule page after empty recaps/news drop");
+assert(folios.includes("MLB1") && folios.includes("MLB2"), "MLB still opens a section");
 
 const a = paper.pages[0];
 assert(a?.kind === "favorites-front" && a.lead?.id === "news-cards", "Cardinals desk weight leads Section A over Chiefs copy");
@@ -232,10 +247,10 @@ assert(
   a?.kind === "favorites-front" && a.news.some((story) => story.id === "news-injury"),
   "Tuesday's Chiefs story still runs",
 );
-const formPage = paper.pages.find((page) => page.kind === "favorites-form");
+const outlookForm = paper.pages.find((page) => page.kind === "favorites-clubs" && page.weatherPart === "outlook");
 assert(
-  formPage?.kind === "favorites-form" && formPage.clubs[0]?.key === "mlb-stl",
-  "club-form pages list Cardinals before Chiefs",
+  outlookForm?.kind === "favorites-clubs" && outlookForm.formClubs?.[0]?.key === "mlb-stl",
+  "club form on A3 lists Cardinals before Chiefs",
 );
 assert(a?.kind === "favorites-front" && a.news.every((story) => story.id !== "wire-nfl-weekend"), "weekend score stays off A1 fresh list");
 assert(a?.kind === "favorites-front", "A1 is the favorites front");
@@ -251,13 +266,17 @@ if (nfl?.kind === "sport-front") {
   assert(!nfl.upcoming.some((game) => /dolphins/i.test(game.label)), "last weekend is not the schedule");
   assert(nfl.clubs[0]?.division.some((row) => row.me && row.team === "Chiefs"), "standings mark your club");
   assert(nfl.clubs[0]?.stats.some((stat) => stat.label === "PF"), "season stats run with the table");
-  assert(nfl.articles.every((article) => article.card.id !== "news-injury"), "a followed club's story runs in Section A, not NFL");
+  assert(nfl.articles.some((article) => article.card.id === "news-injury"), "the NFL front still carries the followed club");
   assert(nfl.articles.every((article) => article.card.id !== "wire-nfl-weekend"), "weekend recap is too old for a fresh midweek desk");
 }
-const nflRecaps = paper.pages.find((page) => page.kind === "sport-front" && page.section === "NFL" && page.focus === "recaps");
-assert(nflRecaps?.kind === "sport-front", "the NFL recaps desk follows the front");
-const nflNews = paper.pages.find((page) => page.kind === "sport-front" && page.section === "NFL" && page.focus === "news");
-assert(nflNews?.kind === "sport-front", "the NFL news desk follows the wraps");
+assert(
+  !paper.pages.some((page) => page.kind === "sport-front" && page.section === "NFL" && page.focus === "recaps"),
+  "an empty NFL recaps desk is dropped",
+);
+assert(
+  !paper.pages.some((page) => page.kind === "sport-front" && page.section === "NFL" && page.focus === "news"),
+  "an empty NFL news desk is dropped after the front consumes the club note",
+);
 const nflTeams = paper.pages.find((page) => page.kind === "sport-front" && page.section === "NFL" && page.focus === "teams");
 assert(nflTeams?.kind === "sport-front", "standings sit with the reference pages");
 const nflForm = paper.pages.find((page) => page.kind === "sport-front" && page.section === "NFL" && page.focus === "form");
@@ -265,33 +284,32 @@ assert(nflForm?.kind === "sport-front", "club form sits with the reference pages
 const nflSched = paper.pages.find((page) => page.kind === "sport-front" && page.section === "NFL" && page.focus === "schedule");
 assert(nflSched?.kind === "sport-front", "the schedule is at the back of the section");
 assert(
-  nflTeams &&
-    nflSched &&
-    nflNews &&
-    nflTeams.sectionPage > nflNews.sectionPage &&
-    nflSched.sectionPage > nflTeams.sectionPage,
-  "news, then standings, then the schedule",
+  nflTeams && nflSched && nflSched.sectionPage > nflTeams.sectionPage,
+  "standings, then the schedule",
 );
 
 const mlb = paper.pages.find((page) => page.folio === "MLB1");
 assert(
-  mlb?.kind === "sport-front" && mlb.articles.every((article) => article.card.id !== "news-cards"),
-  "Cardinals copy stays out of the MLB section",
-);
-assert(
-  paper.pages.every((page) => page.kind !== "sport-inside" || (page.primary.id !== "news-cards" && page.secondary?.id !== "news-cards")),
-  "no MLB story page carries a Cardinals story",
+  mlb?.kind === "sport-front" && mlb.articles.some((article) => article.card.id === "news-cards"),
+  "Cardinals copy still leads the MLB section",
 );
 const mlbPlayoffs = paper.pages.find((page) => page.kind === "sport-front" && page.section === "MLB" && page.focus === "playoffs");
 assert(mlbPlayoffs?.kind === "sport-front", "MLB still prints the playoff tree");
-assert((paper.sections.find((s) => s.code === "NFL")?.pages ?? 0) >= MIN_SECTION_PAGES, "NFL section always has at least five pages");
-assert((paper.sections.find((s) => s.code === "A")?.pages ?? 0) >= MIN_SECTION_PAGES, "A always has at least five pages");
-assert((paper.sections.find((s) => s.code === "MLB")?.pages ?? 0) >= MIN_SECTION_PAGES, "MLB always has at least five pages");
+assert((paper.sections.find((s) => s.code === "NFL")?.pages ?? 0) >= 4, "NFL keeps a front and the reference desks");
 assert(
-  !paper.pages.some((page) => page.kind === "sport-inside" && page.section === "NFL"),
-  "no league copy, no NFL story page",
+  (paper.sections.find((s) => s.code === "A")?.pages ?? 0) >= 4,
+  "A has a front, weather, outlook/form, and the watch page — no empty cream pads",
 );
-assert(paper.pages.some((page) => page.kind === "favorites-form"), "Section A pads with club-form pages");
+assert((paper.sections.find((s) => s.code === "MLB")?.pages ?? 0) >= 4, "MLB keeps a front and the reference desks");
+assert(
+  paper.pages.some((page) => page.kind === "sport-inside" && page.section === "NFL" && page.primary.id === "news-injury") ||
+    paper.pages.some((page) => page.kind === "sport-front" && page.section === "NFL" && page.articles.some((a) => a.card.id === "news-injury")),
+  "the Chiefs note still has an NFL home",
+);
+assert(
+  paper.pages.some((page) => page.kind === "favorites-clubs" && (page.formClubs?.length ?? 0) > 0),
+  "Section A prints club form on the outlook folio instead of short pad pages",
+);
 
 const leagueWire = card({
   id: "league-wire-1",
@@ -336,7 +354,10 @@ const withLeague = buildEdition({
   clubs: [chiefs, cards],
   edition,
 });
-assert(withLeague.pages.some((page) => page.folio === "NFL6"), "league story copy gets an inside page after the desk pages");
+assert(
+  withLeague.pages.some((page) => page.kind === "sport-inside" && page.section === "NFL"),
+  "league story copy gets an inside page after the desk pages",
+);
 assert(
   withLeague.pages.every(
     (page) => page.kind !== "sport-inside" || (page.primary.id !== "league-wire-2" && page.secondary?.id !== "league-wire-2"),
@@ -350,11 +371,10 @@ assert(
   aLead?.kind === "favorites-front" && aLead.news.every((story) => story.id !== "league-wire-1"),
   "league wire stays off the favorites front",
 );
-const nflWithLeague = withLeague.pages.find((page) => page.kind === "sport-front" && page.section === "NFL" && page.focus === "news");
+const nflWithLeague = withLeague.pages.filter((page) => page.kind === "sport-front" && page.section === "NFL");
 assert(
-  nflWithLeague?.kind === "sport-front" &&
-    nflWithLeague.articles.some((article) => article.card.id === "league-wire-1"),
-  "league wire fills the sport news page",
+  nflWithLeague.some((page) => page.kind === "sport-front" && page.articles.some((article) => article.card.id === "league-wire-1")),
+  "league wire still runs in the NFL section",
 );
 
 const sundayRewrite = card({
@@ -391,7 +411,7 @@ const tuesdayPaper = buildEdition({
   clubs: [chiefs],
   edition: "2026-09-29",
 });
-assert((tuesdayPaper.sections.find((s) => s.code === "NFL")?.pages ?? 0) >= MIN_SECTION_PAGES, "Tuesday NFL still has five pages");
+assert((tuesdayPaper.sections.find((s) => s.code === "NFL")?.pages ?? 0) >= 4, "Tuesday NFL still has a front and reference desks");
 const tuesdayNfl = tuesdayPaper.pages.find((page) => page.folio === "NFL1");
 assert(tuesdayNfl?.kind === "sport-front", "Tuesday still opens a football section");
 const tuesdayFront = tuesdayPaper.pages[0];
@@ -482,9 +502,14 @@ if (cont?.kind === "favorites-continue") {
   );
 }
 assert(
-  withJump.pages[1]?.kind === "favorites-clubs",
-  "A2 stays the clubs desk between the tease and the jump",
+  withJump.pages[1]?.kind === "favorites-clubs" && withJump.pages[1].weatherPart === "today",
+  "A2 is today's weather so the 10-day chart does not stretch the folio",
 );
+assert(
+  withJump.pages[2]?.kind === "favorites-clubs" && withJump.pages[2].weatherPart === "outlook",
+  "A3 is the outlook and clubs desk",
+);
+assert(cont?.folio === "A4", "the A1 jump continues on A4 after weather and clubs");
 
 const twice = buildEdition({
   stories: [lionsNote, { ...lionsNote, id: "wrap-lions-note" }],
@@ -1119,6 +1144,232 @@ assert(!cannotLeadFront(lionsDefeat, [lionsWrap, lionsDefeat, lionsBet]), "the d
   assert(front.some((c) => c.id === "news-50107710" || c.id === "wire-nfl-401872978"), "matchup recap takes the lead slot");
 }
 
+const thorntonNote = card({
+  id: "news-thornton",
+  headline: "Sources: Chiefs WR Tyquan Thornton expected back in 12-16 weeks",
+  dek: null,
+  favoriteKey: "nfl-kc",
+  followed: true,
+  teamName: "Chiefs",
+  sportLabel: "NFL",
+  leaguePath: "football/nfl",
+  status: "Story",
+  editorFront: 0,
+  listRank: 0,
+  body: "Kansas City expects Thornton back in 12 to 16 weeks after the injury. ".repeat(16),
+});
+const mizzouFinal = card({
+  id: "wire-cfb-mizzou-florida",
+  headline: "No. 25 Missouri trounces No. 8 Florida 45-17 to snap 9-game skid",
+  dek: "The Tigers scored 45 and ended a nine-game losing streak in Gainesville.",
+  favoriteKey: "cfb-mizzou",
+  followed: true,
+  teamName: "Missouri",
+  sportLabel: "College Football",
+  leaguePath: "football/college-football",
+  status: "Final",
+  scoreLine: "MIZ 45 · FLA 17",
+  when: "2026-10-05T03:30:00Z",
+  editorFront: 1,
+  body: "Missouri beat Florida 45-17 in Gainesville and snapped a nine-game losing streak. ".repeat(16),
+});
+assert(isInjuryNote(thorntonNote), "Thornton hed is an injury note");
+assert(isFavoriteGameResult(mizzouFinal), "Mizzou 45-17 is a favorite-team result");
+assert(!isFavoriteGameResult(thorntonNote), "an injury note is not a game result");
+assert(cannotLeadFront(thorntonNote, [thorntonNote, mizzouFinal]), "an injury note cannot lead over a favorite result");
+{
+  const moNote = card({
+    id: "mo-bailey",
+    headline: "Bailey Jumps Back In - HRCC's Committees",
+    sportLabel: "Missouri",
+    body: "A Missouri scout note. ".repeat(20),
+  });
+  assert(cannotLeadFront(moNote, [moNote, mizzouFinal]), "a statehouse note cannot lead over Mizzou's result");
+  const moPaper = buildEdition({
+    stories: [moNote, mizzouFinal],
+    clubs: [],
+    edition: "2026-10-05-evening",
+  });
+  const moA1 = moPaper.pages.find((p) => p.kind === "favorites-front");
+  assert(
+    moA1?.kind === "favorites-front" && moA1.lead?.id === "wire-cfb-mizzou-florida",
+    "A1 leads with Mizzou, not the Missouri newsletter",
+  );
+}
+assert(!cannotLeadFront(mizzouFinal, [thorntonNote, mizzouFinal]), "the Mizzou recap may lead");
+assert(
+  storyRank(mizzouFinal, "2026-10-05-evening") > storyRank(thorntonNote, "2026-10-05-evening"),
+  "Mizzou's result outranks a Chiefs injury note",
+);
+{
+  const front = editorFront([thorntonNote, mizzouFinal]);
+  assert(front[0]?.id === "wire-cfb-mizzou-florida", "editor injury lead is swapped for the Mizzou result");
+}
+{
+  const evening = buildEdition({
+    stories: [thorntonNote, mizzouFinal],
+    clubs: [],
+    edition: "2026-10-05-evening",
+  });
+  const a1 = evening.pages.find((p) => p.kind === "favorites-front");
+  assert(
+    a1?.kind === "favorites-front" && a1.lead?.id === "wire-cfb-mizzou-florida",
+    `A1 leads with Mizzou, not Thornton (got ${a1 && a1.kind === "favorites-front" ? a1.lead?.headline : "no front"})`,
+  );
+}
+{
+  const filed = { ...mizzouFinal, favoriteKey: "", followed: false };
+  const stamped = stampFavoriteKeys([filed], [
+    { key: "cfb-mizzou", shortName: "Mizzou", logo: null, leaguePath: "football/college-football", record: "4-1", standing: "8th in SEC", division: [], stats: [], leaders: [], upcoming: [] },
+  ]);
+  assert(stamped[0]?.favoriteKey === "cfb-mizzou", "a filed Mizzou recap gets its home-desk key back");
+  const paper = buildEdition({
+    stories: [thorntonNote, filed],
+    clubs: [
+      { key: "cfb-mizzou", shortName: "Mizzou", logo: null, leaguePath: "football/college-football", record: "4-1", standing: "8th in SEC", division: [], stats: [], leaders: [], upcoming: [] },
+    ],
+    edition: "2026-10-05-evening",
+  });
+  const a1 = paper.pages.find((p) => p.kind === "favorites-front");
+  assert(
+    a1?.kind === "favorites-front" && a1.lead?.id === "wire-cfb-mizzou-florida",
+    "A1 still leads with Mizzou when the filed row lost favoriteKey",
+  );
+}
+{
+  const giants = card({
+    id: "wire-nfl-401872966",
+    headline: "Winston throws 3 TD passes and Banks' pick-6 seals Giants' 36-24 win over Cardinals",
+    favoriteKey: "mlb-stl",
+    followed: true,
+    teamName: "Giants",
+    sportLabel: "NFL",
+    leaguePath: "football/nfl",
+    status: "Final",
+    scoreLine: "ARI 24  ·  NYG 36",
+    photo: "https://example.com/giants.jpg",
+    body: "New York beat Arizona. ".repeat(12),
+  });
+  const chiefsWrap = card({
+    id: "wire-nfl-401872976",
+    headline: "Chiefs beat the Raiders 30-27 to move to 4-0 behind Patrick Mahomes",
+    favoriteKey: "nfl-kc",
+    followed: true,
+    teamName: "Chiefs",
+    sportLabel: "NFL",
+    leaguePath: "football/nfl",
+    status: "Final",
+    scoreLine: "KC 30  ·  LV 27",
+    photo: "https://example.com/chiefs.jpg",
+    body: "Kansas City held off Las Vegas. ".repeat(12),
+  });
+  const mizzouLead = card({
+    id: "wire-cfb-mizzou-florida",
+    headline: "No. 25 Missouri trounces No. 8 Florida 45-17",
+    favoriteKey: "cfb-mizzou",
+    followed: true,
+    teamName: "Mizzou",
+    sportLabel: "College Football",
+    leaguePath: "football/college-football",
+    status: "Final",
+    scoreLine: "MIZ 45 · FLA 17",
+    photo: "https://example.com/miz.jpg",
+    body: "Missouri snapped the skid. ".repeat(12),
+  });
+  const clubs: ClubDesk[] = [
+    { key: "mlb-stl", shortName: "Cardinals", logo: null, leaguePath: "baseball/mlb", record: "83-79", standing: "NL Central", division: [], stats: [], leaders: [], upcoming: [] },
+    { key: "nfl-kc", shortName: "Chiefs", logo: null, leaguePath: "football/nfl", record: "4-0", standing: "AFC West", division: [], stats: [], leaders: [], upcoming: [] },
+    { key: "cfb-mizzou", shortName: "Mizzou", logo: null, leaguePath: "football/college-football", record: "4-1", standing: "8th in SEC", division: [], stats: [], leaders: [], upcoming: [] },
+  ];
+  const unstamped = stampFavoriteKeys([giants], clubs);
+  assert(unstamped[0]?.favoriteKey === "", "an NFL Giants–Cardinals wrap does not keep the baseball desk");
+  assert(unstamped[0]?.followed === false, "a cross-league stamp is not a followed story");
+  assert(!isFavoriteStory(unstamped[0]!), "a stripped Giants wrap is not a favorite story");
+  assert(!isFavoriteGameResult(unstamped[0]!), "a stripped Giants wrap is not a favorite result");
+  const under = pickFrontUnderLead([mizzouLead, giants, chiefsWrap], mizzouLead);
+  assert(under?.id === "wire-nfl-401872976", `A1 under the lead is the Chiefs result, not Giants–Arizona (got ${under?.headline ?? "none"})`);
+}
+{
+  const bluesSat = card({
+    id: "wire-nhl-401892439",
+    headline: "Necas and Roy score quick goals as the Avalanche rout the Blues 6-1",
+    favoriteKey: "nhl-stl",
+    followed: true,
+    teamName: "Blues",
+    sportLabel: "NHL",
+    leaguePath: "hockey/nhl",
+    status: "Final",
+    scoreLine: "STL 1  ·  COL 6",
+    when: "2026-10-04T01:00:00Z",
+    photo: "https://example.com/blues.jpg",
+    body: "Colorado beat St. Louis on Saturday. ".repeat(12),
+  });
+  const chiefsSun = card({
+    id: "wire-nfl-401872976",
+    headline: "Chiefs beat the Raiders 30-27 to move to 4-0 behind Patrick Mahomes",
+    favoriteKey: "nfl-kc",
+    followed: true,
+    teamName: "Chiefs",
+    sportLabel: "NFL",
+    leaguePath: "football/nfl",
+    status: "Final",
+    scoreLine: "KC 30  ·  LV 27",
+    when: "2026-10-04T20:25:00Z",
+    won: true,
+    photo: "https://example.com/chiefs.jpg",
+    body: "Kansas City held off Las Vegas on Sunday. ".repeat(12),
+  });
+  const cowboysSun = card({
+    id: "wire-nfl-401872980",
+    headline: "CeeDee Lamb's late TD caps a wild Cowboys rally to beat winless Texans 34-30",
+    favoriteKey: "nfl-dal",
+    followed: true,
+    teamName: "Cowboys",
+    sportLabel: "NFL",
+    leaguePath: "football/nfl",
+    status: "Final",
+    scoreLine: "DAL 34  ·  HOU 30",
+    when: "2026-10-04T20:00:00Z",
+    won: true,
+    photo: "https://example.com/cowboys.jpg",
+    body: "Dallas rallied in Houston on Sunday. ".repeat(12),
+  });
+  const mizzouLead = card({
+    id: "wire-cfb-mizzou-florida",
+    headline: "No. 25 Missouri trounces No. 8 Florida 45-17",
+    favoriteKey: "cfb-mizzou",
+    followed: true,
+    teamName: "Mizzou",
+    sportLabel: "College Football",
+    leaguePath: "football/college-football",
+    status: "Final",
+    scoreLine: "MIZ 45 · FLA 17",
+    when: "2026-10-03T19:50:00Z",
+    photo: "https://example.com/miz.jpg",
+    body: "Missouri snapped the skid. ".repeat(12),
+  });
+  assert(latestClubResultDay([bluesSat, chiefsSun, cowboysSun]) === "2026-10-04", "Sunday is the latest club game day");
+  const lionsSun = card({
+    id: "box-football/nfl-401872978",
+    headline: "Young, McMillan connect for 2 TDs to lead Panthers past Lions 32-26",
+    favoriteKey: "nfl-det",
+    followed: true,
+    teamName: "Lions",
+    sportLabel: "NFL",
+    leaguePath: "football/nfl",
+    status: "Final",
+    scoreLine: "DET 26  ·  CAR 32",
+    when: "2026-10-05T00:20:00Z",
+    won: false,
+    photo: "https://example.com/lions.jpg",
+    body: "Carolina held off Detroit on Sunday night. ".repeat(12),
+  });
+  const under = pickFrontUnderLead([mizzouLead, bluesSat, chiefsSun, cowboysSun, lionsSun], mizzouLead);
+  assert(under?.id === "wire-nfl-401872976", `A1 under the lead is Sunday's Chiefs win, not Saturday's Blues or a Sunday loss (got ${under?.headline ?? "none"})`);
+  const onlySaturday = pickFrontUnderLead([mizzouLead, bluesSat], mizzouLead);
+  assert(onlySaturday?.id === "wire-nhl-401892439", "a Saturday club result may run when it is the freshest game day");
+}
+
 
 const chiefsHighlights = card({
   id: "news-50105678",
@@ -1243,8 +1494,8 @@ const cowboysA = cowboysPaper.pages
 assert(cowboysA.includes("wire-nfl-401872967"), "Section A keeps the full Cowboys recap");
 assert(!cowboysA.includes("news-50103615") && !cowboysA.includes("news-50105829"), "Section A does not reprint the clip");
 assert(
-  !JSON.stringify(cowboysPaper.pages.filter((p) => p.section === "NFL")).includes("wire-nfl-401872967"),
-  "the Cowboys recap does not reprint on the NFL front",
+  JSON.stringify(cowboysPaper.pages.filter((p) => p.section === "NFL")).includes("wire-nfl-401872967"),
+  "the Cowboys recap still leads the NFL front",
 );
 
 const oneTrade = dedupeStories([
@@ -1315,9 +1566,12 @@ const spiked = buildEdition({
 });
 assert(!spiked.favoriteFolioByStory.junk, "a killed host never gets a folio");
 assert(!spiked.favoriteFolioByStory.perry, "a fan feature never leads the club");
-const athleticPage = spiked.pages.find((page) => page.kind === "sport-front" && page.section === "NHL" && page.focus === "news");
 assert(
-  athleticPage?.kind === "sport-front" && athleticPage.articles.some((article) => article.card.id === "athletic-1"),
+  spiked.pages.some(
+    (page) =>
+      ((page.kind === "sport-front" && page.section === "NHL" && page.articles.some((article) => article.card.id === "athletic-1")) ||
+        (page.kind === "sport-inside" && page.section === "NHL" && (page.primary.id === "athletic-1" || page.secondary?.id === "athletic-1"))),
+  ),
   "The Athletic runs in the sport section",
 );
 
@@ -1378,6 +1632,69 @@ assert(
   "Monday morning NFL boards include Saturday",
 );
 assert(isGameWrapStory({ id: "wire-nfl-1" }), "a wire id is a game wrap");
+assert(isGameWrapStory({ id: "box-football/college-football-401856708" }), "a board recap id is a game wrap");
+{
+  const boardMizzou = card({
+    id: "box-football/college-football-401856708",
+    headline: "No. 25 Missouri trounces No. 8 Florida 45-17 to snap 9-game skid against Top 25 opponents",
+    favoriteKey: "cfb-mizzou",
+    followed: true,
+    teamName: "Missouri",
+    sportLabel: "College Football",
+    leaguePath: "football/college-football",
+    status: "Final",
+    scoreLine: "FLA 17 · MIZ 45",
+    when: "2026-10-04T19:30:00Z",
+    body: "Missouri beat Florida 45-17 in Gainesville and snapped a nine-game losing streak. ".repeat(16),
+    photo: "https://example.com/mizzou.jpg",
+  });
+  const sixers = card({
+    id: "league-sixers-pre",
+    headline: "James, Embiid, Maxey sit out 76ers’ preseason opener vs. Knicks",
+    sportLabel: "Nba",
+    leaguePath: "basketball/nba",
+    when: "2026-10-05T23:00:00Z",
+    body: "The 76ers sat their stars in a preseason opener. ".repeat(20),
+    editorFront: 0,
+  });
+  const boardPaper = buildEdition({
+    stories: [sixers, boardMizzou],
+    clubs: [
+      { key: "cfb-mizzou", shortName: "Mizzou", logo: null, leaguePath: "football/college-football", record: "4-1", standing: "8th in SEC", division: [], stats: [], leaders: [], upcoming: [] },
+    ],
+    edition: "2026-10-05-evening",
+  });
+  const boardA1 = boardPaper.pages.find((p) => p.kind === "favorites-front");
+  assert(
+    boardA1?.kind === "favorites-front" && boardA1.lead?.id === "box-football/college-football-401856708",
+    `A1 leads with the board's Mizzou recap, not a preseason sit-out (got ${boardA1 && boardA1.kind === "favorites-front" ? boardA1.lead?.headline : "no front"})`,
+  );
+  const uga = card({
+    id: "wire-cfb-uga",
+    headline: "No. 5 Georgia holds off Vanderbilt",
+    teamName: "Georgia",
+    sportLabel: "College Football",
+    leaguePath: "football/college-football",
+    status: "Final",
+    scoreLine: "VAN 14 · UGA 24",
+    when: "2026-10-04T23:30:00Z",
+    body: "Georgia held off Vanderbilt in Athens. ".repeat(16),
+    photo: "https://example.com/uga.jpg",
+    sec: true,
+  });
+  const cfbPointerPaper = buildEdition({
+    stories: [boardMizzou, uga],
+    clubs: [
+      { key: "cfb-mizzou", shortName: "Mizzou", logo: null, leaguePath: "football/college-football", record: "4-1", standing: "8th in SEC", division: [], stats: [], leaders: [], upcoming: [] },
+    ],
+    edition: "2026-10-05-evening",
+  });
+  const cfb1 = cfbPointerPaper.pages.find((p) => p.kind === "sport-front" && p.section === "CFB" && p.focus === "front");
+  assert(
+    cfb1?.kind === "sport-front" && cfb1.articles[0]?.card.id === "wire-cfb-uga",
+    `CFB1 opens on the next-best wrap, not the A1 Mizzou reprint (got ${cfb1 && cfb1.kind === "sport-front" ? cfb1.articles[0]?.card.id : "no CFB front"})`,
+  );
+}
 
 const satCfb = card({
   id: "wire-cfb-miz",
@@ -1474,9 +1791,17 @@ const sundayNflPaper = buildEdition({
 const sundayNflInside = sundayNflPaper.pages.filter((p) => p.kind === "sport-inside" && p.section === "NFL");
 assert(sundayNflInside.length > 3, "NFL inside pages grow with Sunday's slate instead of stopping at six wraps");
 const sundayNflRecaps = sundayNflPaper.pages.find((p) => p.kind === "sport-front" && p.section === "NFL" && p.focus === "recaps");
+const sundayNflFront = sundayNflPaper.pages.find((p) => p.kind === "sport-front" && p.section === "NFL" && p.focus === "front");
+const sundayNflListed = new Set([
+  ...(sundayNflFront?.kind === "sport-front" ? sundayNflFront.articles.map((a) => a.card.id) : []),
+  ...(sundayNflRecaps?.kind === "sport-front" ? sundayNflRecaps.articles.map((a) => a.card.id) : []),
+]);
+assert(sundayNflListed.size >= 14, "Sunday's finals fill the NFL front and recaps without dropping games");
 assert(
-  sundayNflRecaps?.kind === "sport-front" && sundayNflRecaps.articles.length >= 14,
-  "the recaps desk lists every in-window NFL final",
+  !sundayNflRecaps ||
+    (sundayNflFront?.kind === "sport-front" &&
+      sundayNflRecaps.articles.every((a) => !sundayNflFront.articles.some((f) => f.card.id === a.card.id))),
+  "recaps do not reprint the front's wraps",
 );
 
 const favoriteWrap = card({
@@ -1545,11 +1870,11 @@ const recapsPage = recapsFirst.pages.find((p) => p.kind === "sport-front" && p.s
 const firstNfl = recapsFirst.pages.find((p) => p.kind === "sport-front" && p.section === "NFL");
 assert(firstNfl?.kind === "sport-front" && firstNfl.focus === "front", "morning sport sections open on a section front");
 assert(
-  firstNfl?.kind === "sport-front" && firstNfl.articles.every((a) => a.card.id !== "wire-nfl-kc-lead"),
-  "the favorite-team recap stays in Section A and does not reprint on the NFL front",
+  firstNfl?.kind === "sport-front" && firstNfl.articles[0]?.card.id === "wire-nfl-kc-lead",
+  "the favorite-team recap leads the NFL front",
 );
 assert(
-  recapsPage?.kind === "sport-front" && recapsPage.articles.every((a) => a.card.id !== "wire-nfl-kc-lead"),
+  !recapsPage || (recapsPage.kind === "sport-front" && recapsPage.articles.every((a) => a.card.id !== "wire-nfl-kc-lead")),
   "the favorite-team recap does not reprint on the NFL recaps desk",
 );
 assert(
@@ -1557,12 +1882,17 @@ assert(
   "the Chiefs recap still runs in Section A",
 );
 assert(
-  firstNfl?.kind === "sport-front" && firstNfl.articles[0]?.card.id === "wire-nfl-ind-lead",
-  "a league wrap leads the NFL front once the favorite recap is in A",
+  firstNfl?.kind === "sport-front" && firstNfl.articles.length <= 6,
+  "the section front holds up to six stories so a short CFB1 can fill to ~1480",
 );
 assert(
-  recapsPage?.kind === "sport-front" && recapsPage.articles.some((a) => a.card.id === "wire-nfl-ind-lead"),
-  "the rest of Sunday's wraps still run",
+  recapsFirst.pages.some(
+    (p) =>
+      p.kind === "sport-front" &&
+      p.section === "NFL" &&
+      p.articles.some((a) => a.card.id === "wire-nfl-ind-lead"),
+  ),
+  "Sunday's other wrap still sits on the NFL front or is consumed into recaps",
 );
 assert(
   !JSON.stringify(recapsFirst.pages.filter((p) => p.section === "NFL")).includes("league-highlights"),
@@ -1570,8 +1900,8 @@ assert(
 );
 const newsPage = recapsFirst.pages.find((p) => p.kind === "sport-front" && p.section === "NFL" && p.focus === "news");
 assert(
-  newsPage?.kind === "sport-front" && newsPage.articles.length <= 8 && newsPage.articles.length >= 6,
-  `news is capped ~6–8, got ${newsPage && newsPage.kind === "sport-front" ? newsPage.articles.length : 0}`,
+  newsPage?.kind === "sport-front" && newsPage.articles.length <= 8 && newsPage.articles.length >= 1,
+  `leftover news after the front is capped at 8, got ${newsPage && newsPage.kind === "sport-front" ? newsPage.articles.length : 0}`,
 );
 
 assert(sourceStoryId(card({ id: "news-4012345", headline: "x" })) === "4012345", "news- prefix is the ESPN id");
@@ -1665,6 +1995,19 @@ assert(
   `Coming Up is chronological, date-only last that day: ${coming.map((g) => g.id).join(",")}`,
 );
 assert(comingUpHasClock("Mon, Oct 5, 6:00 PM") && !comingUpHasClock("Tue, Nov 3"), "clock vs date-only");
+const comingOpp = sortComingUp(
+  [
+    { id: "oct10", when: "Sat, Oct 10, 11:00 AM", startIso: "2026-10-10T16:00:00Z" },
+    { id: "nov3", when: "Tue, Nov 3", startIso: "2026-11-03T05:00:00Z" },
+    { id: "ark", when: "@ ARK Sat Oct 31", startIso: null },
+    { id: "oct8", when: "Thu, Oct 8", startIso: "2026-10-08T16:00:00Z" },
+  ],
+  Date.parse("2026-10-05T12:00:00-05:00"),
+);
+assert(
+  comingOpp.map((g) => g.id).join(",") === "oct8,oct10,ark,nov3",
+  `Coming Up strips @ ARK and sorts: ${comingOpp.map((g) => g.id).join(",")}`,
+);
 
 const oct = "2026-10-05";
 assert(sportInSeason("soccer/eng.1", oct) && sportInSeason("soccer/eng.2", oct), "October is soccer season");
@@ -1899,9 +2242,8 @@ const mondayFocus = mondayCfb.pages
   .filter((p) => p.kind === "sport-front" && p.section === "CFB")
   .map((p) => (p.kind === "sport-front" ? p.focus : ""));
 assert(mondayFocus[0] === "front", "Monday CFB still opens on the section front");
-assert(mondayFocus.includes("recaps"), "wraps still print");
+assert(!mondayFocus.includes("recaps"), "an empty wraps desk does not print");
 assert(mondayFocus.includes("coaches"), "Favorite Coaches prints on Monday");
-assert(mondayFocus.indexOf("recaps") < mondayFocus.indexOf("coaches"), "Favorite Coaches follows the wraps");
 assert(mondayFocus.indexOf("coaches") < mondayFocus.indexOf("schedule"), "coaches print before the schedule");
 assert(mondayFocus.indexOf("coaches") < mondayFocus.indexOf("teams"), "coaches print before standings");
 
@@ -2030,5 +2372,32 @@ const eveningFiled = fileEditionStories({
 });
 assert(eveningFiled.some((c) => c.id === "wire-nfl-kc-vegas"), "Monday evening still files Sunday's Chiefs final");
 assert(eveningFiled.some((c) => c.id === "wire-nfl-dal-hou"), "Monday evening still files Sunday's Cowboys final");
+
+const cfbPaged = paginateEditionDesks(
+  buildEdition({
+    stories: [
+      card({
+        id: "wire-cfb-miz",
+        headline: "Mizzou 45, South Carolina 17",
+        favoriteKey: "cfb-mizzou",
+        followed: true,
+        teamName: "Missouri",
+        sportLabel: "College Football",
+        leaguePath: "football/college-football",
+        when: "2026-10-04T23:00:00Z",
+        body: "Missouri rolled in Columbia. ".repeat(20),
+      }),
+    ],
+    clubs: [mizzouCfb],
+    edition: "2026-10-05-evening",
+  }),
+  { "football/college-football": Array.from({ length: 12 }, () => ({ length: 14 })) },
+);
+const cfbTeams = cfbPaged.pages.filter((p) => p.kind === "sport-front" && p.section === "CFB" && p.focus === "teams");
+assert(cfbTeams.length >= 4, "twelve CFB tables become four standings folios");
+assert(
+  cfbTeams.every((p) => p.kind === "sport-front" && (p.standSlice?.count ?? 0) <= 3),
+  "each CFB standings folio holds at most three tables",
+);
 
 console.log("newspaper-sections ok");

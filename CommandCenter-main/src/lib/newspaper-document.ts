@@ -5,6 +5,8 @@
 export const REVEAL_CAP_MS = 7_000;
 export const COMPANION_WAIT_MS = 3_000;
 export const ISSUE_WAIT_MS = 10_000;
+/** Filed shells carry hundreds of stories; give the first read time to land. */
+export const SHELL_WAIT_MS = 25_000;
 /** While the Times is visible, look for a newly ready press. */
 export const ISSUE_POLL_MS = 120_000;
 export const ATF_PAGES = 2;

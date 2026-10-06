@@ -2,6 +2,7 @@
  * The recap every Times game wrap sets: banner, line, chips, photo, box.
  * Full for favorites and marquee games; compact for the rest of the desk.
  */
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { EspnAgate, Face, Leaders, Linescore, MlbAgate, ScoreMast } from "@/components/newspaper/BoxScore";
 import { ESPN_BOX_PATHS, fetchEspnBox } from "@/lib/newspaper-agate";
@@ -99,11 +100,25 @@ export function RecapPhoto({
   width?: number | null;
   caption?: string | null;
 }) {
-  const kind = recapPhotoKind(url, width);
+  const [measured, setMeasured] = useState<number | null>(null);
+  const native = typeof width === "number" && width > 0 ? width : measured;
+  const kind = recapPhotoKind(url, native);
   if (kind === "none" || !url) return null;
   return (
-    <figure className={cn("tt-recap-photo", kind)}>
-      <img src={url} alt="" loading="lazy" decoding="async" />
+    <figure
+      className={cn("tt-recap-photo", kind)}
+      style={native && kind === "fit" ? { maxWidth: native } : undefined}
+    >
+      <img
+        src={url}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        onLoad={(e) => {
+          const w = e.currentTarget.naturalWidth;
+          if (w > 0) setMeasured((prev) => (prev && prev <= w ? prev : w));
+        }}
+      />
       {caption ? <figcaption>{caption}</figcaption> : null}
     </figure>
   );
