@@ -107,7 +107,7 @@ export function planRecapsScorePages(
 ): { offset: number; count: number; wraps: boolean }[] {
   const n = Math.max(0, gameCount);
   const cols = opts?.mlb ? 2 : 3;
-  const rowPx = opts?.mlb ? 160 : 118;
+  const rowPx = opts?.mlb ? 280 : 220;
   const wrapH = opts?.wraps === false ? 0 : RECAPS_WRAPS_PX;
   const chrome = PAGE_CHROME_PX + RECAPS_HERO_PX;
   const firstBudget = PAGE_TARGET_H - chrome - wrapH;

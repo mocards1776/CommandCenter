@@ -38,7 +38,7 @@ import {
   storyReadKeys,
 } from "@/lib/newspaper";
 import { fetchLeagueArticles, fetchTeamArticles } from "@/lib/newspaper-news";
-import { groupByDay, planSchedulePages } from "@/lib/newspaper-page";
+import { groupByDay, planRecapsScorePages, planSchedulePages } from "@/lib/newspaper-page";
 import {
   applyTableStandings,
   boardRecapCards,
@@ -2998,7 +2998,10 @@ function ScoresDesk({
   }
   const recapsOffset = page.recapsOffset ?? 0;
   const recapsWraps = page.recapsWraps !== false && recapsOffset === 0;
-  const recapsCount = page.recapsCount;
+  const plannedLead = planRecapsScorePages(Math.max(games.length, wrapCards.length), {
+    mlb: page.path === "baseball/mlb",
+  })[0];
+  const recapsCount = page.recapsCount ?? plannedLead?.count;
   const sliceGames = (list: BoxGame[]) => {
     if (recapsCount == null && !recapsOffset) return list;
     const start = recapsOffset;

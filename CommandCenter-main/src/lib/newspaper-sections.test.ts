@@ -2305,8 +2305,8 @@ assert(
   "insertMissingRecaps never opens a one-card leftover folio",
 );
 assert(
-  patched.pages.filter((p) => p.kind === "sport-front" && p.section === "NFL" && p.focus === "recaps").length === 1,
-  "15 NFL finals stay on one recaps folio at the 1480 target",
+  patched.pages.filter((p) => p.kind === "sport-front" && p.section === "NFL" && p.focus === "recaps").length >= 2,
+  "15 NFL finals overflow the recaps desk onto another folio",
 );
 
 const hugeBoard = Array.from({ length: 50 }, (_, i) =>

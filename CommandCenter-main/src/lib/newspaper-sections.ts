@@ -1475,12 +1475,13 @@ function favoritePages(
   // A story page needs a story. Thin items ride along as briefs.
   const full = restPool.filter(hasStoryCopy);
   const thin = restPool.filter((c) => !hasStoryCopy(c));
-  let cursor = 0;
   let thinCursor = 0;
-  while (cursor < full.length) {
-    const primary = full[cursor]!;
-    const secondary = full[cursor + 1];
-    const last = cursor + 2 >= full.length;
+  const newsPacks = packSportNewsPages(full);
+  for (let i = 0; i < newsPacks.length; i += 1) {
+    const slice = newsPacks[i]!;
+    const primary = slice[0]!;
+    const secondary = slice[1];
+    const last = i === newsPacks.length - 1;
     const take = last ? thin.length - thinCursor : FRONT_BRIEFS;
     const briefs = thin.slice(thinCursor, thinCursor + take);
     thinCursor += briefs.length;
@@ -1499,7 +1500,6 @@ function favoritePages(
       secondary,
       briefs,
     });
-    cursor += 2;
     n += 1;
   }
 
