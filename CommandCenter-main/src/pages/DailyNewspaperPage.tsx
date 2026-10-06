@@ -2312,7 +2312,12 @@ function finalsSplit(games: BoxGame[], edition: string): { yesterday: BoxGame[];
 }
 
 function stripFor(path: string, board: SectionBoard | null, edition: string): { title: string; games: BoxGame[] }[] {
-  return sportScoreBands(path, board, edition);
+  const bands = sportScoreBands(path, board, edition);
+  if (bands.length) return bands;
+  if (!board) return [];
+  if (board.slate.length) return [{ title: "Upcoming fixtures", games: board.slate }];
+  if (board.prior?.length) return [{ title: "Recent results", games: [...board.prior].reverse() }];
+  return [];
 }
 
 function deskFolio(page: SportFrontPage, focus: SportFrontPage["focus"], fallback: string): string {
@@ -2324,12 +2329,14 @@ function SportSectionFront({
   page,
   board,
   leagueClubs,
+  standings,
   edition,
   onTurn,
 }: {
   page: SportFrontPage;
   board: SectionBoard | null;
   leagueClubs: LeagueClub[];
+  standings: StandGroup[];
   edition: string;
   onTurn: (folio: string) => void;
 }) {
@@ -2355,6 +2362,9 @@ function SportSectionFront({
   const crestFor = (card: GameWrapCard) =>
     leagueClubs.find((c) => c.short && card.teamName?.toLowerCase().includes(c.short.toLowerCase()))?.logo ?? null;
   const railGames = strips.flatMap((s) => s.games).slice(0, 16);
+  const favIds = new Set(leagueClubs.filter((c) => c.favorite).map((c) => c.id));
+  const mine = (row: { id: string; name: string }) => favIds.has(row.id);
+  const tables = rankStandings(standings).slice(0, 2);
 
   return (
     <div className="tt-section-front">
@@ -2469,7 +2479,44 @@ function SportSectionFront({
           </div>
         </div>
       ) : (
-        <p className="wsj-empty">The league wire is quiet. Scores, tables and the slate follow.</p>
+        <div className={cn("tt-front-grid", (railGames.length || tables.length) && "with-side")}>
+          <div className="tt-front-lead">
+            {tables[0] ? (
+              <StandingsTable group={tables[0]} mine={mine} />
+            ) : (
+              <p className="wsj-empty">The league wire is quiet. Scores, tables and the slate follow.</p>
+            )}
+          </div>
+          {strips.length || tables.length > 1 ? (
+            <div className="tt-front-side">
+              {strips.length ? (
+                <div className="tt-front-rails">
+                  {strips.map((strip) => (
+                    <section className="tt-front-rail" aria-label={strip.title} key={strip.title}>
+                      <h3 className="wsj-band-title">
+                        {strip.title}
+                        <button type="button" className="tt-band-link" onClick={() => onTurn(recapsFolio)}>
+                          Recaps, page {recapsFolio} →
+                        </button>
+                      </h3>
+                      <ScoreStrip
+                        games={strip.games}
+                        onOpen={(g) => {
+                          const card = boxStoryCard(g);
+                          if (card) open({ card, game: g });
+                          else onTurn(recapsFolio);
+                        }}
+                      />
+                    </section>
+                  ))}
+                </div>
+              ) : null}
+              {tables.slice(1).map((group) => (
+                <StandingsTable key={group.name} group={group} mine={mine} />
+              ))}
+            </div>
+          ) : null}
+        </div>
       )}
       {more.length ? (
         <BriefGrid
@@ -3373,7 +3420,7 @@ function SportFront({
       <div className="wsj-sport-solo">
         {page.focus === "news" && page.offseason ? <OpenerBand page={page} /> : null}
         {page.focus === "front" ? (
-          <SportSectionFront page={page} board={board} leagueClubs={leagueClubs} edition={edition} onTurn={onTurn} />
+          <SportSectionFront page={page} board={board} standings={standings} leagueClubs={leagueClubs} edition={edition} onTurn={onTurn} />
         ) : page.focus === "news" ? (
           <SportNewsDesk page={page} board={board} leagueClubs={leagueClubs} edition={edition} onTurn={onTurn} />
         ) : page.focus === "opener" ? (

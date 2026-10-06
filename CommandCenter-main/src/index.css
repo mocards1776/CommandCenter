@@ -2564,6 +2564,7 @@ li.counting .tt-count.card {
 .wsj-front {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   gap: 18px;
   flex: 1;
   min-height: 0;
