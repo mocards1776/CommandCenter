@@ -4987,27 +4987,15 @@ function FolioSlot({
 }) {
   const current = useContext(PagerIndexContext);
   // Section A/B/C and each sport front stay painted so races, jumps, and
-  // section landings aren't empty lazy shells. Remaining desks fill in idle.
+  // section landings aren't empty lazy shells. Other desks mount when nearby.
   const essential = /^[ABC]\d+$/.test(folio) || /^(MLB|NFL|CFB|NHL|EPL|EFL|NBA|CBB)1$/.test(folio);
   const near = essential || index < 3 || Math.abs(index - current) <= NEAR_PAGES;
   const [shown, setShown] = useState(essential || index < 3);
   useEffect(() => {
-    if (near) {
-      setShown(true);
-      return;
-    }
-    if (shown) return;
-    const hasIdle = typeof window.requestIdleCallback === "function";
-    const id = hasIdle
-      ? window.requestIdleCallback(() => setShown(true), { timeout: 2_500 + index * 40 })
-      : window.setTimeout(() => setShown(true), 160 + index * 40);
-    return () => {
-      if (hasIdle) window.cancelIdleCallback(id);
-      else window.clearTimeout(id);
-    };
-  }, [near, shown, index]);
+    if (near) setShown(true);
+  }, [near]);
   return (
-    <section className="wsj-page" aria-label={`Page ${folio}`} {...(near || shown ? { "data-near": "" } : {})}>
+    <section className="wsj-page" aria-label={`Page ${folio}`} {...(near ? { "data-near": "" } : {})}>
       <div className="wsj-fit">
         <FittedSheet>{shown ? <FolioBody render={render} /> : null}</FittedSheet>
       </div>
