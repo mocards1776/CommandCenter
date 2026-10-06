@@ -3113,17 +3113,18 @@ function ScoresDesk({
       {favFinals.length ? (
         <ul className="tt-fav-jumps">
           {favFinals.map((g) => {
-            const folio = favoriteRecapFolio(g, favoriteFolios, page.clubs) ?? "A";
+            const folio = favoriteRecapFolio(g, favoriteFolios, page.clubs);
+            const dest = folio && folio !== "A" ? folio : "A";
             return (
               <li key={g.id}>
                 <button
                   type="button"
-                  onClick={() => (onTurn && folio !== "A" ? onTurn(folio) : undefined)}
+                  onClick={() => (onTurn && folio ? onTurn(folio) : undefined)}
                 >
                   <strong>
                     {g.away.abbrev} {g.away.score ?? ""} · {g.home.abbrev} {g.home.score ?? ""}
                   </strong>
-                  <em>Full recap, page {folio}</em>
+                  <em>{folio ? `Full recap, page ${folio}` : "Full recap, Section A"}</em>
                 </button>
               </li>
             );
