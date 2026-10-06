@@ -1,6 +1,6 @@
 import { dropLastSentence } from "./newspaper-copy.ts";
 
-const COPY_SEL = ".wsj-prose p, .wsj-dek, .wsj-brief-dek, .tt-under-story p";
+const COPY_SEL = ".wsj-prose p, .wsj-dek, .wsj-brief-dek, .tt-under-story p, .tt-wrap-copy";
 
 /**
  * Soft pack target: compose to one newspaper page. The sheet may grow to
