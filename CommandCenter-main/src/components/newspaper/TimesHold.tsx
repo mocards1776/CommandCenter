@@ -14,7 +14,7 @@ export function TimesHold({
   const datelineDay = day ?? press.day;
   const { volume, issue } = editionIssue(datelineDay);
   return (
-    <section className="wsj-page" aria-label={line}>
+    <section className="tt-hold-page" aria-label="Setting the edition">
       <div className="wsj-fit">
         <div className="wsj-sheet tt-cover">
           <p className="tt-cover-kicker">{kicker}</p>

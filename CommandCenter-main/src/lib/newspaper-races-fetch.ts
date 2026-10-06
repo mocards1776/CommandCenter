@@ -8,7 +8,14 @@ const COLUMNS = "brief_date, race, headline, bullets, spend, links, notes, sourc
  * days. Missing table, failed read, or an empty window: null, and the page
  * stays out of Section A.
  */
+function peekProofRaces(editionDate: string): RaceBriefsDesk | null {
+  const raw = (globalThis as { __TT_PROOF_RACES__?: unknown }).__TT_PROOF_RACES__;
+  return raw == null ? null : asRaceBriefsDesk(raw, editionDate);
+}
+
 export async function fetchRaceBriefs(editionDate: string): Promise<RaceBriefsDesk | null> {
+  const planted = peekProofRaces(editionDate);
+  if (planted) return planted;
   try {
     const { data, error } = await supabase
       .from("times_race_briefs")

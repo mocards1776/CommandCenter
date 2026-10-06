@@ -638,8 +638,8 @@ const offPaper = buildEdition({ stories: [chiefsNote], clubs: [chiefs], edition,
 const offDesks = offPaper.pages.filter((p) => p.kind === "sport-front" && p.path === "football/nfl");
 assert(
   offDesks.map((p) => (p.kind === "sport-front" ? `${p.folio}:${p.focus}` : "")).join(",") ===
-    "NFL1:front,NFL2:opener,NFL3:news,NFL4:teams",
-  "an offseason section runs a front, the countdown, news and last season's tables",
+    "NFL1:front,NFL2:opener,NFL3:teams",
+  "an offseason section runs a front, the countdown and last season's tables — no empty news folio",
 );
 assert(
   offDesks.every((p) => p.kind === "sport-front" && p.offseason),
@@ -649,6 +649,30 @@ const offTurn = offDesks[0]?.kind === "sport-front" ? offDesks[0].turn : null;
 assert(offTurn?.folio === "NFL2" && offTurn.focus === "opener", "the front turns to the countdown");
 const offTail = offDesks.at(-1);
 assert(offTail?.kind === "sport-front" && offTail.turn === null, "the last desk has no turn line");
+const offWrapOnly = buildEdition({
+  stories: [
+    card({
+      id: "wrap-off-only",
+      headline: "Chiefs close the books",
+      favoriteKey: "nfl-kc",
+      followed: true,
+      sportLabel: "NFL",
+      leaguePath: "football/nfl",
+      status: "Final",
+      scoreLine: "KC 30 · LV 27",
+      gameId: "off-only",
+      when: "2026-09-29T20:15:00Z",
+      body: "Kansas City finished the season in Las Vegas. ".repeat(8),
+    }),
+  ],
+  clubs: [chiefs],
+  edition,
+  offseason: ["football/nfl"],
+});
+assert(
+  !offWrapOnly.pages.some((p) => p.kind === "sport-front" && p.section === "NFL" && p.focus === "news"),
+  "offseason with no leftover notes does not print an empty news folio",
+);
 
 const bluesPreview = card({
   id: "news-blues-preview",

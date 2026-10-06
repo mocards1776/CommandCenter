@@ -1452,9 +1452,12 @@ mark.rss-hl {
   flex-direction: column;
   background: #151b28;
 }
-.tt-hold .wsj-page {
+.tt-hold-page {
   flex: 1;
   min-height: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
 }
 
 .tt-editions {
