@@ -452,6 +452,11 @@ assert.match(svg, />2-2</);
 assert.match(svg, />3-1</);
 assert.match(svg, /Thu, Oct 1, 7:15 PM CT/);
 assert.match(svg, /PIT -2\.5 did not cover/);
+{
+  const stamped = renderFinalSvg({ ...card, sentAt: "2026-10-06T06:20:00Z", daySlot: "Game 1 of 1" });
+  assert.match(stamped, /Tue, Oct 6, 1:20 AM CT  ·  Game 1 of 1/);
+  assert.match(stamped, /Thu, Oct 1, 7:15 PM CT/);
+}
 assert.match(svg, /opacity="0\.38"/);
 assert.doesNotMatch(svg, /Finals and Stats/);
 assert.doesNotMatch(svg, /Last play|yard line|Field map|chains/i);
@@ -993,9 +998,9 @@ assert.match(soxSvg, />SAVE</);
 assert.match(soxSvg, /S\. Burke/);
 assert.match(soxSvg, /E\. Sabrowski/);
 assert.match(soxSvg, /G\. Taylor/);
-assert.match(soxSvg, /Game 1 of 2/);
-assert.match(soxSvg, /Tue, Oct 6, 1:20 AM CT/);
-assert.match(soxSvg, /Mon, Oct 5, 4:00 PM CT/);
+assert.match(soxSvg, /Tue, Oct 6, 1:20 AM CT  ·  Game 1 of 2/);
+assert.match(soxSvg, /Progressive Field  ·  Mon, Oct 5, 4:00 PM CT/);
+assert.match(soxSvg, /Monday, Oct 5 at 4:00 PM/);
 {
   const wpX = Number(/x="(\d+(?:\.\d+)?)"[^>]*>Win probability</.exec(soxSvg)?.[1] ?? 0);
   const winX = Number(/x="(\d+(?:\.\d+)?)"[^>]*>WIN</.exec(soxSvg)?.[1] ?? 0);
