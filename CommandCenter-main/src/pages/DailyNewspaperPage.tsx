@@ -5933,7 +5933,7 @@ function NewspaperDesk() {
   // filing inside two days). No rows: the page is omitted. Client-only.
   const racesQ = useQuery({
     queryKey: ["tt-race-briefs", scheduleDate],
-    enabled: Boolean(user?.id) && Boolean(scheduleDate) && !racesSample,
+    enabled: Boolean(scheduleDate) && !racesSample,
     queryFn: () => fetchRaceBriefs(scheduleDate!),
     staleTime: 5 * 60_000,
     gcTime: 20 * 60 * 60_000,
