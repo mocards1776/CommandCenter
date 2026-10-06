@@ -35,7 +35,7 @@ import {
   withinEditionHours,
   withoutEditorStamps,
 } from "./newspaper.ts";
-import { cleanStoryCopy, isPeripheralClubStory, killedSource, printHeadline } from "./newspaper-copy.ts";
+import { cleanedBodyLength, cleanStoryCopy, isPeripheralClubStory, killedSource, printHeadline } from "./newspaper-copy.ts";
 import { storySource } from "./newspaper-source.ts";
 import type { GameWrapCard } from "./newspaper-sports";
 import {
@@ -525,11 +525,11 @@ export function isDeskStory(card: GameWrapCard): boolean {
     ) {
       return true;
     }
-    return cleanStoryCopy(card.body).text.length >= 80;
+    return cleanedBodyLength(card) >= 80;
   }
   if (!isFavoriteStory(card)) return false;
   if (card.id.startsWith("news-")) return Boolean(card.headline);
-  if (cleanStoryCopy(card.body).text.length >= 80) return true;
+  if (cleanedBodyLength(card) >= 80) return true;
   if (
     card.status &&
     /final|postponed/i.test(card.status) &&
@@ -545,7 +545,7 @@ export function isDeskStory(card: GameWrapCard): boolean {
 export const STORY_COPY_MIN = 400;
 
 export function hasStoryCopy(card: GameWrapCard): boolean {
-  return cleanStoryCopy(card.body).text.length >= STORY_COPY_MIN;
+  return cleanedBodyLength(card) >= STORY_COPY_MIN;
 }
 
 export function isRecapStory(card: GameWrapCard): boolean {
@@ -628,7 +628,7 @@ export function storyRank(card: GameWrapCard, edition: string): number {
   if (card.id.startsWith("league-")) score += 10;
   if (isAthleticCard(card)) score += 12;
   if (isRecapStory(card)) score += 20;
-  if (cleanStoryCopy(card.body).text.length >= 400) score += 15;
+  if (cleanedBodyLength(card) >= 400) score += 15;
   // ESPN lists the piece it is pushing first. There is no pageview count.
   if (typeof card.listRank === "number") score += Math.max(0, 16 - Math.min(16, card.listRank));
   // Cardinals / Blues / Mizzou lead Section A; Lions, Chiefs, soccer follow.
@@ -650,8 +650,11 @@ export function isHoldoverGame(card: GameWrapCard): boolean {
 }
 
 function ruleOrder(cards: GameWrapCard[], edition: string): GameWrapCard[] {
+  // storyRank runs cleanStoryCopy. Score once per card — a comparator that
+  // re-ranks on every compare was ~n log n HTML passes and blew the edge CPU budget.
+  const score = new Map(cards.map((card) => [card, storyRank(card, edition)]));
   return [...cards].sort((a, b) => {
-    const byRank = storyRank(b, edition) - storyRank(a, edition);
+    const byRank = (score.get(b) ?? 0) - (score.get(a) ?? 0);
     if (byRank) return byRank;
     const byList = (a.listRank ?? 99) - (b.listRank ?? 99);
     if (byList) return byList;
@@ -1123,26 +1126,42 @@ function pickBetterStory(cards: GameWrapCard[]): GameWrapCard {
 }
 
 /** One story per event. The better / fuller copy stays; columns like Hochman stay separate. */
-export function dedupeStories(stories: GameWrapCard[]): GameWrapCard[] {
-  const stamped = attachInferredGameIds(stories);
-  const groups: GameWrapCard[][] = [];
-  for (const card of stamped) {
-    const hits: number[] = [];
-    for (let i = 0; i < groups.length; i += 1) {
-      if (groups[i]!.some((prev) => sameSectionAStory(card, prev))) hits.push(i);
-    }
-    if (!hits.length) {
-      groups.push([card]);
-      continue;
-    }
-    const [first, ...rest] = hits;
-    groups[first!]!.push(card);
-    for (const i of rest.sort((a, b) => b - a)) {
-      groups[first!]!.push(...groups[i]!);
-      groups.splice(i, 1);
-    }
+/** One card into the same groups `dedupeStories` builds. Safe to call across hops. */
+export function dedupePush(groups: GameWrapCard[][], card: GameWrapCard): GameWrapCard[][] {
+  const hits: number[] = [];
+  for (let i = 0; i < groups.length; i += 1) {
+    if (groups[i]!.some((prev) => sameSectionAStory(card, prev))) hits.push(i);
   }
+  if (!hits.length) {
+    groups.push([card]);
+    return groups;
+  }
+  const [first, ...rest] = hits;
+  groups[first!]!.push(card);
+  for (const i of rest.sort((a, b) => b - a)) {
+    groups[first!]!.push(...groups[i]!);
+    groups.splice(i, 1);
+  }
+  return groups;
+}
+
+export function finishDedupe(groups: GameWrapCard[][]): GameWrapCard[] {
   return groups.map(pickBetterStory);
+}
+
+/** Desk-eligible stories, not yet collapsed — the scheduled press dedupes these a slice at a time. */
+export function deskCopyQueue(stories: GameWrapCard[], edition: string): GameWrapCard[] {
+  const inWindow = stories.filter(
+    (card) =>
+      isDeskStory(card) && !isNewsMuted(card) && !staleNamedPackage(card, edition) && inEditionWindow(card, edition),
+  );
+  return attachInferredGameIds(inWindow);
+}
+
+export function dedupeStories(stories: GameWrapCard[]): GameWrapCard[] {
+  const groups: GameWrapCard[][] = [];
+  for (const card of attachInferredGameIds(stories)) dedupePush(groups, card);
+  return finishDedupe(groups);
 }
 
 function isStalePreview(card: GameWrapCard, edition: string): boolean {
@@ -1702,17 +1721,25 @@ export function deskCopy(stories: GameWrapCard[], edition: string): GameWrapCard
  * `limit`; `games` is the night's wraps, shown only so it can weigh news
  * against results. Wraps never count against the cap.
  */
+export function editorCandidatesFromDesk(
+  deskStories: GameWrapCard[],
+  edition: string,
+  limit = 24,
+): { news: GameWrapCard[]; games: GameWrapCard[] } {
+  const ranked = ruleOrder(deskStories.map(withoutEditorStamps), edition);
+  return {
+    news: ranked.filter((card) => !isGameWrap(card)).slice(0, limit),
+    games: ranked.filter(isGameWrap),
+  };
+}
+
 export function editorCandidates(
   stories: GameWrapCard[],
   edition: string,
   limit = 24,
   gameLimit = 16,
 ): { news: GameWrapCard[]; games: GameWrapCard[] } {
-  const ranked = ruleOrder(deskCopy(stories, edition).map(withoutEditorStamps), edition);
-  return {
-    news: ranked.filter((card) => !isGameWrap(card)).slice(0, limit),
-    games: ranked.filter(isGameWrap),
-  };
+  return editorCandidatesFromDesk(deskCopy(stories, edition), edition, limit);
 }
 
 export function buildEdition(opts: {

@@ -3,6 +3,7 @@
  */
 import {
   checkpointBag,
+  deadBagKeys,
   DROP_AFTER_BOARD_DESKS,
   DROP_AFTER_FILE_DESKS,
   DROP_AFTER_GATHER,
@@ -27,8 +28,13 @@ const fat = {
 const slim = checkpointBag(fat);
 assert(slim.stage === 14, "keeps the stage");
 assert(!("queries" in slim), "drops already-flushed desks from the bag");
-assert(slim.teamCards && slim.details && slim.wire, "keeps what finalize still reads");
+assert(!slim.details && !slim.wire && !slim.teamCards, "stage 14 drops gather sources already filed");
 assert(JSON.stringify(slim).length < JSON.stringify(fat).length, "checkpoint is smaller than the fat bag");
+
+assert(deadBagKeys(10).includes("wraps"), "file desks stay out of stage 10");
+assert(!deadBagKeys(10).includes("details"), "stage 10 still gathers from details");
+assert(deadBagKeys(11).includes("details") && deadBagKeys(11).includes("news"), "stage 11 has already merged club copy");
+assert(DROP_AFTER_GATHER.includes("snaps"), "snaps leave after they are filed");
 
 const afterFile = dropBagKeys({ ...fat }, DROP_AFTER_FILE_DESKS);
 assert(afterFile.weather === undefined && afterFile.teamCards, "file-desk drop keeps story sources");

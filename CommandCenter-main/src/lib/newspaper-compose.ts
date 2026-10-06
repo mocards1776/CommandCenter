@@ -11,7 +11,7 @@ import { enrichMissouriItems, fetchMissouriDesk, fetchMissouriScout } from "./ne
 import type { MoItem } from "./newspaper-missouri";
 import { fetchOpener, type Opener } from "./newspaper-openers";
 import { attachRelatedGameCopy } from "./newspaper-sport-desk";
-import { cleanStoryCopy, htmlToNewspaperText, isNavSoup, isPeripheralClubStory, isPrintableStoryBody, killedSource, truncateAtSentence } from "./newspaper-copy";
+import { cleanStoryCopy, htmlToNewspaperText, isNavSoup, isPeripheralClubStory, isPrintableStoryBody, killedSource, stampBodyChars, truncateAtSentence } from "./newspaper-copy";
 import { isBoilerplateDek, storySource } from "./newspaper-source";
 import {
   attachFavoriteRecapChrome,
@@ -53,9 +53,9 @@ import { fetchWatchList, WATCH_PAGE_GAMES, type WatchGame } from "./newspaper-wa
 import { fetchYesterdayRecap, type YesterdayRecap } from "./yesterday-recap";
 import { ISSUE_VERSION, type PrintedIssue, type PrintedQuery } from "./newspaper-issue";
 import { clearEditorStamps, editEdition, type EditorRequest } from "./newspaper-editor";
-import { essentialsFromDesks } from "./newspaper-sections";
+import { deskCopyQueue, dedupePush, essentialsFromDesks, finishDedupe } from "./newspaper-sections";
 import { fetchFavoriteCoachDesk, printsFavoriteCoaches } from "./newspaper-favorite-coaches";
-import { checkpointBag, DROP_AFTER_BOARD_DESKS, DROP_AFTER_FILE_DESKS, dropBagKeys } from "./newspaper-press-bag";
+import { checkpointBag, DROP_AFTER_BOARD_DESKS, DROP_AFTER_FILE_DESKS, DROP_AFTER_GATHER, dropBagKeys } from "./newspaper-press-bag";
 
 export { checkpointBag } from "./newspaper-press-bag";
 
@@ -219,11 +219,26 @@ type PressBag = {
   fresh?: GameWrapCard[];
   enrichCursor?: number;
   coaches?: unknown;
+  /** Wire+club+news merged after wrap enrich, so those desks can leave the bag. */
+  clubCopy?: GameWrapCard[];
+  wireGames?: NewspaperWire["games"];
+  filed?: GameWrapCard[];
+  storyCursor?: number;
+  cleanCursor?: number;
+  dedupeQueue?: string[];
+  dedupeGroups?: string[][];
+  dedupeCursor?: number;
+  deskCopy?: GameWrapCard[];
 };
 
 export type PressStep =
-  | { done: false; bag: PressBag; flush: PrintedQuery[] }
-  | { done: true; issue: PrintedIssue; flush: PrintedQuery[] };
+  | { done: false; bag: PressBag; flush: PrintedQuery[]; stories?: GameWrapCard[] }
+  | { done: true; issue: PrintedIssue; flush: PrintedQuery[]; stories?: GameWrapCard[] };
+
+/** Wrap-body enrich: live edge spent 2.0s CPU on 4 at once. Stay well under 2s. */
+const WRAP_ENRICH_PER_HOP = 2;
+/** Stories appended via SQL jsonb || so no hop stringifies the whole edition. */
+const STORY_FLUSH_PER_HOP = 40;
 
 /**
  * One slice of the press. The scheduled worker can only hold a little at a time,
@@ -428,7 +443,7 @@ export async function pressStep(
     const cards = state.teamCards ?? [];
     const cursor = state.enrichCursor ?? 0;
     if (cursor < cards.length) {
-      const slice = cards.slice(cursor, cursor + 4);
+      const slice = cards.slice(cursor, cursor + WRAP_ENRICH_PER_HOP);
       const filled = await settle(enrichWrapBodies(slice, favs), slice);
       const next = cards.slice();
       for (let i = 0; i < filled.length; i++) next[cursor + i] = filled[i]!;
@@ -437,6 +452,20 @@ export async function pressStep(
       return pause();
     }
     delete state.enrichCursor;
+    const teamCards = state.teamCards ?? [];
+    state.clubCopy = mergeStoryCards(
+      mergeStoryCards(
+        wireStoryCards({
+          games: state.wire?.games ?? [],
+          favs,
+          details: state.details ?? [],
+        }),
+        teamCards,
+      ),
+      state.news ?? [],
+    );
+    state.wireGames = state.wire?.games ?? [];
+    dropBagKeys(state, ["details", "wire", "news"]);
     state.stage = 11;
     return pause();
   }
@@ -451,6 +480,11 @@ export async function pressStep(
       state.leagueCursor = cursor + 1;
       return pause();
     }
+    const withLeague = mergeStoryCards(state.clubCopy ?? [], state.leagueNews ?? []);
+    const merged = mergeStoryCards(withLeague, state.athletic ?? []).filter((card) => !isNewsMuted(card));
+    const tagged = tagFavoriteStories(attachRelatedGameCopy(merged), favs);
+    state.raw = attachFavoriteRecapChrome(tagged, state.wireGames ?? []);
+    dropBagKeys(state, ["clubCopy", "wireGames", "athletic", "details", "wire", "news"]);
     state.stage = 12;
     return pause();
   }
@@ -546,21 +580,23 @@ export async function pressStep(
 
   if (state.stage === 14) {
     if (!state.raw || !state.extractUrls) {
-      const teamCards = state.teamCards ?? [];
-      state.raw = gatherStories({
-        wire: state.wire ?? { games: [], postseasonLeagues: [] },
-        favs,
-        details: state.details ?? [],
-        enriched: teamCards,
-        teamCards,
-        news: state.news ?? [],
-        leagueNews: state.leagueNews ?? [],
-        athletic: state.athletic ?? [],
-      });
+      if (!state.raw) {
+        const teamCards = state.teamCards ?? [];
+        state.raw = gatherStories({
+          wire: state.wire ?? { games: state.wireGames ?? [], postseasonLeagues: [] },
+          favs,
+          details: state.details ?? [],
+          enriched: teamCards,
+          teamCards,
+          news: state.news ?? [],
+          leagueNews: state.leagueNews ?? [],
+          athletic: state.athletic ?? [],
+        });
+      }
       state.extractUrls = urlsToExtract(state.raw);
       state.extracts ??= {};
       state.extractCursor ??= 0;
-      dropBagKeys(state, ["details", "wire", "news", "teamCards", "leagueNews", "athletic"]);
+      dropBagKeys(state, DROP_AFTER_GATHER);
     }
     const extractUrls = state.extractUrls ?? [];
     const extracts = state.extracts ?? {};
@@ -588,38 +624,119 @@ export async function pressStep(
     return pause();
   }
 
-  const extras = essentialsFromDesks(null, state.missouri);
-  const filed = fileEditionStories({
-    fresh: state.fresh ?? extras,
-    carried: opts.carried ?? [],
-    readKeys: new Set(opts.readKeys ?? []),
-    pressId,
-  });
-  const filedByLeague = new Map<string, { games: number; wraps: number }>();
-  for (const card of filed) {
-    if (!/^(?:wire|recap|recent)-/.test(card.id)) continue;
-    const league = card.sportLabel || card.leaguePath || "other";
-    const row = filedByLeague.get(league) ?? { games: 0, wraps: 0 };
-    row.games += 1;
-    if ((card.body?.trim().length ?? 0) >= 60 || (card.scoreLine && /\d/.test(card.scoreLine))) row.wraps += 1;
-    filedByLeague.set(league, row);
+  if (state.stage === 15 && !state.filed) {
+    const extras = essentialsFromDesks(null, state.missouri);
+    const filed = fileEditionStories({
+      fresh: state.fresh ?? extras,
+      carried: opts.carried ?? [],
+      readKeys: new Set(opts.readKeys ?? []),
+      pressId,
+    });
+    const filedByLeague = new Map<string, { games: number; wraps: number }>();
+    for (const card of filed) {
+      if (!/^(?:wire|recap|recent)-/.test(card.id)) continue;
+      const league = card.sportLabel || card.leaguePath || "other";
+      const row = filedByLeague.get(league) ?? { games: 0, wraps: 0 };
+      row.games += 1;
+      if ((card.body?.trim().length ?? 0) >= 60 || (card.scoreLine && /\d/.test(card.scoreLine))) row.wraps += 1;
+      filedByLeague.set(league, row);
+    }
+    const filedLine = [...filedByLeague.entries()]
+      .map(([league, row]) => `${league} games=${row.games} wraps=${row.wraps}`)
+      .join(" · ");
+    console.info(`[times-wire] stories ${pressId}${filedLine ? ` ${filedLine}` : " (no wraps)"}`);
+    const extraIds = new Set(filed.map((card) => card.id));
+    const keptExtras = extras.filter((card) => !extraIds.has(card.id));
+    state.filed = clearEditorStamps([...filed, ...keptExtras]);
+    dropBagKeys(state, ["fresh", "missouri"]);
+    state.cleanCursor = 0;
+    return pause();
   }
-  const filedLine = [...filedByLeague.entries()]
-    .map(([league, row]) => `${league} games=${row.games} wraps=${row.wraps}`)
-    .join(" · ");
-  console.info(`[times-wire] stories ${pressId}${filedLine ? ` ${filedLine}` : " (no wraps)"}`);
-  const extraIds = new Set(filed.map((card) => card.id));
-  const keptExtras = extras.filter((card) => !extraIds.has(card.id));
-  let stories = clearEditorStamps([...filed, ...keptExtras]);
-  if (opts.editor) {
-    const edited = await editEdition(stories, pressId, opts.editor);
-    stories = edited.stories;
-    if (edited.desk) put([pressId, "tt-editor", day], edited.desk);
+
+  if (state.stage === 15 && state.filed) {
+    const filed = state.filed;
+    const cursor = state.cleanCursor ?? 0;
+    if (cursor < filed.length) {
+      const slice = filed.slice(cursor, cursor + STORY_FLUSH_PER_HOP);
+      for (const card of slice) stampBodyChars(card);
+      state.cleanCursor = cursor + slice.length;
+      return pause();
+    }
+    delete state.cleanCursor;
+    state.stage = 16;
+    return pause();
   }
+
+  if (state.stage === 16) {
+    const filed = state.filed ?? [];
+    const byId = new Map(filed.map((card) => [card.id, card]));
+    if (!state.dedupeQueue) {
+      state.dedupeQueue = deskCopyQueue(filed, pressId).map((card) => card.id);
+      state.dedupeGroups = [];
+      state.dedupeCursor = 0;
+      return pause();
+    }
+    const queue = state.dedupeQueue;
+    const cursor = state.dedupeCursor ?? 0;
+    const groups = (state.dedupeGroups ?? []).map((ids) => ids.map((id) => byId.get(id)).filter(Boolean) as GameWrapCard[]);
+    if (cursor < queue.length) {
+      const slice = queue.slice(cursor, cursor + STORY_FLUSH_PER_HOP);
+      for (const id of slice) {
+        const card = byId.get(id);
+        if (card) dedupePush(groups, card);
+      }
+      state.dedupeGroups = groups.map((group) => group.map((card) => card.id));
+      state.dedupeCursor = cursor + slice.length;
+      return pause();
+    }
+    state.deskCopy = finishDedupe(groups);
+    dropBagKeys(state, ["dedupeQueue", "dedupeGroups", "dedupeCursor"]);
+    state.stage = 17;
+    return pause();
+  }
+
+  if (state.stage === 17) {
+    let stories = state.filed ?? [];
+    if (opts.editor) {
+      const edited = await editEdition(stories, pressId, opts.editor, state.deskCopy);
+      stories = edited.stories;
+      if (edited.desk) put([pressId, "tt-editor", day], edited.desk);
+    }
+    state.filed = stories;
+    dropBagKeys(state, ["deskCopy"]);
+    state.storyCursor = 0;
+    state.stage = 18;
+    return pause();
+  }
+
+  if (state.stage === 18) {
+    const filed = state.filed ?? [];
+    const cursor = state.storyCursor ?? 0;
+    if (cursor < filed.length) {
+      const slice = filed.slice(cursor, cursor + STORY_FLUSH_PER_HOP).map((card) => {
+        const next = { ...card };
+        delete next.bodyChars;
+        return next;
+      });
+      state.filed = filed.slice(cursor + slice.length);
+      state.storyCursor = 0;
+      if (!state.filed.length) {
+        delete state.filed;
+        state.stage = 19;
+      }
+      return { done: false, bag: checkpointBag(state), flush, stories: slice };
+    }
+    delete state.filed;
+    delete state.storyCursor;
+    state.stage = 19;
+    return pause();
+  }
+
   return {
     done: true,
     flush,
-    issue: { version: ISSUE_VERSION, id: pressId, stories, queries: flush },
+    stories: [],
+    issue: { version: ISSUE_VERSION, id: pressId, stories: [], queries: flush },
   };
 }
 
@@ -634,11 +751,18 @@ export async function composePress(opts: {
 }): Promise<PrintedIssue> {
   let bag: PressBag | null = null;
   const queries: PrintedQuery[] = [];
+  const stories: GameWrapCard[] = [];
   for (;;) {
     const step = await pressStep(opts, bag);
     if (step.flush.length) queries.push(...step.flush);
+    if (step.stories?.length) stories.push(...step.stories);
     if (step.done) {
-      return { version: ISSUE_VERSION, id: opts.pressId, stories: step.issue.stories, queries };
+      return {
+        version: ISSUE_VERSION,
+        id: opts.pressId,
+        stories: stories.length ? stories : step.issue.stories,
+        queries,
+      };
     }
     bag = step.bag;
   }

@@ -383,6 +383,18 @@ function prepareCopy(text: string | null | undefined): string {
   return sanitizeArticleBody(text);
 }
 
+/** Use a stamped length when the press already cleaned this body. */
+export function cleanedBodyLength(card: { body?: string | null; bodyChars?: number }): number {
+  if (typeof card.bodyChars === "number") return card.bodyChars;
+  return cleanStoryCopy(card.body).text.length;
+}
+
+export function stampBodyChars<T extends { body?: string | null; bodyChars?: number }>(card: T): T {
+  if (typeof card.bodyChars === "number") return card;
+  card.bodyChars = cleanStoryCopy(card.body).text.length;
+  return card;
+}
+
 /**
  * Copy a desk can set: junk tails cut, a leading menu dropped, the author
  * lifted out, and a menu or an empty shell rejected.

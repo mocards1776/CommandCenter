@@ -13,10 +13,11 @@
  * and the edition runs on the rule desk exactly as before.
  */
 import { favoriteDeskWeight, withoutEditorStamps } from "./newspaper.ts";
-import { cleanStoryCopy } from "./newspaper-copy.ts";
+import { cleanedBodyLength, cleanStoryCopy } from "./newspaper-copy.ts";
 import { storySource } from "./newspaper-source.ts";
 import {
   editorCandidates,
+  editorCandidatesFromDesk,
   isPreviewStory,
   isRecapStory,
   sportSectionId,
@@ -105,6 +106,16 @@ function deskOf(card: GameWrapCard): EditorCandidate["desk"] {
 
 const leagueOf = (card: GameWrapCard) => (card.leaguePath ? sportSectionId(card.leaguePath).code : null);
 
+export function editorRequestFromDesk(
+  deskStories: GameWrapCard[],
+  edition: string,
+  limit = EDITOR_NEWS_BUDGET,
+  gameLimit = EDITOR_GAME_CONTEXT,
+): EditorRequest {
+  const { news, games } = editorCandidatesFromDesk(deskStories, edition, limit);
+  return buildEditorRequest(news, games, edition);
+}
+
 export function editorRequest(
   stories: GameWrapCard[],
   edition: string,
@@ -112,6 +123,10 @@ export function editorRequest(
   gameLimit = EDITOR_GAME_CONTEXT,
 ): EditorRequest {
   const { news, games } = editorCandidates(stories, edition, limit, gameLimit);
+  return buildEditorRequest(news, games, edition);
+}
+
+function buildEditorRequest(news: GameWrapCard[], games: GameWrapCard[], edition: string): EditorRequest {
   const candidates = news.map((card, i): EditorCandidate => {
     const dek = clip(card.dek, DEK_CHARS);
     const body = clip(card.body, SNIPPET_CHARS);
@@ -145,7 +160,7 @@ export function editorRequest(
       league: leagueOf(card),
       status: card.status ?? null,
       postseason: Boolean(card.postseason),
-      hasCopy: cleanStoryCopy(card.body).text.length >= 400,
+      hasCopy: cleanedBodyLength(card) >= 400,
       holdover: Boolean(card.holdover),
     }),
   );
@@ -219,9 +234,12 @@ export async function editEdition<T extends GameWrapCard>(
   stories: T[],
   edition: string,
   ask: (request: EditorRequest) => Promise<unknown>,
+  deskStories?: T[],
 ): Promise<{ stories: T[]; desk: EditorDesk | null }> {
   const clean = clearEditorStamps(stories);
-  const request = editorRequest(clean, edition);
+  const request = deskStories
+    ? editorRequestFromDesk(deskStories, edition)
+    : editorRequest(clean, edition);
   if (request.candidates.length < EDITOR_MIN_NEWS) return { stories: clean, desk: null };
   let raw: unknown = null;
   try {
