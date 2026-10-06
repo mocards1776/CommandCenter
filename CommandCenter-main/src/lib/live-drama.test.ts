@@ -157,7 +157,7 @@ const stripped = heatReasonChips(game, {
   why: "One-run game",
   reasons: ["Live", "Your #1 team", "Playoffs", "Cardinals", "Heat 90", "One-run game"],
 });
-assert(stripped.join(" · ") === "One-run game", stripped.join(" · "));
+assert(stripped.join(" · ") === "One-run game · Late innings", stripped.join(" · "));
 
 const cfb: PushGame = {
   sport: "cfb",
