@@ -140,6 +140,64 @@ export function scoreGridLastSpan(n: number, cols: number): { leftover: number; 
   return { leftover, lastSpan: (cols * 2) / leftover };
 }
 
+/**
+ * Upcoming slate that still fits under the recaps-continuation soft cap.
+ * A short leftover folio (NFL3's 3-2) prints the next week so the cream
+ * foot is ink, not empty. Does not pull boxes back onto the lead folio.
+ */
+export function packRecapsContSlate<T extends { day: string }>(
+  games: T[],
+  opts: { boxes: number; cols?: number; mlb?: boolean },
+): T[] {
+  if (!games.length || opts.boxes <= 0) return [];
+  const cols = opts.cols ?? (opts.mlb ? 2 : 3);
+  const rowPx = opts.mlb ? 280 : 220;
+  const used = PAGE_CHROME_PX + RECAPS_HERO_PX + estimateScoreGridHeight(opts.boxes, cols, rowPx);
+  const room = PAGE_SOFT_CAP_H - used;
+  if (room < SCHEDULE_DAY_HEAD_PX + SCHEDULE_ROW_PX) return [];
+  const out: T[] = [];
+  for (const [, list] of groupByDay(games)) {
+    const next = [...out, ...list];
+    if (estimateScheduleHeight(next) <= room) {
+      out.push(...list);
+      continue;
+    }
+    const base = out.length ? estimateScheduleHeight(out) : 36;
+    const head = SCHEDULE_DAY_HEAD_PX + SCHEDULE_GAP_PX;
+    const fitRows = Math.max(0, Math.floor((room - base - head) / SCHEDULE_ROW_PX));
+    if (fitRows > 0) out.push(...list.slice(0, fitRows * SCHEDULE_COLS));
+    break;
+  }
+  return out;
+}
+
+/**
+ * Folio under the pager's horizontal midpoint. `scrollLeft / clientWidth`
+ * is one page off when a hash jump or swipe hasn't landed on a multiple.
+ */
+export function pagerIndexFromOffsets(
+  scrollLeft: number,
+  viewportW: number,
+  offsets: { left: number; width: number }[],
+  count = offsets.length,
+): number {
+  if (!count) return 0;
+  const mid = scrollLeft + Math.max(viewportW, 1) / 2;
+  let best = 0;
+  let bestDist = Infinity;
+  for (let i = 0; i < offsets.length && i < count; i++) {
+    const { left, width } = offsets[i]!;
+    const right = left + Math.max(width, 1);
+    if (mid >= left && mid < right) return i;
+    const dist = Math.abs(left + Math.max(width, 1) / 2 - mid);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = i;
+    }
+  }
+  return Math.max(0, Math.min(count - 1, best));
+}
+
 /** Wraps and boxes that actually print on this recaps folio — never the whole slate. */
 export function recapsDeskPrinted(opts: {
   articles: number;

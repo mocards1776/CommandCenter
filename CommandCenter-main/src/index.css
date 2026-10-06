@@ -6440,6 +6440,11 @@ li.counting .tt-count.card {
   flex-direction: column;
   gap: 10px;
 }
+.tt-ahead.tt-cont-slate > div {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 .tt-results .wsj-band-title em,
 .tt-players .wsj-band-title em {
   order: 3;
@@ -6450,6 +6455,8 @@ li.counting .tt-count.card {
 .tt-score-grid {
   grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
 }
+/* Fill-last only retargets grid-column. Sheet width stays --tt-page-w
+   (1032) and --tt-fit stays width-only. Wider last-row cards do not zoom. */
 .tt-score-grid.fill-last {
   grid-template-columns: repeat(calc(var(--cols, 3) * 2), minmax(0, 1fr));
 }
@@ -7994,6 +8001,10 @@ li.counting .tt-count.card {
 .newspaper-root .wsj-sheet {
   padding: 14px 18px 28px;
   gap: 14px;
+}
+/* A short recaps continuation tightens to its ink. Never leave a cream foot. */
+.newspaper-root .wsj-sheet:has([data-tt-sheet-tight]) {
+  min-height: 0;
 }
 .newspaper-root .wsj-nameplate { font-size: 68px; }
 .newspaper-root .wsj-hl.xl { font-size: 46px; }

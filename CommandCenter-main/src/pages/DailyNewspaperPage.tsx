@@ -2,7 +2,6 @@ import {
   createContext,
   Fragment,
   memo,
-  startTransition,
   Suspense,
   use,
   useCallback,
@@ -38,7 +37,7 @@ import {
   storyReadKeys,
 } from "@/lib/newspaper";
 import { fetchLeagueArticles, fetchTeamArticles } from "@/lib/newspaper-news";
-import { groupByDay, planRecapsScorePages, planSchedulePages, recapsDeskBlurb, recapsDeskPrinted, scoreGridLastSpan } from "@/lib/newspaper-page";
+import { groupByDay, packRecapsContSlate, pagerIndexFromOffsets, planRecapsScorePages, planSchedulePages, recapsDeskBlurb, recapsDeskPrinted, scoreGridLastSpan } from "@/lib/newspaper-page";
 import {
   applyTableStandings,
   boardRecapCards,
@@ -3084,9 +3083,6 @@ function ScoresDesk({
   const isMlb = page.path === "baseball/mlb";
   const photo = featured.recap?.photo ?? null;
   const sparse = games.length < 7 && recapsWraps;
-  const ahead = college
-    ? []
-    : (board?.slate ?? []).filter((g) => !g.final && !g.live).slice(0, sparse ? 6 : 0);
   const restTitle = football
     ? current.length
       ? `${board?.weekLabel ?? "This week"} results`
@@ -3107,14 +3103,21 @@ function ScoresDesk({
       ? matchedCont
       : gridGames.map((g) => boxStoryCard(g)).filter((c): c is GameWrapCard => Boolean(c))
     : [];
+  const upcoming = college ? [] : (board?.slate ?? []).filter((g) => !g.final && !g.live);
+  const fillCont = !recapsWraps && !college && !shortCont && boxGridList.length > 0 && boxGridList.length <= 6;
+  const ahead = recapsWraps
+    ? upcoming.slice(0, sparse ? 6 : 0)
+    : fillCont
+      ? packRecapsContSlate(upcoming, { boxes: boxGridList.length, cols: boxGridCols, mlb: isMlb })
+      : [];
+  const aheadDays = groupByDay(ahead);
   return (
-    <div className="tt-scores">
+    <div className="tt-scores" {...(!recapsWraps ? { "data-tt-sheet-tight": "" } : {})}>
       {recapsWraps && wrapCards.length ? <DeskWraps cards={wrapCards} /> : null}
       {favFinals.length ? (
         <ul className="tt-fav-jumps">
           {favFinals.map((g) => {
             const folio = favoriteRecapFolio(g, favoriteFolios, page.clubs);
-            const dest = folio && folio !== "A" ? folio : "A";
             return (
               <li key={g.id}>
                 <button
@@ -3265,15 +3268,38 @@ function ScoresDesk({
           />
         </section>
       ) : null}
-      {recapsWraps && ahead.length ? (
-        <section className="tt-ahead">
-          <h3 className="wsj-band-title">Up next</h3>
-          <div className="tt-matchups" style={{ ["--cols" as string]: String(balancedCols(ahead.length, [3, 2, 4])) }}>
-            {ahead.map((g) => (
-              <MatchupCard key={g.id} game={g} />
+      {ahead.length ? (
+        recapsWraps ? (
+          <section className="tt-ahead">
+            <h3 className="wsj-band-title">Up next</h3>
+            <div className="tt-matchups" style={{ ["--cols" as string]: String(balancedCols(ahead.length, [3, 2, 4])) }}>
+              {ahead.map((g) => (
+                <MatchupCard key={g.id} game={g} />
+              ))}
+            </div>
+          </section>
+        ) : (
+          <section className="tt-ahead tt-cont-slate">
+            <h3 className="wsj-band-title">
+              {board?.slateWeekNumber ? `Week ${board.slateWeekNumber}` : "Up next"}{" "}
+              <em>kickoffs · {ahead.length} {ahead.length === 1 ? "game" : "games"}</em>
+            </h3>
+            {aheadDays.map(([day, list]) => (
+              <div key={day}>
+                {aheadDays.length > 1 ? (
+                  <h4 className="wsj-band-title">
+                    {dayHeading(day, edition)} <em>{list.length} {list.length === 1 ? "game" : "games"}</em>
+                  </h4>
+                ) : null}
+                <div className="tt-slate-list">
+                  {list.map((g) => (
+                    <SlateLine key={g.id} game={g} clockOnly />
+                  ))}
+                </div>
+              </div>
             ))}
-          </div>
-        </section>
+          </section>
+        )
       ) : null}
     </div>
   );
@@ -4579,7 +4605,9 @@ function FolioSlot({
 }) {
   const current = useContext(PagerIndexContext);
   const near = index < 2 || Math.abs(index - current) <= 1;
-  const [shown, setShown] = useState(index < 2);
+  const [shown, setShown] = useState(
+    index < 2 || (typeof window !== "undefined" && window.location.hash.replace(/^#/, "") === folio),
+  );
   useEffect(() => {
     if (near) setShown(true);
   }, [near]);
@@ -4622,6 +4650,16 @@ function FittedSheet({ children }: { children: ReactNode }) {
     <div ref={ref} className="wsj-sheet">
       {children}
     </div>
+  );
+}
+
+function visiblePagerIndex(pager: HTMLElement, count: number): number {
+  const kids = [...pager.children] as HTMLElement[];
+  return pagerIndexFromOffsets(
+    pager.scrollLeft,
+    pager.clientWidth,
+    kids.map((k) => ({ left: k.offsetLeft, width: k.offsetWidth })),
+    count,
   );
 }
 
@@ -6075,11 +6113,14 @@ function NewspaperDesk() {
       const el = pagerRef.current;
       if (!el) return;
       const next = Math.max(0, Math.min(pages.length - 1, idx));
-      const from = Math.round(el.scrollLeft / (el.clientWidth || 1));
+      const from = visiblePagerIndex(el, pages.length);
       const sheet = el.children[next] as HTMLElement | undefined;
       if (sheet && next !== from) sheet.scrollTop = 0;
       // Gliding across a whole section paints every folio in between; long jumps cut straight there.
-      el.scrollTo({ left: next * el.clientWidth, behavior: Math.abs(next - from) > NEAR_PAGES ? "instant" : "smooth" });
+      el.scrollTo({
+        left: sheet?.offsetLeft ?? next * el.clientWidth,
+        behavior: Math.abs(next - from) > NEAR_PAGES ? "instant" : "smooth",
+      });
       setPageIndex(next);
       markFolio(next);
     },
@@ -6106,7 +6147,8 @@ function NewspaperDesk() {
     const idx = pages.findIndex((p) => p.folio === hash);
     if (idx >= 0) {
       const el = pagerRef.current;
-      if (el) el.scrollTo({ left: idx * el.clientWidth, behavior: "instant" });
+      const sheet = el?.children[idx] as HTMLElement | undefined;
+      if (el) el.scrollTo({ left: sheet?.offsetLeft ?? idx * el.clientWidth, behavior: "instant" });
       setPageIndex(idx);
     }
   }, [pages]);
@@ -6118,9 +6160,8 @@ function NewspaperDesk() {
     let timer = 0;
     const settle = () => {
       window.clearTimeout(timer);
-      const idx = Math.round(el.scrollLeft / (el.clientWidth || 1));
-      const next = Math.max(0, Math.min(pages.length - 1, idx));
-      startTransition(() => setPageIndex(next));
+      const next = visiblePagerIndex(el, pages.length);
+      setPageIndex(next);
       markFolio(next);
     };
     const onScroll = () => {

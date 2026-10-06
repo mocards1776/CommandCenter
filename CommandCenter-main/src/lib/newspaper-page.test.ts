@@ -19,7 +19,9 @@ import {
   estimateScoreGridHeight,
   estimateSportFrontHeight,
   pageExceedsCanvas,
+  packRecapsContSlate,
   pageHasBlankBand,
+  pagerIndexFromOffsets,
   planRecapsScorePages,
   planSchedulePages,
   recapsBoxPoolCount,
@@ -128,6 +130,40 @@ assert(scoreGridLastSpan(10, 3).leftover === 1 && scoreGridLastSpan(10, 3).lastS
 const nfl3Fav = recapsDeskPrinted({ articles: 13, wraps: false, offset: 6, boardGames: 16, favoriteGames: 3 });
 assert(nfl3Fav.wraps === 0 && nfl3Fav.boxes === 5, "NFL3 is leftover after wraps and favorite-team recaps");
 assert(recapsDeskBlurb(nfl3Fav) === "5 boxes", recapsDeskBlurb(nfl3Fav));
+assert(
+  packRecapsContSlate(week5, { boxes: 5 }).length === week5.length,
+  "NFL3's 5 leftover boxes still have room for the Week 5 slate under 1650",
+);
+const nfl2PlusFive = PAGE_CHROME_PX + 720 + estimateScoreGridHeight(11, 3, 220);
+assert(nfl2PlusFive > PAGE_SOFT_CAP_H, `pulling 5 boxes onto NFL2 overflows (${nfl2PlusFive} > ${PAGE_SOFT_CAP_H})`);
+assert(packRecapsContSlate([], { boxes: 5 }).length === 0, "no upcoming slate, no fill");
+const longSlate = Array.from({ length: 80 }, (_, i) => ({
+  day: `2026-10-${String(8 + Math.floor(i / 12)).padStart(2, "0")}`,
+  id: `g-${i}`,
+}));
+const packedCont = packRecapsContSlate(longSlate, { boxes: 5 });
+assert(packedCont.length > 0 && packedCont.length < longSlate.length, "an oversized upcoming week is clipped to the soft cap");
+assert(
+  PAGE_CHROME_PX + 80 + estimateScoreGridHeight(5, 3, 220) + estimateScheduleHeight(packedCont) <= PAGE_SOFT_CAP_H,
+  "NFL3 plus packed slate stays under 1650",
+);
+assert(
+  pagerIndexFromOffsets(1536, 768, [
+    { left: 0, width: 768 },
+    { left: 768, width: 768 },
+    { left: 1536, width: 768 },
+  ]) === 2,
+  "pager at NFL3's offset is folio 3, not NFL2",
+);
+assert(
+  pagerIndexFromOffsets(1500, 768, [
+    { left: 0, width: 768 },
+    { left: 768, width: 768 },
+    { left: 1536, width: 768 },
+  ]) === 2,
+  "a hash jump short of the multiple still reads the visible folio",
+);
+assert(pagerIndexFromOffsets(700, 768, [{ left: 0, width: 768 }, { left: 768, width: 768 }]) === 1, "midpoint past the first sheet is page 2");
 const mlb3Printed = recapsDeskPrinted({ articles: 8, wraps: false, offset: 2, boardGames: 4, mlb: true });
 assert(mlb3Printed.wraps === 2 && mlb3Printed.boxes === 2, "MLB3 header matches the two leftover boxes");
 assert(recapsDeskBlurb(mlb3Printed) === "2 wraps · 2 boxes", recapsDeskBlurb(mlb3Printed));
