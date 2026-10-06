@@ -2424,7 +2424,7 @@ function SportSectionFront({
                 <h3 className="wsj-band-title">
                   {board?.slateWeekNumber ? `Week ${board.slateWeekNumber}` : "This week"} <em>kickoffs · CT</em>
                 </h3>
-                <div className="tt-slate-list cols-2">
+                <div className="tt-slate-list cols-1">
                   {(board?.slate ?? [])
                     .filter((g) => !g.final && !g.live)
                     .map((g) => (

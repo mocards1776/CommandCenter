@@ -420,11 +420,13 @@ function WeekPreview({
   week,
   take,
   className,
+  cols = 2,
 }: {
   games: BoxGame[];
   week: number;
   take?: number;
   className?: string;
+  cols?: 1 | 2;
 }) {
   if (!games.length) return null;
   const list = take ? games.slice(0, take) : games;
@@ -433,7 +435,7 @@ function WeekPreview({
       <h3 className="wsj-band-title">
         Week {week} <em>kickoffs · CT</em>
       </h3>
-      <div className="tt-slate-list cols-2">
+      <div className={cols === 1 ? "tt-slate-list cols-1" : "tt-slate-list cols-2"}>
         {list.map((g) => (
           <SlateLine key={g.id} game={g} />
         ))}
@@ -468,7 +470,7 @@ function A1Front({
 }) {
   const lead = recaps.find((r) => r.card.favoriteKey === "nfl-dal") ?? recaps[0] ?? null;
   const seconds = recaps.filter((r) => r !== lead);
-  const paras = lead ? pageParas(lead.card.body, 3) : [];
+  const paras = lead ? pageParas(lead.card.body, 5) : [];
   return (
     <TimesChrome folio="A1" kicker="The Essentials">
       {lead ? (
@@ -560,7 +562,7 @@ function NflFront({
                 </section>
               ))}
               {slate.length ? (
-                <WeekPreview games={slate} week={board?.slateWeekNumber ?? 5} className="tt-side-fill" />
+                <WeekPreview games={slate} week={board?.slateWeekNumber ?? 5} className="tt-side-fill" cols={1} />
               ) : (
                 <DeskTables tables={tables} />
               )}
