@@ -87,6 +87,7 @@ export type EspnSummaryForWrap = {
     team?: { abbreviation?: string };
     leaders?: {
       displayValue?: string;
+      team?: { abbreviation?: string };
       athlete?: {
         id?: string;
         displayName?: string;
@@ -349,7 +350,7 @@ export function leadersFromSummary(sum: EspnSummaryForWrap | null | undefined): 
       line,
       label: group.shortDisplayName || group.displayName || group.name || null,
       headshot: headshotUrl(top.athlete?.headshot),
-      team: group.team?.abbreviation ?? null,
+      team: top.team?.abbreviation ?? group.team?.abbreviation ?? null,
       id: top.athlete?.id ?? null,
     });
     if (out.length >= 4) break;

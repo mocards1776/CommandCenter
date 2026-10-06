@@ -60,6 +60,8 @@ export type RecapCardBits = {
   photoWidth?: number | null;
   caption?: string | null;
   teamName?: string | null;
+  headline?: string | null;
+  dek?: string | null;
   recapGame?: RecapGamePack | null;
   leaders?: Array<{
     name: string;
@@ -283,12 +285,32 @@ export function clubSideAbbrev(card: RecapCardBits, pack: RecapGamePack): string
   return null;
 }
 
-export function preferClubRecapLeaders(leaders: RecapLeader[], clubAbbrev: string | null | undefined): RecapLeader[] {
+function leaderSurname(name: string): string {
+  return name.replace(/^[A-Z]\.\s*/, "").replace(/\s+(III|II|IV|Jr\.?)$/i, "").trim();
+}
+
+export function preferClubRecapLeaders(
+  leaders: RecapLeader[],
+  clubAbbrev: string | null | undefined,
+  hay = "",
+): RecapLeader[] {
   if (!clubAbbrev) return leaders;
   const club = clubAbbrev.toLowerCase();
   const mine = leaders.filter((l) => l.team && l.team.toLowerCase() === club);
   if (mine.length) return mine;
-  return leaders.filter((l) => !l.team || l.team.toLowerCase() === club);
+  const notTheirs = leaders.filter((l) => !l.team || l.team.toLowerCase() === club);
+  const text = hay.toLowerCase();
+  if (!text) return notTheirs;
+  return notTheirs.filter((l) => {
+    if (!/^pass/i.test(l.label)) return true;
+    const token = leaderSurname(l.name).split(/\s+/).pop() ?? "";
+    if (token.length < 4) return true;
+    return text.includes(token.toLowerCase());
+  });
+}
+
+function recapHay(card: RecapCardBits): string {
+  return [card.headline, card.dek, card.teamName].filter(Boolean).join(" ");
 }
 
 function paintSide(side: RecapSide, path: string): RecapSide {
@@ -371,7 +393,7 @@ export function recapPackFor(card: RecapCardBits, game: BoxGame | null | undefin
     if (!pack.away.logo && stored?.away.logo) pack.away.logo = stored.away.logo;
     if (!pack.home.logo && stored?.home.logo) pack.home.logo = stored.home.logo;
     if (!pack.venue && stored?.venue) pack.venue = stored.venue;
-    pack.leaders = preferClubRecapLeaders(pack.leaders, clubSideAbbrev(card, pack));
+    pack.leaders = preferClubRecapLeaders(pack.leaders, clubSideAbbrev(card, pack), recapHay(card));
     return pack;
   }
   if (stored) {
@@ -381,7 +403,7 @@ export function recapPackFor(card: RecapCardBits, game: BoxGame | null | undefin
       home: paintSide(stored.home, stored.path),
       leaders: pickRecapLeaders(stored.path, stored.leaders),
     };
-    pack.leaders = preferClubRecapLeaders(pack.leaders, clubSideAbbrev(card, pack));
+    pack.leaders = preferClubRecapLeaders(pack.leaders, clubSideAbbrev(card, pack), recapHay(card));
     return pack;
   }
   const extra = (card.leaders ?? [])

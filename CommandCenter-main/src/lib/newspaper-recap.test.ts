@@ -322,5 +322,28 @@ assert(
   ).some((l) => /cousins/i.test(l.name)),
   "a tagged Chiefs chip drops an untagged Raiders passer",
 );
+assert(
+  !preferClubRecapLeaders(
+    [
+      { label: "Pass", name: "K. Cousins", line: "31/52, 365 YDS", headshot: null, team: null, id: "14880", href: null },
+      { label: "Rush", name: "K. Walker III", line: "177 YDS", headshot: null, team: null, id: "4567048", href: null },
+      { label: "Rec", name: "T. Thornton", line: "111 YDS", headshot: null, team: null, id: "4362921", href: null },
+    ],
+    "KC",
+    "Chiefs beat the Raiders 30-27 to move to 4-0 behind Patrick Mahomes and Kenneth Walker III",
+  ).some((l) => /cousins/i.test(l.name)),
+  "an all-untagged Chiefs recap drops a passer the hed does not name",
+);
+assert(
+  preferClubRecapLeaders(
+    [
+      { label: "Pass", name: "P. Mahomes", line: "285 YDS", headshot: null, team: null, id: "3139477", href: null },
+      { label: "Rush", name: "K. Walker III", line: "177 YDS", headshot: null, team: null, id: "4567048", href: null },
+    ],
+    "KC",
+    "Chiefs beat the Raiders 30-27 behind Patrick Mahomes and Kenneth Walker III",
+  ).some((l) => /mahomes/i.test(l.name)),
+  "the club passer still prints when the hed names him",
+);
 
 console.log("newspaper-recap ok");

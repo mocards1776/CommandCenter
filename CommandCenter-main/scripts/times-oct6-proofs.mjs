@@ -38,6 +38,11 @@ function arg(name, fallback) {
   return i >= 0 && args[i + 1] ? args[i + 1] : fallback;
 }
 
+const TINY_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64",
+);
+
 function mime(ext) {
   return (
     {
@@ -114,6 +119,7 @@ async function main() {
     await page.setRequestInterception(true);
     page.on("request", async (req) => {
       const url = req.url();
+      try {
       if (req.method() === "OPTIONS") {
         await req.respond({ status: 204, headers: cors }).catch(() => {});
         return;
@@ -174,102 +180,147 @@ async function main() {
         });
         return;
       }
-      if (url.includes("supabase.co") || url.includes("/rest/v1/") || url.includes("espn.com") || url.includes("site.api")) {
+      if (
+        !url.includes("127.0.0.1") &&
+        (/(headshots|\/i\/teamlogos\/)/i.test(url) ||
+          (/\.(png|jpe?g|webp|gif|svg|avif)(\?|$)/i.test(url) && /espncdn|espn\.com/i.test(url)))
+      ) {
+        await req.respond({
+          status: 200,
+          headers: cors,
+          contentType: "image/png",
+          body: TINY_PNG,
+        });
+        return;
+      }
+      if (
+        url.includes("/rest/v1/") ||
+        /site\.(api|web)\.espn\.com|sports\.core\.api\.espn\.com|cdn\.espn\.com\/core/.test(url)
+      ) {
         await req.respond({ status: 200, contentType: "application/json", headers: cors, body: "[]" });
         return;
       }
       await req.continue();
+      } catch (err) {
+        await req.continue().catch(() => {});
+        process.stdout.write(`REQERR ${url.slice(0, 120)} ${err instanceof Error ? err.message : err}\n`);
+      }
     });
-    page.on("pageerror", (err) => console.log("PAGEERROR", err.message));
+    page.on("pageerror", (err) => process.stdout.write(`PAGEERROR ${err.message}\n`));
+    page.on("requestfailed", () => {});
 
+    process.stdout.write(`goto :${port}/newspaper?solo=1&edition=${ISSUE_ID}\n`);
     await page.goto(`http://127.0.0.1:${port}/newspaper?solo=1&edition=${ISSUE_ID}`, {
       waitUntil: "domcontentloaded",
-      timeout: 120_000,
+      timeout: 60_000,
     });
-    await page
-      .waitForFunction(
-        () => {
-          const ready = document.querySelector(".newspaper-root")?.getAttribute("data-times-ready") === "1";
-          const text = document.body?.innerText || "";
-          return ready && /Thompson Times|Cowboys|Stephen A|Marshfield/i.test(text);
-        },
-        { timeout: 90_000 },
-      )
-      .catch(async () => {
-        const flags = await page.evaluate(() => ({
-          ready: document.querySelector(".newspaper-root")?.getAttribute("data-times-ready"),
-          body: document.body?.innerText?.slice(0, 400),
-        }));
-        console.log("ready wait failed", flags);
+    process.stdout.write("domcontentloaded\n");
+    for (let i = 0; i < 40; i++) {
+      const flags = await page.evaluate(() => ({
+        ready: document.querySelector(".newspaper-root")?.getAttribute("data-times-ready"),
+        pages: document.querySelectorAll(".wsj-page").length,
+        body: (document.body?.innerText || "").slice(0, 160).replace(/\s+/g, " "),
+      }));
+      process.stdout.write(`ready ${i} ${JSON.stringify(flags)}\n`);
+      if (flags.ready === "1" && /Thompson Times|Cowboys|Stephen A|Marshfield/i.test(flags.body)) break;
+      await new Promise((r) => setTimeout(r, 1_000));
+    }
+
+    async function closeReader() {
+      const opened = await page.evaluate(() => {
+        if (!document.documentElement.classList.contains("tt-reader-open")) return false;
+        const back = document.querySelector(".tt-reader-back");
+        if (back instanceof HTMLElement) {
+          back.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+        }
+        document.documentElement.classList.remove("tt-reader-open");
+        return true;
       });
-    await new Promise((r) => setTimeout(r, 2000));
-    let currentIdx = 0;
+      if (opened) await new Promise((r) => setTimeout(r, 400));
+    }
+
+    async function chromeFolio() {
+      return page.evaluate(() => {
+        const el = document.querySelector(".wsj-pager-label");
+        if (!el) return "";
+        const em = el.querySelector("em")?.textContent || "";
+        return (el.textContent || "").replace(em, "").replace(/\s+/g, "").trim();
+      });
+    }
+
+    async function turnTo(hash) {
+      process.stdout.write(`turn ${hash}\n`);
+      await closeReader();
+      if ((await chromeFolio()) === hash) return hash;
+      await page.evaluate((target) => {
+        if (location.hash !== `#${target}`) location.hash = target;
+        else window.dispatchEvent(new HashChangeEvent("hashchange"));
+      }, hash);
+      await page
+        .waitForFunction(
+          (target) => {
+            const el = document.querySelector(".wsj-pager-label");
+            const em = el?.querySelector("em")?.textContent || "";
+            const folio = (el?.textContent || "").replace(em, "").replace(/\s+/g, "").trim();
+            return folio === target;
+          },
+          { timeout: 5_000 },
+          hash,
+        )
+        .catch(() => {});
+      const now = await chromeFolio();
+      process.stdout.write(`chrome ${now}\n`);
+      return now;
+    }
 
     for (const folio of FOLIOS) {
-      const target = await page.evaluate((hash) => {
-        const sheets = [...document.querySelectorAll(".wsj-page")];
-        return sheets.findIndex(
-          (node) => (node.getAttribute("aria-label") || "").replace(/^Page\s+/, "") === hash,
-        );
-      }, folio.hash);
-      const delta = target - currentIdx;
-      for (let i = 0; i < Math.abs(delta); i++) {
-        await page.keyboard.press(delta > 0 ? "ArrowRight" : "ArrowLeft");
-        await new Promise((r) => setTimeout(r, 80));
-      }
-      currentIdx = target;
-      await new Promise((r) => setTimeout(r, 400));
+      process.stdout.write(`folio ${folio.hash}\n`);
+      const chrome = await turnTo(folio.hash);
+      await new Promise((r) => setTimeout(r, 500));
       await page.evaluate((hash) => {
-        const sheets = [...document.querySelectorAll(".wsj-page")];
-        for (const sheet of sheets) {
+        const pager = document.querySelector(".wsj-pager");
+        for (const sheet of document.querySelectorAll(".wsj-page")) {
           const label = (sheet.getAttribute("aria-label") || "").replace(/^Page\s+/, "");
           sheet.style.display = label === hash ? "flex" : "none";
         }
+        if (pager instanceof HTMLElement) pager.scrollLeft = 0;
       }, folio.hash);
-      await page
-        .waitForFunction(
-          (hash) => {
-            const pager = document.querySelector(".wsj-pager");
-            if (!pager) return false;
-            const hit = [...pager.querySelectorAll(".wsj-page")].find((node) => {
-              const r = node.getBoundingClientRect();
-              return r.left > -40 && r.left < pager.clientWidth * 0.55;
-            });
-            const label = hit?.getAttribute("aria-label")?.replace(/^Page\s+/, "") ?? "";
-            return label === hash;
-          },
-          { timeout: 15_000 },
-          folio.hash,
-        )
-        .catch(() => {});
       await new Promise((r) => setTimeout(r, 800));
       const dest = path.join(outDir, folio.file);
       await page.screenshot({ path: dest, clip: { x: 0, y: 0, width: 768, height: 1024 } });
-      const text = await page.evaluate(() => document.body?.innerText || "");
-      const visible = await page.evaluate(() => {
-        const pager = document.querySelector(".wsj-pager");
-        const hit = pager
-          ? [...pager.querySelectorAll(".wsj-page")].find((node) => {
-              const r = node.getBoundingClientRect();
-              return r.left > -40 && r.left < pager.clientWidth * 0.55;
-            })
-          : null;
-        return hit?.getAttribute("aria-label") ?? "";
-      });
-      const hit = folio.wait.test(text);
-      const junk = /Join Washington Examiner|Laura Ingraham|Hegseth ['‘]s|1% rain/.test(text);
+      const info = await page.evaluate((hash) => {
+        const sheet = [...document.querySelectorAll(".wsj-page")].find(
+          (node) => (node.getAttribute("aria-label") || "").replace(/^Page\s+/, "") === hash,
+        );
+        const text = sheet?.innerText || "";
+        const r = sheet?.getBoundingClientRect();
+        return {
+          visible: sheet?.getAttribute("aria-label") ?? "",
+          text,
+          left: r?.left ?? null,
+          width: r?.width ?? null,
+          reader: document.documentElement.classList.contains("tt-reader-open"),
+        };
+      }, folio.hash);
+      const hit = folio.wait.test(info.text);
+      const junk = /Join Washington Examiner|Laura Ingraham|Hegseth ['‘]s|1% rain/.test(info.text);
       notes.push({
         folio: folio.hash,
-        visible,
+        chrome,
+        visible: info.visible,
         file: dest,
         matched: hit,
         junk,
-        snippet: text.slice(0, 220).replace(/\s+/g, " "),
+        reader: info.reader,
+        left: info.left,
+        snippet: info.text.slice(0, 240).replace(/\s+/g, " "),
       });
       await page.evaluate(() => {
         for (const sheet of document.querySelectorAll(".wsj-page")) sheet.style.display = "";
+        const pager = document.querySelector(".wsj-pager");
+        if (pager instanceof HTMLElement) pager.scrollLeft = 0;
       });
-      console.log(folio.hash, "visible", visible, dest, "matched", hit, "junk", junk);
+      console.log(folio.hash, "chrome", chrome, "visible", info.visible, dest, "matched", hit, "junk", junk);
     }
   } finally {
     await browser.close();

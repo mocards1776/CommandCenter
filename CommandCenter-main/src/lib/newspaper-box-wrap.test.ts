@@ -2,7 +2,15 @@
  * Run with: node --experimental-strip-types src/lib/newspaper-box-wrap.test.ts
  * from CommandCenter-main/.
  */
-import { hasEspnRecap, lineHighlight, periodPhrase, wrapBriefSentences, writeBoxWrap, type BoxWrapGame } from "./newspaper-box-wrap.ts";
+import {
+  hasEspnRecap,
+  leadersFromSummary,
+  lineHighlight,
+  periodPhrase,
+  wrapBriefSentences,
+  writeBoxWrap,
+  type BoxWrapGame,
+} from "./newspaper-box-wrap.ts";
 
 function assert(cond: unknown, msg: string) {
   if (!cond) throw new Error(`FAIL: ${msg}`);
@@ -67,5 +75,21 @@ const nfl: BoxWrapGame = {
 const kc = writeBoxWrap(nfl);
 assert(/in overtime/.test(kc.body), kc.body);
 assert(/P\. Mahomes/.test(kc.body), kc.body);
+
+const stamped = leadersFromSummary({
+  leaders: [
+    {
+      shortDisplayName: "PASS",
+      leaders: [
+        {
+          displayValue: "31/52, 365 YDS",
+          team: { abbreviation: "LV" },
+          athlete: { id: "14880", shortName: "K. Cousins" },
+        },
+      ],
+    },
+  ],
+});
+assert(stamped[0]?.team === "LV", "the leader row stamps the player's club, not the category");
 
 console.log("newspaper-box-wrap ok");
