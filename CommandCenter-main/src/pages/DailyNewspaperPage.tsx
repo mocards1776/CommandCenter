@@ -2492,9 +2492,11 @@ function SportSectionFront({
   const folios = Object.fromEntries(page.articles.map((a) => [a.card.id, a.folio]));
   const lead = stories[0] ?? null;
   const rest = stories.filter((c) => c !== lead);
-  const underLead = rest.slice(0, cfb || mlb ? 1 : 2);
-  const railSeconds = rest.slice(underLead.length, underLead.length + 2);
-  const more = rest.slice(underLead.length + railSeconds.length, underLead.length + railSeconds.length + 6);
+  const underLead = rest.slice(0, cfb ? 0 : mlb ? 1 : 2);
+  const railSeconds = rest.slice(underLead.length, underLead.length + (cfb ? 1 : 2));
+  const more = cfb
+    ? []
+    : rest.slice(underLead.length + railSeconds.length, underLead.length + railSeconds.length + 6);
   const leadGame = lead ? gameForCard(lead, recent, page.clubs) : null;
   const recapsFolio = deskFolio(page, "recaps", `${page.section}2`);
   const crestFor = (card: GameWrapCard) =>
