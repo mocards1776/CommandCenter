@@ -1,0 +1,278 @@
+/**
+ * Competitive Telegram card (1080×1350). Centered liquid-glass infographic:
+ * wordmark on the field (no plate), Just in = actual new buys, then race
+ * recap + DMA affiliation pies and a spend totals strip.
+ *
+ * Raster: SVG → resvg PNG → JPEG q≈95 → sendPhoto.
+ */
+import {
+  CARD_HEIGHT,
+  CARD_WIDTH,
+  affiliationTotals,
+  barWidth,
+  displayMedia,
+  formatGrp,
+  formatSpendExact,
+  formatSpendShort,
+  landscapeBuyers,
+  maxGrp,
+  maxSpend,
+  raceSpendTotal,
+  type AffiliationSlice,
+  type BuyerRow,
+  type CompetitiveCard,
+  type JustInBuy,
+} from "./card.ts";
+
+export const COMPETITIVE_ALERT_WIDTH = CARD_WIDTH;
+export const COMPETITIVE_ALERT_HEIGHT = CARD_HEIGHT;
+
+/** Native logo 276×34. Centered on the field — no disc or plate. */
+export const LOGO_DISPLAY_WIDTH = 480;
+export const LOGO_DISPLAY_HEIGHT = 59;
+export const LOGO_X = (CARD_WIDTH - LOGO_DISPLAY_WIDTH) / 2;
+export const LOGO_Y = 28;
+
+const W = CARD_WIDTH;
+const H = CARD_HEIGHT;
+const CX = W / 2;
+
+const CREAM = "#EFE8DC";
+const INK = "#1A1814";
+const MUTED = "#5C564E";
+const FAINT = "#8A8378";
+const TRACK = "rgba(255,255,255,0.35)";
+const BRAND = "#8A3046";
+
+function esc(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function text(
+  value: string,
+  x: number,
+  y: number,
+  opts: {
+    size: number;
+    fill: string;
+    anchor?: "start" | "middle" | "end";
+    weight?: number;
+    spacing?: number;
+  },
+): string {
+  const anchor = opts.anchor ?? "start";
+  const weight = opts.weight ?? 400;
+  const spacing = opts.spacing != null ? ` letter-spacing="${opts.spacing}"` : "";
+  return `<text x="${x}" y="${y}" fill="${opts.fill}" font-size="${opts.size}" font-weight="${weight}" font-family="Inter" text-anchor="${anchor}"${spacing}>${esc(value)}</text>`;
+}
+
+function glassPanel(x: number, y: number, w: number, h: number, rx = 26): string {
+  return [
+    `<rect filter="url(#glassDepth)" x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" fill="rgba(255,255,255,0.34)" stroke="rgba(255,255,255,0.7)" stroke-width="1.25"/>`,
+    `<rect x="${x + 14}" y="${y + 1}" width="${w - 28}" height="2" rx="1" fill="rgba(255,255,255,0.55)"/>`,
+  ].join("");
+}
+
+function sectionLabel(label: string, y: number): string {
+  return text(label, CX, y, { size: 13, fill: FAINT, anchor: "middle", weight: 700, spacing: 2.4 });
+}
+
+function logoMark(card: CompetitiveCard): string {
+  if (card.logoData) {
+    return `<image href="${esc(card.logoData)}" x="${LOGO_X}" y="${LOGO_Y}" width="${LOGO_DISPLAY_WIDTH}" height="${LOGO_DISPLAY_HEIGHT}" preserveAspectRatio="xMidYMid meet"/>`;
+  }
+  return text("THOMPSON COMMUNICATIONS", CX, LOGO_Y + 34, {
+    size: 16,
+    fill: BRAND,
+    anchor: "middle",
+    weight: 700,
+    spacing: 2,
+  });
+}
+
+function justInHero(buys: readonly JustInBuy[], y: number): string {
+  const n = Math.max(1, buys.length);
+  const gap = 18;
+  const colW = Math.round((W - 80 - gap * (n - 1)) / n);
+  const colH = 248;
+  const x0 = Math.round((W - (colW * n + gap * (n - 1))) / 2);
+  const tileY = y + 48;
+  const parts = [text("JUST IN", CX, y + 28, { size: 26, fill: INK, anchor: "middle", weight: 700, spacing: 2.6 })];
+  buys.forEach((buy, i) => {
+    const x = x0 + i * (colW + gap);
+    const cx = x + colW / 2;
+    parts.push(glassPanel(x, tileY, colW, colH, 28));
+    parts.push(`<circle cx="${cx}" cy="${tileY + 36}" r="8" fill="${buy.color}"/>`);
+    parts.push(text(buy.sponsor, cx, tileY + 72, { size: 20, fill: INK, anchor: "middle", weight: 700 }));
+    parts.push(text("added", cx, tileY + 98, { size: 14, fill: MUTED, anchor: "middle" }));
+    parts.push(text(formatSpendExact(buy.amount), cx, tileY + 150, { size: 40, fill: INK, anchor: "middle", weight: 700 }));
+    parts.push(
+      text(`in ${buy.market} ${displayMedia(buy.media)} for ${formatGrp(buy.grp)} GRP`, cx, tileY + 186, {
+        size: 15,
+        fill: MUTED,
+        anchor: "middle",
+      }),
+    );
+    parts.push(text(buy.station, cx, tileY + 214, { size: 13, fill: FAINT, anchor: "middle", weight: 700, spacing: 1.2 }));
+  });
+  return parts.join("");
+}
+
+function buyerTile(row: BuyerRow, x: number, y: number, w: number, h: number, spendMax: number, grpMax: number): string {
+  const pad = 22;
+  const track = w - pad * 2;
+  const spendW = barWidth(row.spend, spendMax, track);
+  const grpW = barWidth(row.grp, grpMax, track);
+  const barY = y + h - 42;
+  return [
+    glassPanel(x, y, w, h, 22),
+    `<rect x="${x + 18}" y="${y + 10}" width="${w - 36}" height="4" rx="2" fill="${row.color}" opacity="0.85"/>`,
+    text(row.name, x + pad, y + 48, { size: 22, fill: INK, weight: 700 }),
+    text(`${formatGrp(row.grp)} GRP`, x + w - pad, y + 48, { size: 15, fill: MUTED, anchor: "end", weight: 700 }),
+    text(formatSpendShort(row.spend), x + pad, y + 86, { size: 26, fill: INK, weight: 700 }),
+    `<rect x="${x + pad}" y="${barY}" width="${track}" height="12" rx="6" fill="${TRACK}"/>`,
+    `<rect x="${x + pad}" y="${barY}" width="${spendW}" height="12" rx="6" fill="${row.color}"/>`,
+    `<rect x="${x + pad}" y="${barY + 18}" width="${track}" height="5" rx="2.5" fill="${TRACK}"/>`,
+    `<rect x="${x + pad}" y="${barY + 18}" width="${grpW}" height="5" rx="2.5" fill="${row.color}" opacity="0.5"/>`,
+  ].join("");
+}
+
+function raceGrid(buyers: readonly BuyerRow[], y: number): string {
+  const shown = landscapeBuyers(buyers);
+  const gap = 14;
+  const colW = Math.round((W - 80 - gap) / 2);
+  const rowH = 156;
+  const x0 = Math.round((W - (colW * 2 + gap)) / 2);
+  const spendMax = maxSpend(shown);
+  const grpMax = maxGrp(shown);
+  const parts = [sectionLabel("RACE", y + 8)];
+  shown.forEach((row, i) => {
+    const col = i % 2;
+    const r = Math.floor(i / 2);
+    parts.push(buyerTile(row, x0 + col * (colW + gap), y + 24 + r * (rowH + gap), colW, rowH, spendMax, grpMax));
+  });
+  return parts.join("");
+}
+
+function polar(cx: number, cy: number, r: number, a: number): [number, number] {
+  return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
+}
+
+/** Donut slice. Angles in radians, 0 = 3 o'clock, sweep clockwise from 12 o'clock. */
+export function donutSlice(cx: number, cy: number, outer: number, inner: number, a0: number, a1: number): string {
+  const large = a1 - a0 > Math.PI ? 1 : 0;
+  const [x0, y0] = polar(cx, cy, outer, a0);
+  const [x1, y1] = polar(cx, cy, outer, a1);
+  const [ix1, iy1] = polar(cx, cy, inner, a1);
+  const [ix0, iy0] = polar(cx, cy, inner, a0);
+  return `M${x0.toFixed(2)} ${y0.toFixed(2)} A${outer} ${outer} 0 ${large} 1 ${x1.toFixed(2)} ${y1.toFixed(2)} L${ix1.toFixed(2)} ${iy1.toFixed(2)} A${inner} ${inner} 0 ${large} 0 ${ix0.toFixed(2)} ${iy0.toFixed(2)} Z`;
+}
+
+function affiliationPies(slices: readonly AffiliationSlice[], y: number): string {
+  const gap = 16;
+  const colW = Math.round((W - 80 - gap) / 2);
+  const colH = 248;
+  const x0 = Math.round((W - (colW * 2 + gap)) / 2);
+  const charts: { title: string; key: "spend" | "grp"; format: (n: number) => string }[] = [
+    { title: "SPEND", key: "spend", format: formatSpendShort },
+    { title: "GRP", key: "grp", format: formatGrp },
+  ];
+  const parts = [sectionLabel("DMA", y + 6)];
+  charts.forEach((chart, i) => {
+    const x = x0 + i * (colW + gap);
+    const cx = x + colW / 2;
+    const cy = y + 118;
+    const total = slices.reduce((sum, s) => sum + s[chart.key], 0);
+    parts.push(glassPanel(x, y + 20, colW, colH, 24));
+    parts.push(text(chart.title, cx, y + 48, { size: 13, fill: FAINT, anchor: "middle", weight: 700, spacing: 1.8 }));
+    let angle = -Math.PI / 2;
+    const gapA = 0.06;
+    const usable = Math.PI * 2 - gapA * slices.length;
+    for (const slice of slices) {
+      const share = total > 0 ? slice[chart.key] / total : 0;
+      const sweep = Math.max(0.02, share * usable);
+      parts.push(
+        `<path d="${donutSlice(cx, cy, 70, 40, angle, angle + sweep)}" fill="${slice.color}"/>`,
+      );
+      angle += sweep + gapA;
+    }
+    parts.push(text(chart.format(total), cx, cy + 6, { size: 16, fill: INK, anchor: "middle", weight: 700 }));
+    let lx = x + 24;
+    slices.forEach((slice) => {
+      parts.push(`<circle cx="${lx}" cy="${y + 226}" r="5" fill="${slice.color}"/>`);
+      parts.push(text(`${slice.label}  ${chart.format(slice[chart.key])}`, lx + 12, y + 230, { size: 13, fill: INK, weight: 700 }));
+      lx += colW / 2 - 8;
+    });
+  });
+  return parts.join("");
+}
+
+function spendTotalsStrip(slices: readonly AffiliationSlice[], race: number, y: number): string {
+  const x = 40;
+  const w = W - 80;
+  const h = 92;
+  const [dem, gop] = slices;
+  const third = w / 3;
+  return [
+    glassPanel(x, y, w, h, 22),
+    text("DEM", x + third * 0.5, y + 26, { size: 11, fill: FAINT, anchor: "middle", weight: 700, spacing: 1.4 }),
+    text(dem?.parties ?? "", x + third * 0.5, y + 44, { size: 12, fill: MUTED, anchor: "middle" }),
+    text(formatSpendExact(dem?.spend ?? 0), x + third * 0.5, y + 72, { size: 20, fill: "#0A84FF", anchor: "middle", weight: 700 }),
+    text("GOP", x + third * 1.5, y + 26, { size: 11, fill: FAINT, anchor: "middle", weight: 700, spacing: 1.4 }),
+    text(gop?.parties ?? "", x + third * 1.5, y + 44, { size: 12, fill: MUTED, anchor: "middle" }),
+    text(formatSpendExact(gop?.spend ?? 0), x + third * 1.5, y + 72, { size: 20, fill: "#FF3B30", anchor: "middle", weight: 700 }),
+    text("RACE", x + third * 2.5, y + 26, { size: 11, fill: FAINT, anchor: "middle", weight: 700, spacing: 1.4 }),
+    text("both sides", x + third * 2.5, y + 44, { size: 12, fill: MUTED, anchor: "middle" }),
+    text(formatSpendExact(race), x + third * 2.5, y + 72, { size: 20, fill: INK, anchor: "middle", weight: 700 }),
+  ].join("");
+}
+
+function field(): string {
+  return `
+  <rect width="${W}" height="${H}" fill="${CREAM}"/>
+  <ellipse filter="url(#orb)" cx="220" cy="280" rx="260" ry="180" fill="#7EB6FF" opacity="0.42"/>
+  <ellipse filter="url(#orb)" cx="880" cy="340" rx="240" ry="170" fill="#FF8A80" opacity="0.34"/>
+  <ellipse filter="url(#orb)" cx="540" cy="980" rx="320" ry="200" fill="#C4B5FD" opacity="0.3"/>
+  <ellipse filter="url(#orb)" cx="160" cy="1100" rx="180" ry="140" fill="#FFFFFF" opacity="0.35"/>
+`;
+}
+
+function defs(): string {
+  return `
+  <defs>
+    <filter id="orb" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="42"/>
+    </filter>
+    <filter id="glassDepth" x="-15%" y="-20%" width="130%" height="160%">
+      <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#1A1814" flood-opacity="0.12"/>
+    </filter>
+  </defs>`;
+}
+
+export function renderCompetitiveSvg(card: CompetitiveCard): string {
+  const heroY = 208;
+  const raceY = 540;
+  const dmaY = 892;
+  const stripY = 1176;
+  const sides = affiliationTotals(card.buyers);
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="Inter, sans-serif" role="img" aria-label="${esc(card.title)} just in">
+  ${defs()}
+  ${field()}
+  ${logoMark(card)}
+  ${text(card.kicker, CX, 108, { size: 12, fill: BRAND, anchor: "middle", weight: 700, spacing: 2.8 })}
+  ${text(card.title, CX, 158, { size: 48, fill: INK, anchor: "middle", weight: 700 })}
+  ${text(`${card.dateLabel}  ·  ${card.market}`, CX, 190, { size: 16, fill: MUTED, anchor: "middle" })}
+  ${justInHero(card.justIn, heroY)}
+  ${raceGrid(card.buyers, raceY)}
+  ${affiliationPies(sides, dmaY)}
+  ${spendTotalsStrip(sides, raceSpendTotal(card.buyers), stripY)}
+  ${text(`${card.footer}   ·   ${card.handle}`, CX, 1318, { size: 13, fill: FAINT, anchor: "middle" })}
+</svg>`;
+}
