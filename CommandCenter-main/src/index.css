@@ -8123,9 +8123,10 @@ li.counting .tt-count.card {
 .tt-front-side .tt-score-mast-side b,
 .tt-rail-recap .tt-score-mast-side b {
   font-size: 22px;
-  min-width: 1.5em;
+  min-width: 1.75em;
   text-align: right;
   flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
 }
 .tt-score-mast-state {
   position: absolute;
