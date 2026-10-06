@@ -1,24 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import MlbBaseDiamond from "@/components/sports/MlbBaseDiamond";
+import MlbHeatGrid from "@/components/sports/MlbHeatGrid";
 import PlayerHeadshot from "@/components/sports/PlayerHeadshot";
 import {
   batterGameLine,
-  clampFieldPoint,
   fetchMlbBatterHeatZones,
   fetchMlbPlayByPlay,
-  FIELD_HOME,
-  FIELD_VB,
-  flightArcHeight,
-  flightPathD,
   heatZoneGrid,
-  mapSprayToField,
   pitchCallShort,
   pitchChipKind,
   pitchTypeLabel,
   playHeadline,
   resolvePbpView,
-  type MlbHeatTemp,
+  shouldRenderPbpFieldMap,
   type MlbPbpPitch,
   type MlbPbpPlay,
   type MlbPbpRunner,
@@ -62,202 +58,44 @@ function CountDots({
   );
 }
 
-function heatFill(temp: MlbHeatTemp): { bg: string; fg: string } {
-  if (temp === "hot") return { bg: "#d32f2f", fg: "#fff" };
-  if (temp === "warm") return { bg: "#e08a90", fg: "#1a1220" };
-  if (temp === "cold") return { bg: "#1e62d0", fg: "#fff" };
-  if (temp === "cool") return { bg: "#7ea6e8", fg: "#102038" };
-  return { bg: "#eceef4", fg: "#1a1d27" };
-}
-
-function BatterSilhouette({ side }: { side: "L" | "R" | "S" | null }) {
-  const flip = side === "L";
-  return (
-    <svg
-      viewBox="0 0 120 200"
-      className={cn(
-        "pointer-events-none absolute bottom-0 h-full w-auto text-white/[0.14]",
-        flip ? "right-[-6%] -scale-x-100" : "left-[-8%]",
-      )}
-      aria-hidden
-    >
-      <g fill="currentColor">
-        <ellipse cx="48" cy="22" rx="16" ry="18" />
-        <path d="M34 38c-8 6-16 22-14 42 1 9 6 14 14 16l6-22 14 28 18-4-12-30c6-12 6-24-2-32-6-6-16-6-24 2z" />
-        <path d="M38 88c-4 22-8 44-6 58l22 4 8-40 16 52 24-2-18-64-20-12z" />
-        <path d="M34 148c-2 16 0 34 2 46h22c-2-16-4-30-2-46z" />
-        <path d="M68 154c2 14 6 30 8 40h22c-4-12-8-28-10-40z" />
-        <path d="M78 20c22-28 36-8 32 14-8 18-22 40-28 52l-10-6c8-14 18-30 22-42 2-8-2-16-16-8z" />
-      </g>
-    </svg>
-  );
-}
-
-function HeatGrid({
-  batterId,
-  batSide,
-  cells,
-  pending,
-}: {
-  batterId: number | null;
-  batSide: "L" | "R" | "S" | null;
-  cells: ReturnType<typeof heatZoneGrid>;
-  pending: boolean;
-}) {
-  return (
-    <div className="relative mx-auto flex h-[250px] w-full max-w-[24rem] items-center justify-center sm:h-[270px]">
-      <BatterSilhouette side={batSide} />
-      <div
-        key={batterId ?? "none"}
-        className="relative z-[1] grid grid-cols-3 gap-[4px] rounded-[2px] bg-black/20 p-[4px]"
-        role="img"
-        aria-label="Batter strike-zone heat"
-      >
-        {cells.map((cell, i) => {
-          const { bg, fg } = heatFill(cell.temp);
-          return (
-            <div
-              key={cell.zone}
-              className="mlb-pbp-cell-in flex h-11 w-[3.15rem] items-center justify-center text-[12px] font-semibold tabular-nums sm:h-12 sm:w-[3.4rem] sm:text-[13px]"
-              style={{
-                background: pending ? "rgba(255,255,255,0.08)" : bg,
-                color: pending ? "rgba(255,255,255,0.35)" : fg,
-                animationDelay: `${80 + i * 45}ms`,
-              }}
-            >
-              {pending ? "—" : cell.value}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 function OnBaseRow({ runners }: { runners: MlbPbpRunner[] }) {
   const at = (n: 1 | 2 | 3) => runners.find((r) => r.base === n);
-  const bag = (on: boolean) =>
-    on ? "bg-white shadow-[0_0_0_1px_rgba(255,255,255,0.35)]" : "bg-white/15";
-  const label = (n: 1 | 2 | 3) => {
-    const r = at(n);
-    return r ? `${n}B: ${r.shortName}` : `${n}B: empty`;
-  };
+  const names = ([1, 2, 3] as const)
+    .map((n) => {
+      const r = at(n);
+      return r ? `${n}B: ${r.shortName}` : null;
+    })
+    .filter((bit): bit is string => Boolean(bit));
   return (
     <div className="flex items-center gap-3 border-t border-white/[0.06] px-3 py-3 sm:px-4">
-      <div className="relative h-10 w-10 shrink-0" aria-hidden>
-        <span className={cn("absolute top-0 left-1/2 h-2.5 w-2.5 -translate-x-1/2 rotate-45", bag(Boolean(at(2))))} />
-        <span className={cn("absolute top-1/2 left-0 h-2.5 w-2.5 -translate-y-1/2 rotate-45", bag(Boolean(at(3))))} />
-        <span className={cn("absolute top-1/2 right-0 h-2.5 w-2.5 -translate-y-1/2 rotate-45", bag(Boolean(at(1))))} />
-      </div>
+      <MlbBaseDiamond
+        onFirst={Boolean(at(1))}
+        onSecond={Boolean(at(2))}
+        onThird={Boolean(at(3))}
+        className="mx-0 shrink-0"
+      />
       <p className="min-w-0 text-[12px] leading-snug text-white/75">
         <span className="mr-2 text-[10px] font-semibold tracking-[0.14em] text-white/40">
           ON BASE
         </span>
-        {label(1)}
-        <span className="mx-2 text-white/20">·</span>
-        {label(2)}
-        <span className="mx-2 text-white/20">·</span>
-        {label(3)}
+        {names.length ? names.join(" · ") : null}
       </p>
     </div>
   );
 }
 
-function FieldDiamond({
-  play,
-}: {
-  play: MlbPbpPlay | null;
-}) {
-  const landing = play?.hit
-    ? clampFieldPoint(mapSprayToField(play.hit.coordX, play.hit.coordY))
-    : null;
-  const arc = flightArcHeight(play?.hit ?? null);
-  const d = landing ? flightPathD(FIELD_HOME, landing, arc) : null;
-  const flyKey = `${play?.atBatIndex ?? "x"}-${landing?.x.toFixed(1) ?? ""}-${landing?.y.toFixed(1) ?? ""}`;
-
+function PlayResultLabel({ play }: { play: MlbPbpPlay | null }) {
+  const event = play?.event?.trim();
+  if (!event && !play?.description) return null;
   return (
-    <svg
-      viewBox={`0 0 ${FIELD_VB.w} ${FIELD_VB.h}`}
-      className="mx-auto block h-auto w-full max-w-[22rem]"
-      role="img"
-      aria-label={play?.event ? `${play.event} trajectory` : "Baseball field"}
-    >
-      <defs>
-        <linearGradient id="mlbPbpGrass" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#4caf62" />
-          <stop offset="55%" stopColor="#3d9a52" />
-          <stop offset="100%" stopColor="#2f7d42" />
-        </linearGradient>
-        <radialGradient id="mlbPbpDirt" cx="50%" cy="62%" r="42%">
-          <stop offset="0%" stopColor="#c4a06a" />
-          <stop offset="100%" stopColor="#a07c4a" />
-        </radialGradient>
-      </defs>
-      <path
-        d="M160 272 L274 168 L252 48 L160 16 L68 48 L46 168 Z"
-        fill="url(#mlbPbpGrass)"
-      />
-      <path
-        d="M160 258 L228 178 L160 112 L92 178 Z"
-        fill="url(#mlbPbpDirt)"
-        opacity="0.92"
-      />
-      <path
-        d="M160 236 L204 178 L160 132 L116 178 Z"
-        fill="#3f9a51"
-      />
-      <ellipse cx="160" cy="196" rx="11" ry="8" fill="#b89158" />
-      <path
-        d="M160 258 L228 178 M160 258 L92 178 M228 178 L160 112 L92 178"
-        fill="none"
-        stroke="rgba(255,255,255,0.55)"
-        strokeWidth="1.2"
-      />
-      {[
-        [228, 178],
-        [160, 112],
-        [92, 178],
-      ].map(([x, y]) => (
-        <rect
-          key={`${x}-${y}`}
-          x={x - 4}
-          y={y - 4}
-          width="8"
-          height="8"
-          fill="#f4f1e9"
-          transform={`rotate(45 ${x} ${y})`}
-        />
-      ))}
-      <path
-        d="M154 262h12l6 6-12 7-12-7z"
-        fill="#f4f1e9"
-      />
-      {d ? (
-        <path
-          key={flyKey}
-          className="mlb-pbp-fly"
-          d={d}
-          fill="none"
-          stroke="#111"
-          strokeWidth="1.7"
-          pathLength={1}
-        />
+    <div className="px-4 py-5 text-center">
+      {event ? (
+        <p className="text-[18px] font-semibold tracking-tight text-white">{event}</p>
       ) : null}
-      {landing ? (
-        <g key={`land-${flyKey}`} transform={`translate(${landing.x} ${landing.y})`}>
-          <rect
-            className="mlb-pbp-land"
-            x={-4.5}
-            y={-4.5}
-            width="9"
-            height="9"
-            fill="#3b82f6"
-            stroke="#0b1220"
-            strokeWidth="0.8"
-          />
-        </g>
+      {play?.description ? (
+        <p className="mt-1.5 text-[13px] leading-snug text-white/55">{play.description}</p>
       ) : null}
-    </svg>
+    </div>
   );
 }
 
@@ -481,6 +319,7 @@ export default function MlbPlayByPlayPanel({
   if (box?.pregame && !state.live) return null;
 
   const teamId = focus?.batter?.teamId ?? state.current?.batter?.teamId ?? null;
+  const showField = shouldRenderPbpFieldMap(focus ?? null);
   const canToggle = Boolean(state.current && state.lastComplete);
 
   return (
@@ -524,16 +363,15 @@ export default function MlbPlayByPlayPanel({
 
       <div key={`${view}-${focus?.atBatIndex ?? "x"}`} className="mlb-pbp-card-in">
         {view === "batter" ? (
-          <HeatGrid
-            batterId={batterId}
-            batSide={focus?.batSide ?? null}
-            cells={grid}
-            pending={zones.isPending && !zones.data}
-          />
-        ) : (
-          <div className="px-2 pb-1 pt-1">
-            <FieldDiamond play={focus ?? null} />
+          <div className="flex justify-center px-3 py-3">
+            <MlbHeatGrid
+              batterId={batterId}
+              cells={grid}
+              pending={zones.isPending && !zones.data}
+            />
           </div>
+        ) : showField ? null : (
+          <PlayResultLabel play={focus ?? null} />
         )}
       </div>
 

@@ -51,9 +51,10 @@ export default function MlbPbpPreviewPage() {
         <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
           MLB game detail
         </p>
-        <h1 className="text-xl font-semibold text-[#f4f1e9]">2D play-by-play</h1>
+        <h1 className="text-xl font-semibold text-[#f4f1e9]">Live matchup heat</h1>
         <p className="text-[12px] leading-relaxed text-[#9aa3b8]">
-          Same panel as <code className="text-white/70">/sports/mlb/game/:gamePk</code>.
+          Preview of heat zones. Game detail uses the pitcher / zone / batter matchup.
+          Trajectory map is hidden until landing is trustworthy.
           {gamePk ? ` Game ${gamePk}.` : " Picking a live or recent game…"}
         </p>
       </header>

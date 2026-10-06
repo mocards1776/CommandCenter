@@ -1,5 +1,8 @@
 import { Link } from "react-router-dom";
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import MlbBaseDiamond from "@/components/sports/MlbBaseDiamond";
+import MlbHeatGrid from "@/components/sports/MlbHeatGrid";
 import PlayerHeadshot from "@/components/sports/PlayerHeadshot";
 import {
   fetchMlbLiveMatchupExtras,
@@ -8,130 +11,40 @@ import {
   type MlbLiveSituation,
   type MlbPitchPlot,
 } from "@/lib/mlb";
+import { fetchMlbBatterHeatZones, heatZoneGrid } from "@/lib/mlb-pbp";
 import { cn } from "@/lib/utils";
 
-function BaseDiamond({
-  onFirst,
-  onSecond,
-  onThird,
-}: {
-  onFirst: boolean;
-  onSecond: boolean;
-  onThird: boolean;
-}) {
-  const bag = (on: boolean) =>
-    on ? "bg-cream shadow-[0_0_0_1px_rgba(255,255,255,0.35)]" : "bg-white/15";
-  return (
-    <div className="relative mx-auto h-9 w-9" aria-hidden>
-      <span className={cn("absolute top-0 left-1/2 h-2.5 w-2.5 -translate-x-1/2 rotate-45", bag(onSecond))} />
-      <span className={cn("absolute top-1/2 left-0 h-2.5 w-2.5 -translate-y-1/2 rotate-45", bag(onThird))} />
-      <span className={cn("absolute top-1/2 right-0 h-2.5 w-2.5 -translate-y-1/2 rotate-45", bag(onFirst))} />
-    </div>
-  );
-}
-
 function pitchFill(call: MlbPitchPlot["call"]): string {
-  if (call === "B") return "#3b82f6";
-  if (call === "S") return "#ef4444";
-  if (call === "X") return "#eab308";
-  return "#94a3b8";
+  if (call === "B") return "bg-[#3b82f6] text-white";
+  if (call === "S") return "bg-[#ef4444] text-white";
+  if (call === "X") return "bg-[#22c55e] text-[#082014]";
+  return "bg-white/20 text-white";
 }
 
-/** Catcher's-view strike zone with pitch dots (pX/pZ in feet). */
-function StrikeZonePlot({ pitches }: { pitches: MlbPitchPlot[] }) {
-  const zoneTop = pitches[0]?.zoneTop ?? 3.5;
-  const zoneBottom = pitches[0]?.zoneBottom ?? 1.5;
-  const halfPlate = 0.708; // 17" plate / 2
-  const padX = 1.15;
-  const padY = 0.55;
-  const minX = -halfPlate - padX;
-  const maxX = halfPlate + padX;
-  const minZ = zoneBottom - padY;
-  const maxZ = zoneTop + padY;
-  const vbW = 100;
-  const vbH = 130;
-  const toX = (pX: number) => ((pX - minX) / (maxX - minX)) * vbW;
-  // Higher pZ is higher in the zone — flip for SVG y
-  const toY = (pZ: number) => ((maxZ - pZ) / (maxZ - minZ)) * vbH;
-  const zx1 = toX(-halfPlate);
-  const zx2 = toX(halfPlate);
-  const zy1 = toY(zoneTop);
-  const zy2 = toY(zoneBottom);
-
+function PitchDots({ pitches }: { pitches: MlbPitchPlot[] }) {
+  if (!pitches.length) return null;
   return (
-    <svg
-      viewBox={`0 0 ${vbW} ${vbH}`}
-      className="mx-auto h-[7.5rem] w-[5.75rem]"
-      role="img"
-      aria-label="Strike zone pitch tracking"
-    >
-      <rect
-        x={zx1}
-        y={zy1}
-        width={zx2 - zx1}
-        height={zy2 - zy1}
-        fill="rgba(255,255,255,0.04)"
-        stroke="rgba(255,255,255,0.55)"
-        strokeWidth={1.4}
-      />
-      {/* 3×3 grid */}
-      {[1, 2].map((i) => (
-        <line
-          key={`v${i}`}
-          x1={zx1 + ((zx2 - zx1) * i) / 3}
-          y1={zy1}
-          x2={zx1 + ((zx2 - zx1) * i) / 3}
-          y2={zy2}
-          stroke="rgba(255,255,255,0.18)"
-          strokeWidth={0.8}
-        />
-      ))}
-      {[1, 2].map((i) => (
-        <line
-          key={`h${i}`}
-          x1={zx1}
-          y1={zy1 + ((zy2 - zy1) * i) / 3}
-          x2={zx2}
-          y2={zy1 + ((zy2 - zy1) * i) / 3}
-          stroke="rgba(255,255,255,0.18)"
-          strokeWidth={0.8}
-        />
-      ))}
+    <div className="flex max-w-[16rem] flex-wrap items-center justify-center gap-1.5">
       {pitches.map((p) => (
-        <g key={p.number}>
-          <circle
-            cx={toX(p.pX)}
-            cy={toY(p.pZ)}
-            r={5.2}
-            fill={pitchFill(p.call)}
-            stroke="rgba(0,0,0,0.45)"
-            strokeWidth={0.8}
-          >
-            <title>
-              {[
-                `#${p.number}`,
-                p.pitchType,
-                p.speed != null ? `${Math.round(p.speed)} mph` : null,
-                p.callLabel,
-              ]
-                .filter(Boolean)
-                .join(" · ")}
-            </title>
-          </circle>
-          <text
-            x={toX(p.pX)}
-            y={toY(p.pZ) + 1.6}
-            textAnchor="middle"
-            fill="#0b1220"
-            fontSize={5.5}
-            fontWeight={700}
-            fontFamily="ui-sans-serif, system-ui, sans-serif"
-          >
-            {p.number}
-          </text>
-        </g>
+        <span
+          key={p.number}
+          className={cn(
+            "grid h-6 w-6 place-items-center rounded-full text-[10px] font-bold tabular-nums",
+            pitchFill(p.call),
+          )}
+          title={[
+            `#${p.number}`,
+            p.pitchType,
+            p.speed != null ? `${Math.round(p.speed)} mph` : null,
+            p.callLabel,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        >
+          {p.number}
+        </span>
       ))}
-    </svg>
+    </div>
   );
 }
 
@@ -201,7 +114,7 @@ function SideCard({
   );
 }
 
-/** ESPN-style live pitcher / strike zone / batter panel with pitch tracking. */
+/** ESPN-style live pitcher / heat zone / batter panel. */
 export default function MlbLiveMatchupPanel({
   game,
   situation,
@@ -223,6 +136,13 @@ export default function MlbLiveMatchupPanel({
     enabled: Boolean(batter?.id && pitcher?.id),
     staleTime: 60_000,
   });
+  const zones = useQuery({
+    queryKey: ["mlb-pbp-heat", batter?.id],
+    queryFn: () => fetchMlbBatterHeatZones(batter!.id),
+    enabled: Boolean(batter?.id),
+    staleTime: 10 * 60_000,
+  });
+  const grid = useMemo(() => heatZoneGrid(zones.data), [zones.data]);
 
   const vsBits: string[] = [];
   if (extras.data?.vsPitcher && pitcher) {
@@ -240,8 +160,12 @@ export default function MlbLiveMatchupPanel({
       <div className="grid grid-cols-1 items-center gap-3 sm:grid-cols-[1fr_auto_1fr] sm:gap-4">
         <SideCard card={pitcher} role="pitcher" align="left" />
 
-        <div className="flex flex-col items-center gap-1.5">
-          <StrikeZonePlot pitches={situation.pitches} />
+        <div className="flex flex-col items-center gap-2">
+          <MlbHeatGrid
+            batterId={batter?.id ?? null}
+            cells={grid}
+            pending={zones.isPending && !zones.data}
+          />
           <p className="numeral text-[15px] font-semibold tracking-wide text-cream">
             {situation.balls}-{situation.strikes}
             <span className="mx-1.5 text-white/30">·</span>
@@ -249,11 +173,12 @@ export default function MlbLiveMatchupPanel({
               {situation.outs} out{situation.outs === 1 ? "" : "s"}
             </span>
           </p>
-          <BaseDiamond
+          <MlbBaseDiamond
             onFirst={situation.onFirst}
             onSecond={situation.onSecond}
             onThird={situation.onThird}
           />
+          <PitchDots pitches={situation.pitches} />
           {vsBits.length > 0 ? (
             <p className="max-w-[16rem] text-center text-[10px] leading-snug text-[#8b93a7]">
               {vsBits.join(" · ")}

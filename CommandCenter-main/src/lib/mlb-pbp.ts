@@ -380,6 +380,14 @@ export function mapLiveFeedToPbp(raw: MlbLiveFeedRaw | null | undefined): MlbPbp
  * Batter heat while a PA is underway; play result (field) after the PA ends
  * or before the next pitch of the following batter.
  */
+/**
+ * LAST PLAY spray/trajectory is hidden until landing matches the play
+ * description (Josh: a flyout must not plot as a short infield path).
+ */
+export function shouldRenderPbpFieldMap(_play: MlbPbpPlay | null | undefined): boolean {
+  return false;
+}
+
 export function resolvePbpView(state: MlbPbpState | null, prefer?: MlbPbpView | null): MlbPbpView {
   if (prefer === "batter" || prefer === "play") return prefer;
   if (!state) return "batter";

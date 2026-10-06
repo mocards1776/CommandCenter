@@ -7,11 +7,11 @@ import { useAuth } from "@/lib/auth-context";
 import { listFavoritePlayers } from "@/lib/favorite-players";
 import { fetchTaggedPlayerIds } from "@/lib/sports-player-tags";
 import { liveScoreHeader } from "@/lib/apple-score";
+import { mlbFinalWinnerFlags } from "@/lib/mlb-score-ui";
 import AppleScoreCluster from "@/components/sports/AppleScoreCluster";
 import PlayoffSeriesLine from "@/components/sports/PlayoffSeriesLine";
 import HighlightReel from "@/components/sports/HighlightReel";
 import MlbLiveMatchupPanel from "@/components/sports/MlbLiveMatchupPanel";
-import MlbPlayByPlayPanel from "@/components/sports/MlbPlayByPlayPanel";
 import PlayerHeadshot from "@/components/sports/PlayerHeadshot";
 import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
 import TeamMark from "@/components/sports/TeamMark";
@@ -231,12 +231,9 @@ export function MlbGameDetail({
     g.attendance != null ? `Att ${g.attendance.toLocaleString("en-US")}` : null,
     g.weather,
   ].filter(Boolean);
-  const showPbp = Boolean(g.live || !g.pregame || /warmup/i.test(g.status));
-
   return (
     <div className="w-full max-w-full min-w-0 space-y-5 overflow-x-hidden">
-      <GameMatchupHeader game={g} hideLiveMatchup={showPbp} />
-      {showPbp ? <MlbPlayByPlayPanel gamePk={g.gamePk} box={g} /> : null}
+      <GameMatchupHeader game={g} />
 
       {/* Pregame: starters → preview text → lineups/leaders → ESPN extras + BBRef. */}
       {g.pregame && (
@@ -1166,16 +1163,15 @@ function LiveSituationBar({
   );
 }
 
-function GameMatchupHeader({
-  game: g,
-  hideLiveMatchup = false,
-}: {
-  game: MlbBoxscore;
-  /** 2D PBP panel below already covers live at-bat / last-play. */
-  hideLiveMatchup?: boolean;
-}) {
-  const awayWins = !g.pregame && g.away.runs > g.home.runs;
-  const homeWins = !g.pregame && g.home.runs > g.away.runs;
+function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
+  const warmup = /warmup/i.test(g.status);
+  const playing = g.live || warmup;
+  const { awayWins, homeWins } = mlbFinalWinnerFlags({
+    pregame: g.pregame,
+    live: playing,
+    awayRuns: g.away.runs,
+    homeRuns: g.home.runs,
+  });
   const awayForm = useQuery({
     queryKey: ["mlb-team-form", g.away.teamId],
     queryFn: () => fetchMlbTeamForm(g.away.teamId),
@@ -1191,8 +1187,6 @@ function GameMatchupHeader({
   const showLiveMatchup =
     Boolean(g.situation) && (g.live || /warmup|in progress/i.test(g.status));
   const pregameClock = g.pregame && !/warmup/i.test(g.status);
-  const warmup = /warmup/i.test(g.status);
-  const playing = g.live || warmup;
   const final = !g.pregame && !g.live;
   const detail = g.inning || g.status;
   const barLabel = playing
@@ -1247,7 +1241,7 @@ function GameMatchupHeader({
           form={awayForm.data ?? null}
           showForm={pregameClock}
         />
-        <div className="shrink-0 self-center px-1 text-center">
+        <div className="min-w-0 shrink-0 self-center px-1 text-center">
           <AppleScoreCluster
             away={g.away.runs}
             home={g.home.runs}
@@ -1276,7 +1270,6 @@ function GameMatchupHeader({
               First pitch
             </p>
           ) : null}
-          <PlayoffSeriesLine line={g.seriesLine} className="mx-auto mt-1.5 max-w-[14rem] text-center" />
         </div>
         <EspnTeam
           side={g.home}
@@ -1287,6 +1280,10 @@ function GameMatchupHeader({
           showForm={pregameClock}
         />
       </div>
+      <PlayoffSeriesLine
+        line={g.seriesLine}
+        className="relative z-10 mx-auto max-w-[22rem] px-3 pb-3 text-center leading-snug"
+      />
 
       {pregameClock && (awayForm.data || homeForm.data) ? (
         <div className="relative z-10 grid grid-cols-2 gap-4 border-t border-white/[0.07] px-4 py-3.5 md:px-8 xl:hidden">
@@ -1295,7 +1292,7 @@ function GameMatchupHeader({
         </div>
       ) : null}
 
-      {hideLiveMatchup ? null : showLiveMatchup && g.situation ? (
+      {showLiveMatchup && g.situation ? (
         <MlbLiveMatchupPanel game={g} situation={g.situation} />
       ) : g.live && g.situation ? (
         <LiveSituationBar inning={g.inning} situation={g.situation} />
