@@ -5538,8 +5538,16 @@ function NewspaperDesk() {
         applyScaledFitBox(fitBox, sheet, pageW, fit, useTransform);
       }
     };
+    let raf = 0;
+    const schedule = () => {
+      if (raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        apply();
+      });
+    };
     apply();
-    const ro = new ResizeObserver(apply);
+    const ro = new ResizeObserver(schedule);
     ro.observe(el);
     const seen = new Set<Element>();
     const watchSheets = () => {
@@ -5548,13 +5556,18 @@ function NewspaperDesk() {
         seen.add(sheet);
         ro.observe(sheet);
       }
+      schedule();
     };
     watchSheets();
     const mo = new MutationObserver(watchSheets);
     mo.observe(el, { childList: true, subtree: true });
+    el.addEventListener("load", schedule, true);
+    void document.fonts?.ready.then(schedule);
     return () => {
+      if (raf) cancelAnimationFrame(raf);
       ro.disconnect();
       mo.disconnect();
+      el.removeEventListener("load", schedule, true);
     };
   }, [docPhase]);
 

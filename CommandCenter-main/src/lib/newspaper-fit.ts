@@ -38,6 +38,11 @@ export function scaledFitBox(pageW: number, sheetH: number, fit: number): { widt
   return { width: pageW * f, height: Math.max(0, sheetH) * f };
 }
 
+/** Unzoomed sheet height. scrollHeight wins when overflow is clipped by a stale wrapper. */
+export function sheetLayoutHeight(sheet: { offsetHeight: number; scrollHeight: number }): number {
+  return Math.max(sheet.offsetHeight, sheet.scrollHeight);
+}
+
 /** iPad / no-zoom-layout: use transform:scale and a height-corrected wrapper. */
 export function sheetNeedsTransformFit(
   ua = typeof navigator === "undefined" ? "" : navigator.userAgent,
@@ -81,7 +86,7 @@ export function applyScaledFitBox(
     sheet.style.transformOrigin = "";
     return;
   }
-  const box = scaledFitBox(pageW, sheet.offsetHeight, fit);
+  const box = scaledFitBox(pageW, sheetLayoutHeight(sheet), fit);
   fitBox.classList.add("tt-fit-transform");
   fitBox.style.width = `${box.width}px`;
   fitBox.style.height = `${box.height}px`;

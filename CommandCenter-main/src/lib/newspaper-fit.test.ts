@@ -9,6 +9,7 @@ import {
   pageFit,
   plansEqual,
   scaledFitBox,
+  sheetLayoutHeight,
   sheetNeedsTransformFit,
   unzoomedPx,
 } from "./newspaper-fit.ts";
@@ -22,6 +23,7 @@ assert(HARD_PAGE_H === 1650, "hard pack cap stays 1650");
 assert(pageFit(768, 1032) === 768 / 1032, "iPad 768 fit is width-only min(1, w/1032)");
 assert(pageFit(1032, 1032) === 1, "13-inch portrait is true size");
 assert(pageFit(1400, 1032) === 1, "wider screens do not upscale");
+assert(sheetLayoutHeight({ offsetHeight: 800, scrollHeight: 2929 }) === 2929, "wrapper tracks the full sheet, not a stale clip");
 assert(scaledFitBox(1032, 1600, 768 / 1032).width === 768, "transform wrapper width is the visual sheet");
 assert(
   Math.abs(scaledFitBox(1032, 1600, 768 / 1032).height - 1600 * (768 / 1032)) < 0.01,
