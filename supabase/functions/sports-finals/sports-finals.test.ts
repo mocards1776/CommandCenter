@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { cardFromSummary, finalCaption, formatFinalsTimestamp, highlightFromBox, parseLinescores, pickCardLogoHref, pickMlbPerformers, starsFromLanding, statMagnitude } from "./card.ts";
+import { cardFromSummary, daySlotFromScoreboard, daySlotLabel, finalCaption, formatFinalsTimestamp, formatGameStart, highlightFromBox, parseLinescores, parsePitchingDecision, pickCardLogoHref, pickMlbDecisions, pickMlbPerformers, starsFromLanding, statMagnitude } from "./card.ts";
 import { mapMlbWinProbability, mlbInningLabels, mlbPlayRefs, mlbWinProbDomain } from "./mlb-win-probability.ts";
 import { mapThreeStars } from "./nhl-stars.ts";
 import { formatBestOf, formatPlayoffSeriesLine, mlbPlayoffFromSummary } from "./series.ts";
@@ -596,6 +596,24 @@ assert.equal(spreadOutcome(-2.5, 17, 14), "covered");
 assert.equal(spreadOutcome(-3, 20, 17), "push");
 assert.equal(spreadOutcome(-2.5, 24, 27), "not covered");
 assert.equal(formatFinalsTimestamp("2026-10-04T17:00Z"), "Sun, Oct 4, 12:00 PM CT");
+assert.equal(formatGameStart("2026-10-05T21:00Z"), "Mon, Oct 5, 4:00 PM CT");
+assert.deepEqual(parsePitchingDecision("W, 1-0"), { role: "W", record: "1-0" });
+assert.deepEqual(parsePitchingDecision("L, 0-1, B, 1"), { role: "L", record: "0-1" });
+assert.deepEqual(parsePitchingDecision("S, 2"), { role: "S", record: "0-0-2 SV" });
+assert.equal(daySlotLabel(1, 2), "Game 1 of 2");
+assert.equal(
+  daySlotFromScoreboard(
+    {
+      events: [
+        { id: "401907991", date: "2026-10-05T21:00Z" },
+        { id: "401907986", date: "2026-10-06T00:00Z" },
+      ],
+    },
+    "401907991",
+    "20261005",
+  ),
+  "Game 1 of 2",
+);
 
 const covered = oddsFromSummary(
   {
@@ -950,6 +968,15 @@ assert.ok(
   soxGuardians.leaders.every((row) => row.photoUrl?.startsWith("https://")),
   "key performers carry ESPN headshot URLs",
 );
+assert.deepEqual(
+  pickMlbDecisions(soxGuardians.mlbBox!).map((row) => row.role),
+  ["W", "L", "S"],
+);
+assert.equal(soxGuardians.daySlot, "Game 1 of 2");
+assert.equal(soxGuardians.sentAt, "2026-10-06T06:20:00Z");
+assert.equal(soxGuardians.attendance, 32050);
+assert.equal(soxGuardians.duration, "3:06");
+assert.match(soxGuardians.weather ?? "", /61° · Clear/);
 const soxSvg = renderFinalSvg(soxGuardians);
 assert.match(soxSvg, /S\. Antonacci/);
 assert.match(soxSvg, /C\. DeLautter/);
@@ -960,6 +987,20 @@ assert.match(soxSvg, new RegExp(`font-size="${MLB_BOX_STAT_SIZE}"[^>]*>11<`));
 assert.ok(MLB_BOX_NAME_SIZE >= 20 && MLB_BOX_STAT_SIZE >= 20, "box type must stay phone-readable");
 const soxH = Number(/<svg [^>]*height="(\d+(?:\.\d+)?)"/.exec(soxSvg)?.[1] ?? 0);
 assert.ok(soxH > 1350 && soxH <= FINALS_ALERT_TARGET_HEIGHT + 500, `full-box MLB card height ${soxH}`);
+assert.match(soxSvg, />WIN</);
+assert.match(soxSvg, />LOSS</);
+assert.match(soxSvg, />SAVE</);
+assert.match(soxSvg, /S\. Burke/);
+assert.match(soxSvg, /E\. Sabrowski/);
+assert.match(soxSvg, /G\. Taylor/);
+assert.match(soxSvg, /Game 1 of 2/);
+assert.match(soxSvg, /Tue, Oct 6, 1:20 AM CT/);
+assert.match(soxSvg, /Mon, Oct 5, 4:00 PM CT/);
+{
+  const wpX = Number(/x="(\d+(?:\.\d+)?)"[^>]*>Win probability</.exec(soxSvg)?.[1] ?? 0);
+  const winX = Number(/x="(\d+(?:\.\d+)?)"[^>]*>WIN</.exec(soxSvg)?.[1] ?? 0);
+  assert.ok(wpX > 0 && winX > wpX, `W/L/S should sit right of WP (wp x=${wpX}, win x=${winX})`);
+}
 {
   const withArt = structuredClone(soxGuardians);
   withArt.away.logoData = "data:image/png;base64,aaa";

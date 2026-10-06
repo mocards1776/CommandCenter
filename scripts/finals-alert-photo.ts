@@ -11,7 +11,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { initWasm, Resvg } from "@resvg/resvg-wasm";
-import { cardFromSummary, hydrateFinalCardArt, loadFinalCard, type FinalCard } from "../supabase/functions/sports-finals/card.ts";
+import { cardFromSummary, fetchDaySlot, hydrateFinalCardArt, loadFinalCard, type FinalCard } from "../supabase/functions/sports-finals/card.ts";
 import { whiteSoxGuardiansPlayoffFixture } from "../supabase/functions/sports-finals/mlb-playoff-fixture.ts";
 import { tablesFromStandings } from "../supabase/functions/sports-finals/standings.ts";
 import { renderFinalSvg } from "../supabase/functions/sports-finals/svg.ts";
@@ -393,7 +393,9 @@ if (has("fixture") || !gameId) {
   }
 }
 
-if (!card.away.logoData || !card.home.logoData || card.leaders.some((row) => row.photoUrl && !row.photoData)) {
+card.sentAt = new Date().toISOString();
+if (!card.daySlot) card.daySlot = await fetchDaySlot(card.sport, card.eventId, card.date);
+if (!card.away.logoData || !card.home.logoData || card.leaders.some((row) => row.photoUrl && !row.photoData) || card.mlbDecisions.some((row) => row.photoUrl && !row.photoData)) {
   await hydrateFinalCardArt(card);
 }
 

@@ -57,7 +57,7 @@ const CLE_LOGOS = [
 ];
 
 export function whiteSoxGuardiansPlayoffFixture(): FinalCard {
-  return cardFromSummary("mlb", "401810002", {
+  const card = cardFromSummary("mlb", "401810002", {
     header: {
       id: "401810002",
       season: { year: 2026, type: 3 },
@@ -67,6 +67,7 @@ export function whiteSoxGuardiansPlayoffFixture(): FinalCard {
           date: "2026-10-05T21:00Z",
           venue: { fullName: "Progressive Field" },
           notes: [{ headline: "ALDS - Game 2" }],
+          attendance: 32050,
           competitors: [
             {
               homeAway: "away",
@@ -101,6 +102,12 @@ export function whiteSoxGuardiansPlayoffFixture(): FinalCard {
           ],
         },
       ],
+    },
+    gameInfo: {
+      venue: { fullName: "Progressive Field" },
+      attendance: 32050,
+      gameDuration: "3:06",
+      weather: { temp: "61", condition: "Clear", wind: "13 mph, In From CF" },
     },
     seasonseries: [
       {
@@ -191,8 +198,8 @@ export function whiteSoxGuardiansPlayoffFixture(): FinalCard {
               athletes: [
                 pitcher("A. Kay", ["0.1", "1", "2", "2", "1", "0"], undefined, "40947"),
                 pitcher("S. Newcomb", ["2.0", "1", "0", "0", "1", "3"], undefined, "33856"),
-                pitcher("S. Burke", ["5.1", "1", "1", "1", "1", "6"], "W", "4867679"),
-                pitcher("G. Taylor", ["1.1", "1", "0", "0", "1", "1"], undefined, "4927630"),
+                pitcher("S. Burke", ["5.1", "1", "1", "1", "1", "6"], "W, 1-0", "4867679"),
+                pitcher("G. Taylor", ["1.1", "1", "0", "0", "0", "0"], "S, 2", "4927630"),
               ],
             },
           ],
@@ -220,7 +227,7 @@ export function whiteSoxGuardiansPlayoffFixture(): FinalCard {
               labels: ["IP", "H", "R", "ER", "BB", "K"],
               athletes: [
                 pitcher("G. Williams", ["5.0", "4", "2", "2", "3", "11"], undefined, "4345076"),
-                pitcher("E. Sabrowski", ["0.2", "1", "2", "2", "1", "0"], undefined, "5194333"),
+                pitcher("E. Sabrowski", ["0.2", "1", "2", "2", "1", "0"], "L, 0-1", "5194333"),
                 pitcher("S. Armstrong", ["1.1", "0", "0", "0", "0", "1"], undefined, "33499"),
                 pitcher("C. Smith", ["1.0", "0", "0", "0", "0", "1"], undefined, "4987924"),
               ],
@@ -259,4 +266,7 @@ export function whiteSoxGuardiansPlayoffFixture(): FinalCard {
       { homeWinPercentage: 0, playId: "b9" },
     ],
   });
+  card.daySlot = "Game 1 of 2";
+  card.sentAt = "2026-10-06T06:20:00Z";
+  return card;
 }
