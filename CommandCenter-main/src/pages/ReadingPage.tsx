@@ -118,6 +118,7 @@ import {
   sameWork,
 } from "@/lib/similar-books";
 import RatingPicker from "@/components/RatingPicker";
+import ReadingYearChart from "@/components/ReadingYearChart";
 import { useCelebration } from "@/components/celebration-context";
 import { cn, todayStr, fmtLongDate } from "@/lib/utils";
 import type { Book, BookHighlight, ContentType, ReadStatus } from "@/types";
@@ -5739,6 +5740,28 @@ export default function ReadingPage() {
               books={books ?? []}
               sessions={sessions ?? []}
               onBreakdown={openBreakdown}
+            />
+            <ReadingYearChart
+              books={books ?? []}
+              sessions={sessions ?? []}
+              onBreakdown={(focus) =>
+                openBreakdown(
+                  focus.kind === "finished"
+                    ? {
+                        kind: "finished",
+                        label: focus.label,
+                        from: focus.from,
+                        to: focus.to,
+                        contentType: "book",
+                      }
+                    : {
+                        kind: "pages",
+                        label: focus.label,
+                        from: focus.from,
+                        to: focus.to,
+                      },
+                )
+              }
             />
             <PagesCalendar sessions={sessions ?? []} />
             <GoalCard
