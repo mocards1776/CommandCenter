@@ -3185,7 +3185,17 @@ function WrapPlayers({ card }: { card: GameWrapCard }) {
   );
 }
 
-function WrapBrief({ card, trim, path }: { card: GameWrapCard; trim?: number; path?: string }) {
+function WrapBrief({
+  card,
+  trim,
+  path,
+  flow,
+}: {
+  card: GameWrapCard;
+  trim?: number;
+  path?: string;
+  flow?: boolean;
+}) {
   const lookup = useContext(GameLookup);
   const game = isSingleGameRecap(card) ? lookup(card) : null;
   const copy = wrapBriefCopy(card, 4);
@@ -3199,6 +3209,7 @@ function WrapBrief({ card, trim, path }: { card: GameWrapCard; trim?: number; pa
       data-tt-keys={storyReadKeys(card).join("|")}
       data-tt-title={card.headline}
       {...(trim != null ? { "data-tt-trim": trim } : {})}
+      {...(flow ? { "data-tt-flow": "" } : {})}
     >
       <Kicker card={card} />
       <h3 className="wsj-hl sm">
@@ -3248,7 +3259,7 @@ function WrapFlow({ cards, path }: { cards: GameWrapCard[]; path: string }) {
     if (!storyFitsSection(card, path)) continue;
     if (shown.some((prev) => prev.id === card.id || sameGameStory(prev, card))) continue;
     shown.push(card);
-    if (shown.length >= 9) break;
+    if (shown.length >= 6) break;
   }
   const cols = balanceWrapColumns(shown, 3);
   return (
@@ -3256,7 +3267,7 @@ function WrapFlow({ cards, path }: { cards: GameWrapCard[]; path: string }) {
       {cols.map((col, i) => (
         <div key={i} className="tt-wrap-col">
           {col.map((card, j) => (
-            <WrapBrief key={card.id} card={card} path={path} trim={45 + i * 10 + j} />
+            <WrapBrief key={card.id} card={card} path={path} trim={45 + i * 10 + j} flow={j > 0} />
           ))}
         </div>
       ))}
@@ -3292,7 +3303,7 @@ function ScoresDesk({
         if (!card || !storyFitsSection(card, page.path)) return [];
         if (filedWraps.some((prev) => prev.id === card.id || sameGameStory(prev, card))) return [];
         return [card];
-      })
+      }).slice(0, Math.max(0, 6 - filedWraps.length))
     : [];
   const wrapCards = [...filedWraps, ...boardWraps];
   if (!board && !wrapCards.length) return <p className="wsj-empty">Setting the box scores…</p>;
