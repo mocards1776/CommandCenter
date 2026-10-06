@@ -4996,8 +4996,7 @@ function FolioSlot({
     kind === "favorites-day" ||
     kind === "national" ||
     kind === "missouri" ||
-    kind === "sport-front" ||
-    /^[ABC]1$/.test(folio);
+    /^(MLB|NFL|CFB|NHL|EPL|EFL|NBA|CBB)1$/.test(folio);
   const near = essential || index < 3 || Math.abs(index - current) <= NEAR_PAGES;
   const [shown, setShown] = useState(essential || index < 3);
   useEffect(() => {
