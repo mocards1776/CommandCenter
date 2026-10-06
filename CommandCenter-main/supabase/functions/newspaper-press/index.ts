@@ -19,6 +19,7 @@ type Issue = {
   stories: unknown[];
   queries: unknown[];
 };
+type PrintedQuery = { key: unknown[]; data: unknown };
 type PressModule = {
   composePress: (args: {
     pressId: string;
@@ -31,6 +32,8 @@ type PressModule = {
   pressEdition: () => { id: string; day: string };
   previousPressId: (pressId: string) => string | null;
   slimIssue: (issue: Issue) => Issue;
+  slimPrintedQuery: (query: PrintedQuery) => PrintedQuery;
+  checkpointBag: (bag: Record<string, unknown>) => Record<string, unknown>;
   pressStep: (
     args: {
       pressId: string;
@@ -44,7 +47,10 @@ type PressModule = {
       editor?: (request: unknown) => Promise<unknown>;
     },
     bag: Record<string, unknown> | null,
-  ) => Promise<{ done: false; bag: Record<string, unknown> } | { done: true; issue: Issue }>;
+  ) => Promise<
+    | { done: false; bag: Record<string, unknown>; flush: PrintedQuery[] }
+    | { done: true; issue: Issue; flush: PrintedQuery[] }
+  >;
 };
 
 /** Long enough for one Grok pass; short enough that a hung editor still leaves time to file the rule desk's paper. */
@@ -195,7 +201,8 @@ Deno.serve(async (req) => {
   }
 
   const supabase = createClient(url, key);
-  const { deskFavorites, pressEdition, previousPressId, pressStep, slimIssue } = await loadPress();
+  const { deskFavorites, pressEdition, previousPressId, pressStep, slimPrintedQuery, checkpointBag } =
+    await loadPress();
   const press = pressEdition();
   let continued = false;
   try {
@@ -231,7 +238,9 @@ Deno.serve(async (req) => {
   }
 
   const saved = existing?.queries as { checkpoint?: boolean; bag?: Record<string, unknown> } | null;
-  const bag = saved && typeof saved === "object" && !Array.isArray(saved) && saved.checkpoint ? (saved.bag ?? null) : null;
+  const bag =
+    saved && typeof saved === "object" && !Array.isArray(saved) && saved.checkpoint ? (saved.bag ?? null) : null;
+  const bagStage = typeof bag?.stage === "number" ? bag.stage : 0;
 
   try {
     const { data: desk } = await supabase
@@ -256,19 +265,23 @@ Deno.serve(async (req) => {
     const prevId = previousPressId(press.id);
     let carried: unknown[] = [];
     let carriedMissouri: unknown[] = [];
-    if (prevId) {
+    // Only the Missouri desk (8) and story file (15) need yesterday's paper.
+    // Loading it on every hop doubled finalize's heap.
+    if (prevId && (bagStage === 8 || bagStage >= 15)) {
       const { data: prev } = await supabase
         .from("newspaper_issues")
-        .select("stories, queries")
+        .select(bagStage === 8 ? "queries" : "stories")
         .eq("id", prevId)
         .eq("status", "ready")
         .maybeSingle();
-      if (Array.isArray(prev?.stories)) carried = prev.stories;
-      const queries = Array.isArray(prev?.queries) ? prev.queries : [];
-      for (const query of queries) {
-        const row = query as { key?: unknown; data?: { items?: unknown[] } };
-        if (Array.isArray(row.key) && row.key[1] === "tt-missouri" && Array.isArray(row.data?.items)) {
-          carriedMissouri = row.data.items;
+      if (bagStage >= 15 && Array.isArray(prev?.stories)) carried = prev.stories;
+      if (bagStage === 8) {
+        const queries = Array.isArray(prev?.queries) ? prev.queries : [];
+        for (const query of queries) {
+          const row = query as { key?: unknown; data?: { items?: unknown[] } };
+          if (Array.isArray(row.key) && row.key[1] === "tt-missouri" && Array.isArray(row.data?.items)) {
+            carriedMissouri = row.data.items;
+          }
         }
       }
     }
@@ -289,39 +302,34 @@ Deno.serve(async (req) => {
       },
       bag,
     );
+    const flush = (step.flush ?? []).map(slimPrintedQuery);
+    const dbUrl = Deno.env.get("SUPABASE_DB_URL");
+    if (!dbUrl) throw new Error("Missing database URL");
     if (!step.done) {
-      // Stage 13 already wrote board/standings/etc. to cache. Drop them from the
-      // checkpoint so stage-14 continues and finalize stay under the edge memory cap.
-      // Keeping a 5MB+ bag made finalize return HTTP 546 (resource limit).
-      const drop = new Set([
-        "board", "standings", "leaders", "playoffs", "leagueClubs", "leagueSlate",
-        "wraps", "coaches", "org", "openers", "sheets", "watch", "snaps", "weather",
-        "missouri", "heisman", "scoutItem", "paths", "pathKey", "recap",
-        "wireCursor", "leagueCursor",
-      ]);
-      const bag: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(step.bag ?? {})) {
-        if (!drop.has(k)) bag[k] = v;
-      }
-      // Prefer teamCards over the heavier enriched copy when both exist.
-      if (bag.teamCards != null && bag.enriched != null) delete bag.enriched;
-      // Extracts are done once extractCursor covers the 20-URL cap; drop the blob.
-      const cursor = typeof bag.extractCursor === "number" ? bag.extractCursor : 0;
-      if (cursor >= 20 && bag.extracts != null) delete bag.extracts;
-      const { error } = await supabase
-        .from("newspaper_issues")
-        .update({
-          status: "printing",
-          queries: { checkpoint: true, bag },
-          printed_at: new Date().toISOString(),
-        })
-        .eq("id", press.id);
-      if (error) throw new Error(error.message);
-      const dbUrl = Deno.env.get("SUPABASE_DB_URL");
-      if (!dbUrl) throw new Error("Missing database URL");
+      // Persist only this hop's flush + the slim bag. Postgres concatenates
+      // already-filed desks so this isolate never reloads them.
+      const bag = checkpointBag(step.bag ?? { stage: 0 });
       const pool = new Pool(dbUrl, 1);
       const connection = await pool.connect();
       try {
+        await connection.queryObject(
+          `update public.newspaper_issues
+              set status = 'printing',
+                  printed_at = now(),
+                  queries = jsonb_build_object(
+                    'checkpoint', true,
+                    'bag', $1::jsonb,
+                    'desks', coalesce(
+                      case
+                        when jsonb_typeof(queries) = 'object' then queries->'desks'
+                        else '[]'::jsonb
+                      end,
+                      '[]'::jsonb
+                    ) || $2::jsonb
+                  )
+            where id = $3`,
+          [JSON.stringify(bag), JSON.stringify(flush), press.id],
+        );
         await connection.queryObject(
           "select net.http_post(url := $1::text, headers := jsonb_build_object('Content-Type', 'application/json', 'Authorization', $2::text), body := $3::text::jsonb, timeout_milliseconds := 150000)",
           [`${url}/functions/v1/newspaper-press`, `Bearer ${key}`, JSON.stringify({ continue: true })],
@@ -331,21 +339,35 @@ Deno.serve(async (req) => {
         await pool.end();
       }
       const stage = typeof step.bag.stage === "number" ? step.bag.stage : null;
-      return Response.json({ ok: true, id: press.id, stage });
+      return Response.json({ ok: true, id: press.id, stage, flushed: flush.length });
     }
-    const issue = slimIssue(step.issue);
-    const { error } = await supabase
-      .from("newspaper_issues")
-      .update({
-        version: issue.version,
-        status: "ready",
-        stories: issue.stories,
-        queries: issue.queries,
-        printed_at: new Date().toISOString(),
-      })
-      .eq("id", press.id);
-    if (error) throw new Error(error.message);
-    return Response.json({ ok: true, id: press.id, stories: issue.stories.length, queries: issue.queries.length });
+    const stories = step.issue.stories;
+    const pool = new Pool(dbUrl, 1);
+    const connection = await pool.connect();
+    try {
+      const filed = await connection.queryObject<{ n: number }>(
+        `update public.newspaper_issues
+            set version = $1,
+                status = 'ready',
+                stories = $2::jsonb,
+                queries = coalesce(
+                  case
+                    when jsonb_typeof(queries) = 'object' then queries->'desks'
+                    else '[]'::jsonb
+                  end,
+                  '[]'::jsonb
+                ) || $3::jsonb,
+                printed_at = now()
+          where id = $4
+          returning jsonb_array_length(queries) as n`,
+        [ISSUE_VERSION, JSON.stringify(stories), JSON.stringify(flush), press.id],
+      );
+      const queryCount = filed.rows[0]?.n ?? flush.length;
+      return Response.json({ ok: true, id: press.id, stories: stories.length, queries: queryCount });
+    } finally {
+      connection.release();
+      await pool.end();
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return Response.json({ ok: false, error: message }, { status: 500 });
