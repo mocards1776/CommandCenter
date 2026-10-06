@@ -1404,9 +1404,13 @@ mark.rss-hl {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   text-align: center;
   gap: 8px;
+  padding-top: 28px;
+}
+.tt-hold .wsj-sheet.tt-cover {
+  justify-content: flex-start;
 }
 .tt-cover-kicker {
   margin: 0;
@@ -4931,6 +4935,35 @@ li.counting .tt-count.card {
   object-fit: cover;
   object-position: center 18%;
 }
+.wsj-sport-seconds .wsj-cut.fit,
+.tt-front-lead .wsj-cut.fit,
+.wsj-story.lead .wsj-cut.fit,
+.wsj-sport-seconds .tt-recap-photo.fit,
+.tt-front-lead .tt-recap-photo.fit,
+.wsj-story.lead .tt-recap-photo.fit {
+  max-width: 100%;
+}
+.wsj-sport-seconds .wsj-cut.fit img,
+.tt-front-lead .wsj-cut.fit img,
+.wsj-story.lead .wsj-cut.fit img,
+.wsj-sport-seconds .tt-recap-photo.fit img,
+.tt-front-lead .tt-recap-photo.fit img,
+.wsj-story.lead .tt-recap-photo.fit img {
+  width: auto;
+  max-width: 100%;
+  aspect-ratio: auto;
+  max-height: none;
+  object-fit: contain;
+  object-position: center top;
+}
+.tt-front-lead .wsj-story.lead.art-side,
+.wsj-sport-seconds .wsj-story.art-side,
+.wsj-front .wsj-story.lead.art-side {
+  display: grid;
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+  gap: var(--w-gutter);
+  align-items: start;
+}
 
 /* Desk pages behind the section front carry a slim flag, not the hero. */
 .wsj-sport-band {
@@ -5088,6 +5121,20 @@ li.counting .tt-count.card {
   display: block;
   width: 100%;
   height: auto;
+  background: var(--w-paper-2);
+}
+.tt-recap-photo.fit {
+  width: auto;
+  max-width: 100%;
+  float: none;
+  margin: 0 0 14px;
+}
+.tt-recap-photo.fit img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  object-fit: contain;
   background: var(--w-paper-2);
 }
 .tt-recap-photo figcaption {

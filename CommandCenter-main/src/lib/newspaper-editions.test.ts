@@ -65,4 +65,21 @@ assert(
   `stand prints each slot once, got ${doubled.map((r) => editionPickerLabel(r.id, doubled)).join(" · ")}`,
 );
 
+const remotePlusLocal = uniqueEditionStand(
+  [
+    evening,
+    midday,
+    morning,
+    { ...evening, printedAt: "2026-10-05T22:12:00.000Z" },
+    { ...midday, printedAt: "2026-10-05T17:08:00.000Z" },
+    { ...morning, printedAt: "2026-10-05T11:10:00.000Z" },
+  ],
+  night,
+);
+assert(
+  remotePlusLocal.map((r) => editionPickerLabel(r.id, remotePlusLocal)).join(" · ") ===
+    "Evening · Midday · Morning",
+  "local + remote reprints still print one button per slot",
+);
+
 console.log("newspaper-editions ok");

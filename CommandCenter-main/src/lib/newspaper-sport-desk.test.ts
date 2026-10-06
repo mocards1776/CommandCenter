@@ -223,6 +223,15 @@ const eaglesSurgery = card({
   body: "Philadelphia said Tank Bigsby will have surgery. ".repeat(4),
 });
 assert(isInjuryNote(eaglesSurgery), "a surgery note is injury news");
+assert(
+  isInjuryNote(
+    card({
+      id: "news-thornton-hed",
+      headline: "Sources: Chiefs WR Tyquan Thornton expected back in 12-16 weeks",
+    }),
+  ),
+  "expected-back-in is still an injury note when the hed never says injury",
+);
 const injuryLead = orderSportSectionFront(
   [eaglesSurgery, lastNight],
   "football/nfl",

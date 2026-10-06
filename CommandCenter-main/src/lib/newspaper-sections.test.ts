@@ -39,7 +39,9 @@ import {
   isPreviewStory,
   isBettingPreview,
   cannotLeadFront,
+  isFavoriteGameResult,
   isSectionAStory,
+  storyRank,
   sameSectionAStory,
   MIN_SECTION_PAGES,
   orderSportSections,
@@ -54,6 +56,7 @@ import {
   type ClubDesk,
 } from "./newspaper-sections.ts";
 import { sampleNationalDesk } from "./newspaper-national.ts";
+import { isInjuryNote } from "./newspaper-sport-desk.ts";
 
 assert(favoriteDeskWeight("mlb-stl") === 100, "Cardinals are home desk");
 assert(favoriteDeskWeight("nhl-stl") === 100, "Blues are home desk");
@@ -1124,6 +1127,61 @@ assert(!cannotLeadFront(lionsDefeat, [lionsWrap, lionsDefeat, lionsBet]), "the d
   const front = editorFront(stamped);
   assert(front[0]?.id !== "news-50053980", "editor betting lead is swapped off A1");
   assert(front.some((c) => c.id === "news-50107710" || c.id === "wire-nfl-401872978"), "matchup recap takes the lead slot");
+}
+
+const thorntonNote = card({
+  id: "news-thornton",
+  headline: "Sources: Chiefs WR Tyquan Thornton expected back in 12-16 weeks",
+  dek: null,
+  favoriteKey: "nfl-kc",
+  followed: true,
+  teamName: "Chiefs",
+  sportLabel: "NFL",
+  leaguePath: "football/nfl",
+  status: "Story",
+  editorFront: 0,
+  listRank: 0,
+  body: "Kansas City expects Thornton back in 12 to 16 weeks after the injury. ".repeat(16),
+});
+const mizzouFinal = card({
+  id: "wire-cfb-mizzou-florida",
+  headline: "No. 25 Missouri trounces No. 8 Florida 45-17 to snap 9-game skid",
+  dek: "The Tigers scored 45 and ended a nine-game losing streak in Gainesville.",
+  favoriteKey: "cfb-mizzou",
+  followed: true,
+  teamName: "Missouri",
+  sportLabel: "College Football",
+  leaguePath: "football/college-football",
+  status: "Final",
+  scoreLine: "MIZ 45 · FLA 17",
+  when: "2026-10-05T03:30:00Z",
+  editorFront: 1,
+  body: "Missouri beat Florida 45-17 in Gainesville and snapped a nine-game losing streak. ".repeat(16),
+});
+assert(isInjuryNote(thorntonNote), "Thornton hed is an injury note");
+assert(isFavoriteGameResult(mizzouFinal), "Mizzou 45-17 is a favorite-team result");
+assert(!isFavoriteGameResult(thorntonNote), "an injury note is not a game result");
+assert(cannotLeadFront(thorntonNote, [thorntonNote, mizzouFinal]), "an injury note cannot lead over a favorite result");
+assert(!cannotLeadFront(mizzouFinal, [thorntonNote, mizzouFinal]), "the Mizzou recap may lead");
+assert(
+  storyRank(mizzouFinal, "2026-10-05-evening") > storyRank(thorntonNote, "2026-10-05-evening"),
+  "Mizzou's result outranks a Chiefs injury note",
+);
+{
+  const front = editorFront([thorntonNote, mizzouFinal]);
+  assert(front[0]?.id === "wire-cfb-mizzou-florida", "editor injury lead is swapped for the Mizzou result");
+}
+{
+  const evening = buildEdition({
+    stories: [thorntonNote, mizzouFinal],
+    clubs: [],
+    edition: "2026-10-05-evening",
+  });
+  const a1 = evening.pages.find((p) => p.kind === "favorites-front");
+  assert(
+    a1?.kind === "favorites-front" && a1.lead?.id === "wire-cfb-mizzou-florida",
+    `A1 leads with Mizzou, not Thornton (got ${a1 && a1.kind === "favorites-front" ? a1.lead?.headline : "no front"})`,
+  );
 }
 
 

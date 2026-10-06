@@ -62,7 +62,7 @@ export function isInjuryNote(card: GameWrapCard): boolean {
   if (isGameWrapCard(card)) return false;
   if (card.scoreLine && /\d/.test(card.scoreLine) && /\bfinal\b/i.test(card.status ?? "")) return false;
   const head = `${card.headline} ${card.dek ?? ""}`;
-  return /\binjur|surgery|questionable|doubtful|out for the season|season-ending|torn (?:acl|achilles)|dislocat|to have surgery\b/i.test(
+  return /\binjur|surgery|questionable|doubtful|out for the season|season-ending|torn (?:acl|achilles)|dislocat|to have surgery|expected back in|out \d+(?:-\d+)? weeks|sidelined|injured reserve|week-to-week|placed on ir\b/i.test(
     head,
   );
 }

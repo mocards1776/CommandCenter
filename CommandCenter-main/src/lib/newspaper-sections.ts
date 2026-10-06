@@ -598,12 +598,29 @@ export function isStaleGamePreview(card: GameWrapCard, pool: GameWrapCard[]): bo
   );
 }
 
+/** A followed/home club's game result — not a transaction, injury, or preview. */
+export function isFavoriteGameResult(card: GameWrapCard): boolean {
+  if (!isFavoriteStory(card) || isInjuryNote(card)) return false;
+  if (isPreviewStory(card) || isBettingPreview(card)) return false;
+  return (
+    isRecapStory(card) ||
+    isGameRecapCopy(card) ||
+    isGameWrap(card) ||
+    Boolean(card.status && /final/i.test(card.status) && card.scoreLine && /\d/.test(card.scoreLine))
+  );
+}
+
 /** Never open A1 or the edition alert on these. */
 export function cannotLeadFront(card: GameWrapCard, pool: GameWrapCard[] = []): boolean {
   if (isHoldoverGame(card)) return true;
   if (isBettingPreview(card)) return true;
   if (pool.length && isStaleGamePreview(card, pool)) return true;
   if (isPreviewStory(card)) return true;
+  // A minor injury note may run inside Section A; it never opens the paper
+  // when a favorite-team result is on the slate (Mizzou first).
+  if (isInjuryNote(card) && pool.some((other) => other.id !== card.id && isFavoriteGameResult(other))) {
+    return true;
+  }
   return false;
 }
 
@@ -617,7 +634,12 @@ function leadReplacement(bad: GameWrapCard, pool: GameWrapCard[], taken: Set<str
       (isRecapStory(c) || isGameRecapCopy(c) || isGameWrap(c)) &&
       hasStoryCopy(c),
   );
-  return recap ?? null;
+  if (recap) return recap;
+  if (!isInjuryNote(bad)) return null;
+  const results = pool
+    .filter((c) => !taken.has(c.id) && c.id !== bad.id && isFavoriteGameResult(c) && hasStoryCopy(c))
+    .sort((a, b) => favoriteDeskWeight(b.favoriteKey ?? "") - favoriteDeskWeight(a.favoriteKey ?? ""));
+  return results[0] ?? null;
 }
 
 /** Last night's result outranks a feature; home clubs outrank the rest. */
@@ -626,6 +648,8 @@ export function storyRank(card: GameWrapCard, edition: string): number {
   let score = 0;
   if (isBettingPreview(card)) score -= 250;
   if (isPreviewStory(card)) score -= 150;
+  if (isInjuryNote(card)) score -= 220;
+  if (isFavoriteGameResult(card)) score += 80;
   if (day === editionNewsDay(edition) && card.status && /final/i.test(card.status)) score += 100;
   if (card.postseason) score += 40;
   if (card.id.startsWith("news-")) score += 25;

@@ -92,15 +92,19 @@ export function editionPickerLabel(id: string, recent: FiledIssueMeta[]): string
 }
 
 /**
- * One button per printed label. Local + remote copies of the same slot
- * were painting EVENING · EVENING · MIDDAY · MIDDAY · MORNING · MORNING.
+ * One button per edition slot. Local + remote reprints of the same
+ * morning / midday / evening were painting
+ * EVENING · EVENING · MIDDAY · MIDDAY · MORNING.
  */
 export function uniqueEditionStand(recent: FiledIssueMeta[], now = Date.now()): FiledIssueMeta[] {
   const filtered = filterRecentFiledIssues(recent, now);
   const seen = new Set<string>();
   return filtered.filter((row) => {
+    const parsed = parsePressId(row.id);
+    const slot = parsed?.slot ?? editionPickerLabel(row.id, filtered).toLowerCase();
     const label = editionPickerLabel(row.id, filtered).toLowerCase();
-    if (seen.has(label)) return false;
+    if (seen.has(slot) || seen.has(label)) return false;
+    seen.add(slot);
     seen.add(label);
     return true;
   });

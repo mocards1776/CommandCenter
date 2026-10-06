@@ -28,9 +28,10 @@ function assert(cond: unknown, msg: string) {
 }
 
 assert(recapPhotoKind(null) === "none", "no photo is skipped");
-assert(recapPhotoKind("https://img/x.jpg", 640) === "wide", "a smaller file still fills the column");
+assert(recapPhotoKind("https://img/x.jpg", 640) === "fit", "a small original is not stretched");
+assert(recapPhotoKind("https://img/x.jpg", 350) === "fit", "a 350px cut stays at its sharp size");
 assert(recapPhotoKind("https://img/x.jpg", 1200) === "wide", "a wide cut fills the column");
-assert(recapPhotoKind("https://img/x.jpg") === "wide", "unknown width stays wide");
+assert(recapPhotoKind("https://img/x.jpg") === "wide", "unknown width stays wide until measured");
 assert(recapPhotoKind("https://img/x.jpg", 0) === "wide", "a zero width is treated as unknown");
 
 assert(recapIsFull({ followed: true }), "a followed club is full");

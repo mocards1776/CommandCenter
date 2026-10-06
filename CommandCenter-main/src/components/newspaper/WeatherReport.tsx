@@ -198,10 +198,11 @@ function HourlyChart({ hours }: { hours: WxHour[] }) {
   const line = hours.map((h, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(h.tempF).toFixed(1)}`).join("");
   const area = `${line}L${x(hours.length - 1)} ${base}L${x(0)} ${base}Z`;
   const marks = hours.map((_, i) => i).filter((i) => i % 3 === 0);
+  const hasRain = hours.some((h) => h.precipChance > 0);
   return (
     <figure className="wx-hourly">
       <figcaption>Next 24 hours</figcaption>
-      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Hourly temperature and chance of rain">
+      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={hasRain ? "Hourly temperature and chance of rain" : "Hourly temperature"}>
         <path d={area} className="wx-area" />
         <path d={line} className="wx-line" />
         {hours.map((h, i) =>
@@ -230,7 +231,13 @@ function HourlyChart({ hours }: { hours: WxHour[] }) {
         ))}
       </svg>
       <p className="wx-key">
-        <i className="wx-key-line" /> Temperature <i className="wx-key-pop" /> Chance of rain
+        <i className="wx-key-line" /> Temperature
+        {hasRain ? (
+          <>
+            {" "}
+            <i className="wx-key-pop" /> Chance of rain
+          </>
+        ) : null}
       </p>
     </figure>
   );

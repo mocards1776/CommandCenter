@@ -60,7 +60,7 @@ import {
 } from "@/lib/newspaper-box";
 import { cleanStoryCopy, proseParas, tidy, truncateAtSentence } from "@/lib/newspaper-copy";
 import { fitSentencesIn } from "@/lib/newspaper-fit";
-import { recapBodyForPage, recapDropLead, recapIsScoreOnly, recapShouldDropCap, splitApDateline } from "@/lib/newspaper-recap";
+import { recapBodyForPage, recapDropLead, recapIsScoreOnly, recapPhotoKind, recapShouldDropCap, splitApDateline } from "@/lib/newspaper-recap";
 import {
   Face,
   MatchupCard,
@@ -597,11 +597,15 @@ function faceOff(iso: string | null): string {
   return t.replace(":00 ", " ");
 }
 
+function sameHead(a: string, b: string): boolean {
+  return a.replace(/\s+/g, " ").trim().toLowerCase() === b.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
 function pageLabel(page: EditionPage): string {
   switch (page.kind) {
     case "sport-front":
       return {
-        front: page.sectionTitle,
+        front: "",
         news: "News",
         recaps: "Recaps",
         teams: "Standings",
@@ -690,7 +694,7 @@ function Masthead({
       {editions.length ? (
         <nav className="tt-editions" aria-label="Editions">
           <span className="tt-editions-label">Edition</span>
-          {uniqueEditionStand(editions).map((row, i) => (
+          {uniqueEditionStand(editions).map((row, i, stand) => (
             <Fragment key={row.id}>
               {i > 0 ? <span className="tt-editions-dot">·</span> : null}
               <button
@@ -699,7 +703,7 @@ function Masthead({
                 aria-current={row.id === selectedId ? "page" : undefined}
                 onClick={() => onSelectEdition(row.id)}
               >
-                {editionPickerLabel(row.id, editions)}
+                {editionPickerLabel(row.id, stand)}
               </button>
             </Fragment>
           ))}
@@ -727,13 +731,15 @@ function Masthead({
 }
 
 function RunningHead({ day, page }: { day: string; page: EditionPage }) {
+  const desk = pageLabel(page);
+  const dup = Boolean(desk && sameHead(desk, page.sectionTitle));
   return (
     <header className="wsj-run">
       <span className="wsj-run-plate">The Thompson Times</span>
       <span className="wsj-run-section">
         <b>{page.section}</b>
         <span>{page.sectionTitle}</span>
-        <em>{pageLabel(page)}</em>
+        {desk && !dup ? <em>{desk}</em> : null}
       </span>
       <span className="wsj-run-folio">
         {editionDateline(day)}
@@ -938,12 +944,26 @@ function runIn(text: string): [string, string] {
 }
 
 function Cut({ card, shape = "wide" }: { card: GameWrapCard; shape?: "wide" | "tall" | "square" }) {
+  const [measured, setMeasured] = useState<number | null>(null);
   if (!card.photo) return null;
   const caption =
     card.caption && squash(card.caption) !== squash(card.teamName) ? card.caption : null;
+  const native = typeof card.photoWidth === "number" && card.photoWidth > 0 ? card.photoWidth : measured;
+  const kind = recapPhotoKind(card.photo, native);
   return (
-    <figure className={cn("wsj-cut", shape, card.photoStyle === "cutout" && "cutout")}>
-      <img src={card.photo} alt="" loading="lazy" />
+    <figure
+      className={cn("wsj-cut", shape, kind === "fit" && "fit", card.photoStyle === "cutout" && "cutout")}
+      style={native && kind === "fit" ? { maxWidth: native } : undefined}
+    >
+      <img
+        src={card.photo}
+        alt=""
+        loading="lazy"
+        onLoad={(e) => {
+          const w = e.currentTarget.naturalWidth;
+          if (w > 0) setMeasured((prev) => (prev && prev <= w ? prev : w));
+        }}
+      />
       {caption ? <figcaption>{caption}</figcaption> : null}
     </figure>
   );
@@ -1095,17 +1115,25 @@ function Story({
   const partial = readOn ?? Boolean(jump || (storyCopy && storyCopy.length < full.length * 0.9));
   const dek = dekFor(card, storyCopy);
   const useDrop = Boolean(drop && storyCopy && recapShouldDropCap(storyCopy));
+  const photoKind = recapPhotoKind(card.photo, card.photoWidth);
+  const narrowArt =
+    photoKind === "fit" || (Boolean(card.photo) && isNarrowStoryImage(card.photo));
   const artNode =
-    recap || art === "none" ? null : card.photo ? (
-      <Cut card={card} shape={art === "side" && copy.length > 450 ? "square" : "wide"} />
-    ) : poster ? (
-      <StatPoster team={team ?? null} card={card} layout={poster === "band" ? "band" : "block"} />
-    ) : null;
+    art === "none"
+      ? null
+      : card.photo
+        ? recap
+          ? <RecapPhoto url={card.photo} width={card.photoWidth} caption={card.caption} />
+          : <Cut card={card} shape={art === "side" && copy.length > 450 ? "square" : "wide"} />
+        : poster
+          ? <StatPoster team={team ?? null} card={card} layout={poster === "band" ? "band" : "block"} />
+          : null;
+  const artMode = !artNode ? "none" : narrowArt ? "side" : art;
   return (
     <article
       className={cn(
         "wsj-story",
-        artNode ? `art-${art}` : "art-none",
+        artNode ? `art-${artMode}` : "art-none",
         artNode && !copy && !dek && "bare",
         className,
       )}
@@ -1121,7 +1149,6 @@ function Story({
         {recap ? null : <ScoreBug card={card} />}
         <Byline card={card} />
         {recap && chrome !== false ? <RecapChrome card={card} game={game ?? null} compact={compactBox} /> : null}
-        {recap ? <RecapPhoto url={card.photo} width={card.photoWidth} caption={card.caption} /> : null}
         {storyCopy ? (
           <Prose
             card={card}
@@ -2299,7 +2326,15 @@ function SportHero({
       <header className="wsj-sport-band">
         <span className="wsj-sport-code">{page.section}</span>
         <h3>
-          {page.sectionTitle} <em>{deskTitle ?? FOCUS_TITLES[page.focus]}</em>
+          {page.sectionTitle}
+          {deskTitle ?? FOCUS_TITLES[page.focus] ? (
+            sameHead(deskTitle ?? FOCUS_TITLES[page.focus], page.sectionTitle) ? null : (
+              <>
+                {" "}
+                <em>{deskTitle ?? FOCUS_TITLES[page.focus]}</em>
+              </>
+            )
+          ) : null}
         </h3>
         <p>{blurb}</p>
       </header>
