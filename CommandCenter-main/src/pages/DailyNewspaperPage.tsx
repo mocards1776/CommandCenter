@@ -1139,7 +1139,8 @@ function Story({
         : poster
           ? <StatPoster team={team ?? null} card={card} layout={poster === "band" ? "band" : "block"} />
           : null;
-  const artMode = !artNode ? "none" : narrowArt ? "side" : art;
+  const artMode =
+    !artNode ? "none" : narrowArt && !className?.includes("lead") ? "side" : art;
   return (
     <article
       className={cn(

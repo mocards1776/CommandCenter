@@ -8163,8 +8163,15 @@ li.counting .tt-count.card {
   max-height: 340px;
   object-fit: cover;
 }
-.newspaper-root .tt-section-front .tt-front-lead .wsj-story.lead img {
+.newspaper-root .tt-section-front .tt-front-lead .wsj-story.lead img,
+.newspaper-root .tt-section-front .tt-front-lead .tt-recap-photo.fit img {
+  max-width: 100%;
   max-height: 280px;
+  width: 100%;
+  object-fit: cover;
+}
+.newspaper-root .tt-section-front .tt-front-lead .wsj-story.lead.art-side {
+  grid-template-columns: 1fr;
 }
 .newspaper-root .tt-front-under .wsj-story img {
   max-height: 160px;
