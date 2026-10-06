@@ -531,10 +531,12 @@ export function favoriteDeskWeight(key: string): number {
   if (key === "cfb-mizzou" || key === "cbb-mizzou") return 100;
   if (key === "nfl-det") return 70;
   if (key === "nfl-kc") return 50;
-  if (key === "nfl-dal" || key === "nba-phi") return 45;
+  if (key === "nfl-dal") return 45;
   if (key === "cfb-missouri-state" || key === "cbb-missouri-state") return 40;
   if (key === "eng-arsenal" || key === "eng-wrexham" || key === "eng-wolves") return 25;
   if (key.startsWith("eng-") || key.includes("soccer")) return 20;
+  // 76ers stay on the NBA desk / scores; they are not a Section A priority.
+  if (key === "nba-phi") return 8;
   return 10;
 }
 

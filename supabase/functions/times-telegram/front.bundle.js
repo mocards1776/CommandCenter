@@ -133,7 +133,7 @@ function holdoverCovers(iso, pressId) {
   return t <= endMs && t >= endMs - HOLDOVER_HOURS * 36e5;
 }
 function isGameWrapStory(card) {
-  return /^(?:wire|recap|recent|wrap)-/.test(card.id);
+  return /^(?:wire|recap|recent|wrap|box)-/.test(card.id);
 }
 function centralWeekday(day) {
   return (/* @__PURE__ */ new Date(`${day}T12:00:00Z`)).getUTCDay();
@@ -154,9 +154,12 @@ function gameWindowStart(pressId, leaguePath) {
     if (slot !== "morning" && wd === 6) return pressInstant(`${day}-morning`);
     return pressInstant(`${previousSaturday(day)}-morning`);
   }
-  if (slot === "morning" && wd === 1) return pressInstant(`${shiftDay(day, -2)}-morning`);
-  if (slot === "morning") return pressInstant(`${shiftDay(day, -1)}-morning`);
-  return pressInstant(`${day}-morning`);
+  if (leaguePath === "football/nfl" && (wd === 1 || wd === 2)) {
+    return pressInstant(`${shiftDay(day, wd === 1 ? -2 : -3)}-morning`);
+  }
+  if (wd === 1) return pressInstant(`${shiftDay(day, -2)}-morning`);
+  if (slot !== "morning") return pressInstant(`${shiftDay(day, -1)}-morning`);
+  return pressInstant(`${shiftDay(day, -1)}-morning`);
 }
 function gameWrapCovers(iso, pressId, leaguePath) {
   const end = pressInstant(asPressId(pressId));
@@ -173,7 +176,9 @@ function isResultCopy(input) {
     return true;
   }
   const hay2 = `${input.headline ?? ""} ${input.dek ?? ""}`.toLowerCase();
-  return /\bin (?:a |the )?(?:win|loss|defeat)\b/.test(hay2) || /\bwin (?:over|vs\.?|against)\b/.test(hay2) || /\b(?:beat|defeated|edged|routed|downed|topped) the\b/.test(hay2) || /\b(?:lifts|lifted)\b[^.]{0,48}\b(?:win|victory)\b/.test(hay2) || /\bposts? \d+ points\b/.test(hay2) || /\brecaps?\b/.test(hay2) || /\b\d{1,3}\s*[-–]\s*\d{1,3}\s+(?:win|loss|victory|defeat)\b/.test(hay2);
+  return /\bin (?:a |the )?(?:win|loss|defeat)\b/.test(hay2) || /\bwin (?:over|vs\.?|against)\b/.test(hay2) || /\b(?:beat|beats|defeated|edged|routed|routs|downed|topped|trounced|trounces|blanked|pounded|thrashed|clobbered)\b/.test(
+    hay2
+  ) || /\b(?:lifts|lifted)\b[^.]{0,48}\b(?:win|victory|over)\b/.test(hay2) || /\bwalk-?off\b/.test(hay2) || /\bposts? \d+ points\b/.test(hay2) || /\brecaps?\b/.test(hay2) || /\b\d{1,3}\s*[-–]\s*\d{1,3}\s+(?:win|loss|victory|defeat)\b/.test(hay2) || /\b\d{1,3}\s*[-–]\s*\d{1,3}\b/.test(hay2);
 }
 var NEWS_MUTED = /* @__PURE__ */ new Set(["eng-arsenal"]);
 var NEWS_MUTED_NAMES = /\barsenal\b/i;
@@ -187,10 +192,11 @@ function favoriteDeskWeight(key) {
   if (key === "cfb-mizzou" || key === "cbb-mizzou") return 100;
   if (key === "nfl-det") return 70;
   if (key === "nfl-kc") return 50;
-  if (key === "nfl-dal" || key === "nba-phi") return 45;
+  if (key === "nfl-dal") return 45;
   if (key === "cfb-missouri-state" || key === "cbb-missouri-state") return 40;
   if (key === "eng-arsenal" || key === "eng-wrexham" || key === "eng-wolves") return 25;
   if (key.startsWith("eng-") || key.includes("soccer")) return 20;
+  if (key === "nba-phi") return 8;
   return 10;
 }
 function splitStoryCopy(text, teaserChars) {
@@ -378,21 +384,86 @@ function joinBrokenDecimals(text) {
   out = out.replace(/\b(above|below|under|over|from|to|than)\.\s+(\d{3})\b/gi, "$1 .$2");
   return out;
 }
+function isTeamNameCaption(text) {
+  const t = text.replace(/\s+/g, " ").trim();
+  if (!t) return true;
+  if (/[.!?,:;]/.test(t)) return false;
+  const words = t.split(" ");
+  if (words.length > 4) return false;
+  return /^(the\s+)?[A-Za-z.]+(?:\s+[A-Za-z.]+){0,3}$/.test(t);
+}
 function stripGettyCredit(text) {
   return text.replace(/\s*\((?:Getty(?:\s+Images)?|getty images)\)/gi, "").replace(/^\s*(?:Getty(?:\s+Images)?)\s*$/i, "").replace(/\s{2,}/g, " ").trim();
 }
-var BOILERPLATE_LINE = /^(?:-{3,}|_{3,}|\*{3,}|sign up for\b|subscribe:|jump to:|posted in\b|share this:|to read this\b|click here\b|download the app\b|follow us on\b|read more\b|advertisement\b|related stories\b|you may also like\b)/i;
+var BOILERPLATE_LINE = /^(?:-{3,}|_{3,}|\*{3,}|sign up for\b|subscribe:|jump to:|posted in\b|share this:|to read this\b|click here\b|download the app\b|follow us on\b|read more\b|advertisement\b|related stories\b|you may also like\b|watch:|terms of use\b|privacy policy\b|privacy notice\b|cookie (?:policy|settings)\b)/i;
 var BOILERPLATE_GETTY = /^\(?getty(?:\s+images)?\)?\.?$/i;
+var GAMBLING_LINE = /\b(?:1-800-gambler|1-800-522-4700|1-800-next-step|1-800-9-with-it|1-800-betsoff|gambling problem|gambling helpline|responsible gaming|draftkings|fanduel|betmgm|caesars sportsbook|if you or someone you know has a gambling|must be 21(?:\+| years)|gamblinghelp|visitgambling|ncpgambling|rg-help)\b/i;
+var LEGAL_LINE = /\b(?:terms of use|privacy policy|privacy notice|cookie policy|all rights reserved|©\s*\d{4}|copyright\s*©|void where prohibited)\b/i;
+var RELATED_LINE = /^(?:watch:|read more\b|related(?: stories| links)?:|more from\b|also on espn\b|click for (?:full )?story\b)/i;
+var VIDEO_STAMP = /\b\d{1,2}:\d{2}\b/;
 function isBoilerplateLine(line) {
   const t = line.replace(/\s+/g, " ").trim();
   if (!t) return true;
   if (BOILERPLATE_GETTY.test(t)) return true;
   if (BOILERPLATE_LINE.test(t)) return true;
+  if (GAMBLING_LINE.test(t)) return true;
+  if (LEGAL_LINE.test(t) && t.length < 280) return true;
+  if (RELATED_LINE.test(t)) return true;
   if (/^sign up for\b/i.test(t) && /\balerts?\b/i.test(t)) return true;
+  if (isCaptionOnlyLine(t)) return true;
+  if (isVideoTitleLine(t)) return true;
   return false;
+}
+function isCaptionOnlyLine(line) {
+  const t = line.replace(/\s+/g, " ").trim();
+  if (!t) return true;
+  if (isTeamNameCaption(t)) return true;
+  if (/^(?:photo|image|courtesy|ap photo|getty)\b/i.test(t) && t.length < 80) return true;
+  if (/:\s*(?:game |full )?highlights\s*$/i.test(t) && t.length < 140) return true;
+  return false;
+}
+function isVideoTitleLine(line) {
+  const t = line.replace(/\s+/g, " ").trim();
+  if (!t) return true;
+  if (/^watch:/i.test(t)) return true;
+  if (VIDEO_STAMP.test(t) && t.length < 160 && !/[.!]/.test(t.replace(VIDEO_STAMP, ""))) return true;
+  if (/^(?:did|is|are|can|will|why|how|what)\b.+\?$/i.test(t) && t.length < 140) return true;
+  return false;
+}
+function isVideoTitleSoup(text) {
+  const raw = text.replace(/\s+/g, " ").trim();
+  if (raw.length < 40) return false;
+  if (/\bwatch:\b/i.test(raw) && VIDEO_STAMP.test(raw)) return true;
+  if (/(.{18,90})\s+\1/i.test(raw) && VIDEO_STAMP.test(raw)) return true;
+  if (/(.{18,90})\s+\1/i.test(raw) && /\b(?:film room|must-see|highlights?)\b/i.test(raw)) return true;
+  const questions = (raw.match(/\?/g) ?? []).length;
+  const sentences = (raw.match(/[.!](?=\s|$)/g) ?? []).length;
+  if (questions >= 2 && sentences < 2 && VIDEO_STAMP.test(raw)) return true;
+  const stamps = raw.match(/\b\d{1,2}:\d{2}\b/g)?.length ?? 0;
+  return stamps >= 2 && raw.length < 900;
+}
+function isGamblingDisclaimer(text) {
+  return GAMBLING_LINE.test(text);
 }
 function stripBoilerplateCopy(text) {
   return text.split(/\n{2,}|\n/).map((line) => line.replace(/\s+/g, " ").trim()).filter((line) => !isBoilerplateLine(line)).join("\n\n").trim();
+}
+var INLINE_JUNK_CUT = /\b(?:terms of use|privacy policy|privacy notice|cookie policy|all rights reserved|©\s*\d{4}|1-800-gambler|gambling problem|responsible gaming|must be 21(?:\+| years)|visitgambling|ncpgambling|watch:\s*)/i;
+function sanitizeArticleBody(text) {
+  let raw = text ?? "";
+  if (!raw.trim()) return "";
+  if (looksLikeHtml(raw)) raw = htmlToNewspaperText(raw);
+  else raw = decodeNewspaperEntities(raw);
+  raw = stripBoilerplateCopy(raw);
+  raw = raw.replace(/\bWatch:\s*[^.!?\n]{0,160}/gi, " ").replace(/\bRead more\b[:\s][^.!?\n]{0,160}/gi, " ").replace(/\b(?:Terms of Use|Privacy Policy|Cookie Policy)\b/gi, " ");
+  const paras = raw.split(/\n{2,}/).map((p) => tidy(p.replace(/\s+/g, " "))).filter((p) => p && !isBoilerplateLine(p) && !isGamblingDisclaimer(p));
+  let out = paras.join("\n\n").trim();
+  const cut = out.search(INLINE_JUNK_CUT);
+  if (cut >= 40) out = out.slice(0, cut).trim();
+  else if (cut >= 0 && cut < 40) out = "";
+  out = collapseInline(out);
+  if (!out || isNavSoup(out) || isVideoTitleSoup(out)) return "";
+  return out;
 }
 function htmlToNewspaperText(html) {
   if (!html.trim()) return "";
@@ -416,10 +487,18 @@ function htmlToNewspaperText(html) {
   }).filter(Boolean);
   return paras.join("\n\n").trim();
 }
+function restorePossessiveSpace(text) {
+  return text.replace(/(\w)['‘]/g, "$1\u2019").replace(/(\p{L}|\d)(['’])(?!(?:s|t|ll|re|ve|d|m)\b)(\p{L})/gu, "$1$2 $3").replace(/(\p{L})(['’])(\d)/gu, "$1$2 $3");
+}
+function printHeadline(text) {
+  return restorePossessiveSpace(String(text ?? "").replace(/\s+/g, " ").trim());
+}
 function tidy(text) {
-  return joinBrokenDecimals(
-    decodeNewspaperEntities(stripGettyCredit(text)).replace(/\s+([,;:!?])/g, "$1").replace(/\s+\.(?!\d)/g, ".").replace(/(\w)\s+([’'])/g, "$1$2").replace(/([‘'])\s+(\w)/g, "$1$2").replace(/(["“])\s+/g, "$1").replace(/\s+(["”])/g, "$1").replace(/\(\s+/g, "(").replace(/\s+\)/g, ")")
-  ).replace(/[^\S\n]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  return restorePossessiveSpace(
+    joinBrokenDecimals(
+      decodeNewspaperEntities(stripGettyCredit(text)).replace(/\s+([,;:!?])/g, "$1").replace(/\s+\.(?!\d)/g, ".").replace(/(\w)\s+([’‘'`])/g, "$1$2").replace(/(?<!\w)([‘'])\s+(\w)/g, "$1$2").replace(/(["“])\s+/g, "$1").replace(/\s+(["”])/g, "$1").replace(/([,;:.!?])(["“])(?=\S)/g, "$1 $2").replace(/\s*(?:--|—|–)[\s—–-]+/g, " \u2014 ").replace(/\(\s+/g, "(").replace(/\s+\)/g, ")")
+    ).replace(/[^\S\n]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim()
+  );
 }
 function stripModules(text) {
   return collapseInline(
@@ -445,13 +524,11 @@ function stripLeadingMenu(text) {
   return text;
 }
 function prepareCopy(text) {
-  let raw = text ?? "";
-  if (!raw.trim()) return "";
-  if (looksLikeHtml(raw)) raw = htmlToNewspaperText(raw);
-  else raw = decodeNewspaperEntities(raw);
-  raw = stripBoilerplateCopy(raw);
-  const paras = raw.split(/\n{2,}/).map((p) => tidy(p.replace(/\s+/g, " "))).filter((p) => p && !isBoilerplateLine(p));
-  return paras.join("\n\n");
+  return sanitizeArticleBody(text);
+}
+function cleanedBodyLength(card) {
+  if (typeof card.bodyChars === "number") return card.bodyChars;
+  return cleanStoryCopy(card.body).text.length;
 }
 function cleanStoryCopy(text) {
   let raw = prepareCopy(text);
@@ -561,6 +638,209 @@ function storySource(card) {
   return base.charAt(0).toUpperCase() + base.slice(1);
 }
 
+// src/lib/newspaper-favorite-match.ts
+var WEAK_TOKENS = /* @__PURE__ */ new Set([
+  "the",
+  "and",
+  "st.",
+  "st",
+  "fc",
+  "afc",
+  "club",
+  "city",
+  "united",
+  "state",
+  "states",
+  "football",
+  "basketball",
+  "baseball",
+  "hockey",
+  "soccer",
+  "tour",
+  "louis",
+  "kansas",
+  "detroit",
+  "missouri"
+]);
+function strongNames(fav) {
+  const names = [fav.shortName, fav.name].map((n) => n.trim().toLowerCase()).filter(Boolean);
+  if (fav.key === "mlb-stl") names.push("cardinals", "st. louis cardinals", "stl");
+  if (fav.key === "nfl-kc") names.push("chiefs", "kansas city chiefs", "kc");
+  if (fav.key === "nfl-det") names.push("lions", "detroit lions");
+  if (fav.key === "cfb-mizzou" || fav.key === "cbb-mizzou") {
+    names.push("mizzou", "missouri tigers");
+  }
+  if (fav.key === "cfb-missouri-state" || fav.key === "cbb-missouri-state") {
+    names.push("missouri state");
+  }
+  if (fav.key === "eng-wolves") names.push("wolves", "wolverhampton", "wolverhampton wanderers");
+  if (fav.key === "eng-wrexham") names.push("wrexham");
+  if (fav.key === "eng-arsenal") names.push("arsenal");
+  if (fav.key === "nhl-stl") names.push("blues", "st. louis blues");
+  if (fav.key === "nfl-dal") names.push("cowboys", "dallas cowboys");
+  if (fav.key === "nba-phi") names.push("76ers", "sixers", "philadelphia 76ers");
+  return [...new Set(names)].filter((n) => n.length >= 3 && !WEAK_TOKENS.has(n));
+}
+var AMBIGUOUS_NICK = /^(cardinals|lions|bears|blues|wolves|arsenal)$/i;
+var FAVORITE_CONFLICTS = {
+  "mlb-stl": /\barizona\b|\bari\b|\bnfl\b|\bgiants['’]?\s+36-24\b/i,
+  "nhl-stl": /\bchelsea\b|\bst\.?\s*louis city\b/i,
+  "nfl-det": /\bnittany\b|\bpenn\s*state\b|\bcolumbia lions\b/i,
+  "eng-wolves": /\btimberwolves?\b|\bminnesota\b|\bnba\b/i,
+  "eng-arsenal": /\barsenal\s+(?:shirt|jacket|fc\s+women)\b/i,
+  "cfb-missouri-state": /\bchicago\b|\bcal(?:ifornia)?\b|\bbaylor\b|\bpackers\b/i,
+  "cbb-missouri-state": /\bchicago\b|\bcal(?:ifornia)?\b|\bbaylor\b/i
+};
+var KNOWN_ESPN_TEAM_ID = {
+  "mlb-stl": "24",
+  "nhl-stl": "19",
+  "cfb-mizzou": "142",
+  "cbb-mizzou": "142",
+  "cfb-missouri-state": "2623",
+  "cbb-missouri-state": "2623",
+  "nfl-det": "8",
+  "nfl-kc": "12",
+  "nfl-dal": "6",
+  "nba-phi": "20",
+  "eng-wrexham": "352",
+  "eng-wolves": "380",
+  "eng-arsenal": "359"
+};
+function favoriteEspnTeamId(fav) {
+  const id = fav.espnPath.split("/").pop();
+  if (id && /^\d+$/.test(id) && id !== "0") return id;
+  return KNOWN_ESPN_TEAM_ID[fav.key] ?? null;
+}
+function favoriteAbbrevs(fav) {
+  if (fav.key === "mlb-stl" || fav.key === "nhl-stl") return ["stl"];
+  if (fav.key === "nfl-kc") return ["kc"];
+  if (fav.key === "nfl-det") return ["det"];
+  if (fav.key === "nfl-dal") return ["dal"];
+  if (fav.key === "nba-phi") return ["phi"];
+  if (fav.key === "eng-wolves") return ["wol"];
+  if (fav.key === "eng-wrexham") return ["wrx"];
+  if (fav.key === "eng-arsenal") return ["ars"];
+  if (fav.key === "cfb-mizzou" || fav.key === "cbb-mizzou") return ["miz"];
+  if (fav.key === "cfb-missouri-state" || fav.key === "cbb-missouri-state") return ["most"];
+  return [];
+}
+function cardLeaguePathOf(card) {
+  if (card.leaguePath) return card.leaguePath.toLowerCase();
+  const s = (card.sportLabel ?? "").trim().toLowerCase();
+  if (s === "nfl" || s === "football") return "football/nfl";
+  if (s === "mlb" || s === "baseball") return "baseball/mlb";
+  if (s === "nhl" || s === "hockey") return "hockey/nhl";
+  if (s === "nba" || s === "basketball") return "basketball/nba";
+  if (s === "cfb" || s === "college football") return "football/college-football";
+  if (s === "cbb" || s === "college basketball" || s === "ncaam") return "basketball/mens-college-basketball";
+  if (s === "epl" || s === "premier league") return "soccer/eng.1";
+  if (s === "efl" || s === "championship") return "soccer/eng.2";
+  return null;
+}
+function favoriteKeyFitsPath(key, leaguePath, sportLabel) {
+  if (!key) return false;
+  const path = (leaguePath || cardLeaguePathOf({ leaguePath: null, sportLabel }) || "").toLowerCase();
+  if (!path) return true;
+  const prefix = key.split("-")[0];
+  switch (prefix) {
+    case "mlb":
+      return path === "baseball/mlb";
+    case "nfl":
+      return path === "football/nfl";
+    case "nhl":
+      return path === "hockey/nhl";
+    case "nba":
+      return path === "basketball/nba";
+    case "cfb":
+      return path === "football/college-football";
+    case "cbb":
+      return path === "basketball/mens-college-basketball";
+    case "eng":
+      return path.startsWith("soccer/");
+    default:
+      return true;
+  }
+}
+function collectCardTeamIds(card) {
+  const ids = [];
+  for (const side of [card.recapGame?.away, card.recapGame?.home]) {
+    if (side?.id) ids.push(String(side.id));
+  }
+  return ids;
+}
+function collectCardAbbrevs(card) {
+  const out = [];
+  for (const side of [card.recapGame?.away, card.recapGame?.home]) {
+    if (side?.abbrev) out.push(side.abbrev.toLowerCase());
+  }
+  return out;
+}
+var HAY_NAME_RE = /* @__PURE__ */ new Map();
+function hayHasName(hay2, name) {
+  if (!name) return false;
+  let re = HAY_NAME_RE.get(name);
+  if (!re) {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+    re = new RegExp(`(?:^|[^a-z0-9])${escaped}(?:[^a-z0-9]|$)`, "i");
+    HAY_NAME_RE.set(name, re);
+  }
+  return re.test(hay2);
+}
+function storyMatchesFavorite(card, fav) {
+  if (fav.kind !== "team") return false;
+  const path = cardLeaguePathOf(card);
+  if (path && !favoriteKeyFitsPath(fav.key, path, card.sportLabel)) return false;
+  const favId = favoriteEspnTeamId(fav);
+  const ids = collectCardTeamIds(card);
+  if (favId && ids.includes(favId)) return true;
+  if (fav.mlbTeamId && ids.includes(String(fav.mlbTeamId))) return true;
+  const abbrevs = favoriteAbbrevs(fav);
+  const cardAbbrevs = collectCardAbbrevs(card);
+  if (abbrevs.some((a) => cardAbbrevs.includes(a))) return true;
+  const hay2 = `${card.headline ?? ""} ${card.dek ?? ""} ${card.teamName ?? ""}`.toLowerCase();
+  const conflict = FAVORITE_CONFLICTS[fav.key];
+  if (conflict?.test(hay2)) return false;
+  const official = (fav.name || "").trim().toLowerCase();
+  if (official.length >= 6 && hayHasName(hay2, official)) return true;
+  if ((fav.key === "cfb-mizzou" || fav.key === "cbb-mizzou") && /\bmissouri\b(?!\s+state)/i.test(hay2)) {
+    return true;
+  }
+  if (abbrevs.some((a) => hayHasName(hay2, a))) {
+    if (!path || favoriteKeyFitsPath(fav.key, path, card.sportLabel)) return true;
+  }
+  const names = strongNames(fav);
+  const nickHit = names.some((n) => hayHasName(hay2, n));
+  if (!nickHit) return false;
+  if (path && favoriteKeyFitsPath(fav.key, path, card.sportLabel)) {
+    const nick = (fav.shortName || "").trim().toLowerCase();
+    if (AMBIGUOUS_NICK.test(nick) && hayHasName(hay2, nick) && !hayHasName(hay2, official) && !abbrevs.some((a) => hayHasName(hay2, a))) {
+      if (fav.key === "mlb-stl" || fav.key === "nhl-stl") return hayHasName(hay2, "st. louis") || hayHasName(hay2, "stl");
+      if (fav.key === "nfl-det") return hayHasName(hay2, "detroit") || hayHasName(hay2, "det");
+      if (fav.key === "eng-wolves") return hayHasName(hay2, "wolverhampton") || hayHasName(hay2, "wol");
+    }
+    return true;
+  }
+  const long = names.filter((n) => n.length >= 8 && !AMBIGUOUS_NICK.test(n));
+  return hayHasName(hay2, official) || long.some((n) => hayHasName(hay2, n));
+}
+
+// src/lib/newspaper-box.ts
+var MLB_HYDRATE = [
+  "linescore",
+  "decisions",
+  "probablePitcher(stats(group=[pitching],type=[season]))",
+  "team",
+  "seriesStatus",
+  "broadcasts(all)",
+  "venue",
+  "game(content(editorial(recap)))"
+].join(",");
+function scoresInHeadline(headline) {
+  const hit = headline.match(/(\d+)\s*[-–to]+\s*(\d+)/i);
+  if (!hit) return null;
+  return [Number(hit[1]), Number(hit[2])];
+}
+
 // src/lib/newspaper-sport-desk.ts
 function isPreviewCard(card) {
   if (card.status && /\b(scheduled|pre-?game|preview)\b/i.test(card.status)) return true;
@@ -581,6 +861,14 @@ function hay(card) {
 function isGameWrapCard(card) {
   return isGameWrapStory(card);
 }
+function isInjuryNote(card) {
+  if (isGameWrapCard(card)) return false;
+  if (card.scoreLine && /\d/.test(card.scoreLine) && /\bfinal\b/i.test(card.status ?? "")) return false;
+  const head = `${card.headline} ${card.dek ?? ""}`;
+  return /\binjur|surgery|questionable|doubtful|out for the season|season-ending|torn (?:acl|achilles)|dislocat|to have surgery|expected back in|out \d+(?:-\d+)? weeks|sidelined|injured reserve|week-to-week|placed on ir\b/i.test(
+    head
+  );
+}
 function sportFillerReason(card, recaps = []) {
   if (isGameWrapCard(card)) return null;
   const text = hay(card);
@@ -597,9 +885,31 @@ function sportFillerReason(card, recaps = []) {
 function isSportFiller(card, recaps = []) {
   return sportFillerReason(card, recaps) != null;
 }
+var EFL_CLUB = /\b(wrexham|wolves|wolverhampton|leicester|southampton|ipswich|leeds|norwich|sheffield wednesday|sheffield united|west brom|coventry|middlesbrough|stoke|hull|bristol city|watford|swansea|cardiff|qpr|queens park|millwall|preston|blackburn|derby|portsmouth|oxford|plymouth|charlton|birmingham|sunderland|championship|efl)\b/i;
+var NOT_EFL = /\b(messi|ronaldo|reyna|inter miami|mls|lafc|galaxy|premier league|champions league|liga mx)\b/i;
+function isEflChampionshipStory(card) {
+  if (card.leaguePath && card.leaguePath !== "soccer/eng.2") return false;
+  const text = hay(card);
+  if (NOT_EFL.test(text) && !EFL_CLUB.test(text)) return false;
+  return EFL_CLUB.test(text);
+}
+var CFB_OFF_DESK = /\b(colts|commanders|jordan walker|nfl\b|world series|nlcs|alcs)\b/i;
+var CFB_OTHER_SPORT = /\b(soccer|usmnt|world cup|\bmls\b|premier league|nba\b|nhl\b|wizards|anthony davis|timberwolves|lakers)\b/i;
+var CFB_SIGNAL = /\b(college|ncaa|sec\b|acc\b|big ten|big 12|mizzou|missouri tigers)\b/i;
+function cfbDeskCopy(text) {
+  if (CFB_OTHER_SPORT.test(text)) return false;
+  if (CFB_OFF_DESK.test(text) && !CFB_SIGNAL.test(text)) return false;
+  return true;
+}
 function storyFitsSection(card, path) {
-  if (!card.leaguePath) return true;
-  return card.leaguePath === path;
+  if (path === "soccer/eng.2") return isEflChampionshipStory(card);
+  if (card.leaguePath && card.leaguePath !== path) return false;
+  if (path === "football/college-football") {
+    const text = hay(card);
+    if (!cfbDeskCopy(text)) return false;
+    if (!card.leaguePath && /\b(nfl|mlb|nhl|nba)\b/i.test(text) && !CFB_SIGNAL.test(text)) return false;
+  }
+  return !card.leaguePath || card.leaguePath === path;
 }
 function eventIdOf(card) {
   const raw = card.gameId ?? "";
@@ -608,20 +918,65 @@ function eventIdOf(card) {
   const href = `${card.wrapHref ?? ""} ${card.gameHref ?? ""}`;
   return href.match(/(?:gameId|event)[=/](\d{6,})/i)?.[1] ?? null;
 }
+var GAME_TOKEN_STOP = /* @__PURE__ */ new Set([
+  "beat",
+  "over",
+  "from",
+  "with",
+  "that",
+  "will",
+  "this",
+  "have",
+  "been",
+  "were",
+  "they",
+  "into",
+  "after",
+  "week",
+  "more",
+  "than",
+  "then",
+  "when",
+  "game",
+  "win",
+  "wins",
+  "lead",
+  "seals",
+  "throws",
+  "passes",
+  "start",
+  "best",
+  "fuel"
+]);
 function teamTokens(card) {
-  return `${card.headline} ${card.scoreLine ?? ""} ${card.teamName}`.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((w) => w.length >= 4);
+  return `${card.headline} ${card.scoreLine ?? ""} ${card.teamName}`.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((w) => w.length >= 4 && !GAME_TOKEN_STOP.has(w));
+}
+var matchKeyCache = /* @__PURE__ */ new WeakMap();
+function matchKeyOf(card) {
+  const hit = matchKeyCache.get(card);
+  if (hit) return hit;
+  const tokens = teamTokens(card);
+  const key = {
+    eventId: eventIdOf(card),
+    tokens,
+    tokenSet: new Set(tokens),
+    scoreKey: card.scoreLine ? `${card.scoreLine}\0${card.leaguePath ?? ""}` : null,
+    leaguePath: card.leaguePath ?? null,
+    hasScore: Boolean(card.scoreLine),
+    isWrap: isGameWrapCard(card)
+  };
+  matchKeyCache.set(card, key);
+  return key;
+}
+function sameGameKeyed(a, b) {
+  if (a.eventId && b.eventId && a.eventId === b.eventId) return true;
+  if (a.leaguePath && b.leaguePath && a.leaguePath !== b.leaguePath) return false;
+  if (a.scoreKey && b.scoreKey && a.scoreKey === b.scoreKey) return true;
+  const shared = b.tokens.filter((w) => a.tokenSet.has(w));
+  return shared.length >= 2 && Boolean(a.hasScore || b.hasScore || a.isWrap || b.isWrap);
 }
 function sameGameStory(a, b) {
-  const idA = eventIdOf(a);
-  const idB = eventIdOf(b);
-  if (idA && idB && idA === idB) return true;
-  if (a.scoreLine && b.scoreLine && a.scoreLine === b.scoreLine && a.leaguePath === b.leaguePath) {
-    return true;
-  }
-  const ta = new Set(teamTokens(a));
-  const tb = teamTokens(b);
-  const shared = tb.filter((w) => ta.has(w));
-  return shared.length >= 2 && Boolean(a.scoreLine || b.scoreLine || isGameWrapCard(a) || isGameWrapCard(b));
+  return sameGameKeyed(matchKeyOf(a), matchKeyOf(b));
 }
 function recapScore(card) {
   return (card.favoriteKey || card.followed ? 1e4 + favoriteDeskWeight(card.favoriteKey) : 0) + (card.postseason ? 5e3 : 0) + (card.ranked ? 2e3 : 0) + (card.sec ? 1500 : 0) + Math.min(400, Math.floor((card.body?.length ?? 0) / 10));
@@ -637,14 +992,55 @@ function isSecCard(card) {
   if (card.favoriteKey === "cfb-mizzou") return true;
   return false;
 }
+function isBoxStub(card) {
+  if (card.wrapKind === "box") return true;
+  if (card.id.startsWith("box-") && !card.photo && (card.body?.length ?? 0) < 400) return true;
+  return false;
+}
+function isWrapLead(card) {
+  if (isGameWrapCard(card) || Boolean(card.scoreLine && /\d/.test(card.scoreLine))) return true;
+  if (scoresInHeadline(card.headline ?? "")) return true;
+  return isResultCopy({
+    headline: card.headline,
+    dek: card.dek,
+    status: card.status,
+    scoreLine: card.scoreLine,
+    type: card.id.startsWith("news-") || card.id.startsWith("league-") ? card.status : null
+  });
+}
+function isStoryPhoto(url) {
+  if (!url) return false;
+  return !/teamlogos|\/team-logos\/|\/logos\//i.test(url);
+}
+function alreadyOnSectionA(card, ran = []) {
+  return ran.some((a) => a.id === card.id || sameGameStory(a, card));
+}
+function pickSectionFrontLead(wraps, pool, editorLead, newsLead, alreadyOnA1 = []) {
+  const open = (cs) => cs.filter((c) => !alreadyOnSectionA(c, alreadyOnA1));
+  const quality = wraps.filter((c) => !isBoxStub(c) && (isStoryPhoto(c.photo) || (c.body?.length ?? 0) >= 280));
+  const pictured = quality.filter((c) => isStoryPhoto(c.photo));
+  const picturedFresh = pictured.filter((c) => !c.holdover);
+  const picturedPost = pictured.filter((c) => c.postseason);
+  const qualityFresh = quality.filter((c) => !c.holdover);
+  const qualityPost = quality.filter((c) => c.postseason);
+  const favOf = (cs) => cs.filter((c) => c.favoriteKey || c.followed);
+  const nonStubFresh = wraps.filter((c) => !c.holdover && !isBoxStub(c));
+  const nonStub = wraps.filter((c) => !isBoxStub(c));
+  const freshWraps = wraps.filter((c) => !c.holdover);
+  return favOf(open(picturedFresh))[0] ?? favOf(open(qualityFresh))[0] ?? open(picturedFresh)[0] ?? open(picturedPost)[0] ?? open(pictured)[0] ?? open(qualityFresh)[0] ?? open(qualityPost)[0] ?? open(quality)[0] ?? open(nonStubFresh)[0] ?? open(nonStub)[0] ?? open(freshWraps)[0] ?? open(wraps)[0] ?? (editorLead && !alreadyOnSectionA(editorLead, alreadyOnA1) ? editorLead : void 0) ?? (newsLead && !alreadyOnSectionA(newsLead, alreadyOnA1) ? newsLead : void 0) ?? open(pool)[0] ?? picturedFresh[0] ?? wraps[0] ?? pool[0];
+}
 function isFreshSectionLead(card, path, edition) {
-  if (card.holdover) return false;
-  if (isGameWrapCard(card) || card.scoreLine && /\d/.test(card.scoreLine)) {
-    return gameWrapCovers(card.when, edition, path);
+  if (isWrapLead(card)) {
+    if (!card.when) return true;
+    if (gameWrapCovers(card.when, edition, path) || card.holdover) return true;
+    if (card.postseason) return true;
+    if (card.status && /\brecap\b/i.test(card.status)) return true;
+    return false;
   }
+  if (card.holdover) return false;
   return true;
 }
-function orderSportSectionFront(cards, path, edition) {
+function orderSportSectionFront(cards, path, edition, alreadyOnA1 = []) {
   const seen = /* @__PURE__ */ new Set();
   const unique = cards.filter((card) => {
     if (seen.has(card.id)) return false;
@@ -653,13 +1049,11 @@ function orderSportSectionFront(cards, path, edition) {
   });
   const fresh = unique.filter((card) => isFreshSectionLead(card, path, edition));
   const pool = fresh.length ? fresh : unique;
-  const editorLead = pool.find((card) => card.editorFront === 0);
-  const wraps = orderSportRecaps(
-    pool.filter((card) => isGameWrapCard(card) || Boolean(card.scoreLine && /\d/.test(card.scoreLine))),
-    path
-  );
-  const news = pool.filter((card) => !isGameWrapCard(card) && !(card.scoreLine && /\d/.test(card.scoreLine))).sort((a, b) => (a.editorRank ?? 99) - (b.editorRank ?? 99) || String(b.when ?? "").localeCompare(String(a.when ?? "")));
-  const lead = editorLead ?? wraps[0] ?? news[0] ?? pool[0];
+  const wraps = orderSportRecaps(pool.filter(isWrapLead), path);
+  const news = pool.filter((card) => !isWrapLead(card)).sort((a, b) => (a.editorRank ?? 99) - (b.editorRank ?? 99) || String(b.when ?? "").localeCompare(String(a.when ?? "")));
+  const newsLead = news.find((card) => !isInjuryNote(card));
+  const editorLead = pool.find((card) => card.editorFront === 0 && !isInjuryNote(card));
+  const lead = pickSectionFrontLead(wraps, pool, editorLead, newsLead, alreadyOnA1);
   if (!lead) return [];
   const rest = pool.filter((card) => card.id !== lead.id);
   const withPhoto = rest.filter((card) => card.photo);
@@ -755,18 +1149,165 @@ function packNationalPages(stories) {
   }
   return pages;
 }
+var NATIONAL_PROMO_SENTENCE = /(?:See more of our coverage in your search results\.?|Join Washington Examiner\b[^.!?]{0,220}[.!?]|Subscribe for full access to Washington Examiner\b[^.!?]{0,220}[.!?]|Laura Ingraham,\s+Jesse Watters and Greg Gutfeld bring Fox News viewers[^.!?]{0,180}[.!?])\s*/gi;
+function stripNationalPromos(text) {
+  return text.replace(NATIONAL_PROMO_SENTENCE, " ").replace(/\bJoin Washington Examiner\b[\s\S]{0,280}?(?:subscriber-only journalism\.?)/gi, " ").replace(/\s{2,}/g, " ").trim();
+}
+function tidyNationalTicks(text) {
+  return text.replace(/(\w)\s+([’‘'`])/g, "$1$2").replace(/(\w)['‘]/g, "$1\u2019");
+}
+var BODY_MIN = 360;
+var OUTLET_SUFFIX = /\s+[—|–-]\s+(?:Fox News|The Wall Street Journal|WSJ|New York Post|Associated Press|AP News|AP|Reuters|National Review|The Daily Wire|Daily Wire|Washington Examiner|Washington Free Beacon|The Dispatch|Yahoo News|Google News)\s*$/i;
+function cleanHeadline(title) {
+  return title.replace(OUTLET_SUFFIX, "").replace(/\s+/g, " ").trim();
+}
+var STOP = /* @__PURE__ */ new Set([
+  "the",
+  "and",
+  "for",
+  "with",
+  "from",
+  "that",
+  "this",
+  "have",
+  "has",
+  "was",
+  "were",
+  "are",
+  "but",
+  "his",
+  "her",
+  "their",
+  "its",
+  "into",
+  "over",
+  "after",
+  "before",
+  "about",
+  "will",
+  "they",
+  "them",
+  "been",
+  "than",
+  "then",
+  "when",
+  "what",
+  "your",
+  "our",
+  "who",
+  "how",
+  "not",
+  "you",
+  "all",
+  "can",
+  "just",
+  "out",
+  "new",
+  "says",
+  "said",
+  "after",
+  "amid",
+  "against",
+  "under",
+  "into",
+  "onto",
+  "over",
+  "near",
+  "more",
+  "than",
+  "could",
+  "would",
+  "should",
+  "might",
+  "must",
+  "also",
+  "still",
+  "back",
+  "down",
+  "some"
+]);
+function significantWords(title) {
+  return cleanHeadline(title).toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((w) => w.length > 3 && !STOP.has(w));
+}
+function sameStory(a, b) {
+  if (!a.length || !b.length) return false;
+  const other = new Set(b);
+  const shared = a.filter((w) => other.has(w));
+  const shorter = Math.min(a.length, b.length);
+  if (shared.length >= 3 && shared.length / shorter >= 0.45) return true;
+  if (shared.length >= 2 && shared.some((w) => w.length >= 6) && shared.length / shorter >= 0.55) return true;
+  return false;
+}
+var ENTITY_RULES = [
+  { id: "b1-bomber", test: (t) => /\bb-?1\b/.test(t) && /\bbomber|lancer|pullout|withdraw/.test(t) },
+  {
+    id: "scotus-climate",
+    test: (t) => /\bsupreme court\b|\bscotus\b|\bjustices\b/.test(t) && /\bclimate|epa|emissions|clean power/.test(t)
+  }
+];
+function storyEntityKeys(title, extra = "") {
+  const t = `${title} ${extra}`.toLowerCase();
+  return ENTITY_RULES.filter((rule) => rule.test(t)).map((rule) => rule.id);
+}
+function sameNationalEvent(a, b) {
+  const ea = storyEntityKeys(a.title, a.snippet ?? "");
+  const eb = storyEntityKeys(b.title, b.snippet ?? "");
+  if (ea.some((id) => eb.includes(id))) return true;
+  return sameStory(significantWords(a.title), significantWords(b.title));
+}
+var CAPTION_LEAD = /^(?:watch(?:\s+now)?|video|newsmakers?|tonight on)\b/i;
+var SPEAKER_CAPTION = /^[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3}\s+(?:talks?|discusses|weighs in|breaks down)\b/;
+function isLeadCaption(text) {
+  const t = text.replace(/\s+/g, " ").trim();
+  if (!t || t.length > 220) return false;
+  if (CAPTION_LEAD.test(t)) return true;
+  if (SPEAKER_CAPTION.test(t)) return true;
+  return /\b(?:discusses?|talks? to|weighs in|breaks down)\b/i.test(t) && t.length < 160;
+}
+function stripLeadCaption(text) {
+  const raw = (text ?? "").trim();
+  if (!raw) return raw;
+  const paras = newspaperParas(raw);
+  if (paras.length >= 2 && isLeadCaption(paras[0])) return paras.slice(1).join("\n\n");
+  const bits = splitNewspaperSentences(raw);
+  if (bits.length >= 2 && isLeadCaption(bits[0])) return bits.slice(1).join(" ");
+  return raw;
+}
+function isPaywallStubNote(note) {
+  return /full text was paywalled|printed from the rss brief/i.test(note ?? "");
+}
+function cleanNationalStories(stories) {
+  const out = [];
+  for (const raw of stories) {
+    const summary = stripLeadCaption(tidyNationalTicks(stripNationalPromos(raw.summary ?? "")));
+    const paragraphs = (raw.paragraphs ?? []).map((p) => stripLeadCaption(tidyNationalTicks(stripNationalPromos(p)))).filter(Boolean);
+    const body = raw.body ? stripLeadCaption(tidyNationalTicks(stripNationalPromos(raw.body))) : null;
+    const paywalled = isPaywallStubNote(raw.bodyNote) || /full text was paywalled/i.test(`${summary} ${body ?? ""}`);
+    if (paywalled && !(body && body.length >= BODY_MIN)) {
+      if (!summary || /full text was paywalled/i.test(summary)) continue;
+    }
+    const story = {
+      ...raw,
+      summary,
+      paragraphs: paragraphs.length ? paragraphs : newspaperParas(summary),
+      body: paywalled && !(body && body.length >= BODY_MIN) ? null : body,
+      bodyNote: paywalled ? null : raw.bodyNote ?? null
+    };
+    if (out.some(
+      (prev) => sameNationalEvent(
+        { title: prev.headline, snippet: prev.summary },
+        { title: story.headline, snippet: story.summary }
+      )
+    )) {
+      continue;
+    }
+    out.push(story);
+  }
+  return out;
+}
 
-// src/lib/newspaper-box.ts
-var MLB_HYDRATE = [
-  "linescore",
-  "decisions",
-  "probablePitcher(stats(group=[pitching],type=[season]))",
-  "team",
-  "seriesStatus",
-  "broadcasts(all)",
-  "venue",
-  "game(content(editorial(recap)))"
-].join(",");
+// src/lib/newspaper-national.ts
+var cleanNationalStories2 = cleanNationalStories;
 
 // src/lib/newspaper-favorite-coaches.ts
 var FAVORITE_COACHES_PRINT = {
@@ -807,6 +1348,26 @@ function printsFavoriteCoaches(pressId) {
   if (weekday === 1 && FAVORITE_COACHES_PRINT.monday === "always") return true;
   if (weekday === 0 && FAVORITE_COACHES_PRINT.sunday === "cfb-season") return isCfbSeasonDay(day);
   return false;
+}
+
+// src/lib/newspaper-page.ts
+var PAGE_CANVAS = { width: 1040, height: 1480 };
+var PAGE_CHROME_PX = 188;
+var PAGE_BODY_PX = PAGE_CANVAS.height - PAGE_CHROME_PX;
+var NEWS_STORIES_PER_PAGE = 3;
+var PRESEASON_MS = 18 * 24 * 60 * 60 * 1e3;
+var A2_CLUB_CARDS = 3;
+var FORM_CLUBS_PER_PACKED_PAGE = 6;
+function planOutlookAndForm(clubCount) {
+  const n = Math.max(clubCount, 0);
+  const leftoverOffset = A2_CLUB_CARDS;
+  const leftoverCount = 0;
+  const formOnOutlook = Math.min(n, FORM_CLUBS_PER_PACKED_PAGE);
+  const formContinue = [];
+  for (let offset = formOnOutlook; offset < n; offset += FORM_CLUBS_PER_PACKED_PAGE) {
+    formContinue.push({ offset, count: Math.min(FORM_CLUBS_PER_PACKED_PAGE, n - offset) });
+  }
+  return { leftoverOffset, leftoverCount, formOnOutlook, formContinue };
 }
 
 // src/lib/newspaper-sections.ts
@@ -856,7 +1417,6 @@ function orderSportSections(ids, day) {
     return a.order - b.order || a.code.localeCompare(b.code);
   });
 }
-var MIN_SECTION_PAGES = 5;
 function sportSectionId(path) {
   const known = KNOWN[path];
   if (known) return { path, ...known };
@@ -865,8 +1425,89 @@ function sportSectionId(path) {
   const title = slug.replace(/[._-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   return { path, code: letters, title, order: 200 };
 }
+function leaguePathFromSportLabel(label) {
+  const s = (label ?? "").trim().toLowerCase();
+  if (s === "nfl" || s === "football") return "football/nfl";
+  if (s === "mlb" || s === "baseball") return "baseball/mlb";
+  if (s === "nhl" || s === "hockey") return "hockey/nhl";
+  if (s === "nba" || s === "basketball") return "basketball/nba";
+  if (s === "cfb" || s === "college football") return "football/college-football";
+  if (s === "cbb" || s === "college basketball" || s === "ncaam") return "basketball/mens-college-basketball";
+  if (s === "epl" || s === "premier league") return "soccer/eng.1";
+  if (s === "efl" || s === "championship") return "soccer/eng.2";
+  return null;
+}
+function favoriteKeyFitsCard(key, card) {
+  return favoriteKeyFitsPath(key, card.leaguePath || leaguePathFromSportLabel(card.sportLabel), card.sportLabel);
+}
 function isFavoriteStory(card) {
-  return Boolean(card.favoriteKey || card.followed);
+  if (card.favoriteKey) return favoriteKeyFitsCard(card.favoriteKey, card);
+  return false;
+}
+function isMoScoutCard(card) {
+  if (card.sportLabel !== "Missouri") return false;
+  return /missouri scout|moscout/i.test(`${card.teamName ?? ""} ${card.caption ?? ""} ${card.wrapHref ?? ""}`);
+}
+function isTodaysMoScout(card, edition) {
+  if (!isMoScoutCard(card)) return false;
+  if (!card.when) return true;
+  const day = instantDay(card.when);
+  const newsDay = editionNewsDay(edition);
+  return !day || day === newsDay || day === edition.slice(0, 10);
+}
+var A1_MUTED_KEYS = /* @__PURE__ */ new Set(["nba-phi"]);
+function isA1MutedFavoriteKey(key) {
+  return Boolean(key && A1_MUTED_KEYS.has(key));
+}
+function isNbaCard(card) {
+  const path = cardLeaguePath(card);
+  return path === "basketball/nba" || /^nba$/i.test(card.sportLabel ?? "");
+}
+function isA1Muted(card, edition = "") {
+  if (isA1MutedFavoriteKey(card.favoriteKey)) return true;
+  if (isFrontPreseasonNote(card)) return true;
+  if (!isNbaCard(card)) return false;
+  if (edition && !sportInSeason("basketball/nba", edition)) return true;
+  return !isFavoriteStory(card);
+}
+function mayFrontA1(card, edition) {
+  if (isA1Muted(card, edition)) return false;
+  if (isTodaysMoScout(card, edition)) return true;
+  if (isHistoricNationalCard(card)) return true;
+  return isFavoriteStory(card);
+}
+function cardLeaguePath(card) {
+  return card.leaguePath || leaguePathFromSportLabel(card.sportLabel);
+}
+function stampFavoriteKeys(stories, clubs) {
+  return stories.map((card) => {
+    const kept = card.favoriteKey && favoriteKeyFitsCard(card.favoriteKey, card) ? card.favoriteKey : "";
+    if (kept) return card.followed ? card : { ...card, favoriteKey: kept, followed: true };
+    if (card.favoriteKey && !kept) {
+      card = { ...card, favoriteKey: "", followed: false };
+    }
+    if (!clubs.length) return card;
+    const path = cardLeaguePath(card);
+    let hit;
+    for (const club of clubs) {
+      if (club.leaguePath && path && club.leaguePath !== path) continue;
+      const fav = {
+        key: club.key,
+        name: club.shortName,
+        shortName: club.shortName,
+        sport: "",
+        league: "",
+        espnPath: club.leaguePath ? `${club.leaguePath}/teams/0` : "",
+        kind: "team"
+      };
+      if (storyMatchesFavorite(card, fav)) {
+        hit = club;
+        break;
+      }
+    }
+    if (hit) return { ...card, favoriteKey: hit.key, followed: true };
+    return card;
+  });
 }
 function isEssentialsDesk(card) {
   return card.sportLabel === "National" || card.sportLabel === "Missouri";
@@ -925,11 +1566,11 @@ function isDeskStory(card) {
     if (card.status && /final|postponed/i.test(card.status) && card.scoreLine && /\d/.test(card.scoreLine)) {
       return true;
     }
-    return cleanStoryCopy(card.body).text.length >= 80;
+    return cleanedBodyLength(card) >= 80;
   }
   if (!isFavoriteStory(card)) return false;
   if (card.id.startsWith("news-")) return Boolean(card.headline);
-  if (cleanStoryCopy(card.body).text.length >= 80) return true;
+  if (cleanedBodyLength(card) >= 80) return true;
   if (card.status && /final|postponed/i.test(card.status) && card.scoreLine && /\d/.test(card.scoreLine)) {
     return true;
   }
@@ -937,7 +1578,7 @@ function isDeskStory(card) {
 }
 var STORY_COPY_MIN = 400;
 function hasStoryCopy(card) {
-  return cleanStoryCopy(card.body).text.length >= STORY_COPY_MIN;
+  return cleanedBodyLength(card) >= STORY_COPY_MIN;
 }
 function isRecapStory(card) {
   return isResultCopy({
@@ -968,31 +1609,53 @@ function isStaleGamePreview(card, pool) {
     (other) => other.id !== card.id && shareMatchup(card, other) && (isRecapStory(other) || isGameRecapCopy(other) || isGameWrap(other) || Boolean(other.status && /final/i.test(other.status)))
   );
 }
+function isFavoriteGameResult(card) {
+  if (!isFavoriteStory(card) || isInjuryNote(card)) return false;
+  if (isPreviewStory(card) || isBettingPreview(card)) return false;
+  return isRecapStory(card) || isGameRecapCopy(card) || isGameWrap(card) || Boolean(card.status && /final/i.test(card.status) && card.scoreLine && /\d/.test(card.scoreLine));
+}
+function isFrontPreseasonNote(card) {
+  if (card.preseason) return true;
+  return /\bpreseason\b/i.test(`${card.headline} ${card.dek ?? ""} ${card.status ?? ""}`);
+}
 function cannotLeadFront(card, pool = []) {
+  if (isA1MutedFavoriteKey(card.favoriteKey) || isFrontPreseasonNote(card)) return true;
+  if (isNbaCard(card) && !isFavoriteStory(card)) return true;
   if (isHoldoverGame(card)) return true;
   if (isBettingPreview(card)) return true;
   if (pool.length && isStaleGamePreview(card, pool)) return true;
   if (isPreviewStory(card)) return true;
+  if (isInjuryNote(card) && pool.some((other) => other.id !== card.id && isFavoriteGameResult(other))) {
+    return true;
+  }
+  if (card.sportLabel === "Missouri" && pool.some((other) => other.id !== card.id && isFavoriteGameResult(other))) {
+    return true;
+  }
   return false;
 }
 function leadReplacement(bad, pool, taken) {
   const recap = pool.find(
     (c) => !taken.has(c.id) && c.id !== bad.id && shareMatchup(c, bad) && (isRecapStory(c) || isGameRecapCopy(c) || isGameWrap(c)) && hasStoryCopy(c)
   );
-  return recap ?? null;
+  if (recap) return recap;
+  if (!isInjuryNote(bad) && bad.sportLabel !== "Missouri") return null;
+  const results = pool.filter((c) => !taken.has(c.id) && c.id !== bad.id && isFavoriteGameResult(c) && hasStoryCopy(c)).sort((a, b) => favoriteDeskWeight(b.favoriteKey ?? "") - favoriteDeskWeight(a.favoriteKey ?? ""));
+  return results[0] ?? null;
 }
 function storyRank(card, edition) {
   const day = card.when ? instantDay(card.when) : null;
   let score = 0;
   if (isBettingPreview(card)) score -= 250;
   if (isPreviewStory(card)) score -= 150;
+  if (isInjuryNote(card)) score -= 220;
+  if (isFavoriteGameResult(card)) score += 80;
   if (day === editionNewsDay(edition) && card.status && /final/i.test(card.status)) score += 100;
   if (card.postseason) score += 40;
   if (card.id.startsWith("news-")) score += 25;
   if (card.id.startsWith("league-")) score += 10;
   if (isAthleticCard(card)) score += 12;
   if (isRecapStory(card)) score += 20;
-  if (cleanStoryCopy(card.body).text.length >= 400) score += 15;
+  if (cleanedBodyLength(card) >= 400) score += 15;
   if (typeof card.listRank === "number") score += Math.max(0, 16 - Math.min(16, card.listRank));
   if (card.favoriteKey) score += favoriteDeskWeight(card.favoriteKey);
   return score;
@@ -1004,8 +1667,9 @@ function isHoldoverGame(card) {
   return Boolean(card.holdover && isGameWrap(card));
 }
 function ruleOrder(cards, edition) {
+  const score = new Map(cards.map((card) => [card, storyRank(card, edition)]));
   return [...cards].sort((a, b) => {
-    const byRank = storyRank(b, edition) - storyRank(a, edition);
+    const byRank = (score.get(b) ?? 0) - (score.get(a) ?? 0);
     if (byRank) return byRank;
     const byList = (a.listRank ?? 99) - (b.listRank ?? 99);
     if (byList) return byList;
@@ -1057,24 +1721,77 @@ function uniqueCodes(ids) {
 }
 var FRONT_STORIES = 3;
 var FRONT_BRIEFS = 4;
-var FORM_CLUBS_PER_PAGE = 3;
 function upcomingFor(clubs) {
-  return clubs.flatMap(
-    (club) => club.upcoming.map((game) => ({
-      id: game.id,
-      team: club.shortName,
-      label: game.label,
-      when: game.when,
-      startIso: game.startIso ?? null,
-      detail: game.detail
-    }))
+  return sortComingUp(
+    clubs.flatMap(
+      (club) => club.upcoming.map((game) => ({
+        id: game.id,
+        team: club.shortName,
+        label: game.label,
+        when: game.when,
+        startIso: game.startIso ?? null,
+        detail: game.detail,
+        favoriteKey: club.key
+      }))
+    )
   );
 }
-function chunkClubs(clubs, size) {
-  if (!clubs.length) return [];
-  const out = [];
-  for (let i = 0; i < clubs.length; i += size) out.push(clubs.slice(i, i + size));
-  return out;
+var COMING_UP_CLOCK = /\d{1,2}:\d{2}|\d{1,2}\s*[ap](?:\.?m\.?)/i;
+var CHICAGO = "America/Chicago";
+function chicagoYmd(ms) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: CHICAGO,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(new Date(ms));
+}
+function endOfChicagoDay(ms) {
+  const ymd = chicagoYmd(ms);
+  for (const offset of ["-05:00", "-06:00"]) {
+    const t = Date.parse(`${ymd}T23:59:59.999${offset}`);
+    if (!Number.isNaN(t) && chicagoYmd(t) === ymd) return t;
+  }
+  return Date.parse(`${ymd}T23:59:59.999-05:00`);
+}
+function comingUpHasClock(when) {
+  return Boolean(when && COMING_UP_CLOCK.test(when));
+}
+function parseComingUpWhen(when, now) {
+  const cleaned = when.replace(/^@\s*[A-Za-z0-9.&']+\s+/i, "").replace(/^(vs\.?|at)\s+[A-Za-z0-9.&']+\s+/i, "").replace(/\bCT\b/g, "").replace(/,/g, " ").replace(/\s+/g, " ").trim();
+  if (!cleaned) return null;
+  const year = new Date(now).getFullYear();
+  const attempts = /\b(?:19|20)\d{2}\b/.test(cleaned) ? [cleaned] : [`${cleaned} ${year}`, `${cleaned}, ${year}`];
+  for (const text of attempts) {
+    const t = Date.parse(text);
+    if (Number.isNaN(t)) continue;
+    if (t < now - 150 * 864e5) {
+      const next = Date.parse(text.replace(String(year), String(year + 1)));
+      if (!Number.isNaN(next)) return next;
+    }
+    return t;
+  }
+  return null;
+}
+function comingUpSortMs(game, now = Date.now()) {
+  if (game.startIso) {
+    const t = Date.parse(game.startIso);
+    if (!Number.isNaN(t)) return t;
+  }
+  const when = game.when?.trim() || "";
+  if (!when) return Number.POSITIVE_INFINITY;
+  const parsed = parseComingUpWhen(when, now);
+  if (parsed == null) return Number.POSITIVE_INFINITY;
+  return comingUpHasClock(when) ? parsed : endOfChicagoDay(parsed);
+}
+function sortComingUp(games, now = Date.now()) {
+  return [...games].sort((a, b) => {
+    const d = comingUpSortMs(a, now) - comingUpSortMs(b, now);
+    if (d !== 0) return d;
+    const byDesk = favoriteDeskWeight(b.favoriteKey ?? "") - favoriteDeskWeight(a.favoriteKey ?? "");
+    if (byDesk) return byDesk;
+    return (a.when ?? "").localeCompare(b.when ?? "");
+  });
 }
 var WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 function weekdayName(day) {
@@ -1143,10 +1860,10 @@ var HEAD_STOP = /* @__PURE__ */ new Set([
   "louis",
   "saint"
 ]);
-function significantWords(headline) {
+function significantWords2(headline) {
   return headline.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((word) => word.length > 3 && !HEAD_STOP.has(word));
 }
-function sameStory(a, b) {
+function sameStory2(a, b) {
   if (!a.length || !b.length) return false;
   const other = new Set(b);
   const shared = a.filter((word) => other.has(word));
@@ -1331,7 +2048,124 @@ function headlineTokens(card) {
     aliases.tigers = "missouri";
     aliases.gators = "florida";
   }
-  return significantWords(card.headline).map((word) => aliases[word] ?? word);
+  return significantWords2(card.headline).map((word) => aliases[word] ?? word);
+}
+var SUBJECT_STOP = /* @__PURE__ */ new Set([
+  "cardinals",
+  "chiefs",
+  "lions",
+  "cowboys",
+  "blues",
+  "tigers",
+  "bears",
+  "packers",
+  "giants",
+  "yankees",
+  "rays",
+  "brewers",
+  "padres",
+  "dodgers",
+  "braves",
+  "guardians",
+  "kansas",
+  "city",
+  "louis",
+  "detroit",
+  "dallas",
+  "missouri",
+  "mizzou",
+  "chicago",
+  "arizona",
+  "england",
+  "patriots",
+  "raiders",
+  "vegas",
+  "panthers",
+  "falcons",
+  "saints",
+  "eagles",
+  "steelers",
+  "ravens",
+  "bengals",
+  "browns",
+  "texans",
+  "colts",
+  "jaguars",
+  "titans",
+  "broncos",
+  "chargers",
+  "seahawks",
+  "rams",
+  "49ers",
+  "niners",
+  "commanders",
+  "bills",
+  "dolphins",
+  "jets",
+  "vikings",
+  "buccaneers",
+  "white",
+  "sox",
+  "cubs",
+  "reds",
+  "phillies",
+  "mets",
+  "orioles",
+  "twins",
+  "mariners",
+  "astros",
+  "rangers",
+  "royals",
+  "athletics",
+  "nationals",
+  "marlins",
+  "rockies",
+  "angels",
+  "pirates",
+  "division",
+  "series",
+  "playoff",
+  "playoffs",
+  "postseason",
+  "walk",
+  "single",
+  "lifts",
+  "beats",
+  "beat",
+  "win",
+  "wins",
+  "lead",
+  "leads",
+  "game",
+  "final",
+  "week",
+  "monday",
+  "sunday",
+  "saturday",
+  "night",
+  "analysis",
+  "tips",
+  "prop",
+  "plays",
+  "preview"
+]);
+function distinctiveSubjects(card) {
+  return headlineTokens(card).filter((word) => word.length >= 6 && !SUBJECT_STOP.has(word));
+}
+function seriesGameKey(headline) {
+  const m = headline.match(/\b((?:al|nl)ds)\s+game\s+(\d)\b/i);
+  return m ? `${m[1].toLowerCase()}-${m[2]}` : null;
+}
+function sameNamedPackage(a, b) {
+  if (a.leaguePath && b.leaguePath && a.leaguePath !== b.leaguePath) return false;
+  const seriesA = seriesGameKey(a.headline);
+  const seriesB = seriesGameKey(b.headline);
+  if (seriesA && seriesB && seriesA === seriesB) return true;
+  const left = distinctiveSubjects(a);
+  const right = distinctiveSubjects(b);
+  if (!left.length || !right.length) return false;
+  const shared = left.filter((w) => right.includes(w));
+  return shared.length >= 1;
 }
 function sameSectionAStory(a, b) {
   if (a.id && a.id === b.id) return true;
@@ -1342,40 +2176,45 @@ function sameSectionAStory(a, b) {
   const srcB = sourceStoryId(b);
   if (srcA && srcB && srcA === srcB) return true;
   if (isColumnStory(a) || isColumnStory(b)) {
-    return sameStory(headlineTokens(a), headlineTokens(b));
+    return sameStory2(headlineTokens(a), headlineTokens(b));
   }
   const gameA = storyGameId(a);
   const gameB = storyGameId(b);
   if (gameA && gameB && gameA === gameB) return true;
   if (isGameRecapCopy(a) && isGameRecapCopy(b) && shareMatchup(a, b)) return true;
-  if (isMainGameStory(a) && isMainGameStory(b) && sameStory(headlineTokens(a), headlineTokens(b))) {
+  if (isMainGameStory(a) && isMainGameStory(b) && sameStory2(headlineTokens(a), headlineTokens(b))) {
     return true;
   }
-  return sameStory(headlineTokens(a), headlineTokens(b));
+  if (sameNamedPackage(a, b)) return true;
+  return sameStory2(headlineTokens(a), headlineTokens(b));
 }
 function pickBetterStory(cards) {
   return cards.reduce((best, card) => preferStory(card, best) ? card : best);
 }
-function dedupeStories(stories) {
-  const stamped = attachInferredGameIds(stories);
-  const groups = [];
-  for (const card of stamped) {
-    const hits = [];
-    for (let i = 0; i < groups.length; i += 1) {
-      if (groups[i].some((prev) => sameSectionAStory(card, prev))) hits.push(i);
-    }
-    if (!hits.length) {
-      groups.push([card]);
-      continue;
-    }
-    const [first, ...rest] = hits;
-    groups[first].push(card);
-    for (const i of rest.sort((a, b) => b - a)) {
-      groups[first].push(...groups[i]);
-      groups.splice(i, 1);
-    }
+function dedupePush(groups, card) {
+  const hits = [];
+  for (let i = 0; i < groups.length; i += 1) {
+    if (groups[i].some((prev) => sameSectionAStory(card, prev))) hits.push(i);
   }
+  if (!hits.length) {
+    groups.push([card]);
+    return groups;
+  }
+  const [first, ...rest] = hits;
+  groups[first].push(card);
+  for (const i of rest.sort((a, b) => b - a)) {
+    groups[first].push(...groups[i]);
+    groups.splice(i, 1);
+  }
+  return groups;
+}
+function finishDedupe(groups) {
   return groups.map(pickBetterStory);
+}
+function dedupeStories(stories) {
+  const groups = [];
+  for (const card of attachInferredGameIds(stories)) dedupePush(groups, card);
+  return finishDedupe(groups);
 }
 function isStalePreview(card, edition) {
   if (isRecapStory(card)) return false;
@@ -1416,15 +2255,14 @@ var MAJOR_NEWS = new RegExp(
 );
 function isMajorStory(card) {
   if (isPreviewStory(card)) return false;
+  if (isInjuryNote(card)) return false;
   const text = `${card.headline} ${card.dek ?? ""}`.replace(/\s+/g, " ");
   if (MAJOR_NEWS.test(text)) return true;
   return Boolean(
     card.postseason && isRecapStory(card) && /\b(?:advance[sd]?|sweep(?:s|ed)?|game (?:5|7)|series win|win (?:the )?series)\b/i.test(text)
   );
 }
-var LEAGUE_FRONT_MAX = FRONT_STORIES;
-function editorFront(fresh) {
-  let league = 0;
+function editorFront(fresh, edition = "") {
   const picked = [];
   const taken = /* @__PURE__ */ new Set();
   const ordered = fresh.filter((card) => card.editorFront != null && card.editorFront < FRONT_STORIES && hasStoryCopy(card)).filter((card) => !isHoldoverGame(card)).sort((a, b) => a.editorFront - b.editorFront);
@@ -1435,10 +2273,9 @@ function editorFront(fresh) {
       if (!choice) continue;
     }
     if (taken.has(choice.id)) continue;
-    if (!(isFavoriteStory(choice) || choice.sportLabel === "Missouri" || isHistoricNationalCard(choice))) {
+    if (isA1Muted(choice, edition) || !(isFavoriteStory(choice) || isMoScoutCard(choice) || isHistoricNationalCard(choice))) {
       if (choice.sportLabel === "National") continue;
-      if (league >= LEAGUE_FRONT_MAX || !isMajorStory(choice)) continue;
-      league += 1;
+      continue;
     }
     picked.push(choice);
     taken.add(choice.id);
@@ -1446,23 +2283,24 @@ function editorFront(fresh) {
   }
   return picked;
 }
-function favoritePages(freshStories, sectionStories, clubs, frontPicks = []) {
+function favoritePages(freshStories, sectionStories, clubs, frontPicks = [], edition = "") {
   const favoriteFolioByStory = {};
   const freshIds = new Set(freshStories.map((c) => c.id));
   const frontPool = [...freshStories, ...sectionStories.filter((c) => !freshIds.has(c.id))];
   const clubOf = (c) => c.favoriteKey ?? c.teamName ?? c.id;
   const picks = [];
   const taken = /* @__PURE__ */ new Set();
+  const slotOk = (card) => mayFrontA1(card, edition);
   for (const card of frontPicks) {
     if (picks.length >= FRONT_STORIES) break;
     let choice = card;
-    if (cannotLeadFront(card, frontPool)) choice = leadReplacement(card, frontPool, taken);
-    if (!choice || taken.has(choice.id) || cannotLeadFront(choice, frontPool)) continue;
+    if (cannotLeadFront(card, frontPool) || !slotOk(card)) choice = leadReplacement(card, frontPool, taken);
+    if (!choice || taken.has(choice.id) || cannotLeadFront(choice, frontPool) || !slotOk(choice)) continue;
     picks.push(choice);
     taken.add(choice.id);
   }
   const written = frontPool.filter(
-    (c) => hasStoryCopy(c) && !cannotLeadFront(c, frontPool) && !taken.has(c.id)
+    (c) => slotOk(c) && !cannotLeadFront(c, frontPool) && !taken.has(c.id) && !isTodaysMoScout(c, edition)
   );
   for (const card of written) {
     if (picks.length >= 3) break;
@@ -1473,16 +2311,29 @@ function favoritePages(freshStories, sectionStories, clubs, frontPicks = []) {
   }
   for (const card of [...written, ...frontPool]) {
     if (picks.length >= 3) break;
-    if (cannotLeadFront(card, frontPool) || taken.has(card.id)) continue;
+    if (!slotOk(card) || cannotLeadFront(card, frontPool) || taken.has(card.id)) continue;
     picks.push(card);
     taken.add(card.id);
+  }
+  const scout = frontPool.find((c) => isTodaysMoScout(c, edition));
+  if (scout && !taken.has(scout.id)) {
+    if (picks.length < FRONT_STORIES) {
+      picks.push(scout);
+      taken.add(scout.id);
+    } else {
+      const replaceAt = picks.length - 1;
+      const dropped = picks[replaceAt];
+      taken.delete(dropped.id);
+      picks[replaceAt] = scout;
+      taken.add(scout.id);
+    }
   }
   const [lead = null, second = null, third = null] = picks;
   for (const card of [lead, second, third]) {
     if (card) favoriteFolioByStory[card.id] = "A1";
   }
   const jumps = [];
-  const jumpFolio = "A3";
+  const jumpFolio = "A4";
   const maybeContinue = (card, budget) => {
     const { teaser, rest } = frontSplit(card, budget);
     if (!card || !rest) return { teaser: teaser || void 0 };
@@ -1499,14 +2350,14 @@ function favoritePages(freshStories, sectionStories, clubs, frontPicks = []) {
       folio: jumpFolio,
       section: "A",
       sectionTitle: SECTION_A_TITLE,
-      sectionPage: 3,
+      sectionPage: 4,
       sectionCount: 0,
       continuedFrom: "A1",
       jumps,
       jumpFolio: void 0
     }
   ] : [];
-  let n = 3 + continues.length;
+  let n = 4 + continues.length;
   const inside = [];
   const frontIds = new Set(
     [lead, second, third].filter(Boolean).map((c) => c.id)
@@ -1556,8 +2407,8 @@ function favoritePages(freshStories, sectionStories, clubs, frontPicks = []) {
     lead,
     second,
     third,
-    briefs: (freshStories.length ? freshStories : sectionStories).filter((c) => !frontIds.has(c.id)).slice(0, 6),
-    news: freshStories.length ? freshStories : sectionStories,
+    briefs: (freshStories.length ? freshStories : sectionStories).filter((c) => !frontIds.has(c.id) && !isA1Muted(c, edition)).slice(0, 6),
+    news: (freshStories.length ? freshStories : sectionStories).filter((c) => !isA1Muted(c, edition)),
     leadContinue: leadJump.folio,
     secondContinue: secondJump.folio,
     thirdContinue: thirdJump.folio,
@@ -1565,22 +2416,37 @@ function favoritePages(freshStories, sectionStories, clubs, frontPicks = []) {
     secondTeaser: secondJump.teaser,
     thirdTeaser: thirdJump.teaser
   };
-  const clubsPage = {
+  const orderedClubs = [...clubs].sort(
+    (a, b) => favoriteDeskWeight(b.key) - favoriteDeskWeight(a.key)
+  );
+  const packed = planOutlookAndForm(orderedClubs.length);
+  const weatherToday = {
     kind: "favorites-clubs",
     folio: "A2",
     section: "A",
     sectionTitle: SECTION_A_TITLE,
     sectionPage: 2,
-    sectionCount: 0
+    sectionCount: 0,
+    weatherPart: "today",
+    clubOffset: 0,
+    clubLimit: A2_CLUB_CARDS
   };
-  const pages = [front, clubsPage, ...continues, ...inside];
-  const orderedClubs = [...clubs].sort(
-    (a, b) => favoriteDeskWeight(b.key) - favoriteDeskWeight(a.key)
-  );
-  const formChunks = chunkClubs(orderedClubs, FORM_CLUBS_PER_PAGE);
-  let formIdx = 0;
-  while (pages.length < MIN_SECTION_PAGES) {
-    const chunk = formChunks[formIdx % Math.max(1, formChunks.length)] ?? orderedClubs.slice(0, FORM_CLUBS_PER_PAGE);
+  const weatherOutlook = {
+    kind: "favorites-clubs",
+    folio: "A3",
+    section: "A",
+    sectionTitle: SECTION_A_TITLE,
+    sectionPage: 3,
+    sectionCount: 0,
+    weatherPart: "outlook",
+    clubOffset: packed.leftoverOffset,
+    clubLimit: packed.leftoverCount,
+    formClubs: orderedClubs.slice(0, packed.formOnOutlook)
+  };
+  const pages = [front, weatherToday, weatherOutlook, ...continues, ...inside];
+  for (const slice of packed.formContinue) {
+    const chunk = orderedClubs.slice(slice.offset, slice.offset + slice.count);
+    if (!chunk.length) continue;
     const pageN = pages.length + 1;
     pages.push({
       kind: "favorites-form",
@@ -1589,10 +2455,8 @@ function favoritePages(freshStories, sectionStories, clubs, frontPicks = []) {
       sectionTitle: SECTION_A_TITLE,
       sectionPage: pageN,
       sectionCount: 0,
-      clubs: chunk.length ? chunk : orderedClubs
+      clubs: chunk
     });
-    formIdx += 1;
-    if (!orderedClubs.length && formIdx > MIN_SECTION_PAGES) break;
   }
   const watchN = pages.length + 1;
   pages.push({
@@ -1630,7 +2494,7 @@ function insertCoachesFocus(focuses, include) {
   }
   return [...focuses, "coaches"];
 }
-function sportPages(id, clubs, stories, edition, withPlayers = false, offseason = false, withLeaders = false, postseason = false, withCoaches = false) {
+function sportPages(id, clubs, stories, edition, withPlayers = false, offseason = false, withLeaders = false, postseason = false, withCoaches = false, alreadyOnA1 = []) {
   const upcoming = upcomingFor(clubs);
   const unique = dedupeStories(
     stories.filter(
@@ -1650,14 +2514,42 @@ function sportPages(id, clubs, stories, edition, withPlayers = false, offseason 
     withCoaches && printsFavoriteCoaches(edition)
   );
   const isStoryFocus = (f) => f === "front" || f === "recaps" || f === "news" || f === "opener";
-  const storyFocuses = focuses.filter(isStoryFocus);
-  const refFocuses = focuses.filter((f) => !isStoryFocus(f));
   const recapPool = orderSportRecaps(
     unique.filter((card) => isGameWrap(card) || isRecapStory(card)),
     id.path
   );
   const newsPool = unique.filter((card) => !isGameWrap(card) && !isSportFiller(card, recapPool)).slice(0, SPORT_NEWS_CAP);
-  const frontPool = orderSportSectionFront([...recapPool, ...newsPool], id.path, edition);
+  const newsDay = editionNewsDay(edition);
+  const frontPool = orderSportSectionFront([...recapPool, ...newsPool], id.path, edition, alreadyOnA1).filter((card) => {
+    if (!(isSectionAStory(card) && (isGameWrap(card) || isRecapStory(card)))) return true;
+    if (id.path.startsWith("soccer/")) return true;
+    if (favoriteDeskWeight(card.favoriteKey) >= 100) return true;
+    const gameDay = card.when ? instantDay(card.when) : null;
+    return Boolean(gameDay && gameDay === newsDay);
+  });
+  const FRONT_SHOW = 6;
+  const frontShown = frontPool.slice(0, FRONT_SHOW);
+  const shownIds = new Set(frontShown.map((card) => card.id));
+  let recapsLeft = recapPool.filter((card) => !shownIds.has(card.id));
+  recapsLeft.forEach((card) => shownIds.add(card.id));
+  let newsLeft = newsPool.filter((card) => !shownIds.has(card.id));
+  if (id.path.includes("college-football") && recapsLeft.length < 6) {
+    const pulled = newsLeft.slice(0, 9 - recapsLeft.length);
+    recapsLeft = [...recapsLeft, ...pulled];
+    const pulledIds = new Set(pulled.map((card) => card.id));
+    newsLeft = newsLeft.filter((card) => !pulledIds.has(card.id));
+  }
+  const storyFocuses = focuses.flatMap((f) => {
+    if (!isStoryFocus(f)) return [];
+    if (f === "recaps") return recapsLeft.length > 0 ? ["recaps"] : [];
+    if (f === "news") {
+      if (!newsLeft.length) return [];
+      const n = Math.max(1, Math.ceil(newsLeft.length / NEWS_STORIES_PER_PAGE));
+      return Array.from({ length: n }, () => "news");
+    }
+    return [f];
+  });
+  const refFocuses = focuses.filter((f) => !isStoryFocus(f));
   const inside = [];
   const full = desk ? [] : [
     ...recapPool.filter(hasStoryCopy),
@@ -1730,13 +2622,23 @@ function sportPages(id, clubs, stories, edition, withPlayers = false, offseason 
     card,
     folio: sportFolioByStory[card.id] ?? fallbackDesk(focus)
   }));
+  let newsCursor = 0;
   const pages = numbered.map((page, i) => {
     if (page.kind !== "sport-front") return page;
     const nextFront = numbered.slice(i + 1).find((p) => p.kind === "sport-front");
-    const pool = page.focus === "front" ? frontPool : page.focus === "news" ? newsPool : page.focus === "recaps" ? recapPool : unique;
+    let newsSlice;
+    let pool = page.focus === "front" ? frontShown : page.focus === "news" ? newsLeft : page.focus === "recaps" ? recapsLeft : unique;
+    if (page.focus === "news") {
+      const offset = newsCursor;
+      const count = Math.min(NEWS_STORIES_PER_PAGE, Math.max(newsLeft.length - offset, 0));
+      newsSlice = { offset, count };
+      pool = newsLeft.slice(offset, offset + count);
+      newsCursor += count;
+    }
     return {
       ...page,
       sectionDesks,
+      newsSlice,
       turn: nextFront && nextFront.kind === "sport-front" ? { folio: nextFront.folio, focus: nextFront.focus } : null,
       articles: articlesFor(page.focus, pool)
     };
@@ -1771,7 +2673,7 @@ function missouriPages(desk, code = "B") {
 }
 function nationalPages(desk) {
   if (!desk?.stories.length) return [];
-  const packed = packNationalPages(desk.stories);
+  const packed = packNationalPages(cleanNationalStories2(desk.stories));
   return stampCounts(
     packed.map((page, i) => ({
       kind: "national",
@@ -1792,11 +2694,15 @@ function deskCopy(stories, edition) {
   const inWindow = stories.filter(
     (card) => isDeskStory(card) && !isNewsMuted(card) && !staleNamedPackage(card, edition) && inEditionWindow(card, edition)
   );
-  return dedupeStories(inWindow);
+  return dedupeStories(inWindow).map((card) => ({
+    ...card,
+    headline: printHeadline(card.headline),
+    dek: card.dek != null ? printHeadline(card.dek) : card.dek
+  }));
 }
 function buildEdition(opts) {
   const fresh = rankStories(
-    deskCopy(opts.stories, opts.edition).filter((card) => !card.editorSpiked),
+    deskCopy(stampFavoriteKeys(opts.stories, opts.clubs), opts.edition).filter((card) => !card.editorSpiked),
     opts.edition
   );
   const favoriteFresh = fresh.filter(isSectionAStory);
@@ -1811,10 +2717,13 @@ function buildEdition(opts) {
     list.push(club);
     clubsBy.set(club.leaguePath, list);
   }
+  const a1Picks = editorFront(fresh, opts.edition);
+  const favorites = favoritePages(favoriteFresh, favoriteFresh, opts.clubs, a1Picks, opts.edition);
+  const a1Front = favorites.pages.find((p) => p.kind === "favorites-front");
+  const a1Ran = a1Front?.kind === "favorites-front" ? [a1Front.lead, a1Front.second, a1Front.third].filter((c) => Boolean(c)) : a1Picks;
   const storiesBy = /* @__PURE__ */ new Map();
   for (const story of fresh) {
     if (!story.leaguePath) continue;
-    if (favoriteFresh.some((a) => a.id === story.id || sameSectionAStory(a, story))) continue;
     const list = storiesBy.get(story.leaguePath) ?? [];
     list.push(story);
     storiesBy.set(story.leaguePath, list);
@@ -1830,12 +2739,12 @@ function buildEdition(opts) {
       opts.offseason?.includes(id.path) ?? false,
       opts.leaderPaths?.includes(id.path) ?? false,
       opts.postseasonPaths?.includes(id.path) ?? false,
-      opts.coachPaths?.includes(id.path) ?? false
+      opts.coachPaths?.includes(id.path) ?? false,
+      id.path.includes("college-football") ? a1Ran.filter((card) => card.leaguePath === id.path) : []
     )
   }));
   const sportFolioByStory = {};
   for (const part of sportPagesBuilt) Object.assign(sportFolioByStory, part.built.sportFolioByStory);
-  const favorites = favoritePages(favoriteFresh, favoriteFresh, opts.clubs, editorFront(fresh));
   const national = nationalPages(opts.national ?? null);
   const mo = missouriPages(opts.missouri ?? null, national.length ? "C" : "B");
   const pages = [...favorites.pages, ...national, ...mo];
@@ -1886,12 +2795,106 @@ function buildEdition(opts) {
     });
     pages.push(...part.built.pages);
   }
-  return {
+  return dropEmptyFolios({
     pages,
     sections,
     sportFolioByStory,
     favoriteFolioByStory: favorites.favoriteFolioByStory
-  };
+  });
+}
+function restampEditionPages(pages) {
+  const counts = /* @__PURE__ */ new Map();
+  for (const page of pages) counts.set(page.section, (counts.get(page.section) ?? 0) + 1);
+  const seen = /* @__PURE__ */ new Map();
+  const numbered = pages.map((page) => {
+    const n = (seen.get(page.section) ?? 0) + 1;
+    seen.set(page.section, n);
+    return {
+      ...page,
+      folio: `${page.section}${n}`,
+      sectionPage: n,
+      sectionCount: counts.get(page.section) ?? n
+    };
+  });
+  return numbered.map((page, i) => {
+    if (page.kind !== "sport-front") return page;
+    const sectionDesks = numbered.flatMap(
+      (p) => p.kind === "sport-front" && p.section === page.section ? [{ focus: p.focus, folio: p.folio }] : []
+    );
+    const nextFront = numbered.slice(i + 1).find((p) => p.kind === "sport-front" && p.section === page.section);
+    return {
+      ...page,
+      sectionDesks,
+      turn: nextFront && nextFront.kind === "sport-front" ? { folio: nextFront.folio, focus: nextFront.focus } : null
+    };
+  });
+}
+function editionPageHasInk(page) {
+  switch (page.kind) {
+    case "favorites-front":
+      return true;
+    case "favorites-clubs":
+      return true;
+    case "favorites-form":
+      return page.clubs.length > 0;
+    case "favorites-inside":
+      return Boolean(page.primary);
+    case "favorites-continue":
+      return page.jumps.length > 0;
+    case "favorites-watch":
+      return true;
+    case "favorites-day":
+      return page.events.length > 0 || (page.upcoming?.length ?? 0) > 0;
+    case "favorites-beez":
+      return true;
+    case "favorites-races":
+      return page.races.length > 0;
+    case "sport-front":
+      if (page.focus === "front" || page.focus === "recaps" || page.focus === "news" || page.focus === "opener") {
+        return page.articles.length > 0 || page.clubs.length > 0;
+      }
+      return true;
+    case "sport-inside":
+      return Boolean(page.primary);
+    case "national":
+      return page.stories.length > 0;
+    case "missouri":
+      return page.items.length > 0;
+    default:
+      return true;
+  }
+}
+function dropEmptyFolios(edition) {
+  const pages = edition.pages.filter(editionPageHasInk);
+  if (pages.length === edition.pages.length) return edition;
+  const restamped = restampEditionPages(pages);
+  const sportFolioByStory = { ...edition.sportFolioByStory };
+  const favoriteFolioByStory = { ...edition.favoriteFolioByStory };
+  for (const page of restamped) {
+    if (page.kind === "sport-inside") {
+      sportFolioByStory[page.primary.id] = page.folio;
+      if (page.secondary) sportFolioByStory[page.secondary.id] = page.folio;
+    }
+    if (page.kind === "favorites-inside") {
+      favoriteFolioByStory[page.primary.id] = page.folio;
+      if (page.secondary) favoriteFolioByStory[page.secondary.id] = page.folio;
+    }
+    if (page.kind === "favorites-front") {
+      for (const card of [page.lead, page.second, page.third]) {
+        if (card) favoriteFolioByStory[card.id] = page.folio;
+      }
+    }
+  }
+  const sections = edition.sections.map((section) => {
+    const index = restamped.findIndex((page) => page.section === section.code);
+    return {
+      ...section,
+      pages: restamped.filter((page) => page.section === section.code).length,
+      index: index < 0 ? section.index : index,
+      folio: restamped.find((page) => page.section === section.code)?.folio ?? section.folio
+    };
+  }).filter((section) => section.pages > 0);
+  return { ...edition, pages: restamped, sections, sportFolioByStory, favoriteFolioByStory };
 }
 
 // src/lib/times-telegram-entry.ts

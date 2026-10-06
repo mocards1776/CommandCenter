@@ -389,8 +389,35 @@ export function isTodaysMoScout(card: GameWrapCard, edition: string): boolean {
   return !day || day === newsDay || day === edition.slice(0, 10);
 }
 
+/** Clubs that print scores and the NBA desk, but never occupy an A1 slot. */
+export const A1_MUTED_KEYS = new Set(["nba-phi"]);
+
+export function isA1MutedFavoriteKey(key: string | null | undefined): boolean {
+  return Boolean(key && A1_MUTED_KEYS.has(key));
+}
+
+export function isNbaCard(card: Pick<GameWrapCard, "leaguePath" | "sportLabel">): boolean {
+  const path = cardLeaguePath(card);
+  return path === "basketball/nba" || /^nba$/i.test(card.sportLabel ?? "");
+}
+
+/** 76ers, NBA preseason / exhibition, and other non-favorite NBA fluff. */
+export function isA1Muted(card: GameWrapCard, edition = ""): boolean {
+  if (isA1MutedFavoriteKey(card.favoriteKey)) return true;
+  if (isFrontPreseasonNote(card)) return true;
+  if (!isNbaCard(card)) return false;
+  if (edition && !sportInSeason("basketball/nba", edition)) return true;
+  return !isFavoriteStory(card);
+}
+
+/** A1 Coming Up: same slate, minus clubs that do not belong on the front. */
+export function a1ComingUp<T extends { favoriteKey?: string | null }>(games: T[]): T[] {
+  return games.filter((game) => !isA1MutedFavoriteKey(game.favoriteKey));
+}
+
 /** A1 lead / second / third: a followed club, today's MoScout, or historic national. */
 export function mayFrontA1(card: GameWrapCard, edition: string): boolean {
+  if (isA1Muted(card, edition)) return false;
   if (isTodaysMoScout(card, edition)) return true;
   if (isHistoricNationalCard(card)) return true;
   return isFavoriteStory(card);
@@ -753,7 +780,7 @@ export function latestClubResultDay(pool: GameWrapCard[]): string | null {
  * earlier club game day never beats one from the latest game day on the slate.
  */
 export function pickFrontUnderLead(pool: GameWrapCard[], lead: GameWrapCard | null): GameWrapCard | null {
-  const playable = pool.filter((c) => c !== lead && c.id !== lead?.id && !isFrontPreseasonNote(c));
+  const playable = pool.filter((c) => c !== lead && c.id !== lead?.id && !isA1Muted(c) && !isFrontPreseasonNote(c));
   if (!playable.length) return null;
   const latestDay = latestClubResultDay(playable);
   const freshEnough = (card: GameWrapCard) => {
@@ -776,6 +803,8 @@ export function pickFrontUnderLead(pool: GameWrapCard[], lead: GameWrapCard | nu
 
 /** Never open A1 or the edition alert on these. */
 export function cannotLeadFront(card: GameWrapCard, pool: GameWrapCard[] = []): boolean {
+  if (isA1MutedFavoriteKey(card.favoriteKey) || isFrontPreseasonNote(card)) return true;
+  if (isNbaCard(card) && !isFavoriteStory(card)) return true;
   if (isHoldoverGame(card)) return true;
   if (isBettingPreview(card)) return true;
   if (pool.length && isStaleGamePreview(card, pool)) return true;
@@ -1473,7 +1502,7 @@ export function isMajorStory(card: GameWrapCard): boolean {
  * favorite-club, today's MoScout, or historic-national story always may.
  * Other teams never occupy an A1 slot, even when the copy is major.
  */
-export function editorFront(fresh: GameWrapCard[]): GameWrapCard[] {
+export function editorFront(fresh: GameWrapCard[], edition = ""): GameWrapCard[] {
   const picked: GameWrapCard[] = [];
   const taken = new Set<string>();
   const ordered = fresh
@@ -1487,10 +1516,13 @@ export function editorFront(fresh: GameWrapCard[]): GameWrapCard[] {
       if (!choice) continue;
     }
     if (taken.has(choice.id)) continue;
-    if (!(isFavoriteStory(choice) || isMoScoutCard(choice) || isHistoricNationalCard(choice))) {
+    if (
+      isA1Muted(choice, edition) ||
+      !(isFavoriteStory(choice) || isMoScoutCard(choice) || isHistoricNationalCard(choice))
+    ) {
       if (choice.sportLabel === "National") continue;
       // Other-team copy may still run inside Section A when it is major.
-      // It never occupies an A1 slot.
+      // It never occupies an A1 slot. 76ers / NBA fluff never do either.
       continue;
     }
     picked.push(choice);
@@ -1660,9 +1692,9 @@ function favoritePages(
     second,
     third,
     briefs: (freshStories.length ? freshStories : sectionStories)
-      .filter((c) => !frontIds.has(c.id))
+      .filter((c) => !frontIds.has(c.id) && !isA1Muted(c, edition))
       .slice(0, 6),
-    news: freshStories.length ? freshStories : sectionStories,
+    news: (freshStories.length ? freshStories : sectionStories).filter((c) => !isA1Muted(c, edition)),
     leadContinue: leadJump.folio,
     secondContinue: secondJump.folio,
     thirdContinue: thirdJump.folio,
@@ -2101,7 +2133,7 @@ export function buildEdition(opts: {
   // on the next-best game and points back to A1 instead of reprinting it.
   // editorFront() is only stamped picks — favoritePages may still put a
   // club wrap on A1 with no editorFront, so read the composed A1 lead.
-  const a1Picks = editorFront(fresh);
+  const a1Picks = editorFront(fresh, opts.edition);
   const favorites = favoritePages(favoriteFresh, favoriteFresh, opts.clubs, a1Picks, opts.edition);
   const a1Front = favorites.pages.find((p) => p.kind === "favorites-front");
   const a1Ran =

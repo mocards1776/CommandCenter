@@ -161,18 +161,17 @@ const stamped = stampEditorDesk(stories, desk);
 assert(stamped.find((c) => c.id === "wire-401")?.editorRank == null, "a wrap is never ranked");
 const edited = buildEdition({ stories: stamped, clubs: [], edition });
 const editedFront = edited.pages.find((p) => p.kind === "favorites-front") as FavoritesFrontPage;
-assert(editedFront.lead?.id === "league-no-hitter", "the editor can lead with league news");
-assert(editedFront.second?.id === "wire-401", "the editor can front last night's final");
-assert(editedFront.third?.id === "news-lions-win", "the editor's third runs third");
-assert(edited.favoriteFolioByStory["league-no-hitter"] === "A1", "the league lead is on A1");
-const mlb = edited.pages.find((p) => p.kind === "sport-front" && p.focus === "news");
+assert(editedFront.lead?.id !== "league-no-hitter", "a non-favorite league story does not take A1 even when the editor names it");
+assert(editedFront.lead?.id === "wire-401", "the editor can front last night's home-club final");
+assert(editedFront.second?.id === "news-lions-win", "the editor's followed-club pick runs next");
 assert(
-  mlb?.kind === "sport-front" && !mlb.articles.some((a) => a.card.id === "league-junk"),
-  "a spiked story never reaches the sport section",
+  [editedFront.lead, editedFront.second, editedFront.third].every((c) => !c || c.id !== "league-no-hitter"),
+  "other-team copy never occupies an A1 slot",
 );
+const mlbPages = edited.pages.filter((p) => p.kind === "sport-front" && p.section === "MLB");
 assert(
-  mlb?.kind === "sport-front" && mlb.articles.every((a) => a.card.id !== "league-no-hitter"),
-  "the league lead stays on A1 and does not reprint in its sport section",
+  !JSON.stringify(mlbPages).includes("league-junk"),
+  "a spiked story never reaches the sport section",
 );
 
 // News reorders inside its own slots; the wraps hold the rule desk's places.
@@ -208,7 +207,7 @@ const routineFront = front(
     rationale: "",
   }),
 );
-assert(routineFront.lead?.id === "news-cards-note", "a routine league story does not bump a home story off A1");
+assert(routineFront.lead?.id !== "league-routine" && Boolean(routineFront.lead?.favoriteKey), "a routine league story does not bump a home story off A1");
 assert(
   [routineFront.lead, routineFront.second, routineFront.third].every((c) => !c || c.id !== "league-routine"),
   "a routine league story never runs on A1",
@@ -224,11 +223,11 @@ const twoMajors = buildEdition({
   edition,
 });
 const twoFront = twoMajors.pages.find((p) => p.kind === "favorites-front") as FavoritesFrontPage;
-assert(twoFront.lead?.id === "league-no-hitter", "a major league story may lead A1");
-assert(twoFront.second?.id === "league-firing" || twoFront.second?.id === "wire-401", "a second major may take the next A1 slot");
+assert(twoFront.lead?.id !== "league-no-hitter" && twoFront.lead?.id !== "league-firing", "major other-team copy does not take A1");
+assert(twoFront.lead?.id === "wire-401" || twoFront.lead?.favoriteKey === "mlb-stl", "a home-club story keeps A1");
 assert(
-  [twoFront.lead, twoFront.second, twoFront.third].filter((c) => c?.id.startsWith("league-")).length >= 1,
-  "major league news may run in Section A",
+  [twoFront.lead, twoFront.second, twoFront.third].every((c) => !c || !c.id.startsWith("league-")),
+  "major league news may run in Section A but never occupies an A1 slot",
 );
 
 // Ordinary national news the editor names still stays in Section B.
@@ -304,7 +303,7 @@ const ok = await editEdition(stories, edition, async (req) => {
 assert(asked === 1, "one call per press");
 assert(ok.stories.find((c) => c.id === "league-no-hitter")?.editorFront === 0, "the lead is stamped");
 assert(ok.stories.find((c) => c.id === "league-junk")?.editorSpiked === true, "the spike is stamped");
-assert(front(ok.stories).lead?.id === "league-no-hitter", "an editor lead with the rest left to the desk");
+assert(front(ok.stories).lead?.id !== "league-no-hitter", "an editor-named other-team story still cannot occupy A1");
 
 // Last edition's stamps do not ride into the next one.
 const carried = fileEditionStories({
@@ -360,18 +359,60 @@ assert(
 );
 assert(mondayA1.lead?.id === "news-cards-monday", "fresh news takes the lead the wrap vacated");
 
-// Holdover news may still front.
+// Holdover news may still front (a carry that is not a game wrap, and not an
+// injury note the desk will swap for a favorite result).
 const heldNews = stampEditorDesk(
   [
-    { ...cardsNote, holdover: true, when: "2026-10-05T08:00:00Z" },
+    { ...mondayCards, holdover: true, when: "2026-10-05T08:00:00Z" },
     { ...bluesCamp, when: "2026-10-05T08:30:00Z" },
     { ...lionsWin, when: "2026-10-05T08:15:00Z" },
   ],
-  { front: ["news-cards-note"], order: [], spike: [], rationale: "" },
+  { front: ["news-cards-monday"], order: [], spike: [], rationale: "" },
 );
 const heldNewsA1 = buildEdition({ stories: heldNews, clubs: [], edition: monday }).pages.find(
   (p) => p.kind === "favorites-front",
 ) as FavoritesFrontPage;
-assert(heldNewsA1.lead?.id === "news-cards-note", "holdover news may still lead");
+assert(heldNewsA1.lead?.id === "news-cards-monday", "holdover news may still lead");
+
+const sixersBox = card({
+  id: "box-nba-401898999",
+  headline: "Knicks 97, 76ers 120",
+  favoriteKey: "nba-phi",
+  followed: true,
+  teamName: "76ers",
+  sportLabel: "NBA",
+  leaguePath: "basketball/nba",
+  status: "Final",
+  scoreLine: "NY 97 · PHI 120",
+  when: "2026-10-06T02:00:00Z",
+  body: copy("Philadelphia 76ers beat New York Knicks 120-97 in preseason play."),
+});
+const cowboysMid = card({
+  id: "news-cowboys-midday",
+  headline: "Cowboys get healthy ahead of Tampa Bay",
+  favoriteKey: "nfl-dal",
+  followed: true,
+  teamName: "Cowboys",
+  sportLabel: "NFL",
+  leaguePath: "football/nfl",
+  when: "2026-10-06T15:00:00Z",
+  body: copy("Dallas listed several starters as full participants on Tuesday."),
+});
+const sixersFront = buildEdition({
+  stories: stampEditorDesk([sixersBox, cowboysMid, { ...cardsNote, when: "2026-10-06T14:00:00Z" }], {
+    front: ["box-nba-401898999", "news-cowboys-midday"],
+    order: [],
+    spike: [],
+    rationale: "76ers won.",
+  }),
+  clubs: [],
+  edition: "2026-10-06-midday",
+}).pages.find((p) => p.kind === "favorites-front") as FavoritesFrontPage;
+assert(sixersFront.lead?.id !== "box-nba-401898999", "editor cannot put a 76ers box wrap on A1");
+assert(
+  [sixersFront.lead, sixersFront.second, sixersFront.third].every((c) => !c || c.id !== "box-nba-401898999"),
+  "76ers never occupy an A1 slot even when the editor names them",
+);
+assert(sixersFront.lead?.id === "news-cowboys-midday" || sixersFront.lead?.id === "news-cards-note", "a priority club takes A1 instead");
 
 console.log("newspaper-editor ok");

@@ -25,7 +25,19 @@ assert.match(
   "every phone shot is hard-clipped to the set size",
 );
 assert.doesNotMatch(src, /Math\.max\(PHONE\.height/, "viewport must not grow with card height");
-assert.match(src, /\["front", "weather", "day", "watch"\]/, "four phone cards including front");
-assert.doesNotMatch(src, /newspaper\?solo=1#A1/, "alert runner does not screenshot the iPad paper");
+assert.match(src, /\["weather", "day", "watch"\]/, "weather / day / watch stay phone cards");
+assert.match(src, /\/newspaper\?solo=1/, "front shot opens the printed paper Josh reads");
+assert.match(src, /const IPAD = \{ width: 768, height: 1024 \}/, "front captures the iPad viewport");
+assert.match(src, /data-times-ready/, "front waits for the revealed A1");
+assert.match(src, /fitA1ToPhone/, "iPad A1 is fitted onto the locked phone canvas");
 assert.doesNotMatch(src, /sample=/, "production runner never passes the Day Ahead / front fixtures");
+
+const editorPrompt = readFileSync(new URL("../../supabase/functions/newspaper-editor/index.ts", import.meta.url), "utf8");
+assert.doesNotMatch(
+  editorPrompt,
+  /desk "followed":[^)]*76ers/,
+  "the editor no longer lists 76ers as an A1 followed club",
+);
+assert.match(editorPrompt, /Never front the 76ers/, "the editor is told never to front 76ers");
+
 console.log("times-shots.peek ok");

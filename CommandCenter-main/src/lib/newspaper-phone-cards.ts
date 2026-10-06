@@ -6,7 +6,7 @@
 import { truncateAtSentence, tidy, printHeadline } from "./newspaper-copy.ts";
 import { PRESS_HOURS, favoriteDeskWeight } from "./newspaper.ts";
 import { scheduleDateFor, type DayEvent, type DaySchedule } from "./newspaper-day-ahead.ts";
-import { buildEdition, storyBodyForJump, type FavoritesFrontPage, type FavoritesInsidePage } from "./newspaper-sections.ts";
+import { buildEdition, storyBodyForJump, type FavoritesFrontPage } from "./newspaper-sections.ts";
 import type { GameWrapCard } from "./newspaper-sports.ts";
 import { isWatchPreseasonLowTier, sampleWatchSlate, type WatchGame } from "./newspaper-watch-page.ts";
 
@@ -152,7 +152,7 @@ export function phoneFrontRank(card: GameWrapCard): number {
   return 200;
 }
 
-/** A1 lead, second, third, briefs, then more Section A — phone card only. */
+/** Same A1 order as the printed paper — never re-rank, never pull later Section A pages. */
 export function phoneFrontStories(stories: unknown[], edition: string): PhoneFrontStory[] {
   try {
     const paper = buildEdition({ stories: stories as GameWrapCard[], clubs: [], edition });
@@ -164,35 +164,12 @@ export function phoneFrontStories(stories: unknown[], edition: string): PhoneFro
       seen.add(row.id);
       out.push(row);
     };
-    const pool: GameWrapCard[] = [];
-    const seenCard = new Set<string>();
-    const queue = (card: GameWrapCard | null | undefined) => {
-      if (!card?.id || seenCard.has(card.id) || !String(card.headline ?? "").trim()) return;
-      seenCard.add(card.id);
-      pool.push(card);
-    };
     const front = paper.pages.find((p) => p.kind === "favorites-front") as FavoritesFrontPage | undefined;
-    if (front) {
-      queue(front.lead);
-      queue(front.second);
-      queue(front.third);
-      for (const brief of front.briefs ?? []) queue(brief);
-    }
-    for (const page of paper.pages) {
-      if (page.section !== "A" || page.kind !== "favorites-inside") continue;
-      const inside = page as FavoritesInsidePage;
-      queue(inside.primary);
-      queue(inside.secondary);
-      for (const brief of inside.briefs ?? []) queue(brief);
-    }
-    const ranked = pool
-      .map((card, i) => ({ card, i }))
-      .sort((a, b) => phoneFrontRank(a.card) - phoneFrontRank(b.card) || a.i - b.i)
-      .map((row) => row.card);
-    take(ranked[0], 240);
-    for (const card of ranked.slice(1, 3)) take(card, 110);
-    for (const card of ranked.slice(3, 8)) take(card, 90);
-    for (const card of ranked.slice(8)) take(card, 80);
+    if (!front) return [];
+    take(front.lead, 240);
+    take(front.second, 110);
+    take(front.third, 110);
+    for (const brief of front.briefs ?? []) take(brief, 90);
     return out;
   } catch {
     return [];

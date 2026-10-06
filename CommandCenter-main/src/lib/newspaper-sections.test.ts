@@ -38,7 +38,9 @@ import {
   isMajorStory,
   isPreviewStory,
   isBettingPreview,
+  a1ComingUp,
   cannotLeadFront,
+  isA1Muted,
   isFavoriteGameResult,
   isFavoriteStory,
   isMoScoutCard,
@@ -67,6 +69,8 @@ import { isInjuryNote } from "./newspaper-sport-desk.ts";
 assert(favoriteDeskWeight("mlb-stl") === 100, "Cardinals are home desk");
 assert(favoriteDeskWeight("nhl-stl") === 100, "Blues are home desk");
 assert(favoriteDeskWeight("cfb-mizzou") === 100, "Mizzou is home desk");
+assert(favoriteDeskWeight("nfl-dal") === 45, "Cowboys stay a Section A followed club");
+assert(favoriteDeskWeight("nba-phi") < favoriteDeskWeight("nfl-dal"), "76ers do not share the Cowboys desk weight");
 assert(
   favoriteDeskWeight("nfl-det") > favoriteDeskWeight("nfl-kc"),
   "Lions outrank Chiefs",
@@ -2633,6 +2637,79 @@ assert(
 assert(
   !(mlbJson.includes("league-alds-3a") && mlbJson.includes("league-alds-3b")),
   "MLB does not list ALDS Game 3 twice",
+);
+
+const sixersBox = card({
+  id: "box-nba-401898999",
+  headline: "Knicks 97, 76ers 120",
+  favoriteKey: "nba-phi",
+  followed: true,
+  teamName: "76ers",
+  sportLabel: "NBA",
+  leaguePath: "basketball/nba",
+  status: "Final",
+  scoreLine: "NY 97 · PHI 120",
+  wrapKind: "box",
+  caption: "Times box wrap",
+  when: "2026-10-06T02:00:00Z",
+  body: copy("Philadelphia 76ers beat New York Knicks 120-97 in preseason play. "),
+  editorFront: 0,
+});
+const cowboysNote = card({
+  id: "news-cowboys-midday",
+  headline: "Cowboys get healthy ahead of Tampa Bay",
+  favoriteKey: "nfl-dal",
+  followed: true,
+  teamName: "Cowboys",
+  sportLabel: "NFL",
+  leaguePath: "football/nfl",
+  when: "2026-10-06T15:00:00Z",
+  body: copy("Dallas listed several starters as full participants on Tuesday. "),
+});
+assert(isA1Muted(sixersBox, "2026-10-06-midday"), "a 76ers box wrap is muted for A1");
+assert(!mayFrontA1(sixersBox, "2026-10-06-midday"), "76ers may not occupy A1");
+assert(cannotLeadFront(sixersBox, [sixersBox, cowboysNote, moScoutToday]), "76ers never open the paper");
+assert(mayFrontA1(cowboysNote, "2026-10-06-midday"), "Cowboys news may occupy A1");
+const knicksWire = card({
+  id: "league-knicks-kat",
+  headline: "Stephen A. sounds off on James Dolan, Knicks for their handling of KAT negotiations",
+  teamName: "New York Knicks",
+  sportLabel: "Nba",
+  leaguePath: "basketball/nba",
+  when: "2026-10-06T15:22:05Z",
+  body: copy("Stephen A. Smith criticized the Knicks' talks with Karl-Anthony Towns. "),
+});
+assert(isA1Muted(knicksWire, "2026-10-06-midday"), "non-favorite NBA stays off A1");
+const middaySixers = buildEdition({
+  stories: [sixersBox, cowboysNote, moScoutToday, knicksWire],
+  clubs: [
+    { key: "nba-phi", shortName: "76ers", logo: null, leaguePath: "basketball/nba", record: "0-0", standing: null, division: [], stats: [], leaders: [], upcoming: [] },
+    { key: "nfl-dal", shortName: "Cowboys", logo: null, leaguePath: "football/nfl", record: "3-2", standing: null, division: [], stats: [], leaders: [], upcoming: [] },
+  ],
+  edition: "2026-10-06-midday",
+});
+const middayA1 = middaySixers.pages.find((p) => p.kind === "favorites-front");
+const middayIds =
+  middayA1?.kind === "favorites-front" ? [middayA1.lead, middayA1.second, middayA1.third].map((c) => c?.id) : [];
+assert(
+  middayA1?.kind === "favorites-front" && middayA1.lead?.id !== "box-nba-401898999",
+  `A1 does not lead with the 76ers box wrap (got ${middayA1 && middayA1.kind === "favorites-front" ? middayA1.lead?.id : "none"})`,
+);
+assert(!middayIds.includes("box-nba-401898999"), "76ers box wrap never occupies an A1 slot");
+assert(
+  middayA1?.kind === "favorites-front" &&
+    !middayA1.briefs.some((c) => c.id === "box-nba-401898999") &&
+    !middayA1.news.some((c) => c.id === "box-nba-401898999"),
+  "76ers is not on the A1 page as a brief or under-story",
+);
+assert(!middayIds.includes("league-knicks-kat"), "non-favorite NBA never occupies an A1 slot");
+assert(middayIds.includes("news-cowboys-midday") || middayIds.includes("mo-1x9ok2o"), "Cowboys or today's MoScout take the front");
+assert(
+  a1ComingUp([
+    { id: "sixers", favoriteKey: "nba-phi" },
+    { id: "cowboys", favoriteKey: "nfl-dal" },
+  ]).map((g) => g.id).join(",") === "cowboys",
+  "A1 Coming Up drops the 76ers",
 );
 
 console.log("newspaper-sections ok");
