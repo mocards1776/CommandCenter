@@ -4979,16 +4979,25 @@ const FolioBody = memo(function FolioBody({ render }: { render: () => ReactNode 
 function FolioSlot({
   index,
   folio,
+  kind,
   render,
 }: {
   index: number;
   folio: string;
+  kind: string;
   render: () => ReactNode;
 }) {
   const current = useContext(PagerIndexContext);
-  // Section A/B/C and each sport front stay painted so races, jumps, and
-  // section landings aren't empty lazy shells. Other desks mount when nearby.
-  const essential = /^[ABC]\d+$/.test(folio) || /^(MLB|NFL|CFB|NHL|EPL|EFL|NBA|CBB)1$/.test(folio);
+  // Fronts, races, Day Ahead, and B/C desks stay painted so jumps land on
+  // real copy. Club/form insides and sport desks mount when nearby.
+  const essential =
+    kind === "favorites-front" ||
+    kind === "favorites-races" ||
+    kind === "favorites-day" ||
+    kind === "national" ||
+    kind === "missouri" ||
+    kind === "sport-front" ||
+    /^[ABC]1$/.test(folio);
   const near = essential || index < 3 || Math.abs(index - current) <= NEAR_PAGES;
   const [shown, setShown] = useState(essential || index < 3);
   useEffect(() => {
@@ -6817,6 +6826,7 @@ function NewspaperDesk() {
             key={page.folio}
             index={index}
             folio={page.folio}
+            kind={page.kind}
             render={() => (
             <>
             {index === 0 ? (
