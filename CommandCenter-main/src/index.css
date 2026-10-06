@@ -2660,9 +2660,31 @@ li.counting .tt-count.card {
   padding-top: 12px;
   border-top: 1px solid var(--w-hair);
 }
+.wsj-front-under .wsj-story.art-side,
+.wsj-front-under .wsj-story.art-top,
+.newspaper-root .wsj-front-under .wsj-story.art-side,
+.newspaper-root .wsj-front-under .wsj-story.art-top {
+  display: grid;
+  flex-direction: unset;
+  grid-template-columns: minmax(168px, 0.9fr) minmax(0, 1.2fr);
+  gap: 12px;
+  align-items: start;
+}
+.wsj-front-under .wsj-story-art,
+.wsj-front-under .wsj-cut,
+.wsj-front-under .tt-recap-photo,
+.wsj-front-under .tt-recap-photo.fit,
+.newspaper-root .wsj-front-under .tt-recap-photo.fit {
+  width: 100%;
+  max-width: none;
+  float: none;
+  margin: 0;
+}
 .wsj-front-under .wsj-story img,
 .newspaper-root .wsj-front-under .wsj-story img {
-  max-height: 160px;
+  width: 100%;
+  max-height: 200px;
+  height: 168px;
   object-fit: cover;
 }
 .wsj-front .wsj-ticker {

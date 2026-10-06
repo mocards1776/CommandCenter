@@ -1788,7 +1788,7 @@ function FrontPage({
                 }
                 size="md"
                 cols={1}
-                art={underLead.photo || underPoster ? "top" : "none"}
+                art={underLead.photo || underPoster ? "side" : "none"}
                 poster={underPoster}
                 chrome={false}
                 jump={underContinue}

@@ -42,6 +42,7 @@ import {
   isFavoriteGameResult,
   isFavoriteStory,
   isSectionAStory,
+  latestClubResultDay,
   pickFrontUnderLead,
   stampFavoriteKeys,
   storyRank,
@@ -1287,6 +1288,69 @@ assert(
   assert(!isFavoriteGameResult(unstamped[0]!), "a stripped Giants wrap is not a favorite result");
   const under = pickFrontUnderLead([mizzouLead, giants, chiefsWrap], mizzouLead);
   assert(under?.id === "wire-nfl-401872976", `A1 under the lead is the Chiefs result, not Giants–Arizona (got ${under?.headline ?? "none"})`);
+}
+{
+  const bluesSat = card({
+    id: "wire-nhl-401892439",
+    headline: "Necas and Roy score quick goals as the Avalanche rout the Blues 6-1",
+    favoriteKey: "nhl-stl",
+    followed: true,
+    teamName: "Blues",
+    sportLabel: "NHL",
+    leaguePath: "hockey/nhl",
+    status: "Final",
+    scoreLine: "STL 1  ·  COL 6",
+    when: "2026-10-04T01:00:00Z",
+    photo: "https://example.com/blues.jpg",
+    body: "Colorado beat St. Louis on Saturday. ".repeat(12),
+  });
+  const chiefsSun = card({
+    id: "wire-nfl-401872976",
+    headline: "Chiefs beat the Raiders 30-27 to move to 4-0 behind Patrick Mahomes",
+    favoriteKey: "nfl-kc",
+    followed: true,
+    teamName: "Chiefs",
+    sportLabel: "NFL",
+    leaguePath: "football/nfl",
+    status: "Final",
+    scoreLine: "KC 30  ·  LV 27",
+    when: "2026-10-04T20:25:00Z",
+    photo: "https://example.com/chiefs.jpg",
+    body: "Kansas City held off Las Vegas on Sunday. ".repeat(12),
+  });
+  const cowboysSun = card({
+    id: "wire-nfl-401872980",
+    headline: "CeeDee Lamb's late TD caps a wild Cowboys rally to beat winless Texans 34-30",
+    favoriteKey: "nfl-dal",
+    followed: true,
+    teamName: "Cowboys",
+    sportLabel: "NFL",
+    leaguePath: "football/nfl",
+    status: "Final",
+    scoreLine: "DAL 34  ·  HOU 30",
+    when: "2026-10-04T20:00:00Z",
+    photo: "https://example.com/cowboys.jpg",
+    body: "Dallas rallied in Houston on Sunday. ".repeat(12),
+  });
+  const mizzouLead = card({
+    id: "wire-cfb-mizzou-florida",
+    headline: "No. 25 Missouri trounces No. 8 Florida 45-17",
+    favoriteKey: "cfb-mizzou",
+    followed: true,
+    teamName: "Mizzou",
+    sportLabel: "College Football",
+    leaguePath: "football/college-football",
+    status: "Final",
+    scoreLine: "MIZ 45 · FLA 17",
+    when: "2026-10-03T19:50:00Z",
+    photo: "https://example.com/miz.jpg",
+    body: "Missouri snapped the skid. ".repeat(12),
+  });
+  assert(latestClubResultDay([bluesSat, chiefsSun, cowboysSun]) === "2026-10-04", "Sunday is the latest club game day");
+  const under = pickFrontUnderLead([mizzouLead, bluesSat, chiefsSun, cowboysSun], mizzouLead);
+  assert(under?.id === "wire-nfl-401872976", `A1 under the lead is Sunday's Chiefs, not Saturday's Blues (got ${under?.headline ?? "none"})`);
+  const onlySaturday = pickFrontUnderLead([mizzouLead, bluesSat], mizzouLead);
+  assert(onlySaturday?.id === "wire-nhl-401892439", "a Saturday club result may run when it is the freshest game day");
 }
 
 

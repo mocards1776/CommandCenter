@@ -717,13 +717,47 @@ function isFrontPreseasonNote(card: Pick<GameWrapCard, "preseason" | "headline" 
   return /\bpreseason\b/i.test(`${card.headline} ${card.dek ?? ""} ${card.status ?? ""}`);
 }
 
+/** A followed club's own game wrap — not commentary that inherited a score. */
+function isClubGameResult(card: GameWrapCard): boolean {
+  if (!isFavoriteGameResult(card) || !favoriteKeyFitsCard(card.favoriteKey, card)) return false;
+  return isGameWrap(card) || isRecapStory(card) || isGameRecapCopy(card);
+}
+
+/** Central calendar day of a club result. Wire wraps use the kickoff, not a later take. */
+export function clubResultDay(card: GameWrapCard): string | null {
+  if (!isClubGameResult(card) || !isGameWrap(card) || !card.when) return null;
+  return instantDay(card.when);
+}
+
+/**
+ * The most recent day a followed club actually played in this pool.
+ * Saturday's Blues final is stale once Sunday's Chiefs/Cowboys are on the slate.
+ */
+export function latestClubResultDay(pool: GameWrapCard[]): string | null {
+  let latest: string | null = null;
+  for (const card of pool) {
+    const day = clubResultDay(card);
+    if (day && (!latest || day > latest)) latest = day;
+  }
+  return latest;
+}
+
 /**
  * Compact story under the A1 lead. Desk-club results (photo + graf) beat a
- * national wrap that only shares a name with a home club.
+ * national wrap that only shares a name with a home club. A result from an
+ * earlier club game day never beats one from the latest game day on the slate.
  */
 export function pickFrontUnderLead(pool: GameWrapCard[], lead: GameWrapCard | null): GameWrapCard | null {
   const playable = pool.filter((c) => c !== lead && c.id !== lead?.id && !isFrontPreseasonNote(c));
   if (!playable.length) return null;
+  const latestDay = latestClubResultDay(playable);
+  const freshEnough = (card: GameWrapCard) => {
+    if (!latestDay || !isClubGameResult(card)) return true;
+    const day = clubResultDay(card);
+    return !day || day >= latestDay;
+  };
+  const freshResults = playable.filter((c) => isClubGameResult(c) && freshEnough(c));
+  const candidates = freshResults.length ? freshResults : playable.filter(freshEnough);
   const score = (card: GameWrapCard) =>
     (isFavoriteGameResult(card) && favoriteKeyFitsCard(card.favoriteKey, card)
       ? 100 + favoriteDeskWeight(card.favoriteKey)
@@ -731,7 +765,7 @@ export function pickFrontUnderLead(pool: GameWrapCard[], lead: GameWrapCard | nu
     (isGameWrap(card) ? 15 : 0) +
     (card.photo ? 20 : 0) +
     (card.scoreLine && /\d/.test(card.scoreLine) ? 10 : 0);
-  return [...playable].sort((a, b) => score(b) - score(a))[0] ?? null;
+  return [...candidates].sort((a, b) => score(b) - score(a))[0] ?? null;
 }
 
 /** Never open A1 or the edition alert on these. */
