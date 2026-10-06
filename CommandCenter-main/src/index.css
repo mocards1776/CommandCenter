@@ -1181,10 +1181,14 @@ mark.rss-hl {
   --w-body: "Source Serif 4", Georgia, "Times New Roman", serif;
   --w-gutter: 20px;
 
-  /* Locked broadsheet. Every folio is this canvas; the pager zooms to fit
-     both axes. Sheets do not grow, and they do not scroll. */
-  --tt-page-w: 1040px;
-  --tt-page-h: 1480px;
+  /* One broadsheet, as wide as the iPad Pro 13" in portrait (1032 CSS px), so it
+     prints edge to edge there at true size. The fit is width-only: narrower
+     screens zoom the whole sheet down, wider ones get paper margins, and the
+     height is never fit. A sheet is at least one screen tall (--tt-page-min,
+     set by the pager; --tt-page-h before it measures) and grows with its copy;
+     the folio scrolls. Do not add a second canvas size. */
+  --tt-page-w: 1032px;
+  --tt-page-h: 1290px;
   --w-chrome: calc(61px + env(safe-area-inset-top, 0px));
   flex: 1 1 auto;
   height: 100%;
@@ -1351,16 +1355,14 @@ mark.rss-hl {
 .wsj-sheet {
   box-sizing: border-box;
   flex: none;
-  width: var(--tt-page-w, 1040px);
-  min-width: var(--tt-page-w, 1040px);
-  max-width: var(--tt-page-w, 1040px);
-  height: var(--tt-page-h, 1480px);
-  min-height: var(--tt-page-h, 1480px);
-  max-height: var(--tt-page-h, 1480px);
+  width: var(--tt-page-w, 1032px);
+  min-width: var(--tt-page-w, 1032px);
+  max-width: var(--tt-page-w, 1032px);
+  min-height: var(--tt-page-min, var(--tt-page-h, 1290px));
   zoom: var(--tt-fit, 1);
   margin: 0;
   padding: 14px 18px 18px;
-  overflow: hidden;
+  overflow-x: clip;
   touch-action: pan-y;
   display: flex;
   flex-direction: column;
@@ -6802,7 +6804,7 @@ li.counting .tt-count.card {
   display: flex;
   flex-direction: column;
   gap: 18px;
-  min-height: calc(var(--tt-page-h, 1480px) - 88px);
+  min-height: calc(var(--tt-page-min, var(--tt-page-h, 1290px)) - 88px);
 }
 .tt-nat-hero h3 {
   font-family: var(--w-head);
@@ -8959,7 +8961,7 @@ li.counting .tt-count.card {
 }
 .tt-front-lead,
 .tt-front-side {
-  overflow: hidden;
+  overflow-x: clip;
 }
 .tt-front-lead .tt-recap-photo.wide img,
 .wsj-inside-story .tt-recap-photo.wide img {
@@ -9129,6 +9131,8 @@ li.counting .tt-count.card {
   margin: 24px auto 48px;
 }
 .tt-watch-preview.tt-locked-page {
+  /* Preview proof keeps the #326 folio canvas. Daily pager height is dynamic. */
+  --tt-page-h: 1480px;
   height: auto;
   overflow: auto;
   display: flex;

@@ -4275,6 +4275,7 @@ function FolioSlot({
   );
 }
 
+/** Height is dynamic. The sentence fitter packs toward a soft 1480 target; it never hides leftover copy. */
 function FittedSheet({ children }: { children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -4670,10 +4671,11 @@ function NewspaperDesk() {
       if (w < 40 || h < 40) return;
       const root = el.closest(".newspaper-root") ?? el;
       const cs = getComputedStyle(root);
-      const pageW = parseFloat(cs.getPropertyValue("--tt-page-w")) || 1040;
-      const pageH = parseFloat(cs.getPropertyValue("--tt-page-h")) || 1480;
-      const fit = Math.min(1, w / pageW, h / pageH);
+      // LOCKED: width-only fit at --tt-page-w 1032. Do not add height terms; owner requirement.
+      const pageW = parseFloat(cs.getPropertyValue("--tt-page-w")) || 1032;
+      const fit = Math.min(1, w / pageW);
       el.style.setProperty("--tt-fit", String(fit));
+      el.style.setProperty("--tt-page-min", `${Math.ceil(h / fit)}px`);
       el.dataset.fit = "1";
     };
     apply();
