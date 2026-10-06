@@ -8162,6 +8162,10 @@ li.counting .tt-count.card {
 .newspaper-root .tt-section-front .tt-front-lead .wsj-story.lead img {
   max-height: 280px;
 }
+.newspaper-root .tt-front-under .wsj-story img {
+  max-height: 160px;
+  object-fit: cover;
+}
 .newspaper-root .tt-bracket.compact .tt-br-board {
   min-height: 0;
 }

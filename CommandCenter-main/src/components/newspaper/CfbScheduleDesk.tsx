@@ -109,7 +109,7 @@ export function CfbFill({
   compact?: boolean;
 }) {
   const sec = secStandingsGroup(standings);
-  const pollRows = compact ? poll.slice(0, 12) : poll;
+  const pollRows = compact ? poll.slice(0, 10) : poll;
   const hints = [
     ...pollRows.map((row) => ({ name: row.name, abbrev: row.abbrev, logo: row.logo })),
     ...(sec?.rows ?? []).map((row) => ({ name: row.name, abbrev: row.abbrev, logo: row.logo })),

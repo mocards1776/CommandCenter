@@ -2674,24 +2674,25 @@ function SportSectionFront({
               </div>
             ) : null}
             {underLead.length ? (
-              <div className="tt-front-under" data-tt-keep="">
-                {underLead.map((card) => (
-                  <Story
-                    key={card.id}
-                    card={card}
-                    text={
-                      recapDek(card, 4) ||
-                      wrapBriefCopy(card, 4) ||
-                      gameOf(card)?.recap?.blurb ||
-                      recapDek(card, 2)
-                    }
-                    size="md"
-                    art={card.photo ? "top" : "none"}
-                    readOn
-                    chrome={false}
-                    jump={folios[card.id] && folios[card.id] !== page.folio ? folios[card.id] : undefined}
-                    onTurn={onTurn}
-                  />
+              <div className="tt-front-under">
+                {underLead.map((card, i) => (
+                  <div key={card.id} {...(i === 0 ? { "data-tt-keep": "" } : { "data-tt-flow": "" })}>
+                    <Story
+                      card={card}
+                      text={
+                        recapDek(card, 4) ||
+                        wrapBriefCopy(card, 4) ||
+                        gameOf(card)?.recap?.blurb ||
+                        recapDek(card, 2)
+                      }
+                      size="md"
+                      art={i === 0 && card.photo ? "top" : "none"}
+                      readOn
+                      chrome={false}
+                      jump={folios[card.id] && folios[card.id] !== page.folio ? folios[card.id] : undefined}
+                      onTurn={onTurn}
+                    />
+                  </div>
                 ))}
               </div>
             ) : football && !cfb && fixtures.length ? (
@@ -2709,7 +2710,7 @@ function SportSectionFront({
           </div>
           <div className="tt-front-side">
             {railSeconds.length ? (
-              <div className="wsj-sport-seconds">
+              <div className="wsj-sport-seconds" data-tt-flow="">
                 {railSeconds.map((card) => (
                   <Story
                     key={card.id}
@@ -3267,7 +3268,7 @@ function WrapFlow({ cards, path }: { cards: GameWrapCard[]; path: string }) {
       {cols.map((col, i) => (
         <div key={i} className="tt-wrap-col">
           {col.map((card, j) => (
-            <WrapBrief key={card.id} card={card} path={path} trim={45 + i * 10 + j} flow={j > 0} />
+            <WrapBrief key={card.id} card={card} path={path} trim={45 + i * 10 + j} flow={j > 1} />
           ))}
         </div>
       ))}
