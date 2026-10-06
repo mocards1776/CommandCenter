@@ -2874,10 +2874,10 @@ function WrapPlayers({ card }: { card: GameWrapCard }) {
   );
 }
 
-function WrapBrief({ card, wide }: { card: GameWrapCard; wide?: boolean }) {
+function WrapBrief({ card, wide, desk }: { card: GameWrapCard; wide?: boolean; desk?: boolean }) {
   const lookup = useContext(GameLookup);
   const game = lookup(card);
-  if (game || (isSingleGameRecap(card) && cardLooksRecap(card, game))) {
+  if (!desk && (game || (isSingleGameRecap(card) && cardLooksRecap(card, game)))) {
     return <RecapCard card={card} game={game} wide={wide} />;
   }
   const copy = wrapBriefCopy(card, 4);
@@ -2914,11 +2914,13 @@ function WrapFlow({
   cards,
   path,
   shown,
+  desk,
 }: {
   cards: GameWrapCard[];
   path: string;
   /** First page of the desk; later cards continue on NFL3+. Count still uses `cards`. */
   shown?: GameWrapCard[];
+  desk?: boolean;
 }) {
   const lookup = useContext(GameLookup);
   const unique = dedupeSportRecaps(cards, (c) => lookup(c)?.id ?? lookup(c)?.espnEventId ?? null);
@@ -2941,7 +2943,7 @@ function WrapFlow({
               {band.title} <em>{band.cards.length}</em>
             </h3>
             {visible.map((card) => (
-              <WrapBrief key={card.id} card={card} wide={n <= 2} />
+              <WrapBrief key={card.id} card={card} wide={n <= 2} desk={desk} />
             ))}
           </section>
         );
@@ -2994,10 +2996,19 @@ function ScoresDesk({
       </p>
     );
   }
+  const recapsOffset = page.recapsOffset ?? 0;
+  const recapsWraps = page.recapsWraps !== false && recapsOffset === 0;
+  const recapsCount = page.recapsCount;
+  const sliceGames = (list: BoxGame[]) => {
+    if (recapsCount == null && !recapsOffset) return list;
+    const start = recapsOffset;
+    const end = recapsCount != null ? start + recapsCount : undefined;
+    return list.slice(start, end);
+  };
   if (!games.length) {
     return (
       <div className="tt-scores">
-        <WrapFlow cards={allWraps} shown={wrapCards} path={page.path} />
+        {recapsWraps ? <WrapFlow cards={allWraps} shown={wrapCards} path={page.path} desk /> : null}
       </div>
     );
   }
@@ -3010,10 +3021,13 @@ function ScoresDesk({
   const rest = collegeSplit ? [] : wrapCards.length ? games : games.filter((g) => g !== featured);
   const yesterdayRest = collegeSplit?.yesterday.filter((g) => g !== featured) ?? [];
   const weekRest = collegeSplit?.rest.filter((g) => g.final && g !== featured) ?? [];
+  const gridSource = collegeSplit ? [...yesterdayRest, ...weekRest] : rest;
+  const gridGames = sliceGames(gridSource);
+  const slicedBoard = recapsCount != null || recapsOffset > 0;
   const card = boxStoryCard(featured);
   const isMlb = page.path === "baseball/mlb";
   const photo = featured.recap?.photo ?? null;
-  const sparse = games.length < 7;
+  const sparse = games.length < 7 && recapsWraps;
   const ahead = college
     ? []
     : (board?.slate ?? []).filter((g) => !g.final && !g.live).slice(0, sparse ? 6 : 0);
@@ -3026,8 +3040,8 @@ function ScoresDesk({
       : "Results";
   return (
     <div className="tt-scores">
-      {wrapCards.length ? <WrapFlow cards={allWraps} shown={wrapCards} path={page.path} /> : null}
-      {!wrapCards.length ? (
+      {recapsWraps && wrapCards.length ? <WrapFlow cards={allWraps} shown={wrapCards} path={page.path} desk /> : null}
+      {recapsWraps && !wrapCards.length ? (
       <article
         className={cn("tt-feature", !photo && "graphic")}
         {...(card
@@ -3083,44 +3097,46 @@ function ScoresDesk({
         </div>
       </article>
       ) : null}
-      {isMlb && !wrapCards.length ? <MlbAgate game={featured} enabled={active} /> : null}
-      {[
-        { title: collegeSplit?.title ?? "", rows: yesterdayRest, count: collegeSplit?.yesterday.length ?? 0 },
-        { title: "Rest of the week", rows: weekRest, count: weekRest.length },
-      ].map((band) =>
-        band.rows.length ? (
-          <section className="tt-results" key={band.title}>
-            <h3 className="wsj-band-title">
-              {band.title} <em>{band.count} {band.count === 1 ? "game" : "games"}</em>
-            </h3>
-            <div
-              className="tt-score-grid"
-              style={{ ["--cols" as string]: String(balancedCols(band.rows.length, [3, 2, 4])) }}
-            >
-              {band.rows.map((g) => (
-                <ScoreCard
-                  key={g.id}
-                  game={g}
-                  onOpen={(game) => {
-                    const c = boxStoryCard(game);
-                    if (c) open({ card: c, game });
-                  }}
-                />
-              ))}
-            </div>
-          </section>
-        ) : null,
-      )}
-      {rest.length ? (
+      {recapsWraps && isMlb && !wrapCards.length ? <MlbAgate game={featured} enabled={active} /> : null}
+      {!slicedBoard
+        ? [
+            { title: collegeSplit?.title ?? "", rows: yesterdayRest, count: collegeSplit?.yesterday.length ?? 0 },
+            { title: "Rest of the week", rows: weekRest, count: weekRest.length },
+          ].map((band) =>
+            band.rows.length ? (
+              <section className="tt-results" key={band.title}>
+                <h3 className="wsj-band-title">
+                  {band.title} <em>{band.count} {band.count === 1 ? "game" : "games"}</em>
+                </h3>
+                <div
+                  className="tt-score-grid"
+                  style={{ ["--cols" as string]: String(balancedCols(band.rows.length, [3, 2, 4])) }}
+                >
+                  {band.rows.map((g) => (
+                    <ScoreCard
+                      key={g.id}
+                      game={g}
+                      onOpen={(game) => {
+                        const c = boxStoryCard(game);
+                        if (c) open({ card: c, game });
+                      }}
+                    />
+                  ))}
+                </div>
+              </section>
+            ) : null,
+          )
+        : null}
+      {(slicedBoard ? gridGames : rest).length ? (
         <section className="tt-results">
           <h3 className="wsj-band-title">
             {restTitle} <em>{games.length} {games.length === 1 ? "game" : "games"}</em>
           </h3>
           <div
             className={cn("tt-score-grid", isMlb && "agate", sparse && "roomy")}
-            style={{ ["--cols" as string]: String(isMlb ? 2 : balancedCols(rest.length, [3, 2, 4])) }}
+            style={{ ["--cols" as string]: String(isMlb ? 2 : balancedCols((slicedBoard ? gridGames : rest).length, [3, 2, 4])) }}
           >
-            {rest.map((g) => (
+            {(slicedBoard ? gridGames : rest).map((g) => (
               <ScoreCard
                 key={g.id}
                 game={g}
@@ -3135,8 +3151,8 @@ function ScoresDesk({
           </div>
         </section>
       ) : null}
-      {sparse ? <StarsBand games={games} /> : null}
-      {behind.length ? (
+      {recapsWraps && sparse ? <StarsBand games={games} /> : null}
+      {recapsWraps && behind.length ? (
         <section className="tt-strip-wrap">
           <h3 className="wsj-band-title">{board?.priorLabel ?? "Last week"} finals</h3>
           <ScoreStrip
@@ -3148,7 +3164,7 @@ function ScoresDesk({
           />
         </section>
       ) : null}
-      {ahead.length ? (
+      {recapsWraps && ahead.length ? (
         <section className="tt-ahead">
           <h3 className="wsj-band-title">Up next</h3>
           <div className="tt-matchups" style={{ ["--cols" as string]: String(balancedCols(ahead.length, [3, 2, 4])) }}>
@@ -4468,7 +4484,7 @@ function FolioSlot({
   );
 }
 
-/** Height is dynamic. The sentence fitter packs toward a soft 1480 target; it never hides leftover copy. */
+/** Height is dynamic. The sentence fitter packs toward 1480 (soft cap 1650); leftover copy is never hidden. */
 function FittedSheet({ children }: { children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {

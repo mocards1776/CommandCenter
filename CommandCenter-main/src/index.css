@@ -4968,7 +4968,7 @@ li.counting .tt-count.card {
 }
 .tt-scores .tt-wrap-flow.cols-1,
 .tt-scores .tt-wrap-flow.cols-2 {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   min-height: 0;
 }
 .tt-scores .tt-results {

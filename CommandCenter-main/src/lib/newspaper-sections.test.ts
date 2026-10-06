@@ -2304,5 +2304,31 @@ assert(
   patchedInside.every((p) => p.kind === "sport-inside" && sportInsideCards(p).length >= 2),
   "insertMissingRecaps never opens a one-card leftover folio",
 );
+assert(
+  patched.pages.filter((p) => p.kind === "sport-front" && p.section === "NFL" && p.focus === "recaps").length === 1,
+  "15 NFL finals stay on one recaps folio at the 1480 target",
+);
+
+const hugeBoard = Array.from({ length: 50 }, (_, i) =>
+  card({
+    id: `box-nfl-huge-${i}`,
+    headline: `Sunday final ${i}`,
+    sportLabel: "NFL",
+    leaguePath: "football/nfl",
+    status: "Final",
+    scoreLine: `AA ${10 + i} · BB ${7 + i}`,
+    gameId: `${401780000 + i}`,
+    when: "2026-10-04T20:00:00Z",
+    dek: `The visiting club won game ${i} on Sunday afternoon.`,
+  }),
+);
+const hugePatched = insertMissingRecaps(shortFiled, hugeBoard);
+const hugeRecaps = hugePatched.pages.filter((p) => p.kind === "sport-front" && p.section === "NFL" && p.focus === "recaps");
+assert(hugeRecaps.length >= 2, "a 50-game board flows leftover finals to another recaps folio");
+assert(hugeRecaps[0]?.kind === "sport-front" && hugeRecaps[0].recapsWraps !== false, "the first recaps folio keeps the wraps");
+assert(
+  hugeRecaps.slice(1).every((p) => p.kind === "sport-front" && p.recapsWraps === false),
+  "later recaps folios are board-only",
+);
 
 console.log("newspaper-sections ok");

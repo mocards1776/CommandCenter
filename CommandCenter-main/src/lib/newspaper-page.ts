@@ -1,13 +1,16 @@
 /**
- * Locked Times broadsheet. Every folio is this canvas — never taller,
- * never padded out with empty columns. Overflow is cut, not scrolled.
+ * Compose target. Sheets stay width-only at 1032; height is not locked in
+ * CSS. Pack each folio to ~1480 and overflow to the next page. Grow only
+ * to the soft cap so a story is not cut mid-graf.
  */
 export const PAGE_CANVAS = { width: 1040, height: 1480 } as const;
+export const PAGE_TARGET_H = 1480;
+export const PAGE_SOFT_CAP_H = 1650;
 
 /** Masthead + folio + sheet padding reserved on every page. */
 export const PAGE_CHROME_PX = 188;
 
-export const PAGE_BODY_PX = PAGE_CANVAS.height - PAGE_CHROME_PX;
+export const PAGE_BODY_PX = PAGE_TARGET_H - PAGE_CHROME_PX;
 
 const SCHEDULE_DAY_HEAD_PX = 28;
 const SCHEDULE_ROW_PX = 44;
@@ -61,7 +64,7 @@ export function planSchedulePages<T extends { day: string }>(games: T[]): T[][] 
 }
 
 export function pageExceedsCanvas(heightPx: number): boolean {
-  return heightPx > PAGE_CANVAS.height;
+  return heightPx > PAGE_SOFT_CAP_H;
 }
 
 /** Sport-front budget: lead + rail of `n` week games in two columns. */
@@ -86,9 +89,82 @@ export function estimateInsideRecapHeight(opts: { grafs: number; condensedBox: b
 }
 
 /** NFL2 scoreboard: `n` finals in three columns. */
-export function estimateScoreGridHeight(games: number, cols = 3): number {
+export function estimateScoreGridHeight(games: number, cols = 3, rowPx = 118): number {
   const rows = Math.max(1, Math.ceil(Math.max(games, 1) / cols));
-  return 36 + rows * 118;
+  return 36 + rows * rowPx;
+}
+
+const RECAPS_HERO_PX = 80;
+const RECAPS_WRAPS_PX = 420;
+
+/**
+ * Split a recaps-desk score grid so the first folio keeps the wrap briefs
+ * and later folios take leftover finals. Target 1480; never past 1650.
+ */
+export function planRecapsScorePages(
+  gameCount: number,
+  opts?: { mlb?: boolean; wraps?: boolean },
+): { offset: number; count: number; wraps: boolean }[] {
+  const n = Math.max(0, gameCount);
+  const cols = opts?.mlb ? 2 : 3;
+  const rowPx = opts?.mlb ? 160 : 118;
+  const wrapH = opts?.wraps === false ? 0 : RECAPS_WRAPS_PX;
+  const chrome = PAGE_CHROME_PX + RECAPS_HERO_PX;
+  const firstBudget = PAGE_TARGET_H - chrome - wrapH;
+  const contBudget = PAGE_TARGET_H - chrome;
+  const firstN = Math.max(cols, Math.floor(Math.max(firstBudget - 36, rowPx) / rowPx) * cols);
+  const contN = Math.max(cols, Math.floor(Math.max(contBudget - 36, rowPx) / rowPx) * cols);
+  if (n <= firstN) return [{ offset: 0, count: n, wraps: opts?.wraps !== false }];
+  const pages = [{ offset: 0, count: firstN, wraps: true }];
+  let i = firstN;
+  while (i < n) {
+    pages.push({ offset: i, count: Math.min(contN, n - i), wraps: false });
+    i += contN;
+  }
+  return pages;
+}
+
+/** Sport-news inside: photo + headline + columned copy. */
+export function estimateNewsStoryHeight(card: {
+  body?: string | null;
+  photo?: string | null;
+  headline?: string | null;
+}): number {
+  const text = (card.body ?? "").length;
+  const photo = card.photo ? 260 : 0;
+  const cols = text > 2400 ? 3 : text > 700 ? 2 : 1;
+  const copyH = Math.ceil(Math.max(text, 200) / (cols * 90)) * 21;
+  return 88 + photo + Math.min(copyH, 1100);
+}
+
+/** Pair short news stories; a long feature takes its own folio. */
+export function packSportNewsPages<T extends { body?: string | null; photo?: string | null }>(cards: T[]): T[][] {
+  const pages: T[][] = [];
+  let i = 0;
+  while (i < cards.length) {
+    const a = cards[i]!;
+    const b = cards[i + 1];
+    if (b && PAGE_CHROME_PX + estimateNewsStoryHeight(a) + estimateNewsStoryHeight(b) <= PAGE_SOFT_CAP_H) {
+      pages.push([a, b]);
+      i += 2;
+    } else {
+      pages.push([a]);
+      i += 1;
+    }
+  }
+  return pages;
+}
+
+/**
+ * Pixels from this element's top to the compose target (or soft cap).
+ * Recap fill uses this so leftover matter never grows the sheet past 1650.
+ */
+export function folioFillBudget(el: HTMLElement, cap = false): number {
+  const sheet = el.closest(".wsj-sheet") as HTMLElement | null;
+  if (!sheet) return el.clientHeight;
+  const zoom = Number.parseFloat(getComputedStyle(sheet).zoom || "1") || 1;
+  const limit = (cap ? PAGE_SOFT_CAP_H : PAGE_TARGET_H) * zoom;
+  return Math.max(0, Math.floor(sheet.getBoundingClientRect().top + limit - el.getBoundingClientRect().top));
 }
 
 /** Old 2-column MatchupCard slate — used to prove the compact row is required. */

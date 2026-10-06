@@ -19,6 +19,7 @@ import {
   type ScoringPeriod,
 } from "@/lib/newspaper-agate";
 import { gameClock, type BoxGame } from "@/lib/newspaper-box";
+import { folioFillBudget } from "@/lib/newspaper-page";
 import {
   boxGameFromPack,
   recapIsFull,
@@ -304,14 +305,15 @@ function tableHost(host: HTMLElement): HTMLElement | null {
 function scoringBudget(host: HTMLElement): number {
   const slot = host.closest(".tt-recap-slot") as HTMLElement | null;
   const fill = host.closest(".tt-recap-fill") as HTMLElement | null;
+  const room = folioFillBudget(host);
   if (slot && fill?.classList.contains("scoring")) {
-    return Math.max(0, Math.floor(slot.clientHeight * 0.42));
+    return Math.max(0, Math.min(room, Math.floor(slot.clientHeight * 0.42)));
   }
-  if (!fill) return host.clientHeight;
+  if (!fill) return Math.min(host.clientHeight, room);
   // Whole rows first: spend leftover on scoring, leave a key-stats strip when
   // team stats sit in the same pane. Photos live in extras and take the rest.
   const hasStats = Boolean(fill.querySelector(".tt-recap-stats"));
-  return Math.max(0, Math.floor(fill.clientHeight - (hasStats ? 88 : 0)));
+  return Math.max(0, Math.min(room, Math.floor(fill.clientHeight - (hasStats ? 88 : 0))));
 }
 
 function statsBudget(host: HTMLElement): number {
@@ -691,9 +693,21 @@ export function RecapFill({
   const showStats = only !== "scoring" && Boolean(!skipBox && box && (keyStats(box).length || box.teamStats.length || box.shots));
   const showExtra = only !== "scoring" && Boolean(photo2 || quote || nextLine || standings.length || related.length);
   const hasMatter = Boolean(showScoring || showStats || showExtra);
+  const fillRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = fillRef.current;
+    if (!el) return;
+    const apply = () => {
+      el.style.maxHeight = `${folioFillBudget(el, true)}px`;
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el.closest(".wsj-sheet") ?? el);
+    return () => ro.disconnect();
+  }, [hasMatter, showScoring, showStats, showExtra, density, only]);
   if (!hasMatter) return null;
   return (
-    <div className={cn("tt-recap-fill", density, only !== "all" && only)}>
+    <div ref={fillRef} className={cn("tt-recap-fill", density, only !== "all" && only)}>
       {showScoring || showStats ? (
         <div className="tt-recap-fill-tables">
           {showScoring && box ? <RecapScoringFit periods={box.scoring} game={box.game} card={card} density={density} /> : null}

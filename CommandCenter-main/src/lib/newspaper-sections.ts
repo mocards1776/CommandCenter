@@ -51,6 +51,7 @@ import { isPromoMissouriItem, type MissouriDesk, type MoItem } from "./newspaper
 import type { FavoritesDayPage } from "./newspaper-day-ahead.ts";
 import type { FavoritesBeezPage } from "./newspaper-beez.ts";
 import { packNationalPages, type NationalDesk, type NationalStory } from "./newspaper-national.ts";
+import { packSportNewsPages, planRecapsScorePages } from "./newspaper-page.ts";
 import { printsFavoriteCoaches } from "./newspaper-favorite-coaches.ts";
 
 /** Front-page teaser budgets — rest jumps to a real continuation folio. */
@@ -259,6 +260,10 @@ export type SportFrontPage = PageBase & {
   clubs: ClubDesk[];
   upcoming: DeskFixture[];
   articles: { card: GameWrapCard; folio: string }[];
+  /** Recaps-desk score grid slice. Overflow finals continue on the next recaps folio. */
+  recapsOffset?: number;
+  recapsCount?: number;
+  recapsWraps?: boolean;
 };
 
 export type SportInsidePage = PageBase & {
@@ -1682,7 +1687,7 @@ function sportPages(
       more: slice.slice(2),
     });
   }
-  for (let i = 0; i < newsFull.length; i += 2) {
+  for (const slice of packSportNewsPages(newsFull)) {
     inside.push({
       kind: "sport-inside",
       folio: "",
@@ -1691,8 +1696,8 @@ function sportPages(
       sectionPage: 0,
       sectionCount: 0,
       path: id.path,
-      primary: newsFull[i]!,
-      secondary: newsFull[i + 1],
+      primary: slice[0]!,
+      secondary: slice[1],
     });
   }
 
@@ -2067,11 +2072,23 @@ export function insertMissingRecaps<E extends { pages: EditionPage[]; sections: 
     const existingIds = existingInsides.flatMap((p) => sportInsideCards(p).map((c) => c.id)).join("|");
     const packed = packSportInsideCards(leftover, sportInsidePackSize(path));
     const packedIds = packed.flat().map((c) => c.id).join("|");
+    const scoreSlices = planRecapsScorePages(all.length, { mlb: path === "baseball/mlb" });
+    const existingRecaps = pages.filter(
+      (p) => p.kind === "sport-front" && sportPathOf(p) === path && p.focus === "recaps",
+    ) as SportFrontPage[];
+    const existingSlices = existingRecaps
+      .map((p) => `${p.recapsOffset ?? 0}:${p.recapsCount ?? "all"}:${p.recapsWraps !== false}`)
+      .join("|");
+    const wantedSlices = scoreSlices.map((s) => `${s.offset}:${s.count}:${s.wraps}`).join("|");
     const articlesChanged =
       recapsDesk && recapsDesk.kind === "sport-front" && recapsDesk.articles.length !== all.length;
-    if (!articlesChanged && existingIds === packedIds) continue;
+    if (!articlesChanged && existingIds === packedIds && existingSlices === wantedSlices) continue;
     if (recapsDesk && recapsDesk.kind === "sport-front") {
+      const lead = scoreSlices[0]!;
       recapsDesk.articles = all.map((card) => ({ card, folio: recapsDesk.folio }));
+      recapsDesk.recapsOffset = lead.offset;
+      recapsDesk.recapsCount = lead.count;
+      recapsDesk.recapsWraps = true;
     }
     const extras: SportInsidePage[] = packed.map((slice) => ({
       kind: "sport-inside",
@@ -2085,17 +2102,44 @@ export function insertMissingRecaps<E extends { pages: EditionPage[]; sections: 
       secondary: slice[1],
       more: slice.length > 2 ? slice.slice(2) : undefined,
     }));
-    const firstInside = pages.findIndex(
-      (p) => p.kind === "sport-inside" && p.path === path && sportInsideIsRecaps(p),
-    );
+    const extraRecaps: SportFrontPage[] =
+      recapsDesk && recapsDesk.kind === "sport-front"
+        ? scoreSlices.slice(1).map((slice) => ({
+            ...recapsDesk,
+            folio: "",
+            sectionPage: 0,
+            sectionCount: 0,
+            turn: null,
+            recapsOffset: slice.offset,
+            recapsCount: slice.count,
+            recapsWraps: false,
+            articles: all.slice(slice.offset, slice.offset + slice.count).map((card) => ({
+              card,
+              folio: "",
+            })),
+          }))
+        : [];
     const newsDesk = pages.find((p) => p.kind === "sport-front" && p.path === path && p.focus === "news");
-    let at = firstInside >= 0 ? firstInside : pages.findIndex((p) => p === (newsDesk ?? recapsDesk ?? sample)) + 1;
-    if (at < 1) continue;
     const withoutOld = pages.filter(
-      (p) => !(p.kind === "sport-inside" && p.path === path && sportInsideIsRecaps(p)),
+      (p) =>
+        !(p.kind === "sport-inside" && p.path === path && sportInsideIsRecaps(p)) &&
+        !(
+          p.kind === "sport-front" &&
+          sportPathOf(p) === path &&
+          p.focus === "recaps" &&
+          (p.recapsOffset ?? 0) > 0
+        ),
     );
-    if (firstInside >= 0) at = withoutOld.findIndex((p) => p === (newsDesk ?? recapsDesk ?? sample)) + 1;
-    pages = [...withoutOld.slice(0, at), ...extras, ...withoutOld.slice(at)];
+    const recapsAt = withoutOld.findIndex((p) => p === recapsDesk);
+    let next = [...withoutOld];
+    if (recapsAt >= 0 && extraRecaps.length) {
+      next = [...withoutOld.slice(0, recapsAt + 1), ...extraRecaps, ...withoutOld.slice(recapsAt + 1)];
+    }
+    const newsAt = next.findIndex((p) => p === newsDesk);
+    const insidesAt =
+      newsAt >= 0 ? newsAt : recapsAt >= 0 ? recapsAt + 1 + extraRecaps.length : next.findIndex((p) => p === sample) + 1;
+    if (insidesAt < 1) continue;
+    pages = [...next.slice(0, insidesAt), ...extras, ...next.slice(insidesAt)];
     pages = renumberSection(pages, sample.section);
     changed = true;
   }
