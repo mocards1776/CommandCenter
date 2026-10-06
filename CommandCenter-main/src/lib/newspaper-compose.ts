@@ -217,6 +217,7 @@ type PressBag = {
   extractUrls?: string[];
   raw?: GameWrapCard[];
   fresh?: GameWrapCard[];
+  enrichCursor?: number;
   coaches?: unknown;
 };
 
@@ -424,8 +425,18 @@ export async function pressStep(
   }
 
   if (state.stage === 10) {
-    const teamCards = state.teamCards ?? [];
-    state.enriched = teamCards.length ? await settle(enrichWrapBodies(teamCards, favs), teamCards) : teamCards;
+    const cards = state.teamCards ?? [];
+    const cursor = state.enrichCursor ?? 0;
+    if (cursor < cards.length) {
+      const slice = cards.slice(cursor, cursor + 4);
+      const filled = await settle(enrichWrapBodies(slice, favs), slice);
+      const next = cards.slice();
+      for (let i = 0; i < filled.length; i++) next[cursor + i] = filled[i]!;
+      state.teamCards = next;
+      state.enrichCursor = cursor + slice.length;
+      return pause();
+    }
+    delete state.enrichCursor;
     state.stage = 11;
     return pause();
   }
@@ -502,8 +513,8 @@ export async function pressStep(
       : null;
     const teamCards = state.teamCards ?? [];
     const pathsKey = state.pathKey ?? "";
-    state.teamCards = state.enriched ?? teamCards;
-    put([pressId, "tt-wrap-bodies", day, teamCards.map((c) => `${c.id}:${c.gameId}`).join("|")], state.teamCards);
+    state.teamCards = state.enriched ?? state.teamCards ?? teamCards;
+    put([pressId, "tt-wrap-bodies", day, (state.teamCards ?? []).map((c) => `${c.id}:${c.gameId}`).join("|")], state.teamCards);
     if (paths.length) {
       put([pressId, "tt-league-news", day, pathsKey], state.leagueNews ?? []);
       put([pressId, "tt-league-clubs", day, pathsKey], state.leagueClubs);

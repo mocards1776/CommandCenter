@@ -39,6 +39,7 @@ export const DROP_AFTER_BOARD_DESKS = [
   "pathKey",
   "wireCursor",
   "leagueCursor",
+  "enrichCursor",
 ] as const;
 
 export function dropBagKeys<T extends Record<string, unknown>>(state: T, keys: readonly string[]): T {
