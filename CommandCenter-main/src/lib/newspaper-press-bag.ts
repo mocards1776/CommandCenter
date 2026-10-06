@@ -24,12 +24,30 @@ export const DROP_AFTER_FILE_DESKS = [
 /** After stories are gathered, the source desks are gone from the bag. */
 export const DROP_AFTER_GATHER = ["details", "wire", "news", "teamCards", "leagueNews", "athletic", "snaps"] as const;
 
+/** Merge-hop cursors. Gone once stage 12 has the filed story list. */
+export const DROP_AFTER_MERGE = [
+  "athletic",
+  "clubCopy",
+  "wireGames",
+  "teamCards",
+  "leagueNews",
+  "enriched",
+  "pool",
+  "mergeStep",
+  "wrapCursor",
+  "restCursor",
+  "keptWraps",
+  "leftover",
+  "tagCursor",
+  "leagueCursor",
+] as const;
+
 /** Keys the next stage no longer reads. Applied on every checkpoint write. */
 export function deadBagKeys(stage: number): readonly string[] {
   const dead: string[] = [];
   if (stage >= 10) dead.push(...DROP_AFTER_FILE_DESKS);
   if (stage >= 11) dead.push("details", "wire", "news");
-  if (stage >= 12) dead.push("athletic", "clubCopy", "wireGames");
+  if (stage >= 12) dead.push(...DROP_AFTER_MERGE);
   if (stage >= 14) {
     dead.push(...DROP_AFTER_BOARD_DESKS);
     dead.push(...DROP_AFTER_GATHER);
@@ -39,6 +57,27 @@ export function deadBagKeys(stage: number): readonly string[] {
   if (stage >= 18) dead.push("dedupeQueue", "dedupeGroups", "dedupeCursor", "deskCopy");
   if (stage >= 19) dead.push("filed", "storyCursor");
   return dead;
+}
+
+/** Stage + sub-step cursor so a hop can log and a 546 retry can refuse to re-run. */
+export function hopSignature(bag: Record<string, unknown> | null | undefined): string {
+  if (!bag) return "0";
+  const stage = typeof bag.stage === "number" ? bag.stage : 0;
+  const keys = [
+    "leagueCursor",
+    "mergeStep",
+    "wrapCursor",
+    "restCursor",
+    "tagCursor",
+    "enrichCursor",
+    "extractCursor",
+    "extractFileCursor",
+    "cleanCursor",
+    "dedupeCursor",
+    "storyCursor",
+    "wireCursor",
+  ] as const;
+  return [stage, ...keys.map((key) => (bag[key] == null ? "" : String(bag[key])))].join(":");
 }
 
 export const DROP_AFTER_BOARD_DESKS = [
