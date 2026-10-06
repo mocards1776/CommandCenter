@@ -86,13 +86,21 @@ export function applyScaledFitBox(
     sheet.style.transformOrigin = "";
     return;
   }
-  const box = scaledFitBox(pageW, sheetLayoutHeight(sheet), fit);
   fitBox.classList.add("tt-fit-transform");
-  fitBox.style.width = `${box.width}px`;
-  fitBox.style.height = `${box.height}px`;
-  fitBox.style.overflow = "hidden";
+  // Measure the unscaled sheet, then lock the wrapper to the visual box.
+  // A stale overflow:hidden height makes offsetHeight lie; transform makes
+  // scrollHeight balloon. Clear both before reading.
+  sheet.style.transform = "none";
+  fitBox.style.height = "auto";
+  fitBox.style.overflow = "visible";
+  const box = scaledFitBox(pageW, sheetLayoutHeight(sheet), fit);
+  const nextW = `${box.width}px`;
+  const nextH = `${box.height}px`;
   sheet.style.transform = `scale(${fit})`;
   sheet.style.transformOrigin = "top left";
+  if (fitBox.style.width !== nextW) fitBox.style.width = nextW;
+  if (fitBox.style.height !== nextH) fitBox.style.height = nextH;
+  fitBox.style.overflow = "hidden";
 }
 
 /** Convert a zoomed viewport distance into unzoomed sheet CSS pixels. */
