@@ -44,13 +44,13 @@ assert.equal(CARD_WIDTH, 1080);
 assert.equal(CARD_HEIGHT, 1350);
 assert.match(svg, /width="1080"/);
 assert.match(svg, /height="1350"/);
-assert.match(svg, /#F4EFE6/i, "cream field, not a dark poster");
+assert.match(svg, /#F2EEE6|#F4EFE6/i, "cream field, not a dark poster");
 assert.doesNotMatch(svg, /#07101d|#0b1220|#111827/i);
 
-assert.equal(LOGO_X, (1080 - LOGO_DISPLAY_WIDTH) / 2, "TCI logo is centered");
+assert.equal(LOGO_X, 40, "wordmark sits on the field, left header — no plate");
 assert.match(svg, new RegExp(`<image href="data:image/png;base64,aaa" x="${LOGO_X}"`));
-assert.doesNotMatch(svg, /logo-plate|logoHalo|logo-disc/i);
-assert.doesNotMatch(svg, /letter grade|Grade [A-F]|rating [A-F]/i);
+assert.doesNotMatch(svg, /logo-plate|logoHalo|logo-disc|cardShadow|feDropShadow/i);
+assert.doesNotMatch(svg, /letter grade|Grade [A-F]|rating [A-F]|\bHIGH\b/i);
 
 const fogle = SD30_SAMPLE_BUYERS[0]!;
 const stinnett = SD30_SAMPLE_BUYERS[1]!;
@@ -93,14 +93,18 @@ assert.match(svg, /\$93 CPP/);
 assert.match(svg, /\$92 CPP/);
 assert.match(svg, /\$166 CPP/);
 assert.match(svg, /\$186 CPP/);
+assert.match(svg, /Just in/);
+assert.match(svg, />NEW</);
 assert.match(svg, /GRP rebuild/);
 assert.match(svg, /FCC×AD35/);
 assert.match(svg, /KSPR dark/);
 assert.match(svg, /KYTV CPP/);
-assert.match(svg, /CPP locked/);
-assert.match(svg, /Race landscape/);
-assert.match(svg, /TV SPEND &amp; GRP|TV SPEND & GRP/);
-assert.match(svg, /Missouri SD-30/);
+assert.match(svg, /CPPs locked/);
+assert.match(svg, /Still ahead|STILL AHEAD/);
+assert.match(svg, /Verify remaining weeks/);
+assert.match(svg, /FCC copies still lag/);
+assert.match(svg, /Radio \/ cable/);
+assert.match(svg, /SD-30/);
 assert.match(svg, /October 6, 2026/);
 assert.match(svg, /Springfield/);
 
@@ -129,7 +133,8 @@ assert.ok(caption.includes(SD30_CAPTION_WHATS_NEW));
   assert.ok(logo.length > 200, "real TCI wordmark is embedded");
   const withLogo = renderCompetitiveSvg(sd30SampleCard(logo));
   assert.match(withLogo, /<image href="data:image\/png;base64,/);
-  assert.doesNotMatch(withLogo, /logo-plate|circle cx="540"/);
+  assert.doesNotMatch(withLogo, /logo-plate|logoHalo|feDropShadow|cardShadow/);
+  assert.ok(!/rect[^>]+fill="#FFFFFF"/.test(withLogo), "no white plates");
 }
 
 assert.equal(TELEGRAM_GRAPHIC_METHOD, "sendPhoto");

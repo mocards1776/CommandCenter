@@ -22,6 +22,10 @@ export type WhatsNewItem = {
   color: string;
 };
 
+export type AheadItem = {
+  text: string;
+};
+
 export type CompetitiveCard = {
   kicker: string;
   office: string;
@@ -29,8 +33,10 @@ export type CompetitiveCard = {
   title: string;
   market: string;
   dateLabel: string;
+  justInTitle: string;
   buyers: BuyerRow[];
   whatsNew: WhatsNewItem[];
+  stillAhead: AheadItem[];
   captionWhatsNew: string;
   logoData: string | null;
   footer: string;
@@ -46,9 +52,15 @@ export const SD30_SAMPLE_BUYERS: readonly BuyerRow[] = [
 ];
 
 export const SD30_SAMPLE_WHATS_NEW: readonly WhatsNewItem[] = [
-  { label: "GRP rebuild", detail: "FCC×AD35", color: "#0A84FF" },
-  { label: "KSPR dark", detail: "KYTV CPP", color: "#FF3B30" },
-  { label: "CPP locked", detail: "4 buyers", color: "#5E5CE6" },
+  { label: "GRP rebuild", detail: "FCC×AD35 on all major TV", color: "#0A84FF" },
+  { label: "KSPR dark", detail: "KYTV CPP — no FCC", color: "#FF3B30" },
+  { label: "CPPs locked", detail: "$93 / $92 / $166 / $186", color: "#5E5CE6" },
+];
+
+export const SD30_SAMPLE_AHEAD: readonly AheadItem[] = [
+  { text: "Verify remaining weeks on air" },
+  { text: "FCC copies still lag" },
+  { text: "Radio / cable — no GRP in this book" },
 ];
 
 export const SD30_CAPTION_WHATS_NEW =
@@ -62,8 +74,10 @@ export function sd30SampleCard(logoData: string | null = null): CompetitiveCard 
     title: "Missouri SD-30",
     market: "Springfield",
     dateLabel: "October 6, 2026",
+    justInTitle: "Just in",
     buyers: SD30_SAMPLE_BUYERS.map((row) => ({ ...row })),
     whatsNew: SD30_SAMPLE_WHATS_NEW.map((row) => ({ ...row })),
+    stillAhead: SD30_SAMPLE_AHEAD.map((row) => ({ ...row })),
     captionWhatsNew: SD30_CAPTION_WHATS_NEW,
     logoData,
     footer: "Thompson Communications",
@@ -112,12 +126,15 @@ export function barWidth(value: number, max: number, track: number, minPx = 10):
 
 export function competitiveCaption(card: CompetitiveCard): string {
   const lines = [
-    `${card.title} · ${card.market}`,
+    `Just in · ${card.title} · ${card.market}`,
+    ...card.whatsNew.map((item) => `${item.label} — ${item.detail}`),
+    "",
     ...card.buyers.map(
       (row) =>
         `${row.name} ${formatSpendExact(row.spend)} / ${formatGrp(row.grp)} GRP / ${formatCpp(row.cpp)} CPP`,
     ),
     "",
+    `Still ahead: ${card.stillAhead.map((item) => item.text).join("; ")}`,
     `What’s new: ${card.captionWhatsNew}`,
   ];
   return lines.join("\n");
@@ -132,7 +149,7 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(bin);
 }
 
-/** Centered TCI wordmark — the PNG itself, no disc or plate. */
+/** TCI wordmark only — PNG must be transparent. No disc or plate. */
 export async function loadTciLogoDataUri(): Promise<string | null> {
   const href = new URL("./assets/tc-logo.png", import.meta.url);
   try {
