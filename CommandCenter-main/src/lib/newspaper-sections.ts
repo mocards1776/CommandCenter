@@ -2170,7 +2170,7 @@ function restampEditionPages(pages: EditionPage[]): EditionPage[] {
  */
 export function paginateEditionDesks(
   edition: Edition,
-  standingsByPath: Record<string, { length: number }[] | undefined> | null | undefined,
+  standingsByPath: Record<string, { length: number } | undefined> | null | undefined,
 ): Edition {
   const pages: EditionPage[] = [];
   for (const page of edition.pages) {

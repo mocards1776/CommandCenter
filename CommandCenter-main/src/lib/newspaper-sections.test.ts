@@ -1799,7 +1799,8 @@ const sundayNflListed = new Set([
 assert(sundayNflListed.size >= 14, "Sunday's finals fill the NFL front and recaps without dropping games");
 assert(
   !sundayNflRecaps ||
-    (sundayNflFront?.kind === "sport-front" &&
+    (sundayNflRecaps.kind === "sport-front" &&
+      sundayNflFront?.kind === "sport-front" &&
       sundayNflRecaps.articles.every((a) => !sundayNflFront.articles.some((f) => f.card.id === a.card.id))),
   "recaps do not reprint the front's wraps",
 );
