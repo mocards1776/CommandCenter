@@ -9044,7 +9044,7 @@ li.counting .tt-count.card {
   grid-template-columns: minmax(0, 1fr);
   flex: 0 0 auto;
   gap: 18px;
-  align-items: stretch;
+  align-items: start;
 }
 .tt-front-lead,
 .tt-front-side {
