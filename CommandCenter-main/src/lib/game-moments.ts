@@ -415,7 +415,7 @@ export function demoMoment(kind: GameMomentKind): GameMoment {
       ...base,
       sport: "mlb",
       headline: kind === "home_run" ? "HOME RUN" : "RUN SCORED",
-      subhead: "R. PALACIOS",
+      subhead: kind === "home_run" ? "R. PALACIOS" : "J. DELUCA",
       detail:
         kind === "home_run"
           ? "Richardson Palacios homers on a fly ball to right field."

@@ -32,12 +32,14 @@ export default function MomentAlertPreviewPage() {
       const y = new Date(`${today}T12:00:00-05:00`);
       y.setDate(y.getDate() - 1);
       const yesterday = y.toISOString().slice(0, 10);
-      const [mlbToday, mlbY, nhl] = await Promise.all([
+      const [mlbToday, mlbY, nhlToday, nhlY] = await Promise.all([
         fetchMlbScoreboard(today),
         fetchMlbScoreboard(yesterday),
-        fetchNhlScoreboard(today).catch(() => []),
+        fetchNhlScoreboard(today.replace(/-/g, "")).catch(() => []),
+        fetchNhlScoreboard(yesterday.replace(/-/g, "")).catch(() => []),
       ]);
       const mlb = [...mlbToday, ...mlbY];
+      const nhl = [...nhlToday, ...nhlY];
       const mlbLive = mlb.find((g) => g.live);
       const nhlLive = nhl.find((g) => g.live);
       return {
