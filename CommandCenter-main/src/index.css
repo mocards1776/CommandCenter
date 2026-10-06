@@ -8740,6 +8740,16 @@ li.counting .tt-count.card {
   gap: 18px;
   flex: 1;
   min-height: 0;
+  align-items: stretch;
+}
+.tt-front-lead,
+.tt-front-side {
+  min-height: 0;
+}
+.tt-front-lead .wsj-story.lead,
+.tt-front-lead .wsj-story.lead .wsj-story-art,
+.tt-front-lead .wsj-cut {
+  flex: 1 1 auto;
 }
 .tt-front-grid.with-side {
   grid-template-columns: minmax(0, 1.7fr) minmax(260px, 1fr);
