@@ -55,6 +55,9 @@ import { ISSUE_VERSION, type PrintedIssue, type PrintedQuery } from "./newspaper
 import { clearEditorStamps, editEdition, type EditorRequest } from "./newspaper-editor";
 import { essentialsFromDesks } from "./newspaper-sections";
 import { fetchFavoriteCoachDesk, printsFavoriteCoaches } from "./newspaper-favorite-coaches";
+import { checkpointBag, DROP_AFTER_BOARD_DESKS, DROP_AFTER_FILE_DESKS, dropBagKeys } from "./newspaper-press-bag";
+
+export { checkpointBag } from "./newspaper-press-bag";
 
 export function deskFavorites(order: string[] | null | undefined, hidden: string[] | null | undefined): SportsFavorite[] {
   const layout: SportsLayout = {
@@ -179,7 +182,8 @@ async function poolMap<T, R>(items: T[], limit: number, fn: (item: T) => Promise
 
 type PressBag = {
   stage: number;
-  queries: PrintedQuery[];
+  /** Older checkpoints kept desks here. New runs flush them and drop this key. */
+  queries?: PrintedQuery[];
   snaps?: unknown;
   details?: { fav: SportsFavorite; detail: TeamDetail }[];
   wire?: NewspaperWire;
@@ -210,12 +214,16 @@ type PressBag = {
   heisman?: unknown;
   extractCursor?: number;
   extracts?: Record<string, RssArticle>;
+  extractUrls?: string[];
+  raw?: GameWrapCard[];
+  fresh?: GameWrapCard[];
+  enrichCursor?: number;
   coaches?: unknown;
 };
 
 export type PressStep =
-  | { done: false; bag: PressBag }
-  | { done: true; issue: PrintedIssue };
+  | { done: false; bag: PressBag; flush: PrintedQuery[] }
+  | { done: true; issue: PrintedIssue; flush: PrintedQuery[] };
 
 /**
  * One slice of the press. The scheduled worker can only hold a little at a time,
@@ -240,12 +248,15 @@ export async function pressStep(
 ): Promise<PressStep> {
   const { pressId, day, favs } = opts;
   const userId = opts.userId ?? null;
-  const state: PressBag = bag ?? { stage: 0, queries: [] };
+  const state: PressBag = bag ?? { stage: 0 };
+  delete state.queries;
+  const flush: PrintedQuery[] = [];
   const favKeys = favs.map((t) => t.key).join(",");
   const put = (key: unknown[], data: unknown) => {
-    state.queries.push({ key, data });
+    flush.push({ key, data });
   };
   const wrapFeedUrls = wrapFeedsForFavorites(favs);
+  const pause = (): PressStep => ({ done: false, bag: checkpointBag(state), flush });
 
   if (state.stage === 0) {
     state.snaps = await poolMap(favs, 3, async (fav) => {
@@ -267,7 +278,7 @@ export async function pressStep(
       }
     });
     state.stage = 1;
-    return { done: false, bag: state };
+    return pause();
   }
 
   if (state.stage === 1) {
@@ -283,14 +294,14 @@ export async function pressStep(
       [] as { fav: SportsFavorite; detail: TeamDetail }[],
     );
     state.stage = 2;
-    return { done: false, bag: state };
+    return pause();
   }
 
   if (state.stage === 2) {
     state.wire = await settle(fetchNewspaperWire({ favs, day, pressId }), { games: [], postseasonLeagues: [] } as NewspaperWire);
     state.wireCursor = 0;
     state.stage = 3;
-    return { done: false, bag: state };
+    return pause();
   }
 
   if (state.stage === 3) {
@@ -304,12 +315,12 @@ export async function pressStep(
       wire.games = wire.games.map((g) => byId.get(g.id) ?? g);
       state.wire = wire;
       state.wireCursor = cursor + slice.length;
-      return { done: false, bag: state };
+      return pause();
     }
     logWireFiling(`filed ${pressId}`, wire.games);
     put([pressId, "tt-wire-log", day], tallyWireGames(wire.games));
     state.stage = 4;
-    return { done: false, bag: state };
+    return pause();
   }
 
   if (state.stage === 4) {
@@ -319,7 +330,7 @@ export async function pressStep(
       playerLines: [],
     } as YesterdayRecap);
     state.stage = 5;
-    return { done: false, bag: state };
+    return pause();
   }
 
   if (state.stage === 5) {
@@ -337,13 +348,13 @@ export async function pressStep(
     state.wraps = packed.wraps;
     state.athletic = packed.athletic;
     state.stage = 6;
-    return { done: false, bag: state };
+    return pause();
   }
 
   if (state.stage === 6) {
     state.news = await settle(fetchTeamArticles(favs, pressId), [] as GameWrapCard[]);
     state.stage = 7;
-    return { done: false, bag: state };
+    return pause();
   }
 
   if (state.stage === 7) {
@@ -357,7 +368,7 @@ export async function pressStep(
       null,
     );
     state.stage = 8;
-    return { done: false, bag: state };
+    return pause();
   }
 
   if (state.stage === 8) {
@@ -377,7 +388,7 @@ export async function pressStep(
     });
     state.missouri = items.length || desk ? { scout: desk?.scout ?? null, items, listen: desk?.listen ?? [] } : null;
     state.stage = 9;
-    return { done: false, bag: state };
+    return pause();
   }
 
   if (state.stage === 9) {
@@ -391,7 +402,7 @@ export async function pressStep(
     const details = state.details ?? [];
     const recap = state.recap ?? { date: day, games: [], playerLines: [] };
     const wraps = (state.wraps ?? []) as Parameters<typeof buildGameWrapCards>[0]["wraps"];
-    put([pressId, "tt-team-snaps", day, favKeys], snaps);
+    // Snaps stay in the bag until stage 13 overlays table standings, then flush.
     put([pressId, "tt-team-details", day, favKeys], details);
     put([pressId, "tt-wire", day, favKeys], state.wire);
     put([pressId, "newspaper-yesterday-recap", day, userId], recap);
@@ -408,15 +419,26 @@ export async function pressStep(
     state.paths = sportPathsOf(teams.map((t) => t.fav));
     state.pathKey = state.paths.join("|");
     state.teamCards = buildGameWrapCards({ favs, details, recapGames: recap.games, wraps, recapDate: recap.date });
+    dropBagKeys(state, DROP_AFTER_FILE_DESKS);
     state.stage = 10;
-    return { done: false, bag: state };
+    return pause();
   }
 
   if (state.stage === 10) {
-    const teamCards = state.teamCards ?? [];
-    state.enriched = teamCards.length ? await settle(enrichWrapBodies(teamCards, favs), teamCards) : teamCards;
+    const cards = state.teamCards ?? [];
+    const cursor = state.enrichCursor ?? 0;
+    if (cursor < cards.length) {
+      const slice = cards.slice(cursor, cursor + 4);
+      const filled = await settle(enrichWrapBodies(slice, favs), slice);
+      const next = cards.slice();
+      for (let i = 0; i < filled.length; i++) next[cursor + i] = filled[i]!;
+      state.teamCards = next;
+      state.enrichCursor = cursor + slice.length;
+      return pause();
+    }
+    delete state.enrichCursor;
     state.stage = 11;
-    return { done: false, bag: state };
+    return pause();
   }
 
   if (state.stage === 11) {
@@ -427,10 +449,10 @@ export async function pressStep(
       const batch = await settle(fetchLeagueArticles([paths[cursor]!], pressId), [] as GameWrapCard[]);
       state.leagueNews = [...state.leagueNews, ...batch];
       state.leagueCursor = cursor + 1;
-      return { done: false, bag: state };
+      return pause();
     }
     state.stage = 12;
-    return { done: false, bag: state };
+    return pause();
   }
 
   if (state.stage === 12) {
@@ -452,7 +474,7 @@ export async function pressStep(
         )
       : {};
     state.stage = 13;
-    return { done: false, bag: state };
+    return pause();
   }
 
   if (state.stage === 13) {
@@ -491,7 +513,8 @@ export async function pressStep(
       : null;
     const teamCards = state.teamCards ?? [];
     const pathsKey = state.pathKey ?? "";
-    put([pressId, "tt-wrap-bodies", day, teamCards.map((c) => `${c.id}:${c.gameId}`).join("|")], state.enriched ?? teamCards);
+    state.teamCards = state.enriched ?? state.teamCards ?? teamCards;
+    put([pressId, "tt-wrap-bodies", day, (state.teamCards ?? []).map((c) => `${c.id}:${c.gameId}`).join("|")], state.teamCards);
     if (paths.length) {
       put([pressId, "tt-league-news", day, pathsKey], state.leagueNews ?? []);
       put([pressId, "tt-league-clubs", day, pathsKey], state.leagueClubs);
@@ -507,55 +530,67 @@ export async function pressStep(
       put([pressId, "tt-favorite-coaches", day], state.coaches);
     }
     if (state.snaps && state.standings) {
-      const snaps = applyTableStandings(
+      state.snaps = applyTableStandings(
         state.snaps as { key: string; standing: string | null }[],
         state.standings as Record<string, StandGroup[]>,
         favs,
       );
-      state.snaps = snaps;
-      const snapQuery = state.queries.find((q) => Array.isArray(q.key) && q.key[1] === "tt-team-snaps");
-      if (snapQuery) snapQuery.data = snaps;
     }
+    put([pressId, "tt-team-snaps", day, favKeys], state.snaps);
     state.extracts = {};
     state.extractCursor = 0;
+    dropBagKeys(state, DROP_AFTER_BOARD_DESKS);
     state.stage = 14;
-    return { done: false, bag: state };
+    return pause();
   }
 
-  const details = state.details ?? [];
-  const teamCards = state.teamCards ?? [];
-  const raw = gatherStories({
-    wire: state.wire ?? { games: [], postseasonLeagues: [] },
-    favs,
-    details,
-    enriched: state.enriched ?? teamCards,
-    teamCards,
-    news: state.news ?? [],
-    leagueNews: state.leagueNews ?? [],
-    athletic: state.athletic ?? [],
-  });
-  const extractUrls = urlsToExtract(raw);
-  const extracts = state.extracts ?? {};
-  const cursor = state.extractCursor ?? 0;
-  if (cursor < extractUrls.length) {
-    const slice = extractUrls.slice(cursor, cursor + 4);
-    for (const url of slice) {
-      try {
-        const article = await fetchRssArticle(url);
-        extracts[url] = article;
-        put([pressId, "rss-article-v3", url], article);
-      } catch {
-        /* the brief runs as filed */
-      }
+  if (state.stage === 14) {
+    if (!state.raw || !state.extractUrls) {
+      const teamCards = state.teamCards ?? [];
+      state.raw = gatherStories({
+        wire: state.wire ?? { games: [], postseasonLeagues: [] },
+        favs,
+        details: state.details ?? [],
+        enriched: teamCards,
+        teamCards,
+        news: state.news ?? [],
+        leagueNews: state.leagueNews ?? [],
+        athletic: state.athletic ?? [],
+      });
+      state.extractUrls = urlsToExtract(state.raw);
+      state.extracts ??= {};
+      state.extractCursor ??= 0;
+      dropBagKeys(state, ["details", "wire", "news", "teamCards", "leagueNews", "athletic"]);
     }
-    state.extracts = extracts;
-    state.extractCursor = cursor + slice.length;
-    return { done: false, bag: state };
+    const extractUrls = state.extractUrls ?? [];
+    const extracts = state.extracts ?? {};
+    const cursor = state.extractCursor ?? 0;
+    if (cursor < extractUrls.length) {
+      const slice = extractUrls.slice(cursor, cursor + 4);
+      for (const url of slice) {
+        try {
+          const article = await fetchRssArticle(url);
+          extracts[url] = article;
+          put([pressId, "rss-article-v3", url], article);
+        } catch {
+          /* the brief runs as filed */
+        }
+      }
+      state.extracts = extracts;
+      state.extractCursor = cursor + slice.length;
+      return pause();
+    }
+    if (extractUrls.length) put([pressId, "tt-extracts", day, extractUrls.join("|")], extracts);
+    const extras = essentialsFromDesks(null, state.missouri);
+    state.fresh = fileExtracts([...(state.raw ?? []), ...extras], extractUrls.length ? extracts : undefined);
+    dropBagKeys(state, ["raw", "extracts", "extractUrls", "extractCursor"]);
+    state.stage = 15;
+    return pause();
   }
-  if (extractUrls.length) put([pressId, "tt-extracts", day, extractUrls.join("|")], extracts);
+
   const extras = essentialsFromDesks(null, state.missouri);
   const filed = fileEditionStories({
-    fresh: fileExtracts([...raw, ...extras], extractUrls.length ? extracts : undefined),
+    fresh: state.fresh ?? extras,
     carried: opts.carried ?? [],
     readKeys: new Set(opts.readKeys ?? []),
     pressId,
@@ -583,7 +618,8 @@ export async function pressStep(
   }
   return {
     done: true,
-    issue: { version: ISSUE_VERSION, id: pressId, stories, queries: state.queries },
+    flush,
+    issue: { version: ISSUE_VERSION, id: pressId, stories, queries: flush },
   };
 }
 
@@ -597,9 +633,13 @@ export async function composePress(opts: {
   editor?: (request: EditorRequest) => Promise<unknown>;
 }): Promise<PrintedIssue> {
   let bag: PressBag | null = null;
+  const queries: PrintedQuery[] = [];
   for (;;) {
     const step = await pressStep(opts, bag);
-    if (step.done) return step.issue;
+    if (step.flush.length) queries.push(...step.flush);
+    if (step.done) {
+      return { version: ISSUE_VERSION, id: opts.pressId, stories: step.issue.stories, queries };
+    }
     bag = step.bag;
   }
 }

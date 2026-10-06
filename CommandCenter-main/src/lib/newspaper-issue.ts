@@ -40,6 +40,39 @@ function isQuery(value: unknown): value is PrintedQuery {
   return Array.isArray(row.key);
 }
 
+/**
+ * Ready issues store an array. While printing, the press may stash flushed
+ * desks at `queries.desks` so finalize never reloads them.
+ */
+export function asFiledQueries(raw: unknown): PrintedQuery[] {
+  if (Array.isArray(raw)) return raw.filter(isQuery);
+  if (raw && typeof raw === "object") {
+    const desks = (raw as { desks?: unknown }).desks;
+    if (Array.isArray(desks)) return desks.filter(isQuery);
+  }
+  return [];
+}
+
+function stripArticleHtml(value: unknown): void {
+  if (!value || typeof value !== "object") return;
+  if (Array.isArray(value)) {
+    for (const item of value) stripArticleHtml(item);
+    return;
+  }
+  const rec = value as Record<string, unknown>;
+  if ("contentHtml" in rec) delete rec.contentHtml;
+  for (const child of Object.values(rec)) stripArticleHtml(child);
+}
+
+/** Slim one desk without cloning the rest of the edition. */
+export function slimPrintedQuery(query: PrintedQuery): PrintedQuery {
+  const packed = JSON.stringify(query);
+  if (packed.length < 8_000) return query;
+  const cloned = JSON.parse(packed) as PrintedQuery;
+  stripArticleHtml(cloned.data);
+  return cloned;
+}
+
 /** Drop a stored row that is not this generation of the press file. */
 export function asPrintedIssue(
   id: string,
@@ -49,12 +82,15 @@ export function asPrintedIssue(
   extra?: { printedAt?: unknown; companions?: unknown },
 ): PrintedIssue | null {
   if (version !== ISSUE_VERSION) return null;
-  if (!Array.isArray(stories) || !Array.isArray(queries)) return null;
+  if (!Array.isArray(stories)) return null;
+  const filed =
+    Array.isArray(queries) || (queries && typeof queries === "object" && Array.isArray((queries as { desks?: unknown }).desks));
+  if (!filed) return null;
   const issue: PrintedIssue = {
     version: ISSUE_VERSION,
     id,
     stories,
-    queries: queries.filter(isQuery),
+    queries: asFiledQueries(queries),
   };
   if (typeof extra?.printedAt === "string" && extra.printedAt) issue.printedAt = extra.printedAt;
   if (extra?.companions && typeof extra.companions === "object") {
@@ -65,27 +101,16 @@ export function asPrintedIssue(
 
 /** Article HTML is what makes a press file huge. Copy is already on the story. */
 export function slimIssue(issue: PrintedIssue, maxChars = 4_000_000): PrintedIssue {
-  const cloned = JSON.parse(JSON.stringify(issue)) as PrintedIssue;
-  let packed = JSON.stringify(cloned);
-  if (packed.length <= maxChars) return cloned;
-  const walk = (value: unknown) => {
-    if (!value || typeof value !== "object") return;
-    if (Array.isArray(value)) {
-      for (const item of value) walk(item);
-      return;
-    }
-    const rec = value as Record<string, unknown>;
-    if ("contentHtml" in rec) delete rec.contentHtml;
-    for (const child of Object.values(rec)) walk(child);
-  };
-  walk(cloned.queries);
-  packed = JSON.stringify(cloned);
-  if (packed.length <= maxChars) return cloned;
-  cloned.queries = cloned.queries.filter((q) => {
-    const head = q.key[1];
-    return head !== "rss-article-v3";
-  });
-  return cloned;
+  const packed = JSON.stringify(issue);
+  if (packed.length <= maxChars) {
+    return { ...issue, stories: issue.stories, queries: issue.queries };
+  }
+  const queries = JSON.parse(JSON.stringify(issue.queries)) as PrintedQuery[];
+  stripArticleHtml(queries);
+  const next: PrintedIssue = { ...issue, queries };
+  if (JSON.stringify(next).length <= maxChars) return next;
+  next.queries = next.queries.filter((q) => q.key[1] !== "rss-article-v3");
+  return next;
 }
 
 /** Keep the issue being written plus any other cached issues still inside 24 hours. */

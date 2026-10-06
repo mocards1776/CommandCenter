@@ -34,6 +34,8 @@ import {
   type NhlWrapKind,
 } from "@/lib/nhl";
 import { fetchNhlShiftLines } from "@/lib/nhl-lines";
+import { toNhlMomentSnapshot } from "@/lib/game-moment-sources";
+import { GameMomentLayer } from "@/components/sports/GameMomentAlert";
 import { cn } from "@/lib/utils";
 
 function statusLabel(g: {
@@ -161,6 +163,7 @@ export default function NhlGamePage() {
         <p className="text-alert text-[13px]">Couldn’t load this game.</p>
       ) : (
         <>
+          <GameMomentLayer snapshot={toNhlMomentSnapshot(g)} />
           <header className="relative overflow-hidden rounded-xl border border-white/[0.1] bg-[#07101d] shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
             <div
               className={cn(

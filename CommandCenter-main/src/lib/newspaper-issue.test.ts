@@ -2,6 +2,7 @@
  * Run with: node --experimental-strip-types src/lib/newspaper-issue.test.ts
  */
 import {
+  asFiledQueries,
   asPrintedIssue,
   issueCacheKey,
   issueCacheOwner,
@@ -75,6 +76,14 @@ assert(issueCacheOwner("2026-10-05-evening") === null, "a bare press id is not a
 assert(
   issueCacheKey("user-a", "2026-10-05-evening") !== issueCacheKey("user-b", "2026-10-05-evening"),
   "two accounts do not share an edition file",
+);
+
+const desk = { key: ["2026-10-05-evening", "tt-weather-marshfield"], data: { temp: 62 } };
+assert(asFiledQueries([desk]).length === 1, "ready issues still read an array");
+assert(asFiledQueries({ checkpoint: true, desks: [desk] })[0]?.data, "printing leftover desks still file");
+assert(
+  asPrintedIssue("2026-10-05-evening", ISSUE_VERSION, [{ id: "a" }], { desks: [desk] })?.queries.length === 1,
+  "full-row reader accepts the desks sidecar",
 );
 
 console.log("newspaper-issue ok");

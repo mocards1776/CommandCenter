@@ -12,7 +12,9 @@ import AppleScoreCluster from "@/components/sports/AppleScoreCluster";
 import PlayoffSeriesLine from "@/components/sports/PlayoffSeriesLine";
 import HighlightReel from "@/components/sports/HighlightReel";
 import MlbLiveMatchupPanel from "@/components/sports/MlbLiveMatchupPanel";
+import { GameMomentLayer } from "@/components/sports/GameMomentAlert";
 import PlayerHeadshot from "@/components/sports/PlayerHeadshot";
+import { toMlbBoxMomentSnapshot } from "@/lib/game-moment-sources";
 import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
 import TeamMark from "@/components/sports/TeamMark";
 import { TeamFormChips, TeamStandingLine } from "@/components/sports/TeamFormChips";
@@ -233,6 +235,7 @@ export function MlbGameDetail({
   ].filter(Boolean);
   return (
     <div className="w-full max-w-full min-w-0 space-y-5 overflow-x-hidden">
+      <GameMomentLayer snapshot={toMlbBoxMomentSnapshot(g)} />
       <GameMatchupHeader game={g} />
 
       {/* Pregame: starters → preview text → lineups/leaders → ESPN extras + BBRef. */}
