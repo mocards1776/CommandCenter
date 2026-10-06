@@ -3113,7 +3113,7 @@ function ScoresDesk({
       {favFinals.length ? (
         <ul className="tt-fav-jumps">
           {favFinals.map((g) => {
-            const folio = favoriteRecapFolio(g, favoriteFolios) ?? "A";
+            const folio = favoriteRecapFolio(g, favoriteFolios, page.clubs) ?? "A";
             return (
               <li key={g.id}>
                 <button

@@ -2,6 +2,7 @@
  * Run with: node --experimental-strip-types src/lib/newspaper-box-wrap.test.ts
  * from CommandCenter-main/.
  */
+import { boxGameInvolvesClubs } from "./newspaper-box.ts";
 import { hasEspnRecap, lineHighlight, periodPhrase, wrapBriefSentences, writeBoxCardSentence, writeBoxWrap, writeBoxWrapFromBoxGame, type BoxWrapGame } from "./newspaper-box-wrap.ts";
 
 function assert(cond: unknown, msg: string) {
@@ -103,5 +104,33 @@ assert(/CeeDee Lamb and the Cowboys held off the Texans 34-30/.test(dalCard), da
 assert(!/Dallas Cowboys beat Houston Texans/.test(dalCard), "card fallback does not repeat full club names");
 assert(!/21\/31/.test(dalCard) && !/outscored/.test(dalCard), "card fallback is not a stat dump");
 assert(/P\. Mahomes and the Chiefs/.test(writeBoxCardSentence(nfl)), writeBoxCardSentence(nfl));
+
+const clubs = [
+  { key: "nfl-kc", shortName: "Chiefs" },
+  { key: "nfl-det", shortName: "Lions" },
+  { key: "nfl-dal", shortName: "Cowboys" },
+  { key: "cfb-mizzou", shortName: "Mizzou FB" },
+];
+assert(
+  boxGameInvolvesClubs(
+    { away: { short: "Chiefs", name: "Kansas City Chiefs", abbrev: "KC" }, home: { short: "Raiders", name: "Las Vegas Raiders", abbrev: "LV" } },
+    clubs,
+  ),
+  "Chiefs are a favorite",
+);
+assert(
+  !boxGameInvolvesClubs(
+    { away: { short: "Jets", name: "New York Jets", abbrev: "NYJ" }, home: { short: "Bears", name: "Chicago Bears", abbrev: "CHI" } },
+    clubs,
+  ),
+  "CHI does not match Chiefs",
+);
+assert(
+  boxGameInvolvesClubs(
+    { away: { short: "Missouri", name: "Missouri Tigers", abbrev: "MIZ" }, home: { short: "Vanderbilt", name: "Vanderbilt Commodores", abbrev: "VAN" } },
+    clubs,
+  ),
+  "Mizzou FB matches Missouri",
+);
 
 console.log("newspaper-box-wrap ok");

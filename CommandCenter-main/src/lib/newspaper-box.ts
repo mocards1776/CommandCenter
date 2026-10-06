@@ -1022,14 +1022,29 @@ export function boxGameInvolvesClubs(
   if (!needles.size) return false;
   return [game.away, game.home].some((side) => {
     const hay = [clubNeedle(side.short), clubNeedle(side.abbrev), clubNeedle(side.name)].filter(Boolean);
-    return [...needles].some((n) => n && hay.some((h) => h === n || h.includes(n) || n.includes(h)));
+    return [...needles].some((n) => {
+      if (!n) return false;
+      return hay.some((h) => {
+        if (h === n) return true;
+        // Short codes stay exact so CHI does not match Chiefs.
+        if (n.length <= 3 || h.length <= 3) return false;
+        return h.includes(n) || n.includes(h);
+      });
+    });
   });
 }
 
 /** Folio in Section A for this favorite-team final, when the story id carries the ESPN game. */
 export function favoriteRecapFolio(
-  game: { id: string; espnEventId?: string | null; gamePk?: number | null },
+  game: {
+    id: string;
+    espnEventId?: string | null;
+    gamePk?: number | null;
+    away: { short: string; name: string; abbrev: string };
+    home: { short: string; name: string; abbrev: string };
+  },
   folios: Record<string, string> | null | undefined,
+  clubs?: { key?: string; shortName?: string }[],
 ): string | null {
   if (!folios) return null;
   const keys = [game.id, game.espnEventId, game.gamePk != null ? String(game.gamePk) : null].filter(
@@ -1037,6 +1052,10 @@ export function favoriteRecapFolio(
   );
   for (const [id, folio] of Object.entries(folios)) {
     if (keys.some((k) => id === k || id.endsWith(k) || id.includes(k))) return folio;
+  }
+  const mine = (clubs ?? []).filter((c) => boxGameInvolvesClubs(game, [c]));
+  for (const [id, folio] of Object.entries(folios)) {
+    if (mine.some((c) => c.key && id.includes(c.key))) return folio;
   }
   return null;
 }
