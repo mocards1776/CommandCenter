@@ -1,14 +1,13 @@
 import { dropLastSentence } from "./newspaper-copy";
-import { PAGE_SOFT_CAP_H, PAGE_TARGET_H } from "./newspaper-page";
 
 const COPY_SEL = ".wsj-prose p, .wsj-dek, .wsj-brief-dek, .tt-under-story p";
 
 /**
- * Pack toward 1480. Grow only to 1650 to keep the last sentence of a
- * story. Anything past the cap is leftover for the next folio — never hidden.
+ * Soft pack target from the #326 folio lock. Not a clip: if copy still
+ * does not fit after dropping sentences, the sheet grows and nothing is hidden.
+ * Global 1480/1650 continuation is #329 — this file stays on main's fitter.
  */
-const SOFT_PAGE_H = PAGE_TARGET_H;
-const SOFT_CAP_H = PAGE_SOFT_CAP_H;
+const SOFT_PAGE_H = 1480;
 
 function isVerticalClip(overflow: string, overflowY: string): boolean {
   return overflow === "hidden" || overflowY === "hidden" || overflowY === "clip";
@@ -30,31 +29,27 @@ function clipBottom(el: HTMLElement): number {
   return limit;
 }
 
-function sheetZoom(el: HTMLElement): number {
-  const sheet = el.closest(".wsj-sheet");
-  return Number.parseFloat(getComputedStyle(sheet ?? el).zoom || "1") || 1;
-}
-
-function softLimitBottom(el: HTMLElement, height: number): number | null {
+function softTargetBottom(el: HTMLElement): number | null {
   const sheet = el.closest(".wsj-sheet");
   if (!sheet) return null;
-  return sheet.getBoundingClientRect().top + height * sheetZoom(el);
+  const zoom = Number.parseFloat(getComputedStyle(sheet).zoom || "1") || 1;
+  return sheet.getBoundingClientRect().top + SOFT_PAGE_H * zoom;
 }
 
-function overflowsLimit(el: HTMLElement, height: number): boolean {
+function overflowsClip(el: HTMLElement): boolean {
   const box = el.getBoundingClientRect();
   const hard = clipBottom(el);
   if (Number.isFinite(hard) && box.bottom > hard + 6) return true;
-  const soft = softLimitBottom(el, height);
+  const soft = softTargetBottom(el);
   if (soft != null && box.bottom > soft + 6) return true;
   if (!Number.isFinite(hard) && soft == null) return el.scrollHeight > el.clientHeight + 6;
   return false;
 }
 
 /**
- * Restore full copy, then drop trailing sentences past the 1650 cap.
- * Between 1480 and 1650 keep the last sentence so a story is not cut.
- * Leftover copy is never clipped out of view.
+ * Restore full copy, then drop the last sentence that does not fit the
+ * clipping column, the folio, or the soft 1480 pack target. Leftover
+ * space stays empty; leftover copy is never clipped out of view.
  */
 let fitting = false;
 export function fitSentencesIn(root: HTMLElement): void {
@@ -66,15 +61,12 @@ export function fitSentencesIn(root: HTMLElement): void {
       if (node.dataset.fitFull == null) node.dataset.fitFull = node.textContent ?? "";
       if (node.textContent !== node.dataset.fitFull) node.textContent = node.dataset.fitFull;
     }
-    let guard = 120;
+    let guard = 80;
     while (guard--) {
-      const overCap = [...nodes].reverse().find((node) => (node.textContent ?? "").trim() && overflowsLimit(node, SOFT_CAP_H));
-      const overTarget = [...nodes].reverse().find((node) => (node.textContent ?? "").trim() && overflowsLimit(node, SOFT_PAGE_H));
-      const hit = overCap ?? overTarget;
+      const hit = [...nodes].reverse().find((node) => (node.textContent ?? "").trim() && overflowsClip(node));
       if (!hit) break;
       const next = dropLastSentence(hit.textContent ?? "");
       if (next === hit.textContent) break;
-      if (!overCap && !next.trim()) break;
       hit.textContent = next;
     }
   } finally {

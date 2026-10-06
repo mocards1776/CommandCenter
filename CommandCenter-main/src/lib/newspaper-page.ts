@@ -1,16 +1,16 @@
 /**
- * Compose target. Sheets stay width-only at 1032; height is not locked in
- * CSS. Pack each folio to ~1480 and overflow to the next page. Grow only
- * to the soft cap so a story is not cut mid-graf.
+ * Locked Times broadsheet canvas. Global ~1480 compose / ~1650 continuation
+ * is #329. This file only adds recaps-desk score paging for #318.
  */
 export const PAGE_CANVAS = { width: 1040, height: 1480 } as const;
+/** Recaps-desk pack target. After #329 merges, use that PR's PAGE_SOFT_CAP_H. */
 export const PAGE_TARGET_H = 1480;
 export const PAGE_SOFT_CAP_H = 1650;
 
 /** Masthead + folio + sheet padding reserved on every page. */
 export const PAGE_CHROME_PX = 188;
 
-export const PAGE_BODY_PX = PAGE_TARGET_H - PAGE_CHROME_PX;
+export const PAGE_BODY_PX = PAGE_CANVAS.height - PAGE_CHROME_PX;
 
 const SCHEDULE_DAY_HEAD_PX = 28;
 const SCHEDULE_ROW_PX = 44;
@@ -64,7 +64,7 @@ export function planSchedulePages<T extends { day: string }>(games: T[]): T[][] 
 }
 
 export function pageExceedsCanvas(heightPx: number): boolean {
-  return heightPx > PAGE_SOFT_CAP_H;
+  return heightPx > PAGE_CANVAS.height;
 }
 
 /** Sport-front budget: lead + rail of `n` week games in two columns. */
@@ -124,40 +124,9 @@ export function planRecapsScorePages(
   return pages;
 }
 
-/** Sport-news inside: photo + headline + columned copy. */
-export function estimateNewsStoryHeight(card: {
-  body?: string | null;
-  photo?: string | null;
-  headline?: string | null;
-}): number {
-  const text = (card.body ?? "").length;
-  const photo = card.photo ? 260 : 0;
-  const cols = text > 2400 ? 3 : text > 700 ? 2 : 1;
-  const copyH = Math.ceil(Math.max(text, 200) / (cols * 90)) * 21;
-  return 88 + photo + Math.min(copyH, 1100);
-}
-
-/** Pair short news stories; a long feature takes its own folio. */
-export function packSportNewsPages<T extends { body?: string | null; photo?: string | null }>(cards: T[]): T[][] {
-  const pages: T[][] = [];
-  let i = 0;
-  while (i < cards.length) {
-    const a = cards[i]!;
-    const b = cards[i + 1];
-    if (b && PAGE_CHROME_PX + estimateNewsStoryHeight(a) + estimateNewsStoryHeight(b) <= PAGE_SOFT_CAP_H) {
-      pages.push([a, b]);
-      i += 2;
-    } else {
-      pages.push([a]);
-      i += 1;
-    }
-  }
-  return pages;
-}
-
 /**
- * Pixels from this element's top to the compose target (or soft cap).
- * Recap fill uses this so leftover matter never grows the sheet past 1650.
+ * Pixels from this element's top to the recaps-desk pack target (or soft cap).
+ * Recap fill uses this so leftover matter on a compact card does not grow the sheet.
  */
 export function folioFillBudget(el: HTMLElement, cap = false): number {
   const sheet = el.closest(".wsj-sheet") as HTMLElement | null;

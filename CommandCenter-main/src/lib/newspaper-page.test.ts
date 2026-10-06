@@ -15,11 +15,9 @@ import {
   estimateA1Height,
   estimateInsideRecapHeight,
   estimateMatchupScheduleHeight,
-  estimateNewsStoryHeight,
   estimateScheduleHeight,
   estimateScoreGridHeight,
   estimateSportFrontHeight,
-  packSportNewsPages,
   pageExceedsCanvas,
   pageHasBlankBand,
   planRecapsScorePages,
@@ -30,12 +28,11 @@ function assert(cond: unknown, msg: string) {
   if (!cond) throw new Error(`FAIL: ${msg}`);
 }
 
-assert(PAGE_CANVAS.width === 1040 && PAGE_CANVAS.height === 1480, "compose target is 1040×1480");
-assert(PAGE_TARGET_H === 1480 && PAGE_SOFT_CAP_H === 1650, "soft cap is 1650");
+assert(PAGE_CANVAS.width === 1040 && PAGE_CANVAS.height === 1480, "locked canvas is 1040×1480");
+assert(PAGE_TARGET_H === 1480 && PAGE_SOFT_CAP_H === 1650, "recaps-desk pack is 1480 / 1650");
 assert(PAGE_CANVAS.height / PAGE_CANVAS.width > 1.4 && PAGE_CANVAS.height / PAGE_CANVAS.width < 1.45, "page ratio ~1.42");
-assert(!pageExceedsCanvas(PAGE_TARGET_H), "the target itself fits");
-assert(!pageExceedsCanvas(PAGE_SOFT_CAP_H), "the soft cap itself fits");
-assert(pageExceedsCanvas(PAGE_SOFT_CAP_H + 1), "one pixel over the cap is a miss");
+assert(!pageExceedsCanvas(PAGE_CANVAS.height), "the canvas itself fits");
+assert(pageExceedsCanvas(PAGE_CANVAS.height + 1), "one pixel over is a miss");
 
 const week5 = [
   { day: "2026-10-08", id: "tnf" },
@@ -94,7 +91,7 @@ const composed = [
 assertPagesFitCanvas(composed);
 
 try {
-  assertPagesFitCanvas([{ folio: "NFL7", heightPx: PAGE_SOFT_CAP_H + 40 }]);
+  assertPagesFitCanvas([{ folio: "NFL7", heightPx: PAGE_CANVAS.height + 40 }]);
   throw new Error("FAIL: overflow guard should throw");
 } catch (err) {
   assert(err instanceof Error && /NFL7/.test(err.message), "overflow guard names the tall folio");
@@ -112,12 +109,6 @@ assert(
   cfbDesk.reduce((n, p) => n + p.count, 0) === 50,
   "split recaps pages keep every final",
 );
-
-const shortNews = { body: "A short league note. ".repeat(8), photo: null };
-const longNews = { body: "A feature that runs long. ".repeat(220), photo: "https://example.com/p.jpg" };
-assert(packSportNewsPages([shortNews, shortNews]).length === 1, "two short news items share a folio");
-assert(packSportNewsPages([longNews, longNews]).length === 2, "two long features each get a folio");
-assert(estimateNewsStoryHeight(longNews) > estimateNewsStoryHeight(shortNews), "a photo feature estimates taller");
 
 assert(!pageHasBlankBand({ contentBottomPx: PAGE_CANVAS.height - 40 }), "40px of foot slack is packed");
 assert(

@@ -4487,7 +4487,7 @@ function FolioSlot({
   );
 }
 
-/** Height is dynamic. The sentence fitter packs toward 1480 (soft cap 1650); leftover copy is never hidden. */
+/** Height is dynamic. Recap fill packs leftover on compact cards; global folio caps are #329. */
 function FittedSheet({ children }: { children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {

@@ -51,7 +51,7 @@ import { isPromoMissouriItem, type MissouriDesk, type MoItem } from "./newspaper
 import type { FavoritesDayPage } from "./newspaper-day-ahead.ts";
 import type { FavoritesBeezPage } from "./newspaper-beez.ts";
 import { packNationalPages, type NationalDesk, type NationalStory } from "./newspaper-national.ts";
-import { packSportNewsPages, planRecapsScorePages } from "./newspaper-page.ts";
+import { planRecapsScorePages } from "./newspaper-page.ts";
 import { printsFavoriteCoaches } from "./newspaper-favorite-coaches.ts";
 
 /** Front-page teaser budgets — rest jumps to a real continuation folio. */
@@ -1475,28 +1475,12 @@ function favoritePages(
   // A story page needs a story. Thin items ride along as briefs.
   const full = restPool.filter(hasStoryCopy);
   const thin = restPool.filter((c) => !hasStoryCopy(c));
+  let cursor = 0;
   let thinCursor = 0;
-  const newsPacks: GameWrapCard[][] = [];
-  let newsBuf: GameWrapCard[] = [];
-  const flushNews = () => {
-    if (!newsBuf.length) return;
-    newsPacks.push(...packSportNewsPages(newsBuf));
-    newsBuf = [];
-  };
-  for (const card of full) {
-    if (isGameWrap(card) || isRecapStory(card)) {
-      flushNews();
-      newsPacks.push([card]);
-    } else {
-      newsBuf.push(card);
-    }
-  }
-  flushNews();
-  for (let i = 0; i < newsPacks.length; i += 1) {
-    const slice = newsPacks[i]!;
-    const primary = slice[0]!;
-    const secondary = slice[1];
-    const last = i === newsPacks.length - 1;
+  while (cursor < full.length) {
+    const primary = full[cursor]!;
+    const secondary = full[cursor + 1];
+    const last = cursor + 2 >= full.length;
     const take = last ? thin.length - thinCursor : FRONT_BRIEFS;
     const briefs = thin.slice(thinCursor, thinCursor + take);
     thinCursor += briefs.length;
@@ -1515,6 +1499,7 @@ function favoritePages(
       secondary,
       briefs,
     });
+    cursor += 2;
     n += 1;
   }
 
@@ -1702,7 +1687,7 @@ function sportPages(
       more: slice.slice(2),
     });
   }
-  for (const slice of packSportNewsPages(newsFull)) {
+  for (let i = 0; i < newsFull.length; i += 2) {
     inside.push({
       kind: "sport-inside",
       folio: "",
@@ -1711,8 +1696,8 @@ function sportPages(
       sectionPage: 0,
       sectionCount: 0,
       path: id.path,
-      primary: slice[0]!,
-      secondary: slice[1],
+      primary: newsFull[i]!,
+      secondary: newsFull[i + 1],
     });
   }
 
