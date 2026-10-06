@@ -2768,8 +2768,8 @@ function SportSectionFront({
         </div>
       )}
       {mlbPost && lead ? (
-        <div className="tt-front-fill" data-tt-keep="">
-          <PlayoffDesk tree={playoffs} />
+        <div className="tt-front-fill">
+          <PlayoffDesk tree={playoffs} compact />
         </div>
       ) : null}
       {more.length ? (
@@ -4171,11 +4171,11 @@ function LeagueFormGrid({ clubs }: { clubs: LeagueClub[] }) {
   );
 }
 
-function PlayoffDesk({ tree }: { tree: MlbPlayoffTree | null }) {
+function PlayoffDesk({ tree, compact }: { tree: MlbPlayoffTree | null; compact?: boolean }) {
   if (!tree || !tree.rounds.some((r) => r.series.length)) {
     return <p className="wsj-empty">Postseason bracket isn’t published yet.</p>;
   }
-  return <PlayoffBracket tree={fillMlbPlayoffPlaceholders(tree)} />;
+  return <PlayoffBracket tree={fillMlbPlayoffPlaceholders(tree)} compact={compact} />;
 }
 
 function ClubFormGrid({
@@ -4802,7 +4802,14 @@ function FittedSheet({ children }: { children: ReactNode }) {
       }
     };
     run();
-    void document.fonts?.ready.then(run);
+    void document.fonts?.ready.then(async () => {
+      await Promise.all(
+        [...el.querySelectorAll("img")].map((img) =>
+          img.decode ? img.decode().catch(() => undefined) : Promise.resolve(),
+        ),
+      );
+      run();
+    });
     const ro = new ResizeObserver(run);
     ro.observe(el);
     for (const img of el.querySelectorAll("img")) img.addEventListener("load", run);

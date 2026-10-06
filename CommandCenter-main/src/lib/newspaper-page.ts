@@ -126,15 +126,25 @@ export function planNewsPages(storyCount: number, perPage = NEWS_STORIES_PER_PAG
   return pages;
 }
 
+const PRESEASON_MS = 18 * 24 * 60 * 60 * 1000;
+
 /** A club card with only a future slate — drop the empty form grid until it has numbers. */
-export function clubFormIsThin(club: {
-  stats: unknown[];
-  leaders: unknown[];
-  division: unknown[];
-}): boolean {
+export function clubFormIsThin(
+  club: {
+    stats: unknown[];
+    leaders: unknown[];
+    division: unknown[];
+    upcoming?: { startIso?: string | null }[];
+  },
+  now = Date.now(),
+): boolean {
   // A future slate with no current-season numbers — last year's table does
   // not earn a full form card (Missouri basketball before tip-off).
-  return club.stats.length === 0 && club.leaders.length === 0;
+  if (club.stats.length === 0 && club.leaders.length === 0) return true;
+  const iso = club.upcoming?.[0]?.startIso;
+  if (!iso) return false;
+  const start = Date.parse(iso);
+  return Number.isFinite(start) && start - now > PRESEASON_MS;
 }
 
 /** Stat-grid columns that fill the last row instead of leaving grey cells. */

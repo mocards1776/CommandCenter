@@ -73,7 +73,7 @@ function hideLastPackChild(root: HTMLElement): boolean {
 function hideOverflowBlocks(root: HTMLElement): void {
   const sheet = root.closest(".wsj-sheet") ?? root;
   let guard = 24;
-  while (guard-- && sheet.scrollHeight > HARD_PAGE_H + 8) {
+  while (guard-- && sheet.scrollHeight > HARD_PAGE_H) {
     if (!hideLastPackChild(root)) break;
   }
 }

@@ -8124,6 +8124,41 @@ li.counting .tt-count.card {
   max-height: 340px;
   object-fit: cover;
 }
+.newspaper-root .tt-section-front .tt-front-lead .wsj-story.lead img {
+  max-height: 280px;
+}
+.newspaper-root .tt-bracket.compact .tt-br-board {
+  min-height: 0;
+}
+.newspaper-root .tt-bracket.compact .tt-br-stack {
+  gap: 8px;
+}
+.newspaper-root .tt-bracket.compact .tt-br-club {
+  padding: 3px 6px;
+}
+.newspaper-root .tt-bracket.compact .tt-br-center {
+  padding: 8px 6px;
+  gap: 6px;
+}
+.newspaper-root .tt-bracket.compact .tt-br-trophy svg {
+  width: 36px;
+  height: 36px;
+}
+.newspaper-root .tt-bracket.compact .tt-br-head h3 {
+  font-size: 28px;
+}
+.newspaper-root .tt-bracket.compact .tt-br-head span:first-child {
+  font-size: 22px;
+}
+.newspaper-root .wsj-form-stats {
+  grid-template-columns: repeat(var(--stat-cols, 3), minmax(0, 1fr));
+  background: transparent;
+  gap: 6px;
+  border: 0;
+}
+.newspaper-root .wsj-form-stats > div {
+  border: 1px solid var(--w-hair);
+}
 .newspaper-root .wsj-sport-lead-grid.with-side { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr) !important; }
 .newspaper-root .wsj-sport-lead-grid.with-side > .wsj-story.lead {
   padding-right: var(--w-gutter);
