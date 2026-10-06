@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { FittedSheet } from "@/components/newspaper/FittedSheet";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { DeskSnap, ScoreCard, ScoreStrip, SlateLine } from "@/components/newspaper/BoxScore";
@@ -13,7 +14,6 @@ import {
   type StandGroup,
 } from "@/lib/newspaper-box";
 import { isPrintableStoryBody, proseParas, sanitizeArticleBody } from "@/lib/newspaper-copy";
-import { fitSentencesIn } from "@/lib/newspaper-fit";
 import { newspaperEspnGet } from "@/lib/newspaper-espn";
 import { editionDateline, editionIssue, romanNumeral } from "@/lib/newspaper";
 import {
@@ -162,11 +162,10 @@ function LockedSheet({ folio, children }: { folio: string; children: ReactNode }
     const el = ref.current;
     if (!el) return;
     const check = () => {
-      fitSentencesIn(el);
       setOverflow(el.scrollHeight > PAGE_CANVAS.height + 1);
       const box = el.getBoundingClientRect();
-      const folio = el.querySelector(".wsj-folio");
-      const foot = folio ? folio.getBoundingClientRect().top - box.top : PAGE_CANVAS.height;
+      const mark = el.querySelector(".wsj-folio");
+      const foot = mark ? mark.getBoundingClientRect().top - box.top : PAGE_CANVAS.height;
       const ink = [...el.querySelectorAll(".tt-section-front, .tt-slate-desk, .tt-front-side")]
         .flatMap((node) => [...node.children])
         .filter((node) => node.getBoundingClientRect().height > 2);
@@ -186,13 +185,14 @@ function LockedSheet({ folio, children }: { folio: string; children: ReactNode }
         }),
       );
     };
-    check();
-    const ro = new ResizeObserver(check);
+    const raf = requestAnimationFrame(check);
+    const ro = new ResizeObserver(() => requestAnimationFrame(check));
     ro.observe(el);
     for (const node of el.querySelectorAll("img")) {
       node.addEventListener("load", check);
     }
     return () => {
+      cancelAnimationFrame(raf);
       ro.disconnect();
       for (const node of el.querySelectorAll("img")) {
         node.removeEventListener("load", check);
@@ -200,15 +200,10 @@ function LockedSheet({ folio, children }: { folio: string; children: ReactNode }
     };
   }, [children]);
   return (
-    <div
-      ref={ref}
-      className="wsj-sheet"
-      data-folio={folio}
-      data-overflow={overflow ? "1" : "0"}
-      data-sparse={sparse ? "1" : "0"}
-      data-canvas={`${PAGE_CANVAS.width}x${PAGE_CANVAS.height}`}
-    >
-      {children}
+    <div ref={ref} data-canvas={`${PAGE_CANVAS.width}x${PAGE_CANVAS.height}`}>
+      <FittedSheet folio={folio} overflow={overflow} sparse={sparse}>
+        {children}
+      </FittedSheet>
     </div>
   );
 }
