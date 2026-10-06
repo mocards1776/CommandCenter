@@ -12,12 +12,14 @@ import {
   heatNote,
   heatReasonChips,
   liveDrama,
+  ONE_SCORE_HEAT_LINE,
   type AlertKind,
   type PhaseSnapshot,
   type PushFavorite,
   type PushGame,
   type PushNote,
 } from "./live-drama.ts";
+import { clockWindow, heatCrossHot, isLateAndClose } from "./late-close.ts";
 
 /**
  * Sports PWA web push.
@@ -275,10 +277,20 @@ async function sweep(db: SupabaseClient, dryRun: boolean): Promise<Response> {
 
   for (const game of games) {
     const key = gameKey(game);
+    const before = prev.get(key) ?? null;
     const input = dramaInput(game);
     const drama = input ? liveDrama(input) : { score: 0, hot: false, why: "", reasons: [] };
-    const next: PhaseSnapshot = { phase: gamePhase(game), hot: drama.hot && game.live && !game.final };
-    const before = prev.get(key) ?? null;
+    const scoresKnown = game.away.score != null && game.home.score != null;
+    const next: PhaseSnapshot = {
+      phase: gamePhase(game),
+      hot: heatCrossHot({
+        overLine: drama.score >= ONE_SCORE_HEAT_LINE && game.live && !game.final,
+        lateAndClose: isLateAndClose(game.sport, game),
+        window: clockWindow(game.sport, game),
+        prevHot: before?.hot ?? false,
+        scoresKnown,
+      }),
+    };
     const kinds = crossingAlerts(before, next);
     if (!before) baselined += 1;
 
@@ -314,8 +326,8 @@ async function sweep(db: SupabaseClient, dryRun: boolean): Promise<Response> {
         }
       }
       // Favorite alerts still retry: a failed push releases the claim so the
-      // next sweep sees the same cross. Heat claims stay — the photo already
-      // went, and releasing would send it again.
+      // next sweep sees the same cross. A failed heat photo does not — the
+      // claim already sent it. A later drop of hot clears that claim below.
       if (ok === 0 && kind !== "heat") {
         await release(db, key, kind);
         persist = false;
@@ -323,6 +335,12 @@ async function sweep(db: SupabaseClient, dryRun: boolean): Promise<Response> {
     }
 
     if (!persist) continue;
+    // A real drop (no longer close, or under the line) may come back.
+    // Clearing the claim lets that next rising edge ping. A missing score
+    // keeps hot, so a blip does not clear it.
+    if (before?.hot && !next.hot) {
+      await release(db, key, "heat");
+    }
     const { error: upErr } = await db.from("sports_push_game_state").upsert(
       {
         game_key: key,

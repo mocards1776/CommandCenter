@@ -1,3 +1,5 @@
+import { latePeriodChip } from "./late-close.ts";
+
 /**
  * Live-drama heat line for sports push.
  *
@@ -20,6 +22,9 @@
  *
  * A 0–0 opening is the start of the game, not a cross. Scoreless games stay
  * under the line until they are late or in extras/overtime.
+ *
+ * `hot` here is only the heat line. Heat alerts also require the close-and-late
+ * gate in late-close.ts. That gate does not change this score.
  */
 
 export const ONE_SCORE_HEAT_LINE = 68;
@@ -84,8 +89,9 @@ export function gamePhase(game: { live: boolean; final: boolean }): GamePhase {
  * Alerts for one poll step.
  * The first time a game is seen, nothing fires — that sample is the baseline,
  * so a deploy does not push every game that is already hot or already final.
- * Heat fires once on the rising edge. A later dip and re-cross is suppressed
- * by the sent-log (one heat push per game).
+ * Heat fires on the rising edge of `hot`. The sweep clears the heat claim
+ * when `hot` falls, so a game that drops out and comes back can ping again.
+ * Favorite start and final follow the phase change and ignore `hot`.
  */
 export function crossingAlerts(prev: PhaseSnapshot | null, next: PhaseSnapshot): AlertKind[] {
   if (!prev) return [];
@@ -104,6 +110,7 @@ export function liveDrama(input: LiveDramaInput): LiveDrama {
   const score = Math.max(0, scored.score);
   const reasons = unique(scored.reasons);
   const hot = score >= ONE_SCORE_HEAT_LINE;
+  // Heat-line only. The alert cross applies isLateAndClose before storing hot.
   return { score, hot, why: hot ? dramaWhy(reasons) : "", reasons };
 }
 
@@ -411,6 +418,10 @@ export type PushGame = {
   broadcasts?: string[];
   /** Soccer league label, e.g. Premier League. */
   league?: string | null;
+  /** Scoreboard last-play home win chance, 0–100. Heat gate only. */
+  homeWinPct?: number | null;
+  /** Scoreboard last-play away win chance, 0–100. Heat gate only. */
+  awayWinPct?: number | null;
   away: PushSide;
   home: PushSide;
 };
@@ -558,12 +569,24 @@ export function heatReasonChips(game: PushGame, drama: LiveDrama): string[] {
     const why = cleanChip(drama.why);
     if (why) dramaChips.push(why);
   }
+  const withPeriod = applyLatePeriodChip(dramaChips, game);
   const clock = clockLabel(game);
-  const visible = dramaChips.filter((chip) => !clockCovers(chip, clock));
-  const base = visible.length ? visible : dramaChips;
+  const visible = withPeriod.filter((chip) => !clockCovers(chip, clock));
+  const base = visible.length ? visible : withPeriod;
   const extras = publicCardChips(game).filter((chip) => !base.includes(chip));
   const room = Math.max(1, HEAT_CHIP_CAP - extras.length);
   return [...base.slice(0, room), ...extras].slice(0, HEAT_CHIP_CAP);
+}
+
+/** Margin chip, then the period that made the game late. "Late & close" yields to "3rd period". */
+function applyLatePeriodChip(chips: string[], game: PushGame): string[] {
+  const period = latePeriodChip(game.sport, game);
+  if (!period) return chips;
+  const next =
+    period === "3rd period" ? chips.filter((chip) => chip !== "Late & close") : chips.slice();
+  if (period === "Late innings" && next.includes("Extras")) return next;
+  if (!next.includes(period)) next.push(period);
+  return next;
 }
 
 function clockLabel(game: PushGame): string {

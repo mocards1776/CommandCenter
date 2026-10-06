@@ -51,6 +51,9 @@ type RawEvent = {
     situation?: {
       isRedZone?: boolean;
       downDistanceText?: string;
+      lastPlay?: {
+        probability?: { homeWinPercentage?: number; awayWinPercentage?: number };
+      };
     };
   }[];
 };
@@ -102,6 +105,14 @@ function broadcastNames(rows: RawBroadcast[] | undefined): string[] {
   return out.slice(0, 4);
 }
 
+/** Last-play win chance as 0–100. ESPN sends a rate or a percent. */
+function boardWinPct(raw: number | undefined): number | null {
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return null;
+  const pct = raw <= 1 ? raw * 100 : raw;
+  if (pct < 0 || pct > 100) return null;
+  return Math.round(pct * 10) / 10;
+}
+
 function side(raw: RawCompetitor | undefined): PushSide | null {
   const team = raw?.team;
   const id = team?.id != null ? String(team.id) : "";
@@ -141,6 +152,8 @@ export function mapEspnEvent(sport: string, event: RawEvent, league?: string | n
     when: chicagoTime(event.date || comp.date),
     broadcasts: broadcastNames([...(comp.geoBroadcasts ?? []), ...(comp.broadcasts ?? [])]),
     league: league ?? null,
+    homeWinPct: boardWinPct(comp.situation?.lastPlay?.probability?.homeWinPercentage),
+    awayWinPct: boardWinPct(comp.situation?.lastPlay?.probability?.awayWinPercentage),
     away,
     home,
   };
