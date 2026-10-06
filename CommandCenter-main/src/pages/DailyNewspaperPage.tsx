@@ -5133,6 +5133,7 @@ function NewspaperDesk() {
   const [pageIndex, setPageIndex] = useState(0);
   const pageIndexRef = useRef(0);
   pageIndexRef.current = pageIndex;
+  const restoringRef = useRef(false);
 
   useLayoutEffect(() => {
     const el = pagerRef.current;
@@ -6252,7 +6253,7 @@ function NewspaperDesk() {
     let timer = 0;
     const settle = () => {
       window.clearTimeout(timer);
-      if (document.documentElement.classList.contains("tt-reader-open")) return;
+      if (restoringRef.current || document.documentElement.classList.contains("tt-reader-open")) return;
       const idx = Math.round(el.scrollLeft / (el.clientWidth || 1));
       const next = Math.max(0, Math.min(pages.length - 1, idx));
       startTransition(() => setPageIndex(next));
@@ -6275,26 +6276,37 @@ function NewspaperDesk() {
   useEffect(() => {
     const root = document.documentElement;
     let open = root.classList.contains("tt-reader-open");
-    const saved = { idx: pageIndexRef.current };
+    const saved = { idx: pageIndexRef.current, folio: pages[pageIndexRef.current]?.folio ?? "" };
     const obs = new MutationObserver(() => {
       const now = root.classList.contains("tt-reader-open");
-      if (now && !open) saved.idx = pageIndexRef.current;
+      if (now && !open) {
+        saved.idx = pageIndexRef.current;
+        saved.folio = pages[pageIndexRef.current]?.folio ?? saved.folio;
+      }
       if (!now && open) {
-        const idx = saved.idx;
+        restoringRef.current = true;
         const restore = () => {
           const el = pagerRef.current;
           if (!el) return;
+          const byFolio = saved.folio ? pages.findIndex((p) => p.folio === saved.folio) : -1;
+          const idx = byFolio >= 0 ? byFolio : saved.idx;
           el.scrollTo({ left: idx * el.clientWidth, behavior: "instant" });
           setPageIndex(idx);
           markFolio(idx);
         };
+        restore();
         requestAnimationFrame(() => requestAnimationFrame(restore));
+        window.setTimeout(restore, 60);
+        window.setTimeout(() => {
+          restore();
+          restoringRef.current = false;
+        }, 320);
       }
       open = now;
     });
     obs.observe(root, { attributes: true, attributeFilter: ["class"] });
     return () => obs.disconnect();
-  }, [markFolio]);
+  }, [markFolio, pages]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
