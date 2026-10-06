@@ -1,9 +1,16 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { PHONE_CARD_SIZE } from "@/lib/newspaper-phone-cards";
 
+function outerHeight(node: HTMLElement): number {
+  const s = getComputedStyle(node);
+  return node.offsetHeight + parseFloat(s.marginTop) + parseFloat(s.marginBottom);
+}
+
 /**
  * Drop lower-priority pieces until the phone card's content fits 430×932.
  * Measure an unconstrained inner body — the clipped article is always 932 tall.
+ * Sibling footers (credits) stay outside the body and reserve their own height
+ * so they are never clipped mid-line.
  * Never shrink type — the caller trims items. Overflow is still clipped in CSS.
  */
 export function usePhoneCardFit<T>(initial: T, trim: (current: T) => T | null, resetKey: string) {
@@ -24,7 +31,14 @@ export function usePhoneCardFit<T>(initial: T, trim: (current: T) => T | null, r
       card instanceof HTMLElement
         ? parseFloat(getComputedStyle(card).paddingTop) + parseFloat(getComputedStyle(card).paddingBottom)
         : 0;
-    const budget = (card instanceof HTMLElement ? card.clientHeight : PHONE_CARD_SIZE.height) - pad;
+    let reserve = 0;
+    if (card instanceof HTMLElement) {
+      for (const child of card.children) {
+        if (child === el || !(child instanceof HTMLElement)) continue;
+        reserve += outerHeight(child);
+      }
+    }
+    const budget = (card instanceof HTMLElement ? card.clientHeight : PHONE_CARD_SIZE.height) - pad - reserve;
     const fits = el.offsetHeight <= budget + 0.5;
     if (fits) {
       card?.setAttribute("data-phone-fit", "1");

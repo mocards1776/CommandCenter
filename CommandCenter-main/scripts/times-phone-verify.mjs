@@ -2,6 +2,10 @@
  * Local Playwright proof of the four Times Telegram phone cards.
  * Writes PNGs to /opt/cursor/artifacts (or --out) and prints pixel sizes.
  *
+ * Real path (what the production runner shoots): no ?sample=.
+ * Day Ahead is skipped when times_day_schedule has no row — same as times-shots.mjs.
+ * `?sample=1` is a test-harness only extra shot (day-harness.png).
+ *
  *   VITE_DEV_BYPASS_AUTH=1 node scripts/times-phone-verify.mjs
  *   --base http://127.0.0.1:5173  if Vite is already up
  */
@@ -41,7 +45,7 @@ async function waitFor(url, ms = 90_000) {
   throw new Error(`Vite did not start: ${url}`);
 }
 
-async function shoot(page, card, sample) {
+async function openCard(page, card, sample) {
   const q = new URLSearchParams({ card, issue: ISSUE, solo: "1" });
   if (sample) q.set("sample", sample);
   await page.setViewportSize(PHONE);
@@ -58,10 +62,46 @@ async function shoot(page, card, sample) {
     card,
     { timeout: 45_000 },
   );
-  const ready = await root.getAttribute("data-ready");
-  if (ready !== "1") throw new Error(`${card} not ready: ${ready}`);
+  return root.getAttribute("data-ready");
+}
+
+async function facts(page, card) {
+  return page.evaluate((kind) => {
+    const cardEl = document.querySelector(".tt-phone-card");
+    const credit = document.querySelector(".tt-phone-credit");
+    const rain = document.body.innerText.includes("Chance of rain");
+    const art = document.querySelector(".tt-phone-front-art");
+    const creditBox = credit?.getBoundingClientRect();
+    return {
+      kind,
+      ready: document.querySelector(`[data-phone-card="${kind}"]`)?.getAttribute("data-ready"),
+      stories: cardEl?.getAttribute("data-front-stories"),
+      photo: cardEl?.getAttribute("data-front-photo"),
+      artNatural: art instanceof HTMLImageElement ? art.naturalWidth : null,
+      artCss: art instanceof HTMLElement ? Math.round(art.getBoundingClientRect().width) : null,
+      wxDays: cardEl?.getAttribute("data-wx-days"),
+      wxRain: cardEl?.getAttribute("data-wx-rain"),
+      rainLegend: rain,
+      creditText: credit?.textContent?.trim() ?? null,
+      creditBottom: creditBox ? Math.round(creditBox.bottom) : null,
+      creditTop: creditBox ? Math.round(creditBox.top) : null,
+      gotd: cardEl?.getAttribute("data-gotd"),
+      gotdPreseason: cardEl?.getAttribute("data-gotd-preseason"),
+      kept: cardEl?.getAttribute("data-watch-kept"),
+      source: cardEl?.getAttribute("data-watch-source"),
+      dayTitle: document.body.innerText.includes("Lunch with Dad"),
+    };
+  }, card);
+}
+
+async function shoot(page, card, sample) {
+  const ready = await openCard(page, card, sample);
+  if (ready !== "1") return { ready, png: null, kept: null, source: null, facts: await facts(page, card) };
   await page.locator(".tt-phone-card").waitFor({ state: "visible", timeout: 15_000 });
   await page.evaluate(() => document.fonts?.ready);
+  await page
+    .waitForFunction(() => [...document.querySelectorAll("img")].every((img) => img.complete), { timeout: 20_000 })
+    .catch(() => {});
   await page.waitForTimeout(800);
   await page
     .waitForFunction(() => document.querySelector(".tt-phone-card")?.getAttribute("data-phone-fit") === "1", {
@@ -70,11 +110,12 @@ async function shoot(page, card, sample) {
     .catch(() => {});
   const kept = await page.locator(".tt-phone-card").getAttribute("data-watch-kept");
   const source = await page.locator(".tt-phone-card").getAttribute("data-watch-source");
+  const info = await facts(page, card);
   const png = await page.screenshot({
     clip: { x: 0, y: 0, width: PHONE.width, height: PHONE.height },
     animations: "disabled",
   });
-  return { png, kept: kept ? Number(kept) : null, source: source ? Number(source) : null };
+  return { ready, png, kept: kept ? Number(kept) : null, source: source ? Number(source) : null, facts: info };
 }
 
 async function main() {
@@ -105,31 +146,70 @@ async function main() {
     });
     for (const card of CARDS) {
       const page = await context.newPage();
-      const sample = card === "day" ? "1" : "";
-      let shot;
-      try {
-        shot = await shoot(page, card, sample);
-      } catch (err) {
-        if (card !== "front" && card !== "day") throw err;
-        console.log(`${card} live/sample miss (${err.message}); retrying with fixtures`);
-        shot = await shoot(page, card, "1");
+      const shot = await shoot(page, card, "");
+      if (card === "day") {
+        if (shot.ready === "1") {
+          throw new Error("Day Ahead rendered on the real path — fixture leaked (times_day_schedule should be empty)");
+        }
+        if (shot.facts.dayTitle) throw new Error("Lunch with Dad appeared without ?sample=1");
+        console.log(`day: skipped (ready=${shot.ready}) — no schedule row; fixture not used`);
+        report.push({ card, skipped: true, ready: shot.ready, dest: null });
+        await page.close();
+        continue;
       }
-      const { png, kept, source } = shot;
-      const size = pngSize(png);
+      if (shot.ready !== "1" || !shot.png) throw new Error(`${card} not ready: ${shot.ready}`);
+      const size = pngSize(shot.png);
       const dest = path.join(outDir, `${ISSUE}-${card}.png`);
-      await writeFile(dest, png);
-      const line = `${card}: ${size.width}x${size.height} → ${dest}${
-        kept != null ? ` (kept ${kept} of ${source} games)` : ""
-      }`;
-      console.log(line);
-      report.push({ card, ...size, dest, kept, source });
+      await writeFile(dest, shot.png);
+      const extra =
+        card === "watch"
+          ? ` (kept ${shot.kept} of ${shot.source}; GOTD ${shot.facts.gotd}${shot.facts.gotdPreseason === "1" ? " PRESEASON" : ""})`
+          : card === "front"
+            ? ` (stories=${shot.facts.stories} photo=${shot.facts.photo} art ${shot.facts.artCss}css/${shot.facts.artNatural}nat)`
+            : card === "weather"
+              ? ` (days=${shot.facts.wxDays} rainLegend=${shot.facts.rainLegend} creditBottom=${shot.facts.creditBottom})`
+              : "";
+      console.log(`${card}: ${size.width}x${size.height} → ${dest}${extra}`);
+      report.push({ card, ...size, dest, kept: shot.kept, source: shot.source, ...shot.facts });
       if (size.width !== PHONE.width * PHONE_SCALE || size.height !== PHONE.height * PHONE_SCALE) {
         throw new Error(`${card} is ${size.width}x${size.height}, expected ${PHONE.width * PHONE_SCALE}x${PHONE.height * PHONE_SCALE}`);
       }
+      if (card === "front") {
+        if (Number(shot.facts.stories) < 4) throw new Error(`front only showed ${shot.facts.stories} stories`);
+        if (shot.facts.photo !== "1") throw new Error("front is missing the lead photo");
+        if (shot.facts.artCss && shot.facts.artNatural && shot.facts.artCss > shot.facts.artNatural + 1) {
+          throw new Error(`lead photo CSS-upscaled ${shot.facts.artCss} > native ${shot.facts.artNatural}`);
+        }
+      }
+      if (card === "weather") {
+        if (shot.facts.creditBottom == null || shot.facts.creditBottom > PHONE.height + 1) {
+          throw new Error(`weather credit clipped (bottom ${shot.facts.creditBottom})`);
+        }
+        if (shot.facts.wxRain === "0" && shot.facts.rainLegend) {
+          throw new Error("Chance of rain legend shown with no rain series");
+        }
+        const headerDays = Number(shot.facts.wxDays);
+        if (!(headerDays >= 1)) throw new Error("weather forecast has no days");
+      }
+      if (card === "watch" && shot.facts.gotdPreseason === "1") {
+        throw new Error(`Game of the Day is a preseason game (${shot.facts.gotd})`);
+      }
       await page.close();
     }
+    const harnessPage = await context.newPage();
+    const harness = await shoot(harnessPage, "day", "1");
+    if (harness.ready !== "1" || !harness.png) throw new Error(`day harness not ready: ${harness.ready}`);
+    if (!harness.facts.dayTitle) throw new Error("day harness missing Lunch with Dad");
+    const harnessSize = pngSize(harness.png);
+    const harnessDest = path.join(outDir, `${ISSUE}-day-harness.png`);
+    await writeFile(harnessDest, harness.png);
+    console.log(`day-harness: ${harnessSize.width}x${harnessSize.height} → ${harnessDest} (TEST HARNESS ONLY)`);
+    report.push({ card: "day-harness", ...harnessSize, dest: harnessDest, harnessOnly: true });
+    await harnessPage.close();
+
     const page = await context.newPage();
     const heavy = await shoot(page, "watch", "heavy");
+    if (!heavy.png) throw new Error("heavy watch not ready");
     const size = pngSize(heavy.png);
     const dest = path.join(outDir, `${ISSUE}-watch-heavy.png`);
     await writeFile(dest, heavy.png);
@@ -140,7 +220,7 @@ async function main() {
     if (!(heavy.source > 8) || !(heavy.kept < heavy.source)) {
       throw new Error(`heavy slate did not drop games (kept ${heavy.kept} of ${heavy.source})`);
     }
-    report.push({ card: "watch-heavy", ...size, dest, kept: heavy.kept, source: heavy.source });
+    report.push({ card: "watch-heavy", ...size, dest, kept: heavy.kept, source: heavy.source, ...heavy.facts });
     await context.close();
   } finally {
     await browser.close();

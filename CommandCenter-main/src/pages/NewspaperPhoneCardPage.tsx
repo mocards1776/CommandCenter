@@ -41,14 +41,13 @@ export default function NewspaperPhoneCardPage() {
     queryKey: ["tt-phone-front", issue, useSample],
     queryFn: async () => {
       if (useSample) return sampleFrontStories();
-      if (!issue) return sampleFrontStories();
+      if (!issue) return [];
       try {
         const stories = await readRemoteStories(issue);
-        if (!stories) return sampleFrontStories();
-        const front = phoneFrontStories(stories, issue);
-        return front.length ? front : sampleFrontStories();
+        if (!stories) return [];
+        return phoneFrontStories(stories, issue);
       } catch {
-        return sampleFrontStories();
+        return [];
       }
     },
     enabled: card === "front",

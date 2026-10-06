@@ -3,11 +3,12 @@
  * These routes are only opened by the screenshot runner — the printed paper
  * does not import this file.
  */
+import { truncateAtSentence, tidy } from "./newspaper-copy.ts";
 import { PRESS_HOURS } from "./newspaper.ts";
 import { scheduleDateFor, type DayEvent, type DaySchedule } from "./newspaper-day-ahead.ts";
-import { buildEdition, type FavoritesFrontPage } from "./newspaper-sections.ts";
+import { buildEdition, storyBodyForJump, type FavoritesFrontPage, type FavoritesInsidePage } from "./newspaper-sections.ts";
 import type { GameWrapCard } from "./newspaper-sports.ts";
-import { sampleWatchSlate, type WatchGame } from "./newspaper-watch-page.ts";
+import { isWatchPreseasonLowTier, sampleWatchSlate, type WatchGame } from "./newspaper-watch-page.ts";
 
 /** Portrait iPhone CSS size. times-shots.mjs clips every alert image to this at 3x. */
 export const PHONE_CARD_SIZE = { width: 430, height: 932 } as const;
@@ -23,13 +24,47 @@ export type PhoneFrontStory = {
   teamName: string | null;
   dek: string | null;
   photo: string | null;
+  photoWidth: number | null;
 };
 
-/** Favorites first, then heat (national / stakes). Used only by the phone watch card. */
+/** 1–2 sentences for the lead; a shorter graf for the rest of the column. */
+export function phoneStoryDek(card: GameWrapCard, max = 220): string | null {
+  const fromDek = tidy(card.dek ?? "");
+  if (fromDek.length >= 24) return truncateAtSentence(fromDek, max) || null;
+  const fromBody = tidy(storyBodyForJump(card));
+  if (fromBody.length >= 24) return truncateAtSentence(fromBody, max) || null;
+  return fromDek || null;
+}
+
+export function isPhonePostseason(game: WatchGame): boolean {
+  if (game.preseason || isWatchPreseasonLowTier(game)) return false;
+  if (game.series) return true;
+  const blob = `${game.printReason ?? ""} ${(game.reasons ?? []).join(" ")} ${game.competition ?? ""}`;
+  return /playoff|alcs|nlcs|alds|nlds|world series|division series|championship series|pennant|wild card/i.test(blob);
+}
+
+/**
+ * Live/upcoming postseason and favorite clubs first. Preseason and finished
+ * exhibitions last — they are the first games the phone card drops.
+ */
+export function phoneWatchPriority(game: WatchGame): number {
+  const pre = Boolean(game.preseason) || isWatchPreseasonLowTier(game);
+  if (pre) return game.final ? 90 : 80;
+  const post = isPhonePostseason(game);
+  const active = game.live || !game.final;
+  if (post && active) return 0;
+  if (game.favorite && active) return 1;
+  if (post) return 2;
+  if (game.favorite) return 3;
+  if (game.live) return 4;
+  if (!game.final) return 5;
+  return 6;
+}
+
 export function rankPhoneWatchGames(games: WatchGame[]): WatchGame[] {
   return [...games].sort((a, b) => {
-    const fav = Number(Boolean(b.favorite)) - Number(Boolean(a.favorite));
-    if (fav) return fav;
+    const tier = phoneWatchPriority(a) - phoneWatchPriority(b);
+    if (tier) return tier;
     return b.heat - a.heat || String(a.when ?? "").localeCompare(String(b.when ?? "")) || a.id.localeCompare(b.id);
   });
 }
@@ -68,31 +103,55 @@ export type PhoneWeatherFit = {
 export function trimPhoneWeatherFit(fit: PhoneWeatherFit): PhoneWeatherFit | null {
   if (fit.showAlmanac) return { ...fit, showAlmanac: false };
   if (fit.showToday) return { ...fit, showToday: false };
-  if (fit.days > 3) return { ...fit, days: fit.days - 1 };
+  if (fit.days > 5) return { ...fit, days: fit.days - 1 };
   if (fit.showHourly) return { ...fit, showHourly: false };
   if (fit.days > 1) return { ...fit, days: fit.days - 1 };
   return null;
 }
 
-function slimFront(card: GameWrapCard | null | undefined): PhoneFrontStory | null {
+function slimFront(card: GameWrapCard | null | undefined, dekMax: number): PhoneFrontStory | null {
   const headline = String(card?.headline ?? "").replace(/\s+/g, " ").trim();
   if (!card || !headline) return null;
+  const dek = phoneStoryDek(card, dekMax);
+  const photo = typeof card.photo === "string" && card.photo ? card.photo : null;
+  const photoWidth = typeof card.photoWidth === "number" && card.photoWidth > 0 ? card.photoWidth : null;
   return {
     id: card.id,
     headline,
     teamName: card.teamName ?? null,
-    dek: card.dek ? String(card.dek).replace(/\s+/g, " ").trim() : null,
-    photo: card.photo ?? null,
+    dek,
+    photo,
+    photoWidth,
   };
 }
 
-/** A1 lead + two more, same order the paper sets. Phone card only. */
+/** A1 lead, second, third, briefs, then more Section A — phone card only. */
 export function phoneFrontStories(stories: unknown[], edition: string): PhoneFrontStory[] {
   try {
     const paper = buildEdition({ stories: stories as GameWrapCard[], clubs: [], edition });
+    const seen = new Set<string>();
+    const out: PhoneFrontStory[] = [];
+    const take = (card: GameWrapCard | null | undefined, dekMax: number) => {
+      const row = slimFront(card, dekMax);
+      if (!row || seen.has(row.id)) return;
+      seen.add(row.id);
+      out.push(row);
+    };
     const front = paper.pages.find((p) => p.kind === "favorites-front") as FavoritesFrontPage | undefined;
-    if (!front) return [];
-    return [front.lead, front.second, front.third].map(slimFront).filter((s): s is PhoneFrontStory => Boolean(s));
+    if (front) {
+      take(front.lead, 240);
+      take(front.second, 160);
+      take(front.third, 160);
+      for (const brief of front.briefs ?? []) take(brief, 140);
+    }
+    for (const page of paper.pages) {
+      if (page.section !== "A" || page.kind !== "favorites-inside") continue;
+      const inside = page as FavoritesInsidePage;
+      take(inside.primary, 140);
+      take(inside.secondary, 140);
+      for (const brief of inside.briefs ?? []) take(brief, 140);
+    }
+    return out;
   } catch {
     return [];
   }
@@ -117,7 +176,10 @@ export function phoneCardEditionLabel(issueId: string | null | undefined): strin
   return PRESS_HOURS.find((p) => p.slot === slot)?.label ?? "Edition";
 }
 
-/** Realistic stand-in when public.times_day_schedule has no row (or no table yet). */
+/**
+ * TEST HARNESS ONLY (`?sample=1`). The production runner never passes sample,
+ * and with no times_day_schedule row the Day Ahead photo is skipped.
+ */
 export function sampleDaySchedule(date = "2026-10-05"): DaySchedule {
   const ev = (
     start: string | null,
@@ -160,29 +222,72 @@ function nextDay(date: string, days: number): string {
   return dt.toISOString().slice(0, 10);
 }
 
-/** A1-shaped stand-in from the 2026-10-05-evening issue (headlines only). */
+/** TEST HARNESS ONLY. Shaped like 2026-10-05-evening A1 (photo + dek). */
 export function sampleFrontStories(): PhoneFrontStory[] {
   return [
     {
       id: "wire-college-football-401856708",
       headline: "No. 25 Missouri trounces No. 8 Florida 45-17 to snap 9-game skid against Top 25 opponents",
       teamName: "Mizzou FB",
-      dek: null,
-      photo: null,
+      dek: "Austin Simmons threw for 340 yards and two touchdowns, Jamal Roberts ran for 211 yards and three more scores, and No. 25 Missouri trounced eighth-ranked Florida 45-17 on Saturday.",
+      photo: "https://espnmedia-cdn.akamaized.net/espn/media/common/wsc/2026/1003/e6699ce4-3d1b-4d8b-8a4e-a2582833331a/e6699ce4-3d1b-4d8b-8a4e-a2582833331a.jpg",
+      photoWidth: 576,
     },
     {
       id: "wire-nhl-401892439",
       headline: "Necas and Roy score quick goals as the Avalanche rout the Blues 6-1",
       teamName: "Blues",
-      dek: null,
+      dek: "Nicolas Roy and Martin Necas scored 23 seconds apart in a four-goal second period, and the Colorado Avalanche beat the St. Louis Blues 6-1 on Saturday night.",
       photo: null,
+      photoWidth: null,
     },
     {
       id: "wire-nfl-401872978",
       headline: "Young, McMillan connect for 2 TDs to lead Panthers past Lions 32-26",
       teamName: "Lions",
-      dek: null,
+      dek: "Bryce Young and Tetairoa McMillan connected for two touchdowns as Carolina beat Detroit 32-26 on Sunday night.",
       photo: null,
+      photoWidth: null,
+    },
+    {
+      id: "wire-nfl-401872976",
+      headline: "Chiefs beat the Raiders 30-27 to move to 4-0 behind Patrick Mahomes",
+      teamName: "Chiefs",
+      dek: "Patrick Mahomes led Kansas City past Las Vegas 30-27 to stay unbeaten.",
+      photo: null,
+      photoWidth: null,
+    },
+    {
+      id: "wire-mlb-401907985",
+      headline: "Rasmussen has no-hit bid for 7 2/3 innings as Rays open ALDS with a 1-0 win over Yanks",
+      teamName: "Rays",
+      dek: "TB leads series 1-0.",
+      photo: null,
+      photoWidth: null,
+    },
+    {
+      id: "wire-nfl-401872977",
+      headline: "Cowboys hold off the Jets 24-21 as Dak Prescott finds CeeDee Lamb late",
+      teamName: "Cowboys",
+      dek: "Dak Prescott hit CeeDee Lamb for the go-ahead score and Dallas escaped New York 24-21.",
+      photo: null,
+      photoWidth: null,
+    },
+    {
+      id: "wire-mlb-401907990",
+      headline: "Phillies even the NLDS as Wheeler outduels Yamamoto in Los Angeles",
+      teamName: "Phillies",
+      dek: "Zack Wheeler worked into the seventh and Philadelphia evened the series at Dodger Stadium.",
+      photo: null,
+      photoWidth: null,
+    },
+    {
+      id: "wire-mlb-401907991",
+      headline: "Guardians take Game 2 of the ALDS behind a late rally in Cleveland",
+      teamName: "Guardians",
+      dek: "Cleveland scored three in the eighth to even the series with the White Sox.",
+      photo: null,
+      photoWidth: null,
     },
   ];
 }

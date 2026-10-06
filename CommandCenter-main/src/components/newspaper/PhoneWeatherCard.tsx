@@ -48,6 +48,7 @@ function HourlyChart({ hours }: { hours: WxHour[] }) {
   const line = hours.map((h, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(h.tempF).toFixed(1)}`).join("");
   const area = `${line}L${x(hours.length - 1)} ${base}L${x(0)} ${base}Z`;
   const marks = hours.map((_, i) => i).filter((i) => i % 4 === 0);
+  const hasRain = hours.some((h) => h.precipChance > 0);
   return (
     <figure className="tt-phone-hourly">
       <figcaption>Next 24 hours</figcaption>
@@ -80,7 +81,13 @@ function HourlyChart({ hours }: { hours: WxHour[] }) {
         ))}
       </svg>
       <p className="wx-key">
-        <i className="wx-key-line" /> Temperature <i className="wx-key-pop" /> Chance of rain
+        <i className="wx-key-line" /> Temperature
+        {hasRain ? (
+          <>
+            {" "}
+            <i className="wx-key-pop" /> Chance of rain
+          </>
+        ) : null}
       </p>
     </figure>
   );
@@ -92,15 +99,21 @@ export function PhoneWeatherCard({ weather }: { weather: MarshfieldWeather }) {
   const today = days[0];
   if (!today) return null;
   const moon = moonPhase(today.date);
-  const week = days.slice(1, 8);
+  const week = days.slice(0, 7);
   const { ref, value } = usePhoneCardFit<PhoneWeatherFit>(
     { showAlmanac: true, showToday: true, days: week.length, showHourly: true },
     trimPhoneWeatherFit,
     weather.observedAt,
   );
   const outlook = week.slice(0, value.days);
+  const dayLabel = outlook.length === 1 ? "1-day forecast" : `${outlook.length}-day forecast`;
   return (
-    <article className="tt-phone-card tt-phone-wx" aria-label={`Weather for ${MARSHFIELD.place}`}>
+    <article
+      className="tt-phone-card tt-phone-wx"
+      aria-label={`Weather for ${MARSHFIELD.place}`}
+      data-wx-days={outlook.length}
+      data-wx-rain={hours.some((h) => h.precipChance > 0) ? "1" : "0"}
+    >
       <div className="tt-phone-fit-body" ref={ref}>
       <header className="tt-phone-mast">
         <p className="tt-phone-kicker">Thompson Times</p>
@@ -161,8 +174,8 @@ export function PhoneWeatherCard({ weather }: { weather: MarshfieldWeather }) {
       {value.showHourly ? <HourlyChart hours={hours} /> : null}
 
       {outlook.length ? (
-        <section className="tt-phone-days" aria-label="Seven-day forecast">
-          <h2>7-day forecast</h2>
+        <section className="tt-phone-days" aria-label={dayLabel}>
+          <h2>{dayLabel}</h2>
           <ol>
             {outlook.map((d) => (
               <li key={d.date} className={d.precipChance >= 50 ? "wet" : undefined}>
@@ -216,8 +229,8 @@ export function PhoneWeatherCard({ weather }: { weather: MarshfieldWeather }) {
           ) : null}
         </section>
       ) : null}
-      <p className="tt-phone-credit">Forecast data: Open-Meteo</p>
       </div>
+      <p className="tt-phone-credit">Forecast data: Open-Meteo</p>
     </article>
   );
 }

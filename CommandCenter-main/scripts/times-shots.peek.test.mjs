@@ -27,4 +27,5 @@ assert.match(
 assert.doesNotMatch(src, /Math\.max\(PHONE\.height/, "viewport must not grow with card height");
 assert.match(src, /\["front", "weather", "day", "watch"\]/, "four phone cards including front");
 assert.doesNotMatch(src, /newspaper\?solo=1#A1/, "alert runner does not screenshot the iPad paper");
+assert.doesNotMatch(src, /sample=/, "production runner never passes the Day Ahead / front fixtures");
 console.log("times-shots.peek ok");

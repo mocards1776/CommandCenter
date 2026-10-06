@@ -21,6 +21,7 @@ import {
   type WatchListing,
   type WatchSide,
 } from "@/lib/newspaper-watch";
+import { isWatchPreseasonLowTier } from "@/lib/newspaper-watch-page";
 
 function Crest({ side, league, size }: { side: WatchSide; league: WatchGame["league"]; size: "lg" | "sm" }) {
   const src = watchLogo(side, league);
@@ -36,9 +37,10 @@ function teamTitle(side: WatchSide): string {
 }
 
 function asListing(game: WatchGame): WatchListing {
+  const pre = Boolean(game.preseason) || isWatchPreseasonLowTier(game);
   return {
     ...game,
-    tier: game.favorite ? "must" : game.heat >= 70 ? "worth" : "around",
+    tier: pre ? "around" : game.favorite ? "must" : game.heat >= 70 ? "worth" : "around",
     reason: game.printReason ?? null,
     networks: printNetworks(game.tv),
     clock: printClock(game.when),
@@ -103,7 +105,7 @@ function PhoneCard({ game }: { game: WatchListing }) {
   );
 }
 
-/** Portrait iPhone watch card. Favorites first, then national heat; extras drop to fit. */
+/** Portrait iPhone watch card. Live/upcoming postseason and favorites first; preseason last. */
 export function PhoneWatchCard({ games, editionLabel }: { games: WatchGame[]; editionLabel: string }) {
   const ranked = rankPhoneWatchGames(games);
   const { ref, value } = usePhoneCardFit<PhoneWatchFit>(
@@ -125,12 +127,14 @@ export function PhoneWatchCard({ games, editionLabel }: { games: WatchGame[]; ed
       aria-label="Best Games to Watch Today"
       data-watch-source={games.length}
       data-watch-kept={1 + rest.length}
+      data-gotd={`${feature.away.abbrev}-${feature.home.abbrev}`}
+      data-gotd-preseason={feature.preseason || isWatchPreseasonLowTier(feature) ? "1" : "0"}
     >
       <div className="tt-phone-fit-body" ref={ref}>
       <header className="tt-phone-mast">
         <p className="tt-phone-kicker">The Viewing Guide · {editionLabel}</p>
         <h1>Today&apos;s Games</h1>
-        <p className="tt-phone-dek">Favorite clubs first, then the top national games.</p>
+        <p className="tt-phone-dek">Live and upcoming postseason first, then favorite clubs. Preseason last.</p>
       </header>
 
       <section className="tt-phone-feature" aria-label="Game of the day">

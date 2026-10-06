@@ -6,6 +6,7 @@ import {
   isPhoneCardKind,
   phoneCardDate,
   phoneCardEditionLabel,
+  phoneWatchPriority,
   PHONE_CARD_PX,
   PHONE_CARD_SIZE,
   rankPhoneWatchGames,
@@ -18,6 +19,7 @@ import {
   trimPhoneWatchFit,
   trimPhoneWeatherFit,
 } from "./newspaper-phone-cards.ts";
+import { isWatchPreseasonLowTier, sampleWatchSlateLight, type WatchGame } from "./newspaper-watch-page.ts";
 
 function assert(cond: unknown, msg: string) {
   if (!cond) throw new Error(`FAIL: ${msg}`);
@@ -37,6 +39,8 @@ assert(phoneCardEditionLabel("") === "Edition", "missing issue is a generic edit
 
 const day = sampleDaySchedule("2026-10-05");
 assert(day.date === "2026-10-05" && day.events.length >= 4, "sample day has events");
+assert(day.events.some((e) => e.title === "Lunch with Dad"), "harness fixture includes Lunch with Dad");
+assert(day.upcoming?.some((d) => d.events.some((e) => /Dentist/.test(e.title))), "harness fixture includes Dentist — Maya");
 assert(day.events.some((e) => e.kind === "work") && day.events.some((e) => e.kind === "family"), "sample mixes work and family");
 assert((day.upcoming ?? []).length === 5 && day.upcoming?.[0]?.date === "2026-10-06", "sample Coming Up is the next five days");
 
@@ -47,11 +51,27 @@ assert(watch.every((g) => g.away.abbrev && g.home.abbrev), "sample games have bo
 const heavy = sampleHeavyWatchGames("2026-10-05");
 assert(heavy.length > watch.length, "heavy slate has more games than the short sample");
 const ranked = rankPhoneWatchGames(heavy);
-const firstNonFav = ranked.findIndex((g) => !g.favorite);
-assert(firstNonFav === -1 || ranked.slice(0, firstNonFav).every((g) => g.favorite), "favorites rank ahead of national games");
-if (firstNonFav >= 0 && ranked[firstNonFav + 1]) {
-  assert(ranked[firstNonFav]!.heat >= ranked[firstNonFav + 1]!.heat, "national games stay heat-ordered");
-}
+assert(
+  ranked.every((g, i) => i === 0 || phoneWatchPriority(ranked[i - 1]!) <= phoneWatchPriority(g)),
+  "phone watch stays in priority order",
+);
+const lastReal = ranked.findLastIndex((g) => !g.preseason && !isWatchPreseasonLowTier(g));
+const firstPre = ranked.findIndex((g) => Boolean(g.preseason) || isWatchPreseasonLowTier(g));
+assert(firstPre === -1 || lastReal < 0 || firstPre > lastReal, "preseason games rank after real games");
+
+const light = sampleWatchSlateLight("2026-10-05").map((g) =>
+  g.id === "nba-ny-phi" ? { ...g, final: true, live: false } : g.id === "mlb-nyy-tb" ? { ...g, live: true, final: false } : g,
+);
+const gotd = rankPhoneWatchGames(light)[0];
+assert(gotd?.id === "mlb-cws-cle" || gotd?.id === "mlb-nyy-tb", `Game of the Day is ALDS, not preseason (${gotd?.id})`);
+assert(!gotd?.preseason, "Game of the Day is not a preseason box");
+
+const knicks = light.find((g) => g.id === "nba-ny-phi") as WatchGame;
+const yanks = light.find((g) => g.id === "mlb-nyy-tb") as WatchGame;
+assert(knicks && yanks && knicks.favorite && knicks.preseason && knicks.final, "Knicks-76ers fixture is a favorite preseason final");
+assert(yanks.live && /ALDS/i.test(`${yanks.series ?? ""} ${yanks.printReason ?? ""}`), "Yankees-Rays fixture is a live ALDS game");
+assert(rankPhoneWatchGames([knicks, yanks])[0]!.id === "mlb-nyy-tb", "live ALDS outranks a finished favorite preseason game");
+assert(phoneWatchPriority(knicks) > phoneWatchPriority(yanks), "preseason finals are the first games the card drops");
 
 assert(trimPhoneWatchFit({ keepRest: 3 })?.keepRest === 2, "watch drops the lowest-priority leftover");
 assert(trimPhoneWatchFit({ keepRest: 0 }) === null, "watch keeps the feature game");
@@ -61,6 +81,8 @@ assert(trimPhoneFrontFit({ stories: 3, showDek: true, showPhoto: true })?.storie
 assert(trimPhoneWeatherFit({ showAlmanac: true, showToday: true, days: 7, showHourly: true })?.showAlmanac === false, "weather drops almanac first");
 
 const front = sampleFrontStories();
-assert(front.length === 3 && /Missouri/.test(front[0]!.headline), "sample front is the Oct 5 evening A1 shape");
+assert(front.length >= 6 && /Missouri/.test(front[0]!.headline), "sample front is the Oct 5 evening A1 shape");
+assert(front[0]!.photo && (front[0]!.photoWidth ?? 0) >= 1, "sample lead has a photo at native width");
+assert(front.every((s) => s.dek), "sample headlines carry short deks");
 
 console.log("newspaper-phone-cards ok");
