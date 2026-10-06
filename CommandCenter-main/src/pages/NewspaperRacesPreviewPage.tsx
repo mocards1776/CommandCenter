@@ -1,0 +1,118 @@
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useSearchParams } from "react-router-dom";
+import DayAhead from "@/components/newspaper/DayAhead";
+import RacesPage from "@/components/newspaper/RacesPage";
+import { insertBeez, sampleBeezDesk } from "@/lib/newspaper-beez";
+import { insertDayAhead } from "@/lib/newspaper-day-ahead";
+import { editionDateline, editionIssue, romanNumeral } from "@/lib/newspaper";
+import {
+  insertRaceBriefs,
+  sampleRaceBriefs,
+  sampleRaceBriefsOverflow,
+  type FavoritesRacesPage,
+} from "@/lib/newspaper-races";
+import { buildEdition } from "@/lib/newspaper-sections";
+
+const DAY = "2026-10-06";
+
+/**
+ * Public fixture of the Section A races page at the locked 1032×1480 sheet.
+ * Not linked from nav. Used to proof the politics folio.
+ *   ?sample=1        two-race morning (default)
+ *   ?sample=overflow second folio
+ *   ?empty=1         races omitted; Day Ahead and the folio rail stay put
+ */
+export default function NewspaperRacesPreviewPage() {
+  const [params] = useSearchParams();
+  const empty = params.get("empty") === "1";
+  const overflow = params.get("sample") === "overflow";
+  const desk = overflow ? sampleRaceBriefsOverflow(DAY) : sampleRaceBriefs(DAY);
+  const edition = useMemo(() => {
+    const built = buildEdition({ stories: [], clubs: [], edition: `${DAY}-morning` });
+    const withDay = insertDayAhead(built, {
+      date: DAY,
+      events: [
+        { start: "07:30", end: "08:00", all_day: false, title: "Breakfast with the kids", kind: "family", location: "Home" },
+        { start: "09:00", end: "10:00", all_day: false, title: "Standup", kind: "work", location: "Office" },
+        { start: "12:00", end: "13:00", all_day: false, title: "Lunch", kind: "work", location: null },
+      ],
+      upcoming: [],
+    });
+    const withBeez = insertBeez(withDay, sampleBeezDesk());
+    return empty ? insertRaceBriefs(withBeez, null) : insertRaceBriefs(withBeez, desk);
+  }, [desk, empty]);
+  const sectionA = edition.pages.filter((p) => p.section === "A");
+  const racePages = sectionA.filter((p): p is FavoritesRacesPage => p.kind === "favorites-races");
+  const dayPage = sectionA.find((p) => p.kind === "favorites-day");
+  const shown = overflow ? racePages.slice(1) : racePages;
+  const { volume, issue } = editionIssue(DAY);
+
+  return (
+    <div className="newspaper-root wsj-shell tt-watch-preview tt-races-preview" data-races-preview={empty ? "empty" : overflow ? "overflow" : "sample"}>
+      <p className="tt-races-preview-rail" data-races-folios={sectionA.map((p) => `${p.folio}:${p.kind}`).join("|")}>
+        Section A · {sectionA.map((p) => p.folio).join(" · ")}
+        {empty ? " · races omitted" : ""}
+      </p>
+      {empty ? (
+        <PreviewSheet folio={dayPage && "folio" in dayPage ? dayPage.folio : "A5"} label="The Day Ahead" volume={volume} issue={issue}>
+          {dayPage && dayPage.kind === "favorites-day" ? (
+            <DayAhead date={dayPage.date} events={dayPage.events} upcoming={dayPage.upcoming} editionLabel="Morning Edition" />
+          ) : null}
+        </PreviewSheet>
+      ) : (
+        shown.map((page) => (
+          <PreviewSheet key={page.folio} folio={page.folio} label={page.continued ? "Races We're Tracking · continued" : "Races We're Tracking"} volume={volume} issue={issue}>
+            <RacesPage page={page} />
+          </PreviewSheet>
+        ))
+      )}
+    </div>
+  );
+}
+
+function PreviewSheet({
+  folio,
+  label,
+  volume,
+  issue,
+  children,
+}: {
+  folio: string;
+  label: string;
+  volume: number;
+  issue: number;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState(0);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => setHeight(Math.round(el.getBoundingClientRect().height));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [children]);
+  return (
+    <div className="wsj-page" data-races-sheet={folio} data-sheet-h={height} data-vol={romanNumeral(volume)} data-issue={issue}>
+      <div className="wsj-fit">
+        <div ref={ref} className="wsj-sheet">
+          <header className="wsj-run">
+            <span className="wsj-run-plate">The Thompson Times</span>
+            <span className="wsj-run-section">
+              <b>A</b>
+              <span>The Essentials</span>
+              <em>{label}</em>
+            </span>
+            <span className="wsj-run-folio">
+              {editionDateline(DAY)}
+              <b>{folio}</b>
+            </span>
+          </header>
+          <div className="wsj-body">{children}</div>
+        </div>
+      </div>
+    </div>
+  );
+}

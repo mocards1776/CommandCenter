@@ -1,0 +1,246 @@
+/* Races We're Tracking — Section A, immediately before The Day Ahead.
+   Scoped to .tt-races. Does not touch --tt-page-w or --tt-fit. */
+.tt-races {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 1 1 auto;
+  min-height: calc(var(--tt-page-min, var(--tt-page-h, 1480px)) - 88px);
+}
+.tt-races-head {
+  text-align: center;
+  border-bottom: 3px double var(--w-rule);
+  padding-bottom: 10px;
+}
+.tt-races-kicker {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--w-red);
+}
+.tt-races-head h2 {
+  margin: 6px 0 4px;
+  font-family: var(--w-head);
+  font-size: 40px;
+  font-weight: 900;
+  font-style: italic;
+  line-height: 1.02;
+  letter-spacing: -0.02em;
+}
+.tt-races-dek {
+  margin: 0;
+  font-family: var(--w-body);
+  font-style: italic;
+  font-size: 15px;
+  line-height: 1.35;
+  color: var(--w-ink);
+}
+
+.tt-races-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.tt-races-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1 1 0;
+  min-height: 0;
+  padding-bottom: 12px;
+  border-bottom: 2px solid var(--w-rule);
+}
+.tt-races-block:last-of-type { border-bottom: 0; padding-bottom: 0; }
+
+.tt-races-racehead {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px 16px;
+  align-items: baseline;
+}
+.tt-races-code {
+  margin: 0;
+  font-family: var(--w-cond);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--w-navy);
+  white-space: nowrap;
+}
+.tt-races-racehead h3 {
+  margin: 0;
+  font-family: var(--w-head);
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1.12;
+  letter-spacing: -0.015em;
+}
+
+.tt-races-spend { min-width: 0; }
+.tt-races-spend .wsj-band-title { margin-bottom: 6px; }
+.tt-races-spend table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--w-cond);
+  font-size: 14px;
+  line-height: 1.2;
+  color: var(--w-ink);
+}
+.tt-races-spend th,
+.tt-races-spend td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--w-hair);
+  text-align: left;
+  vertical-align: middle;
+}
+.tt-races-spend thead th {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--w-ink);
+  border-bottom: 1px solid var(--w-rule);
+}
+.tt-races-spend th.sponsor { padding-left: 0; }
+.tt-races-spend .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tt-races-spend .flight { white-space: nowrap; }
+.tt-races-spend .mkt { color: var(--w-ink); }
+.tt-races-spend tbody tr:last-child > * { border-bottom: 0; }
+.tt-races-spend tbody th.sponsor {
+  font-family: var(--w-body);
+  font-size: 14.5px;
+  font-weight: 700;
+}
+.tt-races-spend td.side { font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; font-size: 12.5px; }
+.tt-races-spend td.side.support { color: var(--w-navy); }
+.tt-races-spend td.side.oppose { color: var(--w-red); }
+
+.tt-races-new {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 5px 0;
+  border: 1px solid var(--w-red);
+  font-family: var(--w-cond);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--w-red);
+  vertical-align: 1px;
+}
+
+.tt-races-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 22px;
+  margin: 8px 0 0;
+  padding-top: 6px;
+  border-top: 1px solid var(--w-rule);
+  font-family: var(--w-cond);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--w-ink);
+}
+.tt-races-totals b {
+  margin-right: 6px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--w-navy);
+}
+
+.tt-races-bullets {
+  margin: 2px 0 0;
+  padding: 0 0 0 1.15em;
+}
+.tt-races-bullets li {
+  margin: 0 0 5px;
+  font-family: var(--w-body);
+  font-size: 16px;
+  line-height: 1.35;
+  color: var(--w-ink);
+}
+
+.tt-races-notes {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--w-hair);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tt-races-notes li {
+  font-family: var(--w-body);
+  font-size: 14.5px;
+  line-height: 1.35;
+  color: var(--w-ink);
+}
+.tt-races-notes b {
+  display: inline-block;
+  margin-right: 8px;
+  font-family: var(--w-cond);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--w-navy);
+}
+.tt-races-notes a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.tt-races-links {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+}
+.tt-races-links a {
+  font-family: var(--w-cond);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--w-navy);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.tt-races-credit {
+  margin: auto 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--w-hair);
+  font-family: var(--w-cond);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--w-ink);
+}
+
+.tt-races[data-tt-races="continued"] .tt-races-head h2 { font-size: 34px; }
+
+.tt-races-preview {
+  --tt-page-h: 1480px;
+}
+.tt-races-preview .wsj-sheet {
+  min-height: var(--tt-page-h);
+}
+.tt-races-preview-rail {
+  margin: 0 auto 8px;
+  max-width: var(--tt-page-w, 1032px);
+  padding: 0 18px;
+  font-family: var(--w-cond);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: #f4f1e9;
+}

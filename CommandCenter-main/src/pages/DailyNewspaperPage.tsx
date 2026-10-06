@@ -182,6 +182,9 @@ import { fetchDaySchedule } from "@/lib/newspaper-day-ahead-fetch";
 import BeezPage from "@/components/newspaper/BeezPage";
 import { asBeezDesk, insertBeez, type BeezDesk } from "@/lib/newspaper-beez";
 import { readTimesBeez } from "@/lib/newspaper-beez-fetch";
+import RacesPage from "@/components/newspaper/RacesPage";
+import { insertRaceBriefs, sampleRaceBriefs, type RaceBriefsDesk } from "@/lib/newspaper-races";
+import { fetchRaceBriefs } from "@/lib/newspaper-races-fetch";
 import {
   asNationalDesk,
   sampleNationalDesk,
@@ -614,6 +617,8 @@ function pageLabel(page: EditionPage): string {
       return "The Day Ahead";
     case "favorites-beez":
       return "The Beez";
+    case "favorites-races":
+      return page.continued ? "More Races" : "Races We're Tracking";
     default:
       return "Front Page";
   }
@@ -4421,6 +4426,7 @@ function NewspaperDesk() {
   const queryClient = useQueryClient();
   const [params, setParams] = useSearchParams();
   const nationalSample = import.meta.env.DEV && params.get("national_sample") === "1";
+  const racesSample = import.meta.env.DEV && params.get("races_sample") === "1";
   const askedEdition = parsePressId(params.get("edition") ?? "")?.id ?? null;
   const seeded = useRef<string | null>(null);
   if (opened && seeded.current !== opened.id) {
@@ -5504,6 +5510,17 @@ function NewspaperDesk() {
     retry: 1,
   });
 
+  // Races We're Tracking: one row per race for the edition date (or the newest
+  // filing inside two days). No rows: the page is omitted. Client-only.
+  const racesQ = useQuery({
+    queryKey: ["tt-race-briefs", scheduleDate],
+    enabled: Boolean(user?.id) && Boolean(scheduleDate) && !racesSample,
+    queryFn: () => fetchRaceBriefs(scheduleDate!),
+    staleTime: 5 * 60_000,
+    gcTime: 20 * 60 * 60_000,
+    retry: 1,
+  });
+
   const scoutQ = useQuery({
     queryKey: [pressId, "tt-mo-scout", day],
     enabled: pressing,
@@ -5827,9 +5844,11 @@ function NewspaperDesk() {
         ? dayAheadQ.data
         : null;
   const beezDesk = companions?.id === pressId ? companions.beez : (beezQ.data ?? null);
+  const raceDesk: RaceBriefsDesk | null =
+    racesSample && scheduleDate ? sampleRaceBriefs(scheduleDate) : (racesQ.data ?? null);
   const edition = useMemo(
-    () => insertBeez(insertDayAhead(builtEdition, daySchedule), beezDesk),
-    [builtEdition, daySchedule, beezDesk],
+    () => insertBeez(insertDayAhead(insertRaceBriefs(builtEdition, raceDesk), daySchedule), beezDesk),
+    [builtEdition, raceDesk, daySchedule, beezDesk],
   );
   const comingUp = useMemo<ComingUp[]>(
     () =>
@@ -6080,6 +6099,8 @@ function NewspaperDesk() {
                 <DayAhead date={page.date} events={page.events} upcoming={page.upcoming} editionLabel={press.label} />
               ) : page.kind === "favorites-beez" ? (
                 <BeezPage desk={page.desk} editionLabel={press.label} />
+              ) : page.kind === "favorites-races" ? (
+                <RacesPage page={page} />
               ) : page.kind === "favorites-continue" ? (
                 <ContinuePage
                   jumps={page.jumps}

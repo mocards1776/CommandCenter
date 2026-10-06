@@ -19,6 +19,7 @@ const NewspaperA1PreviewPage = lazy(() => import("@/pages/NewspaperA1PreviewPage
 const NewspaperSportPreviewPage = lazy(() => import("@/pages/NewspaperSportPreviewPage"));
 const NewspaperTimesPreviewPage = lazy(() => import("@/pages/NewspaperTimesPreviewPage"));
 const NewspaperCoachesPreviewPage = lazy(() => import("@/pages/NewspaperCoachesPreviewPage"));
+const NewspaperRacesPreviewPage = lazy(() => import("@/pages/NewspaperRacesPreviewPage"));
 const RssPage = lazy(() => import("@/pages/RssPage"));
 const PublicStoryPage = lazy(() => import("@/pages/PublicStoryPage"));
 const DashboardPage = lazy(() => import("@/pages/DashboardPage"));
@@ -159,6 +160,7 @@ export default function App() {
             <Route path="/newspaper/sport-preview" element={<NewspaperSportPreviewPage />} />
             <Route path="/newspaper/times-preview" element={<NewspaperTimesPreviewPage />} />
             <Route path="/newspaper/coaches-preview" element={<NewspaperCoachesPreviewPage />} />
+            <Route path="/newspaper/races-preview" element={<NewspaperRacesPreviewPage />} />
             <Route element={<Protected />}>
               <Route path="/" element={<HomeRedirect />} />
               <Route path="/dashboard" element={<DashboardPage />} />

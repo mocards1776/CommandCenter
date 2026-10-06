@@ -671,6 +671,32 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["times_day_schedule"]["Insert"]>;
         Relationships: [];
       };
+      times_race_briefs: {
+        Row: {
+          brief_date: string;
+          race: string;
+          headline: string | null;
+          bullets: Json;
+          spend: Json;
+          links: Json;
+          notes: Json;
+          source: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          brief_date: string;
+          race: string;
+          headline?: string | null;
+          bullets?: Json;
+          spend?: Json;
+          links?: Json;
+          notes?: Json;
+          source?: string | null;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["times_race_briefs"]["Insert"]>;
+        Relationships: [];
+      };
       favorite_sports_players: {
         Row: {
           id: string;
