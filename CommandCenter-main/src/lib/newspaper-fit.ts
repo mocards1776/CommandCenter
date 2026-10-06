@@ -14,6 +14,7 @@ const PACK_ROOTS = ".wsj-front, .tt-section-front, .tt-scores, .wsj-sport-solo, 
 const KEEP_COPY = "[data-tt-lead], [data-tt-keep]";
 
 export type SheetFitPlan = {
+  /** nth-child paths from the sheet, e.g. ":nth-child(3) > :nth-child(1)" */
   hide: string[];
   cuts: Record<string, string>;
 };
@@ -46,6 +47,20 @@ export function plansEqual(a: SheetFitPlan, b: SheetFitPlan): boolean {
   const keysB = Object.keys(b.cuts);
   if (keysA.length !== keysB.length) return false;
   return keysA.every((key) => a.cuts[key] === b.cuts[key]);
+}
+
+export function childPath(el: HTMLElement, root: HTMLElement): string | null {
+  const parts: string[] = [];
+  let node: HTMLElement | null = el;
+  while (node && node !== root) {
+    const parent: HTMLElement | null = node.parentElement;
+    if (!parent) return null;
+    const idx = [...parent.children].indexOf(node);
+    if (idx < 0) return null;
+    parts.unshift(`:nth-child(${idx + 1})`);
+    node = parent;
+  }
+  return node === root && parts.length ? parts.join(" > ") : null;
 }
 
 function overflowsClip(el: HTMLElement): boolean {
@@ -117,26 +132,12 @@ function fitClone(root: HTMLElement): void {
   hideOverflowBlocks(root);
 }
 
-export function stampFitIds(root: HTMLElement): void {
-  let i = 0;
-  const seen = new Set<HTMLElement>();
-  const mark = (node: HTMLElement) => {
-    if (seen.has(node)) return;
-    seen.add(node);
-    node.dataset.ttFid = `f${i++}`;
-  };
-  for (const node of root.querySelectorAll<HTMLElement>(FLOW_SEL)) mark(node);
-  for (const pack of root.querySelectorAll<HTMLElement>(PACK_ROOTS)) {
-    for (const kid of pack.children) {
-      if (kid instanceof HTMLElement) mark(kid);
-    }
-  }
-}
-
 function readPlan(root: HTMLElement): SheetFitPlan {
   const hide: string[] = [];
-  for (const node of root.querySelectorAll<HTMLElement>("[data-tt-fid]")) {
-    if (node.hidden || node.dataset.ttFlowed) hide.push(node.dataset.ttFid!);
+  for (const node of root.querySelectorAll<HTMLElement>("[data-tt-flowed], [hidden]")) {
+    if (!node.hidden && !node.dataset.ttFlowed) continue;
+    const path = childPath(node, root);
+    if (path) hide.push(path);
   }
   const cuts: Record<string, string> = {};
   for (const node of root.querySelectorAll<HTMLElement>("[data-tt-cid]")) {
@@ -148,6 +149,19 @@ function readPlan(root: HTMLElement): SheetFitPlan {
   return { hide, cuts };
 }
 
+let measureHost: HTMLDivElement | null = null;
+
+function getMeasureHost(): HTMLDivElement {
+  if (measureHost?.isConnected) return measureHost;
+  const el = document.createElement("div");
+  el.dataset.ttFitHost = "1";
+  el.setAttribute("aria-hidden", "true");
+  el.style.cssText = "position:absolute;left:-10000px;top:0;visibility:hidden;pointer-events:none;";
+  document.body.appendChild(el);
+  measureHost = el;
+  return el;
+}
+
 function attachMeasureClone(live: HTMLElement): HTMLElement {
   const clone = live.cloneNode(true) as HTMLElement;
   clone.dataset.ttFitClone = "1";
@@ -156,10 +170,8 @@ function attachMeasureClone(live: HTMLElement): HTMLElement {
   const cs = getComputedStyle(live);
   clone.style.cssText = [
     "position:absolute",
-    "left:-10000px",
+    "left:0",
     "top:0",
-    "visibility:hidden",
-    "pointer-events:none",
     `width:${width}px`,
     `zoom:${cs.zoom || "1"}`,
   ].join(";");
@@ -167,17 +179,16 @@ function attachMeasureClone(live: HTMLElement): HTMLElement {
   const pageW = cs.getPropertyValue("--tt-page-w");
   if (fit) clone.style.setProperty("--tt-fit", fit);
   if (pageW) clone.style.setProperty("--tt-page-w", pageW);
-  document.body.appendChild(clone);
+  getMeasureHost().appendChild(clone);
   return clone;
 }
 
 /**
- * Measure packing on a detached clone. The live React tree is only stamped
- * with data-tt-fid attributes so the returned hide list can be applied in
- * React (CSS / hidden props). Copy cuts are applied through React text.
+ * Measure packing on a detached clone. The live React tree is not written —
+ * hide/cut come back as a plan for React to apply.
  */
 export function planSheetFit(live: HTMLElement): SheetFitPlan {
-  stampFitIds(live);
+  if (!live.isConnected) return EMPTY_FIT_PLAN;
   const clone = attachMeasureClone(live);
   try {
     fitClone(clone);
@@ -199,5 +210,13 @@ export function fitSentencesIn(root: HTMLElement): void {
 export function hideCssForPlan(sheetId: string, plan: SheetFitPlan): string {
   if (!plan.hide.length) return "";
   const root = `[data-tt-sheet="${sheetId}"]`;
-  return plan.hide.map((id) => `${root} [data-tt-fid="${id}"]{display:none!important}`).join("");
+  return plan.hide.map((path) => `${root} > ${path}{display:none!important}`).join("");
+}
+
+/** Prefetch art without touching React-owned <img> nodes. */
+export function prefetchSrc(src: string | null | undefined): void {
+  if (!src || src.startsWith("data:")) return;
+  const img = new Image();
+  img.decoding = "async";
+  img.src = src;
 }

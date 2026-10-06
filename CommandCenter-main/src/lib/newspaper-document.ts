@@ -52,7 +52,6 @@ export async function decodeImage(img: HTMLImageElement): Promise<void> {
     };
     img.addEventListener("load", done);
     img.addEventListener("error", done);
-    if (img.loading === "lazy") img.loading = "eager";
   });
   try {
     if (img.naturalWidth) await img.decode();

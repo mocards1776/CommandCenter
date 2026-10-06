@@ -34,8 +34,9 @@ export function FitCopy({
 }
 
 /**
- * Pack toward 1480 / hide [data-tt-flow] past 1650 without moving React's DOM.
- * Measurement runs on a detached clone; hide/cut come back as React state.
+ * Pack toward 1480 / hide overflow blocks past 1650 without writing the
+ * printed tree. Measurement clones into a non-React host; hide/cut apply
+ * through React state (CSS + FitCopy).
  */
 export function FittedSheet({
   children,
@@ -70,22 +71,13 @@ export function FittedSheet({
       });
     };
     measure();
-    void document.fonts?.ready.then(async () => {
-      await Promise.all(
-        [...el.querySelectorAll("img")].map((img) =>
-          img.decode ? img.decode().catch(() => undefined) : Promise.resolve(),
-        ),
-      );
-      schedule();
-    });
+    void document.fonts?.ready.then(() => schedule());
     const ro = new ResizeObserver(schedule);
     ro.observe(el);
-    for (const img of el.querySelectorAll("img")) img.addEventListener("load", schedule);
     return () => {
       cancel = true;
       if (raf) cancelAnimationFrame(raf);
       ro.disconnect();
-      for (const img of el.querySelectorAll("img")) img.removeEventListener("load", schedule);
     };
   }, [children]);
 
@@ -93,16 +85,18 @@ export function FittedSheet({
 
   return (
     <SheetFitContext.Provider value={plan}>
-      <div
-        ref={ref}
-        className="wsj-sheet"
-        data-tt-sheet={sheetId}
-        {...(folio != null ? { "data-folio": folio } : {})}
-        {...(overflow != null ? { "data-overflow": overflow ? "1" : "0" } : {})}
-        {...(sparse != null ? { "data-sparse": sparse ? "1" : "0" } : {})}
-      >
+      <div className="wsj-fit-plan" style={{ display: "contents" }}>
         {hideCss ? <style>{hideCss}</style> : null}
-        {children}
+        <div
+          ref={ref}
+          className="wsj-sheet"
+          data-tt-sheet={sheetId}
+          {...(folio != null ? { "data-folio": folio } : {})}
+          {...(overflow != null ? { "data-overflow": overflow ? "1" : "0" } : {})}
+          {...(sparse != null ? { "data-sparse": sparse ? "1" : "0" } : {})}
+        >
+          {children}
+        </div>
       </div>
     </SheetFitContext.Provider>
   );

@@ -59,7 +59,9 @@ import {
   type StandGroup,
 } from "@/lib/newspaper-box";
 import { cleanStoryCopy, proseParas, tidy, truncateAtSentence } from "@/lib/newspaper-copy";
+import { prefetchSrc } from "@/lib/newspaper-fit";
 import { FitCopy, FittedSheet } from "@/components/newspaper/FittedSheet";
+import { TimesCommitBoundary } from "@/components/newspaper/TimesCommitBoundary";
 import { recapBodyForPage, recapDropLead, recapIsScoreOnly, recapPhotoKind, recapShouldDropCap, splitApDateline } from "@/lib/newspaper-recap";
 import {
   Face,
@@ -4976,7 +4978,7 @@ function FolioSlot({
     if (near) setShown(true);
   }, [near]);
   return (
-    <section className="wsj-page" aria-label={`Page ${folio}`}>
+    <section className="wsj-page" aria-label={`Page ${folio}`} {...(near ? { "data-near": "" } : {})}>
       <div className="wsj-fit">
         <FittedSheet>{shown ? <FolioBody render={render} /> : null}</FittedSheet>
       </div>
@@ -4984,20 +4986,12 @@ function FolioSlot({
   );
 }
 
-function markNearPages(pager: HTMLElement, index: number) {
+function prefetchNearArt(pager: HTMLElement, index: number) {
   const sheets = pager.children;
   for (let i = 0; i < sheets.length; i++) {
+    if (Math.abs(i - index) > NEAR_PAGES) continue;
     const sheet = sheets[i] as HTMLElement;
-    const near = Math.abs(i - index) <= NEAR_PAGES;
-    if (near === ("near" in sheet.dataset)) continue;
-    if (near) sheet.dataset.near = "";
-    else delete sheet.dataset.near;
-  }
-  for (const sheet of pager.querySelectorAll<HTMLElement>(".wsj-page[data-near]")) {
-    for (const img of sheet.querySelectorAll("img")) {
-      if (img.loading === "lazy") img.loading = "eager";
-      if (img.complete && img.naturalWidth) img.decode().catch(() => {});
-    }
+    for (const img of sheet.querySelectorAll("img")) prefetchSrc(img.currentSrc || img.src);
   }
 }
 
@@ -5011,26 +5005,21 @@ function warmEdition(pager: HTMLElement, cap = 4): () => void {
   let stopped = false;
   let inflight = 0;
   let handle = 0;
+  const seen = new Set<string>();
   const pump = () => {
     handle = 0;
     if (stopped) return;
-    const queue = pager.querySelectorAll<HTMLImageElement>('img[loading="lazy"]');
-    for (let i = 0; i < queue.length && inflight < cap; i++) {
-      const img = queue[i];
-      img.loading = "eager";
-      if (img.complete) continue;
+    for (const img of pager.querySelectorAll<HTMLImageElement>("img[src]")) {
+      if (inflight >= cap) break;
+      const src = img.currentSrc || img.src;
+      if (!src || seen.has(src) || img.complete) continue;
+      seen.add(src);
+      prefetchSrc(src);
       inflight++;
-      let timer = 0;
-      const done = () => {
-        window.clearTimeout(timer);
-        img.removeEventListener("load", done);
-        img.removeEventListener("error", done);
+      window.setTimeout(() => {
         inflight--;
         schedule();
-      };
-      timer = window.setTimeout(done, 10_000);
-      img.addEventListener("load", done);
-      img.addEventListener("error", done);
+      }, 800);
     }
   };
   const schedule = () => {
@@ -6999,7 +6988,7 @@ function NewspaperDesk() {
 
   useEffect(() => {
     const el = pagerRef.current;
-    if (el) markNearPages(el, pageIndex);
+    if (el) prefetchNearArt(el, pageIndex);
   }, [pageIndex, sheets]);
 
   useLayoutEffect(() => {
@@ -7210,6 +7199,7 @@ function NewspaperDesk() {
       </div>
 
       <PagerIndexContext.Provider value={pageIndex}>
+        <TimesCommitBoundary>
         <div className="tt-spread">
           <div
             className="newspaper-edition wsj-pager"
@@ -7234,6 +7224,7 @@ function NewspaperDesk() {
             </button>
           ) : null}
         </div>
+        </TimesCommitBoundary>
       </PagerIndexContext.Provider>
       {savedOpen ? <SavedDrawer onClose={() => setSavedOpen(false)} /> : null}
       </ReaderProvider>

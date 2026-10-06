@@ -2,7 +2,7 @@
  * Run with: node --experimental-strip-types src/lib/newspaper-fit.test.ts
  * from CommandCenter-main/.
  */
-import { HARD_PAGE_H, SOFT_PAGE_H, plansEqual, unzoomedPx } from "./newspaper-fit.ts";
+import { HARD_PAGE_H, SOFT_PAGE_H, hideCssForPlan, plansEqual, unzoomedPx } from "./newspaper-fit.ts";
 
 function assert(cond: unknown, msg: string) {
   if (!cond) throw new Error(`FAIL: ${msg}`);
@@ -15,12 +15,20 @@ assert(unzoomedPx(1032, 1) === 1032, "desktop fit=1 is already sheet px");
 assert(Math.abs(unzoomedPx(1480 * 0.744186, 0.744186) - 1480) < 0.5, "soft target is the same at iPad zoom");
 assert(Math.abs(unzoomedPx(1480, 1) - 1480) < 0.5, "soft target is the same at desktop zoom");
 assert(
-  plansEqual({ hide: ["f2", "f1"], cuts: { a: "x" } }, { hide: ["f1", "f2"], cuts: { a: "x" } }),
+  plansEqual(
+    { hide: [":nth-child(2)", ":nth-child(1)"], cuts: { a: "x" } },
+    { hide: [":nth-child(1)", ":nth-child(2)"], cuts: { a: "x" } },
+  ),
   "fit plans compare hide order-insensitively",
 );
 assert(
   !plansEqual({ hide: ["f1"], cuts: {} }, { hide: ["f1", "f2"], cuts: {} }),
   "fit plans differ when hide lists differ",
+);
+assert(
+  hideCssForPlan("s1", { hide: [":nth-child(3)"], cuts: {} }) ===
+    `[data-tt-sheet="s1"] > :nth-child(3){display:none!important}`,
+  "hide CSS targets the sheet by nth-child path, not by mutating live nodes",
 );
 
 console.log("newspaper-fit ok");
