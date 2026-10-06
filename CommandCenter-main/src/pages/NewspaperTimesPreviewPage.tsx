@@ -470,7 +470,7 @@ function A1Front({
 }) {
   const lead = recaps.find((r) => r.card.favoriteKey === "nfl-dal") ?? recaps[0] ?? null;
   const seconds = recaps.filter((r) => r !== lead);
-  const paras = lead ? pageParas(lead.card.body, 5) : [];
+  const paras = lead ? pageParas(lead.card.body, 4) : [];
   return (
     <TimesChrome folio="A1" kicker="The Essentials">
       {lead ? (

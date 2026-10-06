@@ -9072,6 +9072,11 @@ li.counting .tt-count.card {
   flex: 1;
   grid-template-columns: 1fr;
   align-content: start;
+  gap: 4px;
+}
+.tt-side-fill .tt-slate-line {
+  min-height: 32px;
+  padding: 3px 6px;
 }
 .tt-front-side .tt-week-fill {
   margin-top: 0;
