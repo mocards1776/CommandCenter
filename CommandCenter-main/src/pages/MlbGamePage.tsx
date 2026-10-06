@@ -11,6 +11,7 @@ import AppleScoreCluster from "@/components/sports/AppleScoreCluster";
 import PlayoffSeriesLine from "@/components/sports/PlayoffSeriesLine";
 import HighlightReel from "@/components/sports/HighlightReel";
 import MlbLiveMatchupPanel from "@/components/sports/MlbLiveMatchupPanel";
+import MlbPlayByPlayPanel from "@/components/sports/MlbPlayByPlayPanel";
 import PlayerHeadshot from "@/components/sports/PlayerHeadshot";
 import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
 import TeamMark from "@/components/sports/TeamMark";
@@ -230,10 +231,12 @@ export function MlbGameDetail({
     g.attendance != null ? `Att ${g.attendance.toLocaleString("en-US")}` : null,
     g.weather,
   ].filter(Boolean);
+  const showPbp = Boolean(g.live || !g.pregame || /warmup/i.test(g.status));
 
   return (
     <div className="w-full max-w-full min-w-0 space-y-5 overflow-x-hidden">
-      <GameMatchupHeader game={g} />
+      <GameMatchupHeader game={g} hideLiveMatchup={showPbp} />
+      {showPbp ? <MlbPlayByPlayPanel gamePk={g.gamePk} box={g} /> : null}
 
       {/* Pregame: starters → preview text → lineups/leaders → ESPN extras + BBRef. */}
       {g.pregame && (
@@ -1163,7 +1166,14 @@ function LiveSituationBar({
   );
 }
 
-function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
+function GameMatchupHeader({
+  game: g,
+  hideLiveMatchup = false,
+}: {
+  game: MlbBoxscore;
+  /** 2D PBP panel below already covers live at-bat / last-play. */
+  hideLiveMatchup?: boolean;
+}) {
   const awayWins = !g.pregame && g.away.runs > g.home.runs;
   const homeWins = !g.pregame && g.home.runs > g.away.runs;
   const awayForm = useQuery({
@@ -1285,7 +1295,7 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
         </div>
       ) : null}
 
-      {showLiveMatchup && g.situation ? (
+      {hideLiveMatchup ? null : showLiveMatchup && g.situation ? (
         <MlbLiveMatchupPanel game={g} situation={g.situation} />
       ) : g.live && g.situation ? (
         <LiveSituationBar inning={g.inning} situation={g.situation} />

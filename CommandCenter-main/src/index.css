@@ -9948,3 +9948,86 @@ li.counting .tt-count.card {
   color: var(--w-muted);
   text-align: center;
 }
+
+/* MLB 2D play-by-play (sports game detail only). */
+@keyframes mlb-pbp-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes mlb-pbp-cell-in {
+  from {
+    opacity: 0;
+    transform: scale(0.88);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes mlb-pbp-fly {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes mlb-pbp-land {
+  0% {
+    opacity: 0;
+    transform: rotate(45deg) scale(0.2);
+  }
+  70% {
+    opacity: 1;
+    transform: rotate(45deg) scale(1.15);
+  }
+  100% {
+    opacity: 1;
+    transform: rotate(45deg) scale(1);
+  }
+}
+@keyframes mlb-pbp-chip-in {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes mlb-pbp-dot-on {
+  from {
+    transform: scale(0.4);
+    opacity: 0.4;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+.mlb-pbp-card-in {
+  animation: mlb-pbp-card-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.mlb-pbp-cell-in {
+  animation: mlb-pbp-cell-in 480ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.mlb-pbp-fly {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: mlb-pbp-fly 780ms cubic-bezier(0.22, 0.8, 0.28, 1) forwards;
+}
+.mlb-pbp-land {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: mlb-pbp-land 420ms 620ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.mlb-pbp-chip-in {
+  animation: mlb-pbp-chip-in 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
