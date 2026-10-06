@@ -161,10 +161,16 @@ function collectCardAbbrevs(card: FavoriteMatchCard): string[] {
   return out;
 }
 
+const HAY_NAME_RE = new Map<string, RegExp>();
+
 export function hayHasName(hay: string, name: string): boolean {
   if (!name) return false;
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
-  const re = new RegExp(`(?:^|[^a-z0-9])${escaped}(?:[^a-z0-9]|$)`, "i");
+  let re = HAY_NAME_RE.get(name);
+  if (!re) {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+    re = new RegExp(`(?:^|[^a-z0-9])${escaped}(?:[^a-z0-9]|$)`, "i");
+    HAY_NAME_RE.set(name, re);
+  }
   return re.test(hay);
 }
 

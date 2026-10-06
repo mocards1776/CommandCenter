@@ -34,6 +34,7 @@ type PressModule = {
   slimIssue: (issue: Issue) => Issue;
   slimPrintedQuery: (query: PrintedQuery) => PrintedQuery;
   checkpointBag: (bag: Record<string, unknown>) => Record<string, unknown>;
+  hopSignature?: (bag: Record<string, unknown> | null) => string;
   pressStep: (
     args: {
       pressId: string;
@@ -201,8 +202,11 @@ Deno.serve(async (req) => {
   }
 
   const supabase = createClient(url, key);
-  const { deskFavorites, pressEdition, previousPressId, pressStep, slimPrintedQuery, checkpointBag } =
-    await loadPress();
+  const loaded = await loadPress();
+  const { deskFavorites, pressEdition, previousPressId, pressStep, slimPrintedQuery, checkpointBag } = loaded;
+  const hopSignature =
+    loaded.hopSignature ??
+    ((next: Record<string, unknown> | null) => String(next?.stage ?? 0));
   const press = pressEdition();
   let continued = false;
   try {
@@ -213,7 +217,7 @@ Deno.serve(async (req) => {
   }
   const { data: existing } = await supabase
     .from("newspaper_issues")
-    .select("status, printed_at, queries")
+    .select("status, printed_at, checkpoint:queries->checkpoint, bag:queries->bag, hopAttempt:queries->hopAttempt")
     .eq("id", press.id)
     .maybeSingle();
 
@@ -237,10 +241,23 @@ Deno.serve(async (req) => {
     if (claimError) return Response.json({ ok: false, error: claimError.message }, { status: 500 });
   }
 
-  const saved = existing?.queries as { checkpoint?: boolean; bag?: Record<string, unknown> } | null;
+  const row = existing as {
+    status?: string;
+    printed_at?: string;
+    checkpoint?: unknown;
+    bag?: unknown;
+    hopAttempt?: unknown;
+    queries?: { checkpoint?: unknown; bag?: unknown; hopAttempt?: unknown };
+  } | null;
+  const checkpoint = row?.checkpoint ?? row?.queries?.checkpoint;
+  const savedBag = row?.bag ?? row?.queries?.bag;
   const bag =
-    saved && typeof saved === "object" && !Array.isArray(saved) && saved.checkpoint ? (saved.bag ?? null) : null;
+    checkpoint === true && savedBag && typeof savedBag === "object" && !Array.isArray(savedBag)
+      ? (savedBag as Record<string, unknown>)
+      : null;
   const bagStage = typeof bag?.stage === "number" ? bag.stage : 0;
+  const priorAttempt = (row?.hopAttempt ?? row?.queries?.hopAttempt) as { sig?: string } | null;
+  const hopSig = hopSignature(bag);
 
   try {
     const { data: desk } = await supabase
@@ -284,6 +301,40 @@ Deno.serve(async (req) => {
         }
       }
     }
+    const dbUrl = Deno.env.get("SUPABASE_DB_URL");
+    if (!dbUrl) throw new Error("Missing database URL");
+    if (priorAttempt?.sig && priorAttempt.sig === hopSig) {
+      console.error(
+        `[newspaper-press] STUCK HOP: stage/cursor ${hopSig} already failed (likely 546 CPU Time exceeded). Not re-running the same work.`,
+      );
+      return Response.json(
+        { ok: false, error: `stuck hop ${hopSig}`, stuck: true, stage: bagStage, cursor: hopSig },
+        { status: 500 },
+      );
+    }
+    {
+      const pool = new Pool(dbUrl, 1);
+      const connection = await pool.connect();
+      try {
+        await connection.queryObject(
+          `update public.newspaper_issues
+              set queries = jsonb_set(
+                coalesce(
+                  case when jsonb_typeof(queries) = 'object' then queries else null end,
+                  jsonb_build_object('checkpoint', true, 'bag', $1::jsonb, 'desks', '[]'::jsonb)
+                ),
+                '{hopAttempt}',
+                $2::jsonb
+              )
+            where id = $3`,
+          [JSON.stringify(bag ?? { stage: 0 }), JSON.stringify({ sig: hopSig, at: new Date().toISOString() }), press.id],
+        );
+      } finally {
+        connection.release();
+        await pool.end();
+      }
+    }
+    const hopStarted = Date.now();
     const step = await pressStep(
       {
         pressId: press.id,
@@ -301,15 +352,20 @@ Deno.serve(async (req) => {
       },
       bag,
     );
+    const hopMs = Date.now() - hopStarted;
     const flush = (step.flush ?? []).map(slimPrintedQuery);
     const storyFlush = step.stories ?? (!step.done ? [] : step.issue.stories);
-    const dbUrl = Deno.env.get("SUPABASE_DB_URL");
-    if (!dbUrl) throw new Error("Missing database URL");
     if (!step.done) {
       // Persist only this hop's flush + story slice + the slim bag.
       // Postgres concatenates desks and stories so this isolate never
-      // reloads or stringifies the whole edition.
-      const bag = checkpointBag(step.bag ?? { stage: 0 });
+      // reloads or stringifies the whole edition. hopAttempt is omitted so
+      // the next isolate will run the new cursor.
+      const nextBag = checkpointBag(step.bag ?? { stage: 0 });
+      const bagJson = JSON.stringify(nextBag);
+      const cursor = hopSignature(nextBag);
+      console.info(
+        `[newspaper-press] hop stage=${nextBag.stage} cursor=${cursor} bagBytes=${bagJson.length} elapsedMs=${hopMs}`,
+      );
       const pool = new Pool(dbUrl, 1);
       const connection = await pool.connect();
       try {
@@ -333,7 +389,7 @@ Deno.serve(async (req) => {
                     ) || $2::jsonb
                   )
             where id = $3`,
-          [JSON.stringify(bag), JSON.stringify(flush), press.id, JSON.stringify(storyFlush)],
+          [bagJson, JSON.stringify(flush), press.id, JSON.stringify(storyFlush)],
         );
         await connection.queryObject(
           "select net.http_post(url := $1::text, headers := jsonb_build_object('Content-Type', 'application/json', 'Authorization', $2::text), body := $3::text::jsonb, timeout_milliseconds := 150000)",
@@ -348,10 +404,16 @@ Deno.serve(async (req) => {
         ok: true,
         id: press.id,
         stage,
+        cursor,
+        bagBytes: bagJson.length,
+        elapsedMs: hopMs,
         flushed: flush.length,
         stories: storyFlush.length,
       });
     }
+    console.info(
+      `[newspaper-press] hop stage=done cursor=${hopSignature({ stage: 19 })} bagBytes=0 elapsedMs=${hopMs}`,
+    );
     const pool = new Pool(dbUrl, 1);
     const connection = await pool.connect();
     try {

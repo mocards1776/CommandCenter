@@ -154,18 +154,72 @@ function teamTokens(card: GameWrapCard): string[] {
     .filter((w) => w.length >= 4 && !GAME_TOKEN_STOP.has(w));
 }
 
-export function sameGameStory(a: GameWrapCard, b: GameWrapCard): boolean {
-  const idA = eventIdOf(a);
-  const idB = eventIdOf(b);
-  if (idA && idB && idA === idB) return true;
+type GameMatchKey = {
+  eventId: string | null;
+  tokens: string[];
+  tokenSet: Set<string>;
+  scoreKey: string | null;
+  leaguePath: string | null;
+  hasScore: boolean;
+  isWrap: boolean;
+};
+
+const matchKeyCache = new WeakMap<GameWrapCard, GameMatchKey>();
+
+function matchKeyOf(card: GameWrapCard): GameMatchKey {
+  const hit = matchKeyCache.get(card);
+  if (hit) return hit;
+  const tokens = teamTokens(card);
+  const key: GameMatchKey = {
+    eventId: eventIdOf(card),
+    tokens,
+    tokenSet: new Set(tokens),
+    scoreKey: card.scoreLine ? `${card.scoreLine}\0${card.leaguePath ?? ""}` : null,
+    leaguePath: card.leaguePath ?? null,
+    hasScore: Boolean(card.scoreLine),
+    isWrap: isGameWrapCard(card),
+  };
+  matchKeyCache.set(card, key);
+  return key;
+}
+
+function sameGameKeyed(a: GameMatchKey, b: GameMatchKey): boolean {
+  if (a.eventId && b.eventId && a.eventId === b.eventId) return true;
   if (a.leaguePath && b.leaguePath && a.leaguePath !== b.leaguePath) return false;
-  if (a.scoreLine && b.scoreLine && a.scoreLine === b.scoreLine && a.leaguePath === b.leaguePath) {
-    return true;
+  if (a.scoreKey && b.scoreKey && a.scoreKey === b.scoreKey) return true;
+  // sameGameStory(a, b) counted tokens(b) against the set of a.
+  const shared = b.tokens.filter((w) => a.tokenSet.has(w));
+  return shared.length >= 2 && Boolean(a.hasScore || b.hasScore || a.isWrap || b.isWrap);
+}
+
+export function sameGameStory(a: GameWrapCard, b: GameWrapCard): boolean {
+  return sameGameKeyed(matchKeyOf(a), matchKeyOf(b));
+}
+
+function indexKeptWraps(kept: GameWrapCard[]): { byEvent: Map<string, number>; byScore: Map<string, number> } {
+  const byEvent = new Map<string, number>();
+  const byScore = new Map<string, number>();
+  for (let i = 0; i < kept.length; i++) {
+    const key = matchKeyOf(kept[i]!);
+    if (key.eventId && !byEvent.has(key.eventId)) byEvent.set(key.eventId, i);
+    if (key.scoreKey && !byScore.has(key.scoreKey)) byScore.set(key.scoreKey, i);
   }
-  const ta = new Set(teamTokens(a));
-  const tb = teamTokens(b);
-  const shared = tb.filter((w) => ta.has(w));
-  return shared.length >= 2 && Boolean(a.scoreLine || b.scoreLine || isGameWrapCard(a) || isGameWrapCard(b));
+  return { byEvent, byScore };
+}
+
+/** First kept wrap that matches, same order as findIndex(sameGameStory). */
+function findKeptWrapIndex(card: GameWrapCard, kept: GameWrapCard[]): number {
+  if (!kept.length) return -1;
+  const key = matchKeyOf(card);
+  const { byEvent, byScore } = indexKeptWraps(kept);
+  let hinted = -1;
+  if (key.eventId && byEvent.has(key.eventId)) hinted = byEvent.get(key.eventId)!;
+  else if (key.scoreKey && byScore.has(key.scoreKey)) hinted = byScore.get(key.scoreKey)!;
+  const limit = hinted >= 0 ? hinted : kept.length;
+  for (let i = 0; i < limit; i++) {
+    if (sameGameKeyed(key, matchKeyOf(kept[i]!))) return i;
+  }
+  return hinted;
 }
 
 function isFeatureOutlet(card: GameWrapCard): boolean {
@@ -191,39 +245,96 @@ function asRelated(card: GameWrapCard): RelatedStory {
   };
 }
 
+export type RelatedCopyCursor = {
+  wrapAt: number;
+  restAt: number;
+  keptWraps: GameWrapCard[];
+  leftover: GameWrapCard[];
+};
+
+export type RelatedCopyStep = {
+  done: boolean;
+  phase: "related-wraps" | "related-rest";
+  cursor: RelatedCopyCursor;
+  cards?: GameWrapCard[];
+};
+
+function foldKeptWrap(keptWraps: GameWrapCard[], card: GameWrapCard): void {
+  const idx = findKeptWrapIndex(card, keptWraps);
+  if (idx < 0) {
+    keptWraps.push({ ...card, related: card.related ? [...card.related] : [] });
+    return;
+  }
+  const prev = keptWraps[idx]!;
+  const nextWins = wrapPreference(card) < wrapPreference(prev);
+  const winner = nextWins ? card : prev;
+  const loser = nextWins ? prev : card;
+  keptWraps[idx] = {
+    ...winner,
+    related: [...(winner.related ?? []), asRelated(loser), ...(loser.related ?? [])],
+  };
+}
+
+function attachRestCard(keptWraps: GameWrapCard[], leftover: GameWrapCard[], card: GameWrapCard): void {
+  const idx = findKeptWrapIndex(card, keptWraps);
+  const wrap = idx >= 0 ? keptWraps[idx] : undefined;
+  if (wrap && (isFeatureOutlet(card) || isPreviewCard(card))) {
+    wrap.related = [...(wrap.related ?? []), asRelated(card)];
+    return;
+  }
+  leftover.push(card);
+}
+
 /**
  * One wrap per game. AP / ESPN recap stays; an Athletic or Post-Dispatch
  * feature on the same game hangs off it as a related item.
+ *
+ * `attachRelatedGameCopyStep` is the same walk with a time budget so the
+ * scheduled press can save a cursor and come back.
  */
-export function attachRelatedGameCopy(cards: GameWrapCard[]): GameWrapCard[] {
+export function attachRelatedGameCopyStep(
+  cards: GameWrapCard[],
+  cursor: RelatedCopyCursor | null,
+  budgetMs: number,
+): RelatedCopyStep {
   const wraps = cards.filter(isGameWrapCard);
   const rest = cards.filter((c) => !isGameWrapCard(c));
-  const keptWraps: GameWrapCard[] = [];
-  for (const card of wraps) {
-    const idx = keptWraps.findIndex((prev) => sameGameStory(card, prev));
-    if (idx < 0) {
-      keptWraps.push({ ...card, related: card.related ? [...card.related] : [] });
-      continue;
+  const started = Date.now();
+  let wrapAt = cursor?.wrapAt ?? 0;
+  let restAt = cursor?.restAt ?? 0;
+  const keptWraps = cursor?.keptWraps ?? [];
+  const leftover = cursor?.leftover ?? [];
+  let progressed = false;
+
+  while (wrapAt < wraps.length) {
+    if (progressed && Date.now() - started >= budgetMs) {
+      return { done: false, phase: "related-wraps", cursor: { wrapAt, restAt, keptWraps, leftover } };
     }
-    const prev = keptWraps[idx]!;
-    const nextWins = wrapPreference(card) < wrapPreference(prev);
-    const winner = nextWins ? card : prev;
-    const loser = nextWins ? prev : card;
-    keptWraps[idx] = {
-      ...winner,
-      related: [...(winner.related ?? []), asRelated(loser), ...(loser.related ?? [])],
-    };
+    foldKeptWrap(keptWraps, wraps[wrapAt]!);
+    wrapAt += 1;
+    progressed = true;
   }
-  const leftover: GameWrapCard[] = [];
-  for (const card of rest) {
-    const wrap = keptWraps.find((w) => sameGameStory(card, w));
-    if (wrap && (isFeatureOutlet(card) || isPreviewCard(card))) {
-      wrap.related = [...(wrap.related ?? []), asRelated(card)];
-      continue;
+
+  while (restAt < rest.length) {
+    if (progressed && Date.now() - started >= budgetMs) {
+      return { done: false, phase: "related-rest", cursor: { wrapAt, restAt, keptWraps, leftover } };
     }
-    leftover.push(card);
+    attachRestCard(keptWraps, leftover, rest[restAt]!);
+    restAt += 1;
+    progressed = true;
   }
-  return [...keptWraps, ...leftover];
+
+  return {
+    done: true,
+    phase: "related-rest",
+    cursor: { wrapAt, restAt, keptWraps, leftover },
+    cards: [...keptWraps, ...leftover],
+  };
+}
+
+export function attachRelatedGameCopy(cards: GameWrapCard[]): GameWrapCard[] {
+  const step = attachRelatedGameCopyStep(cards, null, Number.POSITIVE_INFINITY);
+  return step.cards ?? [...(step.cursor.keptWraps ?? []), ...(step.cursor.leftover ?? [])];
 }
 
 function recapScore(card: GameWrapCard): number {

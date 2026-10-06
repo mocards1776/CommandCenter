@@ -10,7 +10,7 @@ import { fetchClubSheet } from "./newspaper-clubsheet";
 import { enrichMissouriItems, fetchMissouriDesk, fetchMissouriScout } from "./newspaper-missouri-fetch";
 import type { MoItem } from "./newspaper-missouri";
 import { fetchOpener, type Opener } from "./newspaper-openers";
-import { attachRelatedGameCopy } from "./newspaper-sport-desk";
+import { attachRelatedGameCopy, attachRelatedGameCopyStep } from "./newspaper-sport-desk";
 import { cleanStoryCopy, htmlToNewspaperText, isNavSoup, isPeripheralClubStory, isPrintableStoryBody, killedSource, stampBodyChars, truncateAtSentence } from "./newspaper-copy";
 import { isBoilerplateDek, storySource } from "./newspaper-source";
 import {
@@ -55,9 +55,19 @@ import { ISSUE_VERSION, type PrintedIssue, type PrintedQuery } from "./newspaper
 import { clearEditorStamps, editEdition, type EditorRequest } from "./newspaper-editor";
 import { deskCopyQueue, dedupePush, essentialsFromDesks, finishDedupe } from "./newspaper-sections";
 import { fetchFavoriteCoachDesk, printsFavoriteCoaches } from "./newspaper-favorite-coaches";
-import { checkpointBag, DROP_AFTER_BOARD_DESKS, DROP_AFTER_FILE_DESKS, DROP_AFTER_GATHER, dropBagKeys } from "./newspaper-press-bag";
+import {
+  checkpointBag,
+  DROP_AFTER_BOARD_DESKS,
+  DROP_AFTER_FILE_DESKS,
+  DROP_AFTER_GATHER,
+  dropBagKeys,
+  hopSignature,
+} from "./newspaper-press-bag";
 
-export { checkpointBag } from "./newspaper-press-bag";
+export { checkpointBag, hopSignature } from "./newspaper-press-bag";
+
+/** Soft ceiling for CPU work in one isolate. Edge kills the hop at ~2,000 ms. */
+export const HOP_BUDGET_MS = 1_200;
 
 export function deskFavorites(order: string[] | null | undefined, hidden: string[] | null | undefined): SportsFavorite[] {
   const layout: SportsLayout = {
@@ -105,7 +115,33 @@ function filedBody(card: GameWrapCard, text: string | null | undefined): string 
   return `${cleaned.author} | ${outlet} ${cleaned.text}`;
 }
 
-export function fileExtracts(cards: GameWrapCard[], extracts: Record<string, RssArticle> | undefined): GameWrapCard[] {
+/** Article text the press bag keeps after fetch — no raw HTML. */
+export type PressExtract = {
+  url?: string;
+  title?: string | null;
+  byline?: string | null;
+  image?: string | null;
+  /** Image lifted from article HTML at fetch time so the bag can drop HTML. */
+  contentImage?: string | null;
+  contentText?: string;
+  contentHtml?: string;
+  wordCount?: number;
+};
+
+export function slimFetchedArticle(article: RssArticle): PressExtract {
+  const contentText = article.contentHtml ? htmlToNewspaperText(article.contentHtml) : article.contentText;
+  return {
+    url: article.url,
+    title: article.title,
+    byline: article.byline,
+    image: article.image,
+    contentImage: firstContentImageUrl(article.contentHtml),
+    contentText,
+    wordCount: article.wordCount,
+  };
+}
+
+export function fileExtracts(cards: GameWrapCard[], extracts: Record<string, PressExtract> | undefined): GameWrapCard[] {
   const clean = cards.filter(runnable).map((card) => {
     const dek = cleanStoryCopy(card.dek);
     const dekText = dek.text ? truncateAtSentence(dek.text, 280) : "";
@@ -131,7 +167,11 @@ export function fileExtracts(cards: GameWrapCard[], extracts: Record<string, Rss
     return {
       ...card,
       body: adopt ? filedBody(card, source) : currentPrintable ? card.body : filedBody(card, card.body),
-      photo: pickBestStoryImage([card.photo, hit.image, firstContentImageUrl(hit.contentHtml)]),
+      photo: pickBestStoryImage([
+        card.photo,
+        hit.image,
+        hit.contentImage ?? firstContentImageUrl(hit.contentHtml),
+      ]),
     };
   });
 }
@@ -214,7 +254,7 @@ type PressBag = {
   heisman?: unknown;
   extractCursor?: number;
   extractFileCursor?: number;
-  extracts?: Record<string, RssArticle>;
+  extracts?: Record<string, PressExtract>;
   extractUrls?: string[];
   raw?: GameWrapCard[];
   fresh?: GameWrapCard[];
@@ -230,6 +270,14 @@ type PressBag = {
   dedupeGroups?: string[][];
   dedupeCursor?: number;
   deskCopy?: GameWrapCard[];
+  /** Stage-11 merge sub-steps. */
+  mergeStep?: "merge" | "related-wraps" | "related-rest" | "tag";
+  pool?: GameWrapCard[];
+  wrapCursor?: number;
+  restCursor?: number;
+  keptWraps?: GameWrapCard[];
+  leftover?: GameWrapCard[];
+  tagCursor?: number;
 };
 
 export type PressStep =
@@ -239,7 +287,13 @@ export type PressStep =
 /** Wrap-body enrich: live edge spent 2.0s CPU on 4 at once. Stay well under 2s. */
 const WRAP_ENRICH_PER_HOP = 2;
 /** Stories appended via SQL jsonb || so no hop stringifies the whole edition. */
-const STORY_FLUSH_PER_HOP = 40;
+const STORY_FLUSH_PER_HOP = 20;
+/** Favorite tagging / recap chrome per time-budgeted slice. */
+const TAG_BATCH = 20;
+
+function overBudget(started: number, progressed: boolean): boolean {
+  return progressed && Date.now() - started >= HOP_BUDGET_MS;
+}
 
 /**
  * One slice of the press. The scheduled worker can only hold a little at a time,
@@ -272,7 +326,28 @@ export async function pressStep(
     flush.push({ key, data });
   };
   const wrapFeedUrls = wrapFeedsForFavorites(favs);
-  const pause = (): PressStep => ({ done: false, bag: checkpointBag(state), flush });
+  const hopStarted = Date.now();
+  const logHop = (bag: PressBag) => {
+    const cursor = hopSignature(bag);
+    console.info(
+      `[newspaper-press] hop stage=${bag.stage} cursor=${cursor} elapsedMs=${Date.now() - hopStarted}`,
+    );
+  };
+  const pause = (): PressStep => {
+    const bag = checkpointBag(state);
+    logHop(bag);
+    return { done: false, bag, flush };
+  };
+  const fileWrapAndLeagueDesks = () => {
+    const cards = state.enriched ?? state.teamCards;
+    if (cards) {
+      put([pressId, "tt-wrap-bodies", day, cards.map((c) => `${c.id}:${c.gameId}`).join("|")], cards);
+    }
+    const paths = state.paths ?? [];
+    if (paths.length && state.leagueNews) {
+      put([pressId, "tt-league-news", day, state.pathKey ?? ""], state.leagueNews);
+    }
+  };
 
   if (state.stage === 0) {
     state.snaps = await poolMap(favs, 3, async (fav) => {
@@ -481,11 +556,77 @@ export async function pressStep(
       state.leagueCursor = cursor + 1;
       return pause();
     }
-    const withLeague = mergeStoryCards(state.clubCopy ?? [], state.leagueNews ?? []);
-    const merged = mergeStoryCards(withLeague, state.athletic ?? []).filter((card) => !isNewsMuted(card));
-    const tagged = tagFavoriteStories(attachRelatedGameCopy(merged), favs);
-    state.raw = attachFavoriteRecapChrome(tagged, state.wireGames ?? []);
-    dropBagKeys(state, ["clubCopy", "wireGames", "athletic", "details", "wire", "news"]);
+    const mergeStep = state.mergeStep ?? "merge";
+    if (mergeStep === "merge") {
+      const withLeague = mergeStoryCards(state.clubCopy ?? [], state.leagueNews ?? []);
+      const merged = mergeStoryCards(withLeague, state.athletic ?? []).filter((card) => !isNewsMuted(card));
+      state.pool = merged;
+      fileWrapAndLeagueDesks();
+      dropBagKeys(state, ["clubCopy", "athletic", "details", "wire", "news", "teamCards", "leagueNews", "enriched"]);
+      state.mergeStep = "related-wraps";
+      state.wrapCursor = 0;
+      state.restCursor = 0;
+      state.keptWraps = [];
+      state.leftover = [];
+      return pause();
+    }
+
+    if (mergeStep === "related-wraps" || mergeStep === "related-rest") {
+      const result = attachRelatedGameCopyStep(
+        state.pool ?? [],
+        {
+          wrapAt: state.wrapCursor ?? 0,
+          restAt: state.restCursor ?? 0,
+          keptWraps: state.keptWraps ?? [],
+          leftover: state.leftover ?? [],
+        },
+        HOP_BUDGET_MS,
+      );
+      state.wrapCursor = result.cursor.wrapAt;
+      state.restCursor = result.cursor.restAt;
+      state.keptWraps = result.cursor.keptWraps;
+      state.leftover = result.cursor.leftover;
+      if (!result.done) {
+        state.mergeStep = result.phase;
+        return pause();
+      }
+      state.pool = result.cards ?? [...result.cursor.keptWraps, ...result.cursor.leftover];
+      dropBagKeys(state, ["keptWraps", "leftover", "wrapCursor", "restCursor"]);
+      state.mergeStep = "tag";
+      state.tagCursor = 0;
+      state.raw = [];
+      return pause();
+    }
+
+    const pool = state.pool ?? [];
+    const started = Date.now();
+    let at = state.tagCursor ?? 0;
+    const out = state.raw ?? [];
+    let progressed = false;
+    while (at < pool.length && !overBudget(started, progressed)) {
+      const slice = pool.slice(at, at + TAG_BATCH);
+      out.push(...attachFavoriteRecapChrome(tagFavoriteStories(slice, favs), state.wireGames ?? []));
+      at += slice.length;
+      progressed = true;
+    }
+    state.raw = out;
+    state.tagCursor = at;
+    if (at < pool.length) return pause();
+    dropBagKeys(state, [
+      "clubCopy",
+      "wireGames",
+      "athletic",
+      "details",
+      "wire",
+      "news",
+      "pool",
+      "mergeStep",
+      "tagCursor",
+      "keptWraps",
+      "leftover",
+      "wrapCursor",
+      "restCursor",
+    ]);
     state.stage = 12;
     return pause();
   }
@@ -546,12 +687,9 @@ export async function pressStep(
     state.heisman = paths.includes("football/college-football")
       ? await settle(fetchHeismanOdds(), null)
       : null;
-    const teamCards = state.teamCards ?? [];
     const pathsKey = state.pathKey ?? "";
-    state.teamCards = state.enriched ?? state.teamCards ?? teamCards;
-    put([pressId, "tt-wrap-bodies", day, (state.teamCards ?? []).map((c) => `${c.id}:${c.gameId}`).join("|")], state.teamCards);
+    fileWrapAndLeagueDesks();
     if (paths.length) {
-      put([pressId, "tt-league-news", day, pathsKey], state.leagueNews ?? []);
       put([pressId, "tt-league-clubs", day, pathsKey], state.leagueClubs);
       put([pressId, "tt-league-slate", day, pathsKey], state.leagueSlate);
       put([pressId, "tt-board", day, pathsKey], state.board);
@@ -582,17 +720,25 @@ export async function pressStep(
   if (state.stage === 14) {
     if (!state.raw || !state.extractUrls) {
       if (!state.raw) {
-        const teamCards = state.teamCards ?? [];
-        state.raw = gatherStories({
-          wire: state.wire ?? { games: state.wireGames ?? [], postseasonLeagues: [] },
-          favs,
-          details: state.details ?? [],
-          enriched: teamCards,
-          teamCards,
-          news: state.news ?? [],
-          leagueNews: state.leagueNews ?? [],
-          athletic: state.athletic ?? [],
-        });
+        const canRebuild = Boolean(state.teamCards?.length || state.leagueNews?.length || state.clubCopy?.length);
+        if (canRebuild) {
+          const teamCards = state.teamCards ?? [];
+          state.raw = gatherStories({
+            wire: state.wire ?? { games: state.wireGames ?? [], postseasonLeagues: [] },
+            favs,
+            details: state.details ?? [],
+            enriched: teamCards,
+            teamCards,
+            news: state.news ?? [],
+            leagueNews: state.leagueNews ?? [],
+            athletic: state.athletic ?? [],
+          });
+        } else {
+          console.error(
+            "[newspaper-press] stage 14 has no raw stories and gather sources were already dropped",
+          );
+          state.raw = [];
+        }
       }
       state.extractUrls = urlsToExtract(state.raw);
       state.extracts ??= {};
@@ -606,7 +752,7 @@ export async function pressStep(
       const slice = extractUrls.slice(cursor, cursor + 4);
       for (const url of slice) {
         try {
-          const article = await fetchRssArticle(url);
+          const article = slimFetchedArticle(await fetchRssArticle(url));
           extracts[url] = article;
           put([pressId, "rss-article-v3", url], article);
         } catch {
@@ -626,14 +772,18 @@ export async function pressStep(
       return pause();
     }
     const queue = state.raw ?? [];
-    const fileAt = state.extractFileCursor;
-    if (fileAt < queue.length) {
+    const started = Date.now();
+    let fileAt = state.extractFileCursor;
+    let progressed = false;
+    while (fileAt < queue.length && !overBudget(started, progressed)) {
       const slice = queue.slice(fileAt, fileAt + STORY_FLUSH_PER_HOP);
       const filed = fileExtracts(slice, extractUrls.length ? extracts : undefined);
       state.fresh = [...(state.fresh ?? []), ...filed];
-      state.extractFileCursor = fileAt + slice.length;
-      return pause();
+      fileAt += slice.length;
+      progressed = true;
     }
+    state.extractFileCursor = fileAt;
+    if (fileAt < queue.length) return pause();
     dropBagKeys(state, ["raw", "extracts", "extractUrls", "extractCursor", "extractFileCursor"]);
     state.stage = 15;
     return pause();
@@ -670,13 +820,17 @@ export async function pressStep(
 
   if (state.stage === 15 && state.filed) {
     const filed = state.filed;
-    const cursor = state.cleanCursor ?? 0;
-    if (cursor < filed.length) {
+    const started = Date.now();
+    let cursor = state.cleanCursor ?? 0;
+    let progressed = false;
+    while (cursor < filed.length && !overBudget(started, progressed)) {
       const slice = filed.slice(cursor, cursor + STORY_FLUSH_PER_HOP);
       for (const card of slice) stampBodyChars(card);
-      state.cleanCursor = cursor + slice.length;
-      return pause();
+      cursor += slice.length;
+      progressed = true;
     }
+    state.cleanCursor = cursor;
+    if (cursor < filed.length) return pause();
     delete state.cleanCursor;
     state.stage = 16;
     return pause();
@@ -692,18 +846,22 @@ export async function pressStep(
       return pause();
     }
     const queue = state.dedupeQueue;
-    const cursor = state.dedupeCursor ?? 0;
+    const started = Date.now();
+    let cursor = state.dedupeCursor ?? 0;
     const groups = (state.dedupeGroups ?? []).map((ids) => ids.map((id) => byId.get(id)).filter(Boolean) as GameWrapCard[]);
-    if (cursor < queue.length) {
+    let progressed = false;
+    while (cursor < queue.length && !overBudget(started, progressed)) {
       const slice = queue.slice(cursor, cursor + STORY_FLUSH_PER_HOP);
       for (const id of slice) {
         const card = byId.get(id);
         if (card) dedupePush(groups, card);
       }
-      state.dedupeGroups = groups.map((group) => group.map((card) => card.id));
-      state.dedupeCursor = cursor + slice.length;
-      return pause();
+      cursor += slice.length;
+      progressed = true;
     }
+    state.dedupeGroups = groups.map((group) => group.map((card) => card.id));
+    state.dedupeCursor = cursor;
+    if (cursor < queue.length) return pause();
     state.deskCopy = finishDedupe(groups);
     dropBagKeys(state, ["dedupeQueue", "dedupeGroups", "dedupeCursor"]);
     state.stage = 17;
@@ -739,7 +897,9 @@ export async function pressStep(
         delete state.filed;
         state.stage = 19;
       }
-      return { done: false, bag: checkpointBag(state), flush, stories: slice };
+      const bag = checkpointBag(state);
+      logHop(bag);
+      return { done: false, bag, flush, stories: slice };
     }
     delete state.filed;
     delete state.storyCursor;
@@ -747,6 +907,7 @@ export async function pressStep(
     return pause();
   }
 
+  logHop({ stage: 19 });
   return {
     done: true,
     flush,
