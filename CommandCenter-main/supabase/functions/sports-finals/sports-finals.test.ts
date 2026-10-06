@@ -20,9 +20,14 @@ import {
   shouldSendFinal,
 } from "./select.ts";
 import { tablesFromStandings, windowRows, shortGroupTitle } from "./standings.ts";
+import { whiteSoxGuardiansPlayoffFixture } from "./mlb-playoff-fixture.ts";
+import { sendTelegramPhoto, TELEGRAM_GRAPHIC_METHOD } from "./telegram.ts";
 import {
   FINALS_ALERT_TARGET_HEIGHT,
   FINALS_ALERT_WIDTH,
+  MLB_BOX_HEAD_SIZE,
+  MLB_BOX_NAME_SIZE,
+  MLB_BOX_STAT_SIZE,
   STANDINGS_GROUP_DY,
   STANDINGS_TITLE_DY,
   distinctTeamPaints,
@@ -885,6 +890,11 @@ assert.doesNotMatch(mlbPlayoffCaption, /103-59|91-71|move to/);
 const mlbPlayoffSvg = renderFinalSvg(mlbPlayoff);
 assert.match(mlbPlayoffSvg, /MIL leads series 2-0/);
 assert.match(mlbPlayoffSvg, /Box score/);
+assert.match(mlbPlayoffSvg, />AB<|>R<|>H<|>RBI<|>HR<|>BB<|>K</);
+assert.match(mlbPlayoffSvg, />IP<|>ER</);
+assert.match(mlbPlayoffSvg, new RegExp(`font-size="${MLB_BOX_NAME_SIZE}"[^>]*>F\\. Tatis Jr\\.`));
+assert.match(mlbPlayoffSvg, new RegExp(`font-size="${MLB_BOX_STAT_SIZE}"[^>]*>5\\.0<`));
+assert.match(mlbPlayoffSvg, new RegExp(`font-size="${MLB_BOX_HEAD_SIZE}"[^>]*>HR<`));
 assert.match(mlbPlayoffSvg, /J\. Chourio|F\. Tatis Jr\./);
 assert.match(mlbPlayoffSvg, /L\. Henderson|M\. King/);
 assert.doesNotMatch(mlbPlayoffSvg, /Standings|NL Central/);
@@ -916,6 +926,48 @@ assert.match(mlbPlayoff.away.logoUrl ?? "", /500-dark\/sd/);
 assert.equal(mlbPlayoff.away.hits, 5);
 assert.equal(mlbPlayoff.home.errors, 3);
 assert.ok(pickMlbPerformers(mlbPlayoff.mlbBox!).length >= 2);
+
+const soxGuardians = whiteSoxGuardiansPlayoffFixture();
+assert.deepEqual(soxGuardians.mlbBox?.batting.away.labels, ["AB", "R", "H", "RBI", "HR", "BB", "K"]);
+assert.deepEqual(soxGuardians.mlbBox?.pitching.home.labels, ["IP", "H", "R", "ER", "BB", "K"]);
+assert.ok((soxGuardians.mlbBox?.batting.away.rows.length ?? 0) >= 11, "full CHW batting order");
+assert.ok((soxGuardians.mlbBox?.pitching.away.rows.length ?? 0) >= 4, "full CHW pitching staff");
+const soxSvg = renderFinalSvg(soxGuardians);
+assert.match(soxSvg, /S\. Antonacci/);
+assert.match(soxSvg, /C\. DeLautter/);
+assert.match(soxSvg, />HR</);
+assert.match(soxSvg, />BB</);
+assert.match(soxSvg, new RegExp(`font-size="${MLB_BOX_NAME_SIZE}"[^>]*>S\\. Antonacci`));
+assert.match(soxSvg, new RegExp(`font-size="${MLB_BOX_STAT_SIZE}"[^>]*>11<`));
+assert.ok(MLB_BOX_NAME_SIZE >= 20 && MLB_BOX_STAT_SIZE >= 20, "box type must stay phone-readable");
+const soxH = Number(/<svg [^>]*height="(\d+(?:\.\d+)?)"/.exec(soxSvg)?.[1] ?? 0);
+assert.ok(soxH > 1350 && soxH <= FINALS_ALERT_TARGET_HEIGHT + 500, `full-box MLB card height ${soxH}`);
+
+assert.equal(TELEGRAM_GRAPHIC_METHOD, "sendDocument");
+{
+  const calls: { url: string; field: string; type: string }[] = [];
+  const orig = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const form = init?.body as FormData;
+    const file = (form?.get("document") ?? form?.get("photo")) as Blob | null;
+    calls.push({
+      url: String(input),
+      field: form?.has("document") ? "document" : form?.has("photo") ? "photo" : "none",
+      type: file && "type" in file ? String(file.type) : "",
+    });
+    return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "Content-Type": "application/json" } });
+  }) as typeof fetch;
+  try {
+    await sendTelegramPhoto("tok", "857547432", new Uint8Array([137, 80, 78, 71]), "FINAL · MLB", null);
+  } finally {
+    globalThis.fetch = orig;
+  }
+  assert.equal(calls.length, 1);
+  assert.match(calls[0]!.url, /\/sendDocument$/);
+  assert.doesNotMatch(calls[0]!.url, /sendPhoto/);
+  assert.equal(calls[0]!.field, "document");
+  assert.equal(calls[0]!.type, "image/png");
+}
 
 const stars = mapThreeStars([
   { star: 1, playerId: 1, teamAbbrev: "VGK", name: { default: "M. Marner" }, position: "R", goals: 1, assists: 0, points: 1, headshot: "https://example.com/a.png" },

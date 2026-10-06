@@ -12,6 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { initWasm, Resvg } from "@resvg/resvg-wasm";
 import { cardFromSummary, loadFinalCard, type FinalCard } from "../supabase/functions/sports-finals/card.ts";
+import { whiteSoxGuardiansPlayoffFixture } from "../supabase/functions/sports-finals/mlb-playoff-fixture.ts";
 import { tablesFromStandings } from "../supabase/functions/sports-finals/standings.ts";
 import { renderFinalSvg } from "../supabase/functions/sports-finals/svg.ts";
 
@@ -313,6 +314,7 @@ export function cubsCardinalsFixture(): FinalCard {
 
 function fixtureFor(sport: string): FinalCard {
   if (sport === "nhl") return bluesBruinsFixture();
+  if (sport === "mlb-playoff" || sport === "mlb-alds") return whiteSoxGuardiansPlayoffFixture();
   if (sport === "mlb") return cubsCardinalsFixture();
   return attachAfcNorth(steelersBrownsFixture());
 }
