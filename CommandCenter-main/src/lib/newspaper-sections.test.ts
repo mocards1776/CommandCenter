@@ -2331,4 +2331,61 @@ assert(
   "later recaps folios are board-only",
 );
 
+const chiefsRecap = card({
+  id: "wire-nfl-kc-401770099",
+  headline: "Chiefs beat the Raiders 30-27 to move to 4-0",
+  favoriteKey: "nfl-kc",
+  followed: true,
+  sportLabel: "NFL",
+  leaguePath: "football/nfl",
+  teamName: "Kansas City Chiefs",
+  status: "Final",
+  scoreLine: "KC 30 · LV 27",
+  gameId: "401770099",
+  when: "2026-10-04T20:00:00Z",
+  body: "Patrick Mahomes threw two touchdowns and the Chiefs held on in Las Vegas. ".repeat(8),
+});
+const chiefsBoard = card({
+  id: "box-nfl-401770099",
+  headline: "Chiefs 30, Raiders 27",
+  sportLabel: "NFL",
+  leaguePath: "football/nfl",
+  status: "Final",
+  scoreLine: "KC 30 · LV 27",
+  gameId: "401770099",
+  when: "2026-10-04T20:00:00Z",
+  dek: "Kansas City held on in Las Vegas.",
+});
+const favPaper = insertMissingRecaps(
+  buildEdition({
+    stories: [chiefsRecap, ...filedSeven],
+    clubs: [chiefs],
+    edition: "2026-10-05-evening",
+  }),
+  [...boardNfl, chiefsBoard],
+);
+const favA = favPaper.pages.filter((p) => p.section === "A");
+assert(
+  favA.some(
+    (p) =>
+      (p.kind === "favorites-inside" || p.kind === "favorites-front") &&
+      (p.kind === "favorites-inside"
+        ? [p.primary, p.secondary, ...p.briefs]
+        : [p.lead, p.second, p.third, ...p.news, ...p.briefs]
+      ).some((c) => c && sameRecapGame(c, chiefsRecap)),
+  ),
+  "the Chiefs keep the full recap in Section A",
+);
+assert(
+  !favPaper.pages.some(
+    (p) => p.kind === "sport-inside" && p.section === "NFL" && sportInsideCards(p).some((c) => sameRecapGame(c, chiefsBoard)),
+  ),
+  "a favorite-team game does not reprint as a compact sport-inside card",
+);
+const favDesk = favPaper.pages.find((p) => p.kind === "sport-front" && p.section === "NFL" && p.focus === "recaps");
+assert(
+  favDesk?.kind === "sport-front" && favDesk.articles.some((a) => sameRecapGame(a.card, chiefsBoard)),
+  "the recaps desk still lists the favorite-team final in the slate",
+);
+
 console.log("newspaper-sections ok");

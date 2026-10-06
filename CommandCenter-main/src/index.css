@@ -5126,6 +5126,8 @@ li.counting .tt-count.card {
   display: block;
   width: 100%;
   height: auto;
+  object-fit: cover;
+  object-position: center top;
   background: var(--w-paper-2);
 }
 .tt-recap-photo.card {

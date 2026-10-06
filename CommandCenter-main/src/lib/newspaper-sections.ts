@@ -2015,6 +2015,31 @@ function uniqueRecapGames(cards: GameWrapCard[]): GameWrapCard[] {
   return out;
 }
 
+/** Favorite-team recaps already set as the full #306 story in Section A. */
+function sectionARecapCards(pages: EditionPage[]): GameWrapCard[] {
+  const out: GameWrapCard[] = [];
+  for (const page of pages) {
+    if (page.kind === "favorites-inside") {
+      out.push(page.primary);
+      if (page.secondary) out.push(page.secondary);
+      out.push(...page.briefs);
+    } else if (page.kind === "favorites-front") {
+      if (page.lead) out.push(page.lead);
+      if (page.second) out.push(page.second);
+      if (page.third) out.push(page.third);
+      out.push(...page.news, ...page.briefs);
+    } else if (page.kind === "favorites-continue") {
+      for (const jump of page.jumps) out.push(jump.card);
+    }
+  }
+  return out;
+}
+
+function isSectionARecap(card: GameWrapCard, aRecaps: GameWrapCard[]): boolean {
+  if (card.favoriteKey || card.followed) return true;
+  return aRecaps.some((a) => a.id === card.id || sameRecapGame(a, card));
+}
+
 function printedSportRecaps(pages: { kind: string; path?: string; focus?: string; articles?: { card: GameWrapCard }[] }[], path: string): GameWrapCard[] {
   const out: GameWrapCard[] = [];
   for (const page of pages) {
@@ -2062,7 +2087,8 @@ export function insertMissingRecaps<E extends { pages: EditionPage[]; sections: 
   for (const [path, cards] of byPath) {
     const printed = printedSportRecaps(pages, path);
     const all = uniqueRecapGames([...printed, ...cards]);
-    const leftover = all.slice(2);
+    const aRecaps = sectionARecapCards(pages);
+    const leftover = all.slice(2).filter((card) => !isSectionARecap(card, aRecaps));
     const recapsDesk = pages.find((p) => p.kind === "sport-front" && sportPathOf(p) === path && p.focus === "recaps");
     const sample = recapsDesk ?? pages.find((p) => sportPathOf(p) === path);
     if (!sample || (sample.kind !== "sport-front" && sample.kind !== "sport-inside")) continue;
