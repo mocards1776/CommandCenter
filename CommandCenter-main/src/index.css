@@ -1305,7 +1305,7 @@ mark.rss-hl {
   color: rgba(237, 239, 245, 0.55);
 }
 
-/* ── The spread: one folio per swipe, each a fixed page canvas ───────── */
+/* ── The spread: one folio per swipe, each scrolling on its own ─────── */
 .newspaper-edition.wsj-pager {
   --tt-fit: 1;
   flex: 1 1 auto;
@@ -1335,9 +1335,10 @@ mark.rss-hl {
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   overscroll-behavior: none;
-  touch-action: pan-x;
+  touch-action: pan-y;
   scroll-snap-align: start;
   scroll-snap-stop: always;
   scrollbar-width: none;
@@ -1523,7 +1524,6 @@ mark.rss-hl {
   min-width: 0;
   flex: 1;
   min-height: 0;
-  overflow: hidden;
 }
 
 .wsj-logo {
@@ -4068,7 +4068,6 @@ li.counting .tt-count.card {
   gap: 20px;
   flex: 1;
   min-height: 0;
-  overflow: hidden;
 }
 .wsj-inside > .wsj-story + .wsj-story {
   padding-top: 18px;
@@ -4102,7 +4101,6 @@ li.counting .tt-count.card {
   gap: 18px;
   flex: 1;
   min-height: 0;
-  overflow: hidden;
 }
 .wsj-sport-hero {
   position: relative;
@@ -4967,7 +4965,6 @@ li.counting .tt-count.card {
   gap: 16px;
   flex: 1;
   min-height: 0;
-  overflow: hidden;
 }
 .tt-scores .tt-wrap-flow.cols-1,
 .tt-scores .tt-wrap-flow.cols-2 {
@@ -8115,8 +8112,8 @@ li.counting .tt-count.card {
 .newspaper-root .tt-hero-id strong { font-size: 22px; }
 .newspaper-root .wsj-sport-hero { padding: 14px 18px; }
 
-/* One frame for every folio. The sheet is the 1040×1480 broadsheet; the frame
-   is the screen. Zoom, not a transform, so both axes fit without a second canvas. */
+/* One frame for every folio. The sheet is the broadsheet; the frame is the screen.
+   Zoom, not a transform, so a sheet taller than the screen scrolls its full height. */
 @supports not (zoom: 1) {
   .wsj-page {
     overflow-x: auto;
@@ -9090,10 +9087,7 @@ li.counting .tt-count.card {
   }
   .newspaper-root .wsj-fit .wsj-sheet {
     zoom: 1 !important;
-    height: var(--tt-page-h, 1480px) !important;
-    min-height: var(--tt-page-h, 1480px) !important;
-    max-height: var(--tt-page-h, 1480px) !important;
-    overflow: hidden !important;
+    min-height: 0 !important;
   }
 }
 
