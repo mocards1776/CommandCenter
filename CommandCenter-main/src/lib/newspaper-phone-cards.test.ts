@@ -174,5 +174,32 @@ const middayPhone = phoneFrontStories(
 );
 assert(middayPhone[0]?.id !== "box-nba-401898999", "Telegram A1 list does not lead with 76ers");
 assert(middayPhone[0]?.id === "news-cowboys-midday", "Telegram A1 list matches the paper Cowboys lead");
+const tuesdayPhone = phoneFrontStories(
+  [
+    {
+      ...mizzouWrap,
+      holdover: false,
+    },
+    {
+      ...mizzouWrap,
+      id: "news-cowboys-midday",
+      favoriteKey: "nfl-dal",
+      teamName: "Cowboys",
+      sportLabel: "NFL",
+      leaguePath: "football/nfl",
+      headline: "Cowboys get healthy ahead of Tampa Bay",
+      scoreLine: null,
+      won: null,
+      holdover: false,
+      photo: null,
+      when: "2026-10-06T15:00:00Z",
+      status: null,
+      body: "Dallas listed several starters as full participants on Tuesday. ".repeat(8),
+    },
+  ],
+  "2026-10-06-midday",
+);
+assert(tuesdayPhone[0]?.id !== "wire-college-football-401856708", "Telegram A1 list does not lead with Saturday CFB");
+assert(tuesdayPhone[0]?.id === "news-cowboys-midday", "Telegram A1 list matches the Tuesday paper, not Saturday Mizzou");
 
 console.log("newspaper-phone-cards ok");

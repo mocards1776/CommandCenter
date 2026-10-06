@@ -1760,7 +1760,7 @@ function FrontPage({
   };
   const leadPoster = wantsPoster(pageLead);
   const underCandidates = pool.filter((c) => c !== pageLead);
-  const underLead = pickFrontUnderLead(pool, pageLead) ?? pageSecond;
+  const underLead = pickFrontUnderLead(pool, pageLead, editionDay) ?? pageSecond;
   const underContinue =
     underLead && underLead.id === second?.id
       ? pageSecondContinue
