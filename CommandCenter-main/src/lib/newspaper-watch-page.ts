@@ -624,11 +624,36 @@ export function composeWatchPage(games: WatchGame[]): WatchPageModel {
 }
 
 /** Today's slate, hottest first. Finals stay on the page so an evening read still shows the afternoon. */
+/** Filed viewing-guide rows: drop exhibitions and blank 0-0 scheduled scores. */
+export function preparePrintedWatch(games: WatchGame[]): WatchGame[] {
+  const playable = games.filter((g) => !g.preseason);
+  return pickWatchGames(playable, Math.max(playable.length, 1));
+}
+
 export function pickWatchGames(
   games: (WatchGame & { final?: boolean })[],
   limit = WATCH_PAGE_GAMES,
 ): WatchGame[] {
-  return games.sort(byHeat).slice(0, limit);
+  const seen = new Set<string>();
+  const cleaned: WatchGame[] = [];
+  for (const game of games.sort(byHeat)) {
+    const day = (game.when && game.when.slice(0, 10)) || (game.status ?? "").replace(/\s+\d{1,2}:\d{2}.*$/, "");
+    const key = `${game.league}|${game.away.abbrev}|${game.home.abbrev}|${day}`;
+    if (seen.has(key) || seen.has(game.id)) continue;
+    seen.add(key);
+    seen.add(game.id);
+    const scheduled = !game.live && !game.final && !/final|in progress|period|q[1-4]/i.test(game.status ?? "");
+    if (scheduled && game.away.score === 0 && game.home.score === 0) {
+      cleaned.push({
+        ...game,
+        away: { ...game.away, score: null },
+        home: { ...game.home, score: null },
+      });
+      continue;
+    }
+    cleaned.push(game);
+  }
+  return cleaned.slice(0, limit);
 }
 
 function ctIso(day: string, hour: number, minute = 0): string {

@@ -41,7 +41,9 @@ import {
   cannotLeadFront,
   isFavoriteGameResult,
   isFavoriteStory,
+  isMoScoutCard,
   isSectionAStory,
+  mayFrontA1,
   latestClubResultDay,
   pickFrontUnderLead,
   stampFavoriteKeys,
@@ -87,13 +89,22 @@ function assert(cond: unknown, msg: string) {
   if (!cond) throw new Error(msg);
 }
 
+function impliedSport(key: string | undefined): { sportLabel: string; leaguePath: string } {
+  if (key?.startsWith("mlb-")) return { sportLabel: "MLB", leaguePath: "baseball/mlb" };
+  if (key?.startsWith("nhl-")) return { sportLabel: "NHL", leaguePath: "hockey/nhl" };
+  if (key?.startsWith("cfb-")) return { sportLabel: "CFB", leaguePath: "football/college-football" };
+  if (key?.startsWith("cbb-")) return { sportLabel: "CBB", leaguePath: "basketball/mens-college-basketball" };
+  if (key?.startsWith("nba-")) return { sportLabel: "NBA", leaguePath: "basketball/nba" };
+  if (key?.startsWith("eng-")) return { sportLabel: "EPL", leaguePath: "soccer/eng.1" };
+  return { sportLabel: "NFL", leaguePath: "football/nfl" };
+}
+
 function card(partial: Partial<GameWrapCard> & Pick<GameWrapCard, "id" | "headline">): GameWrapCard {
   return {
     favoriteKey: "",
     teamName: "",
     teamHref: "/",
-    sportLabel: "NFL",
-    leaguePath: "football/nfl",
+    ...impliedSport(partial.favoriteKey),
     dek: null,
     body: null,
     scoreLine: null,
@@ -642,6 +653,9 @@ assert(offTail?.kind === "sport-front" && offTail.turn === null, "the last desk 
 const bluesPreview = card({
   id: "news-blues-preview",
   favoriteKey: "nhl-stl",
+  teamName: "Blues",
+  sportLabel: "NHL",
+  leaguePath: "hockey/nhl",
   headline: "Stars host the Blues to start 2026 season",
   body: "St. Louis Blues (0-0-0) at Dallas Stars (0-0-0). BOTTOM LINE: The Stars open the season at home. ".repeat(6),
   when: "2026-09-29T20:00:00Z",
@@ -649,6 +663,9 @@ const bluesPreview = card({
 const cardsColumn = card({
   id: "news-cards-column",
   favoriteKey: "mlb-stl",
+  teamName: "Cardinals",
+  sportLabel: "MLB",
+  leaguePath: "baseball/mlb",
   headline: "Hochman: Gorman, Baez and Bohm and the Cardinals' infield",
   body: "The Cardinals have choices to make at third base this winter. ".repeat(12),
   when: "2026-09-29T20:00:00Z",
@@ -1992,8 +2009,37 @@ const coming = sortComingUp([
   { id: "same-day-open", when: "Tue, Oct 6", startIso: "2026-10-06T05:00:00Z" },
 ]);
 assert(
-  coming.map((g) => g.id).join(",") === "sixers,blues,same-day-open,mizzou-fb,mizzou-bb",
-  `Coming Up is chronological, date-only last that day: ${coming.map((g) => g.id).join(",")}`,
+  coming.map((g) => g.id).join(",") === "sixers,same-day-open,blues,mizzou-fb,mizzou-bb",
+  `Coming Up is chronological by start time: ${coming.map((g) => g.id).join(",")}`,
+);
+const comingPriority = sortComingUp([
+  { id: "lions", when: "Tue, Oct 6, 7:00 PM", startIso: "2026-10-07T00:00:00Z", favoriteKey: "nfl-det" },
+  { id: "chiefs", when: "Tue, Oct 6, 7:00 PM", startIso: "2026-10-07T00:00:00Z", favoriteKey: "nfl-kc" },
+]);
+assert(
+  comingPriority.map((g) => g.id).join(",") === "lions,chiefs",
+  "same kickoff sorts by team priority (Lions before Chiefs)",
+);
+const comingJosh = sortComingUp([
+  { id: "mizzou-fb", when: "Sat, Oct 10, 11:00 AM", startIso: "2026-10-10T16:00:00Z", favoriteKey: "cfb-mizzou" },
+  { id: "mizzou-bb", when: "Tue, Nov 3", startIso: "2026-11-03T05:00:00Z", favoriteKey: "cbb-mizzou" },
+  { id: "blues", when: "Tue, Oct 6, 7:00 PM", startIso: "2026-10-07T00:00:00Z", favoriteKey: "nhl-stl" },
+]);
+assert(
+  comingJosh.map((g) => g.id).join(",") === "blues,mizzou-fb,mizzou-bb",
+  `A1 Coming Up is Blues Oct 6, then Mizzou FB Oct 10, then BB Nov 3 (got ${comingJosh.map((g) => g.id).join(",")})`,
+);
+const comingNoIso = sortComingUp(
+  [
+    { id: "mizzou-fb", when: "Sat, Oct 10, 11:00 AM CT", favoriteKey: "cfb-mizzou" },
+    { id: "mizzou-bb", when: "Tue, Nov 3", favoriteKey: "cbb-mizzou" },
+    { id: "blues", when: "Tue, Oct 6, 7:00 PM CT", favoriteKey: "nhl-stl" },
+  ],
+  Date.parse("2026-10-06T12:00:00-05:00"),
+);
+assert(
+  comingNoIso.map((g) => g.id).join(",") === "blues,mizzou-fb,mizzou-bb",
+  `Coming Up without startIso still sorts by Chicago clock (got ${comingNoIso.map((g) => g.id).join(",")})`,
 );
 assert(comingUpHasClock("Mon, Oct 5, 6:00 PM") && !comingUpHasClock("Tue, Nov 3"), "clock vs date-only");
 const comingOpp = sortComingUp(
@@ -2399,6 +2445,170 @@ assert(cfbTeams.length >= 4, "twelve CFB tables become four standings folios");
 assert(
   cfbTeams.every((p) => p.kind === "sport-front" && (p.standSlice?.count ?? 0) <= 3),
   "each CFB standings folio holds at most three tables",
+);
+
+const copy = (s: string) => s.repeat(8);
+const bearsWire = card({
+  id: "league-50110486",
+  headline: "Ben Johnson: Tyson Bagent will start at QB for Bears vs. Packers",
+  dek: "Chicago turns to Bagent with Williams sidelined.",
+  favoriteKey: "cfb-missouri-state",
+  followed: true,
+  teamName: "Bears",
+  sportLabel: "NFL",
+  leaguePath: "football/nfl",
+  when: "2026-10-06T10:00:00Z",
+  body: copy("The Bears will start Tyson Bagent against Green Bay. "),
+});
+const chiefsHillReturn = card({
+  id: "news-50110299",
+  headline: "Tyreek Hill to return to the Chiefs, agent says",
+  dek: "Kansas City is back in play for the receiver.",
+  favoriteKey: "nfl-kc",
+  followed: true,
+  teamName: "Chiefs",
+  sportLabel: "NFL",
+  leaguePath: "football/nfl",
+  when: "2026-10-05T22:41:21Z",
+  body: copy("Tyreek Hill is expected to return to Kansas City. "),
+});
+const moScoutToday = card({
+  id: "mo-1x9ok2o",
+  headline: "Mizzou notebook: the Tuesday brief",
+  teamName: "Missouri Scout",
+  sportLabel: "Missouri",
+  when: "2026-10-06T11:00:00Z",
+  wrapHref: "https://www.missouriscout.com/tuesday",
+  body: copy("Missouri Scout files the day's Columbia notes. "),
+});
+const arizonaGiants = card({
+  id: "wire-nfl-401872966",
+  headline: "Giants beat Cardinals 36-24",
+  dek: "Arizona fell on the road in New York.",
+  favoriteKey: "mlb-stl",
+  followed: true,
+  teamName: "Cardinals",
+  sportLabel: "NFL",
+  leaguePath: "football/nfl",
+  status: "Final",
+  scoreLine: "NYG 36 · ARI 24",
+  gameId: "401872966",
+  when: "2026-10-06T03:00:00Z",
+  body: copy("The New York Giants beat the Arizona Cardinals 36-24 on Sunday. "),
+});
+const mostCfb: ClubDesk = {
+  key: "cfb-missouri-state",
+  shortName: "MOST FB",
+  logo: null,
+  leaguePath: "football/college-football",
+  record: "3-2",
+  standing: "CUSA",
+  division: [],
+  stats: [],
+  leaders: [],
+  upcoming: [],
+};
+assert(isMoScoutCard(moScoutToday), "Missouri Scout files as MoScout");
+assert(mayFrontA1(chiefsHillReturn, "2026-10-06-morning"), "Chiefs news may occupy A1");
+assert(!mayFrontA1({ ...bearsWire, favoriteKey: "", followed: false }, "2026-10-06-morning"), "Bears copy may not occupy A1");
+const stampedOct6 = stampFavoriteKeys(
+  [bearsWire, chiefsHillReturn, moScoutToday, arizonaGiants],
+  [chiefs, cards, mostCfb],
+);
+assert(!stampedOct6.find((c) => c.id === "league-50110486")?.favoriteKey, "NFL Bears drop the Missouri State stamp");
+assert(stampedOct6.find((c) => c.id === "news-50110299")?.favoriteKey === "nfl-kc", "Chiefs keep the NFL desk");
+assert(!stampedOct6.find((c) => c.id === "wire-nfl-401872966")?.favoriteKey, "Arizona Cardinals drop the St. Louis stamp");
+
+const oct6Morning = buildEdition({
+  stories: [bearsWire, chiefsHillReturn, moScoutToday, arizonaGiants],
+  clubs: [chiefs, cards, mostCfb],
+  edition: "2026-10-06-morning",
+});
+const oct6A1 = oct6Morning.pages.find((p) => p.kind === "favorites-front");
+assert(oct6A1?.kind === "favorites-front", "Oct 6 morning still has A1");
+assert(oct6A1?.kind === "favorites-front" && oct6A1.lead?.id === "news-50110299", `A1 lead is the Chiefs, not the Bears (got ${oct6A1 && oct6A1.kind === "favorites-front" ? oct6A1.lead?.id : "none"})`);
+const oct6A1Ids = oct6A1?.kind === "favorites-front"
+  ? [oct6A1.lead, oct6A1.second, oct6A1.third].map((c) => c?.id)
+  : [];
+assert(oct6A1Ids.includes("mo-1x9ok2o"), `today's MoScout is guaranteed an A1 slot (got ${oct6A1Ids.join(",")})`);
+assert(!oct6A1Ids.includes("league-50110486"), "Bears vs Packers never occupies a big A1 slot");
+assert(!oct6A1Ids.includes("wire-nfl-401872966"), "Arizona-Giants never occupies a big A1 slot");
+const oct6AJson = JSON.stringify(oct6Morning.pages.filter((p) => p.section === "A"));
+assert(!oct6AJson.includes("wire-nfl-401872966"), "Arizona-Giants is not a Section A full recap");
+const oct6Nfl = oct6Morning.pages.filter((p) => p.kind === "sport-front" && p.section === "NFL");
+assert(
+  oct6Nfl.some((p) => p.kind === "sport-front" && p.articles.some((a) => a.card.id === "wire-nfl-401872966")),
+  "Arizona-Giants lands on the NFL desk as a compact recap",
+);
+
+const tyreekTwin = card({
+  id: "news-50112189",
+  headline: "Tyreek Hill may return to Kansas City",
+  favoriteKey: "nfl-kc",
+  followed: true,
+  teamName: "Chiefs",
+  sportLabel: "NFL",
+  leaguePath: "football/nfl",
+  when: "2026-10-05T22:41:21Z",
+  body: copy("Nate Taylor on how Tyreek Hill's return timing couldn't be better. "),
+});
+const twoHill = buildEdition({
+  stories: [chiefsHillReturn, tyreekTwin, moScoutToday],
+  clubs: [chiefs],
+  edition: "2026-10-06-morning",
+});
+const twoHillA1 = twoHill.pages.find((p) => p.kind === "favorites-front");
+const twoHillIds =
+  twoHillA1?.kind === "favorites-front" ? [twoHillA1.lead, twoHillA1.second, twoHillA1.third].map((c) => c?.id) : [];
+assert(
+  !(twoHillIds.includes("news-50110299") && twoHillIds.includes("news-50112189")),
+  "A1 does not print both Tyreek Hill packages",
+);
+const chourioA = card({
+  id: "league-50105344",
+  headline: "Jackson Chourio walk-off single lifts Brewers to 2-0 NLDS edge",
+  sportLabel: "MLB",
+  leaguePath: "baseball/mlb",
+  when: "2026-10-06T03:00:00Z",
+  body: copy("Jackson Chourio walked off the Padres in Milwaukee. "),
+});
+const chourioB = card({
+  id: "athletic-chourio",
+  headline: "Jackson Chourio joins rare company with a walk-off that will live on in October lore",
+  sportLabel: "MLB",
+  leaguePath: "baseball/mlb",
+  when: "2026-10-06T03:10:00Z",
+  body: copy("The Athletic on Chourio's October walk-off. "),
+});
+const aldsA = card({
+  id: "league-alds-3a",
+  headline: "How to watch ALDS Game 3: Rays at Yankees",
+  sportLabel: "MLB",
+  leaguePath: "baseball/mlb",
+  when: "2026-10-06T03:20:00Z",
+  body: copy("Game 3 of the ALDS is Tuesday night in the Bronx. "),
+});
+const aldsB = card({
+  id: "league-alds-3b",
+  headline: "ALDS Game 3 preview: Yankees face elimination",
+  sportLabel: "MLB",
+  leaguePath: "baseball/mlb",
+  when: "2026-10-06T03:30:00Z",
+  body: copy("New York hosts Tampa Bay in ALDS Game 3. "),
+});
+const mlbDup = buildEdition({
+  stories: [chourioA, chourioB, aldsA, aldsB],
+  clubs: [cards],
+  edition: "2026-10-06-morning",
+});
+const mlbJson = JSON.stringify(mlbDup.pages.filter((p) => p.kind === "sport-front" && p.section === "MLB"));
+assert(
+  !(mlbJson.includes("league-50105344") && mlbJson.includes("athletic-chourio")),
+  "MLB does not print both Chourio walk-off packages",
+);
+assert(
+  !(mlbJson.includes("league-alds-3a") && mlbJson.includes("league-alds-3b")),
+  "MLB does not list ALDS Game 3 twice",
 );
 
 console.log("newspaper-sections ok");

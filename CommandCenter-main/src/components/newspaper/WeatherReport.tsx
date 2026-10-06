@@ -377,7 +377,7 @@ export function WeatherReport({
                 <b>{d.highF}°</b>
                 <i>{d.lowF}°</i>
               </span>
-              <span className="wx-pct">{d.precipChance}% rain</span>
+              <span className="wx-pct">{d.precipChance >= 10 ? `${d.precipChance}% rain` : "—"}</span>
             </li>
           ))}
         </ol>

@@ -19,6 +19,8 @@ import {
   pickSectionFrontLead,
   sportFillerReason,
   relatedFitsSection,
+  sameGameStory,
+  alreadyOnSectionA,
   storyFitsSection,
 } from "./newspaper-sport-desk.ts";
 
@@ -564,6 +566,98 @@ assert(
     ],
   ) === "eng-wrexham",
   "a Wrexham final stamps the Championship desk",
+);
+assert(
+  favoriteKeyForGame(
+    {
+      path: "football/nfl",
+      away: { id: "22", abbrev: "ARI", short: "Cardinals", name: "Arizona Cardinals" },
+      home: { id: "19", abbrev: "NYG", short: "Giants", name: "New York Giants" },
+    },
+    [
+      { key: "mlb-stl", shortName: "Cardinals", leaguePath: "baseball/mlb" },
+      { key: "nfl-kc", shortName: "Chiefs", leaguePath: "football/nfl" },
+    ],
+  ) === "",
+  "Arizona-Giants is not the St. Louis Cardinals desk",
+);
+assert(
+  favoriteKeyForGame(
+    {
+      path: "football/college-football",
+      away: { short: "Nittany Lions", name: "Penn State Nittany Lions" },
+      home: { short: "Ohio State", name: "Ohio State Buckeyes" },
+    },
+    [{ key: "nfl-det", shortName: "Lions", leaguePath: "football/nfl" }],
+  ) === "",
+  "Penn State is not the Detroit Lions desk",
+);
+assert(
+  favoriteKeyForGame(
+    {
+      path: "basketball/nba",
+      away: { short: "Timberwolves", name: "Minnesota Timberwolves" },
+      home: { short: "76ers", name: "Philadelphia 76ers" },
+    },
+    [
+      { key: "eng-wolves", shortName: "Wolves", leaguePath: "soccer/eng.1" },
+      { key: "nba-phi", shortName: "76ers", leaguePath: "basketball/nba" },
+    ],
+  ) === "nba-phi",
+  "Minnesota does not stamp Wolverhampton; the 76ers still match",
+);
+assert(
+  !storyFitsSection(
+    card({
+      id: "news-ad",
+      headline: "Anthony Davis sits out Wizards preseason with a calf strain",
+      leaguePath: null,
+    }),
+    "football/college-football",
+  ),
+  "an NBA Wizards note stays off the CFB recaps desk",
+);
+assert(
+  !sameGameStory(
+    card({
+      id: "wire-mlb-rays",
+      headline: "Small-ball Rays beat the sloppy Yankees 5-2 for a 2-0 lead",
+      sportLabel: "MLB",
+      leaguePath: "baseball/mlb",
+      teamName: "Rays",
+    }),
+    card({
+      id: "news-50110299",
+      headline: "Why a Tyreek Hill-Chiefs reunion makes so much sense",
+      sportLabel: "NFL",
+      leaguePath: "football/nfl",
+      teamName: "Chiefs",
+      favoriteKey: "nfl-kc",
+    }),
+  ),
+  "Rays–Yankees is not the A1 Chiefs package",
+);
+assert(
+  !alreadyOnSectionA(
+    card({
+      id: "league-50112467",
+      headline: "NFL Week 4: CeeDee Lamb, Joe Burrow and more fuel best quotes",
+      sportLabel: "NFL",
+      leaguePath: "football/nfl",
+      teamName: "Jaguars",
+    }),
+    [
+      card({
+        id: "news-50110299",
+        headline: "Why a Tyreek Hill-Chiefs reunion makes so much sense",
+        sportLabel: "NFL",
+        leaguePath: "football/nfl",
+        teamName: "Chiefs",
+        favoriteKey: "nfl-kc",
+      }),
+    ],
+  ),
+  "CeeDee Lamb quotes do not jump to the A1 Chiefs story",
 );
 
 console.log("newspaper-sport-desk ok");

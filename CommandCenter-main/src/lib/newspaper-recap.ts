@@ -59,6 +59,9 @@ export type RecapCardBits = {
   photo?: string | null;
   photoWidth?: number | null;
   caption?: string | null;
+  teamName?: string | null;
+  headline?: string | null;
+  dek?: string | null;
   recapGame?: RecapGamePack | null;
   leaders?: Array<{
     name: string;
@@ -256,6 +259,60 @@ export function pickRecapLeaders(
   return out.slice(0, 3);
 }
 
+/** Favorite-club recaps print that club's chips, not the other side's passer. */
+export function clubSideAbbrev(card: RecapCardBits, pack: RecapGamePack): string | null {
+  const name = (card.teamName ?? "").trim().toLowerCase();
+  for (const side of [pack.away, pack.home]) {
+    if (
+      name &&
+      (name === side.short.toLowerCase() ||
+        name === side.name.toLowerCase() ||
+        name === side.abbrev.toLowerCase())
+    ) {
+      return side.abbrev;
+    }
+  }
+  const suffix = (card.favoriteKey ?? "").split("-")[1]?.toLowerCase();
+  const fromKey: Record<string, string> = {
+    kc: "KC",
+    dal: "DAL",
+    det: "DET",
+    stl: "STL",
+    phi: "PHI",
+  };
+  const abbr = suffix ? fromKey[suffix] : null;
+  if (abbr && (pack.away.abbrev === abbr || pack.home.abbrev === abbr)) return abbr;
+  return null;
+}
+
+function leaderSurname(name: string): string {
+  return name.replace(/^[A-Z]\.\s*/, "").replace(/\s+(III|II|IV|Jr\.?)$/i, "").trim();
+}
+
+export function preferClubRecapLeaders(
+  leaders: RecapLeader[],
+  clubAbbrev: string | null | undefined,
+  hay = "",
+): RecapLeader[] {
+  if (!clubAbbrev) return leaders;
+  const club = clubAbbrev.toLowerCase();
+  const mine = leaders.filter((l) => l.team && l.team.toLowerCase() === club);
+  if (mine.length) return mine;
+  const notTheirs = leaders.filter((l) => !l.team || l.team.toLowerCase() === club);
+  const text = hay.toLowerCase();
+  if (!text) return notTheirs;
+  return notTheirs.filter((l) => {
+    if (!/^pass/i.test(l.label)) return true;
+    const token = leaderSurname(l.name).split(/\s+/).pop() ?? "";
+    if (token.length < 4) return true;
+    return text.includes(token.toLowerCase());
+  });
+}
+
+function recapHay(card: RecapCardBits): string {
+  return [card.headline, card.dek, card.teamName].filter(Boolean).join(" ");
+}
+
 function paintSide(side: RecapSide, path: string): RecapSide {
   if (side.color) return side;
   if (path.startsWith("baseball/")) {
@@ -336,15 +393,18 @@ export function recapPackFor(card: RecapCardBits, game: BoxGame | null | undefin
     if (!pack.away.logo && stored?.away.logo) pack.away.logo = stored.away.logo;
     if (!pack.home.logo && stored?.home.logo) pack.home.logo = stored.home.logo;
     if (!pack.venue && stored?.venue) pack.venue = stored.venue;
+    pack.leaders = preferClubRecapLeaders(pack.leaders, clubSideAbbrev(card, pack), recapHay(card));
     return pack;
   }
   if (stored) {
-    return {
+    const pack = {
       ...stored,
       away: paintSide(stored.away, stored.path),
       home: paintSide(stored.home, stored.path),
       leaders: pickRecapLeaders(stored.path, stored.leaders),
     };
+    pack.leaders = preferClubRecapLeaders(pack.leaders, clubSideAbbrev(card, pack), recapHay(card));
+    return pack;
   }
   const extra = (card.leaders ?? [])
     .map((l) => asLeader(l))

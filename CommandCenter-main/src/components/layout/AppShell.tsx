@@ -174,6 +174,7 @@ export default function AppShell() {
       (onNewspaper && prefersNewspaperHome()) ||
       (onReading && prefersReadingHome()),
   );
+  const [buildNote, setBuildNote] = useState<string | null>(null);
 
   useEffect(() => {
     if (onReading) {
@@ -339,11 +340,17 @@ export default function AppShell() {
             (window as unknown as { __ccLogoTap?: number }).__ccLogoTap = now;
             // Double-tap within 600ms → hard reload so PWA/React Query pick up new deploys.
             if (now - last < 600) {
-              toast.success("Reloading…");
+              if (!onNewspaper) toast.success("Reloading…");
               window.setTimeout(() => window.location.reload(), 250);
               return;
             }
-            toast(info.label + " · tap again to reload", { duration: 5000, icon: "🇺🇸" });
+            const note = info.label + " · tap again to reload";
+            if (onNewspaper) {
+              setBuildNote(note);
+              window.setTimeout(() => setBuildNote((cur) => (cur === note ? null : cur)), 5000);
+              return;
+            }
+            toast(note, { duration: 5000, icon: "🇺🇸" });
           }}
           title="Show app version (double-tap to reload)"
           className="relative z-10 flex items-center gap-3 md:gap-4 text-left"
@@ -353,7 +360,11 @@ export default function AppShell() {
             {brand}
           </h1>
         </button>
-        {onReading ? (
+        {onNewspaper && buildNote ? (
+          <p className="relative z-10 min-w-0 max-w-[58%] truncate text-right text-[10px] leading-tight tracking-[0.04em] text-cream/80 md:text-[11px]">
+            {buildNote}
+          </p>
+        ) : onReading ? (
           <PagesTodayBadge />
         ) : onSports ? (
           <div className="relative z-10 flex shrink-0 items-center gap-3">

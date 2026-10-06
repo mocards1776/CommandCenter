@@ -182,6 +182,13 @@ export function clubFormIsThin(
   return Boolean(next.when && /Nov|Dec/i.test(next.when) && new Date(now).getUTCMonth() <= 9);
 }
 
+/** ESPN files 0.00 on unused % stats (Missouri RZ TD %). Keep real zeroes like 0 sacks. */
+export function printableFormStat(stat: { label: string; value: string }): boolean {
+  const raw = stat.value.replace(/%/g, "").trim();
+  const emptyPct = /^(0+|0\.0+)$/.test(raw);
+  return !(emptyPct && /%/.test(stat.label));
+}
+
 /** Stat-grid columns that fill the last row instead of leaving grey cells. */
 export function formStatColumns(count: number): number {
   const n = Math.max(count, 0);

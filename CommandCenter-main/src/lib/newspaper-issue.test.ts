@@ -101,6 +101,18 @@ const planted = asProofIssue(
 );
 assert(planted?.stories.length === 1, "a planted proof issue keeps the filed stories");
 assert(planted?.queries.length === 1, "a planted proof issue keeps the desks");
+const plantedNat = asProofIssue(
+  {
+    id: "2026-10-06-morning",
+    version: ISSUE_VERSION,
+    status: "ready",
+    stories: [{ id: "nat-1", headline: "Hasan" }],
+    queries: [],
+    companions: { national: { issueId: "2026-10-06-morning", stories: [{ headline: "Hasan" }] } },
+  },
+  "2026-10-06-morning",
+);
+assert(plantedNat?.companions?.national, "a planted proof issue keeps the national companion");
 assert(asProofIssue({ id: "other", version: ISSUE_VERSION, stories: [] }, "2026-10-05-evening") === null, "wrong id is dropped");
 (globalThis as { __TT_PROOF_ISSUE__?: unknown }).__TT_PROOF_ISSUE__ = planted;
 assert(peekProofIssue("2026-10-05-evening")?.id === "2026-10-05-evening", "peek reads the planted edition");

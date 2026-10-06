@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import {
   composeWatchPage,
+  preparePrintedWatch,
   watchClockState,
   watchContext,
   watchLeagueColor,
@@ -152,7 +153,7 @@ function GameCard({ game }: { game: WatchListing }) {
 
 /** One page: the game of the day, then a Central-time grid of every remaining game. */
 export default function WatchGuide({ games, editionLabel }: { games: WatchGame[]; editionLabel: string }) {
-  const page = composeWatchPage(games);
+  const page = composeWatchPage(preparePrintedWatch(games));
 
   return (
     <div className="tt-watch" data-density={page.density}>

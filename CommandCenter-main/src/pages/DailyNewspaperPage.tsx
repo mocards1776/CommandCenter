@@ -79,7 +79,7 @@ import {
   DeskSnap,
 } from "@/components/newspaper/BoxScore";
 import { RecapBox, RecapChrome, RecapPhoto } from "@/components/newspaper/GameRecap";
-import { clubFormIsThin, clubOpensLabel, clubTickerRecord, formStatColumns, frontPageLeftover, groupByDay, planSchedulePages } from "@/lib/newspaper-page";
+import { clubFormIsThin, clubOpensLabel, clubTickerRecord, formStatColumns, frontPageLeftover, groupByDay, planSchedulePages, printableFormStat } from "@/lib/newspaper-page";
 import { ReaderProvider } from "@/components/newspaper/PaperReader";
 import { useReader } from "@/components/newspaper/reader-context";
 import { CfbFill, CfbScheduleDesk } from "@/components/newspaper/CfbScheduleDesk";
@@ -128,6 +128,7 @@ import { fileExtracts, gatherStories, sportPathsOf, urlsToExtract } from "@/lib/
 import {
   ISSUE_VERSION,
   listLocalIssues,
+  peekProofIssue,
   readCacheUserId,
   readLocalIssue,
   writeLocalIssue,
@@ -214,6 +215,7 @@ import {
   enrichWrapBodies,
   leaguePathFromEspn,
   playerHref,
+  storyMatchesFavorite,
   wrapFeedsForFavorites,
   type GameWrapCard,
   type MatchedWrap,
@@ -222,6 +224,7 @@ import {
 import { isNarrowStoryImage } from "@/lib/newspaper-images";
 import {
   buildEdition,
+  dropEmptyFolios,
   essentialsFromDesks,
   isFavoriteGameResult,
   isFavoriteStory,
@@ -267,6 +270,7 @@ import { fetchMlbPeopleByIds, fetchMlbPlayoffTree, type MlbPlayoffTree } from "@
 import { fillMlbPlayoffPlaceholders } from "@/lib/newspaper-playoff-tree";
 import { fetchRssArticle, fetchRssFeed, fetchRssReads, markRssReadMany, type RssArticle } from "@/lib/rss";
 import {
+  DEFAULT_FAVORITES,
   fetchTeamDetail,
   fetchTeamSnapshot,
   loadSportsLayout,
@@ -287,6 +291,7 @@ type ComingUp = {
   label: string;
   when: string | null;
   startIso?: string | null;
+  favoriteKey?: string | null;
   logo: string | null;
   color: string | null;
 };
@@ -2478,11 +2483,16 @@ function SportHero({
 }
 
 function involvesClub(game: BoxGame, clubs: ClubDesk[]): boolean {
-  const names = clubs.map((c) => squash(c.shortName)).filter(Boolean);
-  return [game.away, game.home].some((side) => {
-    const s = squash(side.short);
-    return names.some((n) => s === n || s.includes(n) || n.includes(s));
-  });
+  return Boolean(
+    favoriteKeyForGame(
+      {
+        away: { short: game.away.short, name: game.away.name, id: game.away.id, abbrev: game.away.abbrev },
+        home: { short: game.home.short, name: game.home.name, id: game.home.id, abbrev: game.home.abbrev },
+        path: game.path,
+      },
+      clubs,
+    ),
+  );
 }
 
 function stampBoardCard(game: BoxGame, clubs: ClubDesk[]): GameWrapCard | null {
@@ -2497,14 +2507,18 @@ function stampBoardCard(game: BoxGame, clubs: ClubDesk[]): GameWrapCard | null {
 }
 
 function favoriteKeyFromCopy(card: GameWrapCard, clubs: ClubDesk[]): string {
-  if (card.favoriteKey) return card.favoriteKey;
-  const hay = `${card.headline} ${card.teamName} ${card.dek ?? ""}`;
+  if (
+    card.favoriteKey &&
+    clubs.some(
+      (c) =>
+        c.key === card.favoriteKey && (!c.leaguePath || !card.leaguePath || c.leaguePath === card.leaguePath),
+    )
+  ) {
+    return card.favoriteKey;
+  }
   for (const club of clubs) {
-    if (club.key === "cfb-mizzou" && /\b(mizzou|missouri tigers)\b/i.test(hay)) return club.key;
-    if (club.key === "eng-wrexham" && /\bwrexham\b/i.test(hay)) return club.key;
-    if (club.key === "eng-wolves" && /\b(wolves|wolverhampton)\b/i.test(hay)) return club.key;
-    const n = club.shortName.toLowerCase();
-    if (n.length >= 4 && hay.toLowerCase().includes(n)) return club.key;
+    const fav = DEFAULT_FAVORITES.find((f) => f.key === club.key);
+    if (fav && storyMatchesFavorite(card, fav)) return club.key;
   }
   return "";
 }
@@ -4452,7 +4466,7 @@ function ClubFormGrid({
                 <section className="wsj-form-sec stats">
                   <h4>{sheet?.season ? `${sheet.season} by the numbers` : "By the numbers"}</h4>
                   <dl className="wsj-form-stats" style={{ ["--stat-cols" as string]: String(formStatColumns(Math.min(stats.length, 6))) }}>
-                    {stats.slice(0, 6).map((s) => (
+                    {stats.filter(printableFormStat).slice(0, 6).map((s) => (
                       <div key={`${s.label}-${s.value}`}>
                         <dd>{s.value}</dd>
                         <dt>
@@ -5302,12 +5316,14 @@ function NewspaperDesk() {
         beez?: BeezDesk | null;
       }) => {
         const date = scheduleDateFor(pressId);
+        const plantedNat = asStoredNational(peekProofIssue(pressId)?.companions?.national);
         return Promise.all([
           cached?.dayAhead ??
             (date
               ? withDeadline(fetchDaySchedule(date).catch(() => null), COMPANION_WAIT_MS, null)
               : Promise.resolve(null)),
           cached?.national ??
+            plantedNat ??
             withDeadline(readTimesNationalNews(pressId).catch(() => null), COMPANION_WAIT_MS, null),
           cached?.beez ?? withDeadline(readTimesBeez().catch(() => null), COMPANION_WAIT_MS, null),
         ] as const);
@@ -5655,13 +5671,16 @@ function NewspaperDesk() {
       // teams already sorted by desk weight (Cardinals / Blues / Mizzou → Lions → Chiefs → soccer).
       teamsRaw.map((team) => {
         const path = leaguePathFromEspn(team.fav.espnPath);
-        const upcoming = (team.detail?.upcoming ?? []).slice(0, 5).map((game) => ({
-          id: `${team.fav.key}-${game.id}`,
-          label: game.label,
-          when: game.when,
-          startIso: game.startIso ?? null,
-          detail: game.detail,
-        }));
+        const upcoming = sortComingUp(
+          (team.detail?.upcoming ?? []).slice(0, 5).map((game) => ({
+            id: `${team.fav.key}-${game.id}`,
+            label: game.label,
+            when: game.when,
+            startIso: game.startIso ?? null,
+            detail: game.detail,
+            favoriteKey: team.fav.key,
+          })),
+        );
         if (!upcoming.length && team.snap.nextGame && team.seasonState === "active") {
           upcoming.push({
             id: `${team.fav.key}-next`,
@@ -5669,6 +5688,7 @@ function NewspaperDesk() {
             when: team.snap.nextGame.when,
             startIso: null,
             detail: team.snap.nextGame.detail,
+            favoriteKey: team.fav.key,
           });
         }
         const namedLeaders = [
@@ -6543,9 +6563,11 @@ function NewspaperDesk() {
     racesSample && scheduleDate ? sampleRaceBriefs(scheduleDate) : (racesQ.data ?? null);
   const edition = useMemo(
     () =>
-      paginateEditionDesks(
-        insertBeez(insertDayAhead(insertRaceBriefs(builtEdition, raceDesk), daySchedule), beezDesk),
-        standingsQ.data ?? {},
+      dropEmptyFolios(
+        paginateEditionDesks(
+          insertBeez(insertDayAhead(insertRaceBriefs(builtEdition, raceDesk), daySchedule), beezDesk),
+          standingsQ.data ?? {},
+        ),
       ),
     [builtEdition, raceDesk, daySchedule, beezDesk, standingsQ.data],
   );
@@ -6559,6 +6581,7 @@ function NewspaperDesk() {
             label: game.label,
             when: game.when,
             startIso: game.startIso ?? null,
+            favoriteKey: club.key,
             logo: club.logo,
             color: club.color ?? null,
           })),
