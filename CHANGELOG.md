@@ -2,6 +2,18 @@
 
 ---
 
+## MLB finals card: larger W/L/S + series, corner first pitch — October 6, 2026
+
+- Telegram MLB finals SVG (`sports-finals/svg.ts`) enlarges the W/L/S pitching
+  summary + venue/meta pane and the Series · Best of N strip so they read on
+  a phone. Full box-score columns stay (AB/R/H/RBI/HR/BB/K).
+- First-pitch time moves to the upper-left corner. The crowded
+  `MLB · venue · time` top-right meta is gone. NFL/NHL/CFB headers unchanged.
+- sendPhoto JPEG path, cream logo plates, and newspaper / Thompson Times are
+  untouched.
+
+---
+
 ## Evening RUWT preview on Finals Telegram — October 5, 2026
 
 - `sports-finals` adds `evening-preview` (alias `preview`): one 1080×1350 PNG
