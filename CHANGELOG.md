@@ -2,6 +2,21 @@
 
 ---
 
+## Reading: rolling 12-month books + pages chart — October 6, 2026
+
+- `/reading` stats now include a last-12-calendar-month combo chart: accent
+  bars for pages, a cream line for books finished. Tooltips show exact
+  counts; empty months stay on the axis as zero. Tap a month to open that
+  month’s finished-books breakdown. Works in `/reading?solo=1`.
+- Books = `status = read` with `finished_at` in the month (magazines
+  excluded). Pages prefer `reading_sessions.pages_read` by `session_date`.
+  Finishes with no sessions (imported StoryGraph history) add `page_count`
+  as an estimate so older months are not a flat zero.
+- Helper: `CommandCenter-main/src/lib/reading-year.ts`. No sports, NHL,
+  or newspaper files changed.
+
+---
+
 ## MLB finals card: larger W/L/S + series, corner first pitch — October 6, 2026
 
 - Telegram MLB finals SVG (`sports-finals/svg.ts`) enlarges the W/L/S pitching
