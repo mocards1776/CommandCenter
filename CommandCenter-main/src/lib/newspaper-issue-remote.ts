@@ -1,5 +1,5 @@
 import { supabase } from "./supabase";
-import { asPrintedIssue, ISSUE_VERSION, slimIssue, type PrintedIssue } from "./newspaper-issue";
+import { asFiledQueries, asPrintedIssue, ISSUE_VERSION, slimIssue, type PrintedIssue } from "./newspaper-issue";
 import { filterRecentFiledIssues, EDITION_LOOKBACK_MS, type FiledIssueMeta } from "./newspaper-editions";
 import type { EditorRequest } from "./newspaper-editor";
 import { ISSUE_QUERY_COLUMNS, ISSUE_SHELL_COLUMNS } from "./newspaper-payload";
@@ -32,8 +32,11 @@ export async function readRemoteQueries(id: string): Promise<PrintedIssue["queri
     .select(ISSUE_QUERY_COLUMNS)
     .eq("id", id)
     .maybeSingle();
-  if (!filed(data, error) || !data || !Array.isArray(data.queries)) return null;
-  return (data.queries as unknown[]).filter(isQuery);
+  if (!filed(data, error) || !data) return null;
+  if (Array.isArray(data.queries)) return asFiledQueries(data.queries);
+  // Printing leftover or a sidecar: `{ desks: [...] }`. Same contract as an array.
+  const desks = asFiledQueries(data.queries);
+  return desks.length ? desks : null;
 }
 
 /** A newly ready press, while the Times is open. iOS will not fire this if the app is closed. */
@@ -56,11 +59,6 @@ export function subscribeReadyIssues(onReady: (row: FiledIssueMeta) => void): ()
   return () => {
     void supabase.removeChannel(channel);
   };
-}
-
-function isQuery(value: unknown): value is PrintedIssue["queries"][number] {
-  if (!value || typeof value !== "object") return false;
-  return Array.isArray((value as { key?: unknown }).key);
 }
 
 /** The edition already on the press, if the desk has finished it. */
