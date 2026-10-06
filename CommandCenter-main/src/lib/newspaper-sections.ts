@@ -329,6 +329,34 @@ export function isFavoriteStory(card: GameWrapCard): boolean {
   return Boolean(card.favoriteKey || card.followed);
 }
 
+const CLUB_ALIASES: Record<string, string[]> = {
+  "cfb-mizzou": ["mizzou", "missouri tigers", "missouri"],
+  "cbb-mizzou": ["mizzou", "missouri tigers", "missouri"],
+};
+
+/** Filed rows sometimes drop favoriteKey; put the home desk back on the card. */
+export function stampFavoriteKeys(stories: GameWrapCard[], clubs: ClubDesk[]): GameWrapCard[] {
+  if (!clubs.length) return stories;
+  return stories.map((card) => {
+    if (card.favoriteKey) return card.followed ? card : { ...card, followed: true };
+    const hay = `${card.teamName ?? ""} ${card.headline ?? ""} ${card.dek ?? ""}`.toLowerCase();
+    let hit: ClubDesk | undefined;
+    for (const club of clubs) {
+      if (club.leaguePath && card.leaguePath && club.leaguePath !== card.leaguePath) continue;
+      const tokens = [
+        club.shortName.toLowerCase(),
+        club.key.replace(/^[a-z]+-/, "").replace(/-/g, " "),
+        ...(CLUB_ALIASES[club.key] ?? []),
+      ].filter((t) => t.length >= 4);
+      if (tokens.some((t) => hay.includes(t))) {
+        hit = club;
+        break;
+      }
+    }
+    return hit ? { ...card, favoriteKey: hit.key, followed: true } : card;
+  });
+}
+
 /** National or Missouri copy filed as a card so Section A can run the essentials. */
 export function isEssentialsDesk(card: GameWrapCard): boolean {
   return card.sportLabel === "National" || card.sportLabel === "Missouri";
@@ -1823,7 +1851,7 @@ export function buildEdition(opts: {
   coachPaths?: string[];
 }): Edition {
   const fresh = rankStories(
-    deskCopy(opts.stories, opts.edition).filter((card) => !card.editorSpiked),
+    deskCopy(stampFavoriteKeys(opts.stories, opts.clubs), opts.edition).filter((card) => !card.editorSpiked),
     opts.edition,
   );
   const favoriteFresh = fresh.filter(isSectionAStory);

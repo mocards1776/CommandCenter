@@ -41,6 +41,7 @@ import {
   cannotLeadFront,
   isFavoriteGameResult,
   isSectionAStory,
+  stampFavoriteKeys,
   storyRank,
   sameSectionAStory,
   MIN_SECTION_PAGES,
@@ -1181,6 +1182,25 @@ assert(
   assert(
     a1?.kind === "favorites-front" && a1.lead?.id === "wire-cfb-mizzou-florida",
     `A1 leads with Mizzou, not Thornton (got ${a1 && a1.kind === "favorites-front" ? a1.lead?.headline : "no front"})`,
+  );
+}
+{
+  const filed = { ...mizzouFinal, favoriteKey: "", followed: false };
+  const stamped = stampFavoriteKeys([filed], [
+    { key: "cfb-mizzou", shortName: "Mizzou", logo: null, leaguePath: "football/college-football", record: "4-1", standing: "8th in SEC", division: [], stats: [], leaders: [], upcoming: [] },
+  ]);
+  assert(stamped[0]?.favoriteKey === "cfb-mizzou", "a filed Mizzou recap gets its home-desk key back");
+  const paper = buildEdition({
+    stories: [thorntonNote, filed],
+    clubs: [
+      { key: "cfb-mizzou", shortName: "Mizzou", logo: null, leaguePath: "football/college-football", record: "4-1", standing: "8th in SEC", division: [], stats: [], leaders: [], upcoming: [] },
+    ],
+    edition: "2026-10-05-evening",
+  });
+  const a1 = paper.pages.find((p) => p.kind === "favorites-front");
+  assert(
+    a1?.kind === "favorites-front" && a1.lead?.id === "wire-cfb-mizzou-florida",
+    "A1 still leads with Mizzou when the filed row lost favoriteKey",
   );
 }
 
