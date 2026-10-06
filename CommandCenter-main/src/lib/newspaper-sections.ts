@@ -344,6 +344,52 @@ export type Edition = {
   favoriteFolioByStory: Record<string, string>;
 };
 
+/** Infer a sport path when the filed row left leaguePath blank. */
+export function leaguePathFromSportLabel(label?: string | null): string | null {
+  const s = (label ?? "").trim().toLowerCase();
+  if (s === "nfl" || s === "football") return "football/nfl";
+  if (s === "mlb" || s === "baseball") return "baseball/mlb";
+  if (s === "nhl" || s === "hockey") return "hockey/nhl";
+  if (s === "nba" || s === "basketball") return "basketball/nba";
+  if (s === "cfb" || s === "college football") return "football/college-football";
+  if (s === "cbb" || s === "college basketball" || s === "ncaam") return "basketball/mens-college-basketball";
+  if (s === "epl" || s === "premier league") return "soccer/eng.1";
+  if (s === "efl" || s === "championship") return "soccer/eng.2";
+  return null;
+}
+
+/**
+ * A favoriteKey belongs to the card's own sport. "Cardinals" in an NFL hed
+ * is Arizona, not the St. Louis baseball desk.
+ */
+export function favoriteKeyFitsCard(
+  key: string | null | undefined,
+  card: Pick<GameWrapCard, "leaguePath" | "sportLabel">,
+): boolean {
+  if (!key) return false;
+  const path = (card.leaguePath || leaguePathFromSportLabel(card.sportLabel) || "").toLowerCase();
+  if (!path) return true;
+  const prefix = key.split("-")[0];
+  switch (prefix) {
+    case "mlb":
+      return path === "baseball/mlb";
+    case "nfl":
+      return path === "football/nfl";
+    case "nhl":
+      return path === "hockey/nhl";
+    case "nba":
+      return path === "basketball/nba";
+    case "cfb":
+      return path === "football/college-football";
+    case "cbb":
+      return path === "basketball/mens-college-basketball";
+    case "eng":
+      return path.startsWith("soccer/");
+    default:
+      return true;
+  }
+}
+
 export function isFavoriteStory(card: GameWrapCard): boolean {
   return Boolean(card.favoriteKey || card.followed);
 }
@@ -353,15 +399,22 @@ const CLUB_ALIASES: Record<string, string[]> = {
   "cbb-mizzou": ["mizzou", "missouri tigers", "missouri"],
 };
 
+function cardLeaguePath(card: Pick<GameWrapCard, "leaguePath" | "sportLabel">): string | null {
+  return card.leaguePath || leaguePathFromSportLabel(card.sportLabel);
+}
+
 /** Filed rows sometimes drop favoriteKey; put the home desk back on the card. */
 export function stampFavoriteKeys(stories: GameWrapCard[], clubs: ClubDesk[]): GameWrapCard[] {
   if (!clubs.length) return stories;
   return stories.map((card) => {
-    if (card.favoriteKey) return card.followed ? card : { ...card, followed: true };
+    const kept = card.favoriteKey && favoriteKeyFitsCard(card.favoriteKey, card) ? card.favoriteKey : "";
+    if (kept) return card.followed ? card : { ...card, favoriteKey: kept, followed: true };
+
+    const path = cardLeaguePath(card);
     const hay = `${card.teamName ?? ""} ${card.headline ?? ""} ${card.dek ?? ""}`.toLowerCase();
     let hit: ClubDesk | undefined;
     for (const club of clubs) {
-      if (club.leaguePath && card.leaguePath && club.leaguePath !== card.leaguePath) continue;
+      if (club.leaguePath && path && club.leaguePath !== path) continue;
       const tokens = [
         club.shortName.toLowerCase(),
         club.key.replace(/^[a-z]+-/, "").replace(/-/g, " "),
@@ -372,7 +425,9 @@ export function stampFavoriteKeys(stories: GameWrapCard[], clubs: ClubDesk[]): G
         break;
       }
     }
-    return hit ? { ...card, favoriteKey: hit.key, followed: true } : card;
+    if (hit) return { ...card, favoriteKey: hit.key, followed: true };
+    if (card.favoriteKey && !kept) return { ...card, favoriteKey: "", followed: false };
+    return card;
   });
 }
 
@@ -655,6 +710,28 @@ export function isFavoriteGameResult(card: GameWrapCard): boolean {
     isGameWrap(card) ||
     Boolean(card.status && /final/i.test(card.status) && card.scoreLine && /\d/.test(card.scoreLine))
   );
+}
+
+function isFrontPreseasonNote(card: Pick<GameWrapCard, "preseason" | "headline" | "dek" | "status">): boolean {
+  if (card.preseason) return true;
+  return /\bpreseason\b/i.test(`${card.headline} ${card.dek ?? ""} ${card.status ?? ""}`);
+}
+
+/**
+ * Compact story under the A1 lead. Desk-club results (photo + graf) beat a
+ * national wrap that only shares a name with a home club.
+ */
+export function pickFrontUnderLead(pool: GameWrapCard[], lead: GameWrapCard | null): GameWrapCard | null {
+  const playable = pool.filter((c) => c !== lead && c.id !== lead?.id && !isFrontPreseasonNote(c));
+  if (!playable.length) return null;
+  const score = (card: GameWrapCard) =>
+    (isFavoriteGameResult(card) && favoriteKeyFitsCard(card.favoriteKey, card)
+      ? 100 + favoriteDeskWeight(card.favoriteKey)
+      : 0) +
+    (isGameWrap(card) ? 15 : 0) +
+    (card.photo ? 20 : 0) +
+    (card.scoreLine && /\d/.test(card.scoreLine) ? 10 : 0);
+  return [...playable].sort((a, b) => score(b) - score(a))[0] ?? null;
 }
 
 /** Never open A1 or the edition alert on these. */

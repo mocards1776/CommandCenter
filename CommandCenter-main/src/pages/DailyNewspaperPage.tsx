@@ -22,7 +22,6 @@ import { useAuth } from "@/lib/auth-context";
 import {
   editionCovers,
   editionDateline,
-  favoriteDeskWeight,
   editionIssue,
   editionNewsDay,
   fileEditionStories,
@@ -230,6 +229,7 @@ import {
   missouriStoryCard,
   nationalStoryCard,
   paginateEditionDesks,
+  pickFrontUnderLead,
   sortComingUp,
   sportInSeason,
   storyBodyForJump,
@@ -274,7 +274,6 @@ import {
   type TeamSnapshot,
 } from "@/lib/sports";
 import { cn } from "@/lib/utils";
-import { isPhonePreseasonNote } from "@/lib/newspaper-phone-cards";
 import { fetchYesterdayRecap } from "@/lib/yesterday-recap";
 
 /** How many stories get a full ESPN story pull rather than the wire stub. */
@@ -1728,13 +1727,7 @@ function FrontPage({
   };
   const leadPoster = wantsPoster(pageLead);
   const underCandidates = pool.filter((c) => c !== pageLead);
-  const playable = underCandidates.filter((c) => !isPhonePreseasonNote(c));
-  const underScore = (card: GameWrapCard) =>
-    (isFavoriteGameResult(card) ? 100 + favoriteDeskWeight(card.favoriteKey) : 0) +
-    (card.photo ? 20 : 0) +
-    (card.scoreLine && /\d/.test(card.scoreLine) ? 10 : 0);
-  const underLead =
-    [...playable].sort((a, b) => underScore(b) - underScore(a))[0] ?? pageSecond;
+  const underLead = pickFrontUnderLead(pool, pageLead) ?? pageSecond;
   const underContinue =
     underLead && underLead.id === second?.id
       ? pageSecondContinue

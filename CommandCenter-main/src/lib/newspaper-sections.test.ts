@@ -40,7 +40,9 @@ import {
   isBettingPreview,
   cannotLeadFront,
   isFavoriteGameResult,
+  isFavoriteStory,
   isSectionAStory,
+  pickFrontUnderLead,
   stampFavoriteKeys,
   storyRank,
   sameSectionAStory,
@@ -1232,6 +1234,59 @@ assert(
     a1?.kind === "favorites-front" && a1.lead?.id === "wire-cfb-mizzou-florida",
     "A1 still leads with Mizzou when the filed row lost favoriteKey",
   );
+}
+{
+  const giants = card({
+    id: "wire-nfl-401872966",
+    headline: "Winston throws 3 TD passes and Banks' pick-6 seals Giants' 36-24 win over Cardinals",
+    favoriteKey: "mlb-stl",
+    followed: true,
+    teamName: "Giants",
+    sportLabel: "NFL",
+    leaguePath: "football/nfl",
+    status: "Final",
+    scoreLine: "ARI 24  ·  NYG 36",
+    photo: "https://example.com/giants.jpg",
+    body: "New York beat Arizona. ".repeat(12),
+  });
+  const chiefsWrap = card({
+    id: "wire-nfl-401872976",
+    headline: "Chiefs beat the Raiders 30-27 to move to 4-0 behind Patrick Mahomes",
+    favoriteKey: "nfl-kc",
+    followed: true,
+    teamName: "Chiefs",
+    sportLabel: "NFL",
+    leaguePath: "football/nfl",
+    status: "Final",
+    scoreLine: "KC 30  ·  LV 27",
+    photo: "https://example.com/chiefs.jpg",
+    body: "Kansas City held off Las Vegas. ".repeat(12),
+  });
+  const mizzouLead = card({
+    id: "wire-cfb-mizzou-florida",
+    headline: "No. 25 Missouri trounces No. 8 Florida 45-17",
+    favoriteKey: "cfb-mizzou",
+    followed: true,
+    teamName: "Mizzou",
+    sportLabel: "College Football",
+    leaguePath: "football/college-football",
+    status: "Final",
+    scoreLine: "MIZ 45 · FLA 17",
+    photo: "https://example.com/miz.jpg",
+    body: "Missouri snapped the skid. ".repeat(12),
+  });
+  const clubs: ClubDesk[] = [
+    { key: "mlb-stl", shortName: "Cardinals", logo: null, leaguePath: "baseball/mlb", record: "83-79", standing: "NL Central", division: [], stats: [], leaders: [], upcoming: [] },
+    { key: "nfl-kc", shortName: "Chiefs", logo: null, leaguePath: "football/nfl", record: "4-0", standing: "AFC West", division: [], stats: [], leaders: [], upcoming: [] },
+    { key: "cfb-mizzou", shortName: "Mizzou", logo: null, leaguePath: "football/college-football", record: "4-1", standing: "8th in SEC", division: [], stats: [], leaders: [], upcoming: [] },
+  ];
+  const unstamped = stampFavoriteKeys([giants], clubs);
+  assert(unstamped[0]?.favoriteKey === "", "an NFL Giants–Cardinals wrap does not keep the baseball desk");
+  assert(unstamped[0]?.followed === false, "a cross-league stamp is not a followed story");
+  assert(!isFavoriteStory(unstamped[0]!), "a stripped Giants wrap is not a favorite story");
+  assert(!isFavoriteGameResult(unstamped[0]!), "a stripped Giants wrap is not a favorite result");
+  const under = pickFrontUnderLead([mizzouLead, giants, chiefsWrap], mizzouLead);
+  assert(under?.id === "wire-nfl-401872976", `A1 under the lead is the Chiefs result, not Giants–Arizona (got ${under?.headline ?? "none"})`);
 }
 
 
