@@ -8,6 +8,7 @@ import {
   filterRecentFiledIssues,
   isIssueWithinLookback,
   resolveEditionParam,
+  uniqueEditionStand,
 } from "./newspaper-editions.ts";
 
 function assert(cond: unknown, msg: string) {
@@ -47,5 +48,21 @@ assert(backEditionNote("2026-10-05-morning", morning.printedAt) === "You are rea
 
 const justMorning = filterRecentFiledIssues([morning], Date.parse("2026-10-05T14:00:00.000Z"));
 assert(editionPickerLabel("2026-10-05-morning", justMorning) === "Morning", "one day on the stand needs no weekday");
+
+const doubled = uniqueEditionStand(
+  [
+    evening,
+    { ...evening, printedAt: "2026-10-05T22:04:00.000Z" },
+    midday,
+    { ...midday, printedAt: "2026-10-05T17:02:00.000Z" },
+    morning,
+    { ...morning, printedAt: "2026-10-05T11:03:00.000Z" },
+  ],
+  night,
+);
+assert(
+  doubled.map((r) => editionPickerLabel(r.id, doubled)).join(" · ") === "Evening · Midday · Morning",
+  `stand prints each slot once, got ${doubled.map((r) => editionPickerLabel(r.id, doubled)).join(" · ")}`,
+);
 
 console.log("newspaper-editions ok");

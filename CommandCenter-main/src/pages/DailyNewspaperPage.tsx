@@ -164,6 +164,7 @@ import {
   editionPickerLabel,
   filterRecentFiledIssues,
   isIssueWithinLookback,
+  uniqueEditionStand,
   type FiledIssueMeta,
 } from "@/lib/newspaper-editions";
 import {
@@ -690,7 +691,7 @@ function Masthead({
       {editions.length ? (
         <nav className="tt-editions" aria-label="Editions">
           <span className="tt-editions-label">Edition</span>
-          {editions.map((row, i) => (
+          {uniqueEditionStand(editions).map((row, i) => (
             <Fragment key={row.id}>
               {i > 0 ? <span className="tt-editions-dot">·</span> : null}
               <button
@@ -4824,7 +4825,7 @@ function NewspaperDesk() {
       window.clearTimeout(fallback);
       if (cancel) return;
       setRecent(
-        filterRecentFiledIssues([
+        uniqueEditionStand([
           ...remote,
           ...local.map((issue) => ({ id: issue.id, printedAt: issue.printedAt ?? "" })),
         ]),
@@ -4834,7 +4835,7 @@ function NewspaperDesk() {
       if (document.visibilityState === "hidden") return;
       void listRecentIssues()
         .then((rows) => {
-          if (rows.length) setRecent(rows);
+          if (rows.length) setRecent(uniqueEditionStand(rows));
         })
         .catch(() => {});
     };

@@ -596,7 +596,14 @@ type EspnEventRaw = {
     };
     competitors?: EspnCompetitorRaw[];
     leaders?: EspnLeaderGroup[];
-    headlines?: { shortLinkText?: string; description?: string; type?: string }[];
+    headlines?: {
+      shortLinkText?: string;
+      description?: string;
+      type?: string;
+      image?: string;
+      images?: { url?: string }[];
+      video?: { thumbnail?: string }[];
+    }[];
     broadcasts?: { names?: string[] }[];
     details?: {
       scoringPlay?: boolean;
@@ -664,6 +671,20 @@ export function periodLabels(path: string, count: number): string[] {
     else out.push(extra === 1 ? "OT" : `${extra}OT`);
   }
   return out.slice(0, Math.max(count, baseball && count > 0 ? count : base.length));
+}
+
+function headlinePhoto(
+  head:
+    | {
+        image?: string;
+        images?: { url?: string }[];
+        video?: { thumbnail?: string }[];
+      }
+    | undefined,
+): string | null {
+  const url = head?.images?.find((img) => img.url)?.url ?? head?.image ?? head?.video?.find((v) => v.thumbnail)?.thumbnail;
+  if (!url || /teamlogos|\/team-logos\/|\/logos\//i.test(url)) return null;
+  return url;
 }
 
 function espnGame(path: string, ev: EspnEventRaw, day: string): BoxGame | null {
@@ -741,6 +762,7 @@ function espnGame(path: string, ev: EspnEventRaw, day: string): BoxGame | null {
     };
   };
   const head = comp?.headlines?.[0];
+  const headPhoto = headlinePhoto(head);
   const scoring = (comp?.details ?? [])
     .filter((d) => d.scoringPlay)
     .map((d) => ({
@@ -768,7 +790,7 @@ function espnGame(path: string, ev: EspnEventRaw, day: string): BoxGame | null {
     scoring,
     recap:
       final && head?.shortLinkText
-        ? { headline: head.shortLinkText, blurb: head.description ?? null, html: null, photo: null, byline: null, url: null }
+        ? { headline: head.shortLinkText, blurb: head.description ?? null, html: null, photo: headPhoto, byline: null, url: null }
         : null,
     broadcasts: [...new Set((comp?.broadcasts ?? []).flatMap((b) => b.names ?? []))].slice(0, 3),
     gamePk: null,
@@ -816,6 +838,40 @@ export function fetchEspnSummary<T = unknown>(path: string, eventId: string): Pr
     .catch(() => null);
   summaries.set(key, { at: Date.now(), data });
   return data;
+}
+
+const HYDRATE_SIDE = /\b(missouri|mizzou|wrexham|wolverhampton|wolves)\b/i;
+
+function needsRecapHydrate(game: BoxGame): boolean {
+  if (!game.espnEventId || !game.final) return false;
+  if (game.recap?.photo && game.recap.html && game.recap.html.length >= 280) return false;
+  const sides = `${game.away.name} ${game.away.short} ${game.home.name} ${game.home.short}`;
+  return Boolean(game.round) || HYDRATE_SIDE.test(sides);
+}
+
+/** Pull the ESPN article cut onto favorite / postseason finals that the board left bare. */
+export async function hydrateSectionRecaps(board: SectionBoard): Promise<SectionBoard> {
+  const picks = board.results.filter(needsRecapHydrate).slice(0, 4);
+  if (!picks.length) return board;
+  const filled = await Promise.all(
+    picks.map(async (game) => {
+      const story = await fetchEspnRecapStory(game.path, game.espnEventId!);
+      if (!story) return game;
+      return {
+        ...game,
+        recap: {
+          headline: game.recap?.headline ?? `${game.away.short} ${game.away.score ?? ""}, ${game.home.short} ${game.home.score ?? ""}`.replace(/\s+/g, " ").trim(),
+          blurb: game.recap?.blurb ?? null,
+          html: story.html,
+          photo: story.photo ?? game.recap?.photo ?? null,
+          byline: story.byline ?? game.recap?.byline ?? null,
+          url: game.recap?.url ?? game.href,
+        },
+      };
+    }),
+  );
+  const byId = new Map(filled.map((game) => [game.id, game]));
+  return { ...board, results: board.results.map((game) => byId.get(game.id) ?? game) };
 }
 
 /** Full ESPN game story for a recap headline, when the board only sent the blurb. */
@@ -1821,6 +1877,10 @@ export function footballWeeksBoard(opts: {
  * finals yet, last week.
  */
 export async function fetchSectionBoard(path: string, edition: string): Promise<SectionBoard> {
+  return hydrateSectionRecaps(await loadSectionBoard(path, edition));
+}
+
+async function loadSectionBoard(path: string, edition: string): Promise<SectionBoard> {
   const day = editionYmd(edition);
   const newsDay = editionNewsDay(day);
   const tomorrow = shiftDay(day, 1);

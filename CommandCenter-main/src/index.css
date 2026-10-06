@@ -1768,6 +1768,8 @@ mark.rss-hl {
   font-weight: 800;
   line-height: 1.04;
   letter-spacing: -0.02em;
+  font-kerning: normal;
+  font-feature-settings: "kern" 1, "liga" 1;
   color: var(--w-ink);
   text-wrap: balance;
 }

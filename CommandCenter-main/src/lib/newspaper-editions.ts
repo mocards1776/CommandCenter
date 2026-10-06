@@ -91,6 +91,21 @@ export function editionPickerLabel(id: string, recent: FiledIssueMeta[]): string
   return `${weekdayShort(parsed.day)}. ${word} · ${monthDay(parsed.day)}`;
 }
 
+/**
+ * One button per printed label. Local + remote copies of the same slot
+ * were painting EVENING · EVENING · MIDDAY · MIDDAY · MORNING · MORNING.
+ */
+export function uniqueEditionStand(recent: FiledIssueMeta[], now = Date.now()): FiledIssueMeta[] {
+  const filtered = filterRecentFiledIssues(recent, now);
+  const seen = new Set<string>();
+  return filtered.filter((row) => {
+    const label = editionPickerLabel(row.id, filtered).toLowerCase();
+    if (seen.has(label)) return false;
+    seen.add(label);
+    return true;
+  });
+}
+
 export function backEditionNote(id: string, printedAt?: string | null): string {
   const parsed = parsePressId(id);
   const label = parsed?.label ?? "edition";
