@@ -8083,6 +8083,29 @@ li.counting .tt-count.card {
   font-weight: 600;
   line-height: 1;
 }
+.tt-score-mast.short .tt-score-mast-side,
+.tt-front-side .tt-score-mast-side,
+.tt-rail-recap .tt-score-mast-side {
+  min-height: 48px;
+  padding: 6px 8px;
+  gap: 6px;
+}
+.tt-score-mast.short .tt-score-mast-side strong,
+.tt-front-side .tt-score-mast-side strong,
+.tt-rail-recap .tt-score-mast-side strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+}
+.tt-score-mast.short .tt-score-mast-side b,
+.tt-front-side .tt-score-mast-side b,
+.tt-rail-recap .tt-score-mast-side b {
+  font-size: 22px;
+  min-width: 1.5em;
+  text-align: right;
+  flex: 0 0 auto;
+}
 .tt-score-mast-state {
   position: absolute;
   left: 50%;
@@ -8675,8 +8698,8 @@ li.counting .tt-count.card {
 .tt-slate-desk {
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  gap: 12px;
+  justify-content: flex-start;
+  gap: 10px;
   flex: 1;
   min-height: 0;
 }
@@ -8700,9 +8723,9 @@ li.counting .tt-count.card {
 }
 .tt-slate-line {
   display: grid;
-  grid-template-columns: 5.4rem minmax(0, 1fr) 1.1rem minmax(0, 1fr) 3.6rem;
+  grid-template-columns: 4.8rem minmax(0, 1fr) 1.1rem minmax(0, 1fr) 3.2rem;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   min-height: 40px;
   padding: 5px 7px;
   background: var(--w-card);
@@ -8710,6 +8733,10 @@ li.counting .tt-count.card {
   font-size: 12px;
 }
 .tt-slate-line time {
+  box-sizing: border-box;
+  width: 4.8rem;
+  min-width: 4.8rem;
+  max-width: 4.8rem;
   font-family: var(--w-cond);
   font-size: 11px;
   font-weight: 700;
@@ -8717,6 +8744,7 @@ li.counting .tt-count.card {
   text-transform: uppercase;
   color: var(--w-muted);
   white-space: nowrap;
+  overflow: hidden;
 }
 .tt-slate-line-side {
   display: flex;
@@ -8913,6 +8941,54 @@ li.counting .tt-count.card {
   margin-top: auto;
 }
 .tt-slate-desk .tt-week-fill {
+  margin-top: 0;
+}
+.tt-slate-fill {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--w-hair);
+}
+.tt-slate-fill .tt-desk-tables,
+.tt-slate-fill .tt-stand-grid {
+  flex: 1;
+}
+.tt-desk-tables {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px 14px;
+}
+.tt-front-side .tt-desk-tables {
+  grid-template-columns: 1fr;
+}
+.tt-bye-line {
+  margin: 0;
+  font-size: 12px;
+}
+.tt-bye-line em {
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.tt-side-fill {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+  margin-top: 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--w-hair);
+}
+.tt-side-fill .tt-slate-list {
+  flex: 1;
+  align-content: stretch;
+}
+.tt-front-side .tt-week-fill {
   margin-top: 0;
 }
 .tt-slate-desk .tt-week-fill .tt-strip {

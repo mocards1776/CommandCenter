@@ -1,19 +1,26 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
-import { Linescore, ScoreCard, ScoreMast, ScoreStrip, SlateLine } from "@/components/newspaper/BoxScore";
+import { ScoreCard, ScoreStrip, SlateLine, StandingsTable } from "@/components/newspaper/BoxScore";
 import { RecapBox, RecapChrome, RecapPhoto } from "@/components/newspaper/GameRecap";
 import {
   boxStoryCard,
   fetchSectionBoard,
+  fetchSectionStandings,
   sportScoreBands,
   type BoxGame,
   type SectionBoard,
+  type StandGroup,
 } from "@/lib/newspaper-box";
 import { isPrintableStoryBody, proseParas, sanitizeArticleBody } from "@/lib/newspaper-copy";
 import { newspaperEspnGet } from "@/lib/newspaper-espn";
 import { editionDateline, editionIssue, romanNumeral } from "@/lib/newspaper";
-import { PAGE_CANVAS, groupByDay, planSchedulePages } from "@/lib/newspaper-page";
+import {
+  PAGE_CANVAS,
+  groupByDay,
+  pageHasBlankBand,
+  planSchedulePages,
+} from "@/lib/newspaper-page";
 import { recapBodyForPage } from "@/lib/newspaper-recap";
 import type { GameWrapCard } from "@/lib/newspaper-sports";
 import { PlayerPopProvider } from "@/components/newspaper/PlayerPop";
@@ -44,8 +51,18 @@ export default function NewspaperTimesPreviewPage() {
     enabled: Boolean(boardQ.data),
     staleTime: 5 * 60_000,
   });
+  const standQ = useQuery({
+    queryKey: ["tt-times-preview", "nfl-stand", EDITION_DAY],
+    queryFn: () => fetchSectionStandings("football/nfl"),
+    staleTime: 30 * 60_000,
+    enabled: page === "nfl1" || page === "nfl-schedule",
+  });
 
-  const ready = boardQ.isFetched && (page.startsWith("nfl") ? true : recapsQ.isFetched);
+  const ready =
+    boardQ.isFetched &&
+    (page.startsWith("nfl") ? true : recapsQ.isFetched) &&
+    (page === "nfl1" || page === "nfl-schedule" ? standQ.isFetched : true);
+  const tables = favoriteTables(standQ.data ?? []);
   const board = boardQ.data ?? null;
   const recaps = recapsQ.data ?? [];
   const lions = recaps.find((r) => r.card.favoriteKey === "nfl-det") ?? null;
@@ -86,6 +103,7 @@ export default function NewspaperTimesPreviewPage() {
                 recaps={recaps}
                 games={weekGames}
                 slate={slate}
+                tables={tables}
               />,
             ]
           : page === "nfl2"
@@ -107,6 +125,8 @@ export default function NewspaperTimesPreviewPage() {
                     week={board?.slateWeekNumber ?? 5}
                     continued={i > 0}
                     fill={i === schedulePacks.length - 1 ? weekGames : []}
+                    tables={tables}
+                    allTables={standQ.data ?? []}
                   />
                 ))
               : [
@@ -136,11 +156,31 @@ export default function NewspaperTimesPreviewPage() {
 function LockedSheet({ folio, children }: { folio: string; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   const [overflow, setOverflow] = useState(false);
+  const [sparse, setSparse] = useState(false);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
     const check = () => {
       setOverflow(el.scrollHeight > PAGE_CANVAS.height + 1);
+      const box = el.getBoundingClientRect();
+      const ink = [...el.querySelectorAll(".wsj-sport-solo, .tt-slate-desk, .tt-front-side, .tt-front-lead")]
+        .flatMap((node) => [...node.children])
+        .filter((node) => node.getBoundingClientRect().height > 2);
+      const bottoms = ink.map((node) => node.getBoundingClientRect().bottom);
+      const contentBottom = bottoms.length ? Math.max(...bottoms) - box.top : 0;
+      const gaps: number[] = [];
+      const bands = [...el.querySelectorAll(".tt-slate-desk > *, .tt-front-side > *")];
+      for (let i = 1; i < bands.length; i++) {
+        const gap = bands[i]!.getBoundingClientRect().top - bands[i - 1]!.getBoundingClientRect().bottom;
+        if (gap > 1) gaps.push(Math.round(gap));
+      }
+      setSparse(
+        pageHasBlankBand({
+          contentBottomPx: Math.round(contentBottom),
+          canvasHeight: PAGE_CANVAS.height,
+          internalGapsPx: gaps,
+        }),
+      );
     };
     check();
     const ro = new ResizeObserver(check);
@@ -161,6 +201,7 @@ function LockedSheet({ folio, children }: { folio: string; children: ReactNode }
       className="wsj-sheet"
       data-folio={folio}
       data-overflow={overflow ? "1" : "0"}
+      data-sparse={sparse ? "1" : "0"}
       data-canvas={`${PAGE_CANVAS.width}x${PAGE_CANVAS.height}`}
     >
       {children}
@@ -362,7 +403,7 @@ function RailRecap({ recap, grafs = 2 }: { recap: FavRecap; grafs?: number }) {
     <article className="tt-rail-recap">
       <p className="wsj-kicker">{recap.card.teamName} · NFL</p>
       <h3 className="wsj-hl md">{recap.card.headline}</h3>
-      <RecapChrome card={recap.card} game={recap.game} compact />
+      <RecapChrome card={recap.card} game={recap.game} compact shortNames />
       {paras.map((p) => (
         <p key={p.slice(0, 40)} className="wsj-dek">
           {p}
@@ -372,19 +413,52 @@ function RailRecap({ recap, grafs = 2 }: { recap: FavRecap; grafs?: number }) {
   );
 }
 
-function WeekPreview({ games, week }: { games: BoxGame[]; week: number }) {
+function WeekPreview({
+  games,
+  week,
+  take,
+  className,
+}: {
+  games: BoxGame[];
+  week: number;
+  take?: number;
+  className?: string;
+}) {
   if (!games.length) return null;
+  const list = take ? games.slice(0, take) : games;
   return (
-    <section className="tt-front-under tt-week-fill" aria-label="This week">
+    <section className={className ?? "tt-front-under tt-week-fill"} aria-label="This week">
       <h3 className="wsj-band-title">
         Week {week} <em>kickoffs · CT</em>
       </h3>
       <div className="tt-slate-list cols-2">
-        {games.slice(0, 4).map((g) => (
+        {list.map((g) => (
           <SlateLine key={g.id} game={g} />
         ))}
       </div>
     </section>
+  );
+}
+
+function favoriteTables(groups: StandGroup[]): StandGroup[] {
+  const want = [/afc west/i, /nfc north/i, /nfc east/i];
+  return want.flatMap((re) => groups.filter((g) => re.test(g.name))).slice(0, 3);
+}
+
+function byeAbbrevs(slate: BoxGame[], tables: StandGroup[]): string[] {
+  const playing = new Set(slate.flatMap((g) => [g.away.abbrev, g.home.abbrev]));
+  const all = tables.flatMap((g) => g.rows.map((r) => r.abbrev));
+  return [...new Set(all.filter((a) => a && !playing.has(a)))];
+}
+
+function DeskTables({ tables }: { tables: StandGroup[] }) {
+  if (!tables.length) return null;
+  return (
+    <div className="tt-stand-grid tt-desk-tables">
+      {tables.map((group) => (
+        <StandingsTable key={group.name} group={group} mine={() => false} />
+      ))}
+    </div>
   );
 }
 
@@ -422,7 +496,7 @@ function A1Front({
               ))}
             </div>
           </div>
-          <WeekPreview games={slate} week={week} />
+          <WeekPreview games={slate} week={week} take={4} />
         </div>
       ) : (
         <p className="wsj-empty">Setting the front…</p>
@@ -436,11 +510,13 @@ function NflFront({
   recaps,
   games,
   slate,
+  tables,
 }: {
   board: SectionBoard | null;
   recaps: FavRecap[];
   games: BoxGame[];
   slate: BoxGame[];
+  tables: StandGroup[];
 }) {
   const strips = sportScoreBands("football/nfl", board, EDITION_DAY);
   const lead = recaps.find((r) => r.card.favoriteKey === "nfl-kc") ?? recaps[0] ?? null;
@@ -488,6 +564,11 @@ function NflFront({
                   <ScoreStrip games={strip.games} />
                 </section>
               ))}
+              {slate.length ? (
+                <WeekPreview games={slate} week={board?.slateWeekNumber ?? 5} className="tt-side-fill" />
+              ) : (
+                <DeskTables tables={tables} />
+              )}
             </div>
           </div>
         </div>
@@ -511,14 +592,19 @@ function NflSchedule({
   week,
   continued,
   fill,
+  tables,
+  allTables,
 }: {
   games: BoxGame[];
   folio: string;
   week: number;
   continued?: boolean;
   fill?: BoxGame[];
+  tables?: StandGroup[];
+  allTables?: StandGroup[];
 }) {
   const days = groupByDay(games);
+  const byes = byeAbbrevs(games, allTables ?? tables ?? []);
   return (
     <TimesChrome folio={folio} kicker="NFL" desk={continued ? `Schedule · continued` : "Schedule"}>
       <div className="tt-schedule tt-schedule-fill tt-slate-desk">
@@ -540,14 +626,22 @@ function NflSchedule({
             </div>
           </section>
         ))}
-        {fill?.length ? (
-          <section className="tt-week-fill" aria-label="Last week">
-            <h3 className="wsj-band-title">
-              Week {Math.max(week - 1, 1)} finals <em>{fill.length} games</em>
-            </h3>
-            <ScoreStrip games={fill} />
-          </section>
-        ) : null}
+        <div className="tt-slate-fill">
+          <DeskTables tables={tables ?? []} />
+          {byes.length ? (
+            <p className="tt-bye-line">
+              On bye <em>{byes.join(" · ")}</em>
+            </p>
+          ) : null}
+          {fill?.length ? (
+            <section aria-label="Last week">
+              <h3 className="wsj-band-title">
+                Week {Math.max(week - 1, 1)} finals <em>{fill.length} games</em>
+              </h3>
+              <ScoreStrip games={fill} />
+            </section>
+          ) : null}
+        </div>
         {!games.length ? <p className="wsj-empty">Setting the Week 5 slate…</p> : null}
       </div>
     </TimesChrome>

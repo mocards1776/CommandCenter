@@ -906,7 +906,7 @@ export function gameDay(game: BoxGame): string {
   return "";
 }
 
-export function gameClock(game: BoxGame): string {
+export function gameClock(game: Pick<BoxGame, "final" | "live" | "status" | "startIso">): string {
   if (game.final) {
     if (/final/i.test(game.status) && !looksLikeEspnZoneClock(game.status)) return game.status;
     return "Final";
@@ -916,6 +916,34 @@ export function gameClock(game: BoxGame): string {
     return game.status;
   }
   return clockInCentral(game.startIso);
+}
+
+/** Weekday + clock for a packed slate cell — never the long "Sun Oct 11 · 12:00". */
+export function slateKickoff(game: Pick<BoxGame, "final" | "live" | "startIso" | "status">): string {
+  const clock = gameClock(game);
+  if (game.final || game.live) return clock;
+  if (!game.startIso) return clock || game.status;
+  const d = new Date(game.startIso);
+  if (Number.isNaN(d.getTime())) return clock || game.status;
+  const day = d.toLocaleDateString("en-US", { weekday: "short", timeZone: "America/Chicago" });
+  return clock ? `${day} ${clock}` : day;
+}
+
+/** National TV, short enough for a 3-column slate cell. */
+export function shortBroadcast(name: string | null | undefined): string {
+  const raw = (name ?? "").trim();
+  if (!raw) return "";
+  const n = raw.toLowerCase();
+  if (/prime|amazon/.test(n)) return "Prime";
+  if (/peacock/.test(n)) return "Peacock";
+  if (/netflix/.test(n)) return "Netflix";
+  if (/nfl\s*net/.test(n) || n === "nfln") return "NFLN";
+  if (/\bespn\b/.test(n)) return "ESPN";
+  if (/\bcbs\b/.test(n)) return "CBS";
+  if (/\bfox\b/.test(n)) return "FOX";
+  if (/\bnbc\b/.test(n)) return "NBC";
+  if (/\babc\b/.test(n)) return "ABC";
+  return raw.replace(/\s+(video|vision|sports|network|tv).*$/i, "").slice(0, 8);
 }
 
 /**

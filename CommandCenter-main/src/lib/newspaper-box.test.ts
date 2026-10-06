@@ -13,6 +13,8 @@ import {
   gameClock,
   gameDay,
   looksLikeEspnZoneClock,
+  shortBroadcast,
+  slateKickoff,
   sportScoreBands,
   standingFromGroups,
   type BoxGame,
@@ -307,5 +309,19 @@ assert(rolled.slate.some((g) => g.id === "dal-tb"), "Week 5 is the schedule once
 const bands = sportScoreBands("football/nfl", mondayBoard, "2026-10-05-evening");
 assert(bands[0]?.games.some((g) => g.id === "kc-lv"), "NFL1's rail includes KC");
 assert(bands[0]?.games.some((g) => g.id === "car-det"), "NFL1's rail includes DET");
+
+assert(shortBroadcast("Prime Video") === "Prime", "Prime Video shortens to Prime");
+assert(shortBroadcast("Amazon Prime") === "Prime", "Amazon Prime shortens to Prime");
+assert(shortBroadcast("NFL Network") === "NFLN", "NFL Network shortens");
+assert(shortBroadcast("CBS") === "CBS", "CBS stays");
+
+const thu = slateKickoff({
+  final: false,
+  live: false,
+  status: "Scheduled",
+  startIso: "2026-10-09T00:15:00Z",
+});
+assert(/^Thu\s/.test(thu) && /\d{1,2}:\d{2}/.test(thu), `kickoff is weekday + clock (${thu})`);
+assert(!/Oct/.test(thu), "slate kickoff drops the calendar date");
 
 console.log("newspaper-box ok");

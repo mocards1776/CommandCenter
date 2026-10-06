@@ -110,3 +110,33 @@ export function assertPagesFitCanvas(pages: { folio: string; heightPx: number }[
     );
   }
 }
+
+/** Content may not end more than this far above the folio rule. */
+export const PAGE_FOOT_SLACK_PX = 60;
+
+/** No internal hole larger than this between stacked bands. */
+export const PAGE_INTERNAL_GAP_PX = 80;
+
+/**
+ * True when a folio is sparse: the last ink sits too far above the footer,
+ * or a stacked band leaves a hole bigger than `PAGE_INTERNAL_GAP_PX`.
+ */
+export function pageHasBlankBand(opts: {
+  contentBottomPx: number;
+  canvasHeight?: number;
+  internalGapsPx?: number[];
+}): boolean {
+  const canvas = opts.canvasHeight ?? PAGE_CANVAS.height;
+  if (canvas - opts.contentBottomPx > PAGE_FOOT_SLACK_PX) return true;
+  return (opts.internalGapsPx ?? []).some((gap) => gap > PAGE_INTERNAL_GAP_PX);
+}
+
+/** Guard: packed folios must fill the canvas, not just fit it. */
+export function assertPagesFilled(
+  pages: { folio: string; contentBottomPx: number; internalGapsPx?: number[] }[],
+): void {
+  const sparse = pages.filter((p) => pageHasBlankBand(p));
+  if (sparse.length) {
+    throw new Error(`pages leave blank space: ${sparse.map((p) => p.folio).join(", ")}`);
+  }
+}

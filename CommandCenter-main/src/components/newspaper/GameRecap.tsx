@@ -113,17 +113,20 @@ export function RecapChrome({
   card,
   game,
   compact,
+  shortNames,
 }: {
   card: RecapCardBits;
   game?: BoxGame | null;
   compact?: boolean;
+  /** Narrow rails: print KC / LV, not Chiefs / Raiders, so the score never collides. */
+  shortNames?: boolean;
 }) {
   const pack = recapPackFor(card, game ?? null);
   const box = recapBoxGame(card, game);
   if (!box || (!box.final && !box.live)) return null;
   return (
     <section className={cn("tt-recap-chrome", compact && "compact")}>
-      <ScoreMast game={box} />
+      <ScoreMast game={box} shortNames={shortNames} />
       <header className="tt-recap-linehead">
         <b>{gameClock(box)}</b>
         <span>{[box.round, box.series, pack?.venue || box.venue].filter(Boolean).join(" · ")}</span>

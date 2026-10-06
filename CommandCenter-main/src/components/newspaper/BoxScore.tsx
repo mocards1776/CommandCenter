@@ -7,6 +7,8 @@ import {
   type StandGroup,
   gameClock,
   gameDay,
+  shortBroadcast,
+  slateKickoff,
 } from "@/lib/newspaper-box";
 import {
   agateMinWidth,
@@ -516,15 +518,15 @@ function sidePaint(color: string | null, abbrev?: string, path?: string): string
 }
 
 /** The final the way the sports pages set it: both clubs, their marks, the score. */
-export function ScoreMast({ game }: { game: BoxGame }) {
+export function ScoreMast({ game, shortNames }: { game: BoxGame; shortNames?: boolean }) {
   return (
-    <div className="tt-score-mast">
+    <div className={cn("tt-score-mast", shortNames && "short")}>
       {[game.away, game.home].map((side, i) => (
         <div key={i} className={cn("tt-score-mast-side", side.winner && "won", game.final && !side.winner && "lost")} style={{ background: sidePaint(side.color, side.abbrev, game.path) }}>
-          <Mark src={side.logo} size="lg" />
+          <Mark src={side.logo} size={shortNames ? "sm" : "lg"} />
           <span>
             <em>{i === 0 ? "Away" : "Home"}</em>
-            <strong>{side.short}</strong>
+            <strong>{shortNames ? side.abbrev : side.short}</strong>
           </span>
           <b>{side.score ?? "–"}</b>
         </div>
@@ -661,22 +663,20 @@ export function MatchupCard({ game }: { game: BoxGame }) {
 
 /** One compact slate row: time, crests, matchup, TV. Used so NFL7 fits the canvas. */
 export function SlateLine({ game }: { game: BoxGame }) {
-  const when = [gameDay(game), gameClock(game)].filter(Boolean).join(" · ");
+  const when = slateKickoff(game);
   return (
     <article className={cn("tt-slate-line", game.live && "live")}>
       <time dateTime={game.startIso ?? undefined}>{when || game.status}</time>
       <span className="tt-slate-line-side away">
         <Mark src={game.away.logo} size="xs" />
         <b>{game.away.abbrev}</b>
-        {game.away.record ? <em>{game.away.record}</em> : null}
       </span>
       <i>at</i>
       <span className="tt-slate-line-side home">
         <Mark src={game.home.logo} size="xs" />
         <b>{game.home.abbrev}</b>
-        {game.home.record ? <em>{game.home.record}</em> : null}
       </span>
-      <span className="tt-slate-line-tv">{game.broadcasts.filter(Boolean)[0] || game.venue || ""}</span>
+      <span className="tt-slate-line-tv">{shortBroadcast(game.broadcasts.filter(Boolean)[0]) || ""}</span>
     </article>
   );
 }

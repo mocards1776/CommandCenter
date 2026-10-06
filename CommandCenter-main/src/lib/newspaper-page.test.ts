@@ -6,6 +6,9 @@ import {
   PAGE_BODY_PX,
   PAGE_CANVAS,
   PAGE_CHROME_PX,
+  PAGE_FOOT_SLACK_PX,
+  PAGE_INTERNAL_GAP_PX,
+  assertPagesFilled,
   assertPagesFitCanvas,
   estimateA1Height,
   estimateInsideRecapHeight,
@@ -14,6 +17,7 @@ import {
   estimateScoreGridHeight,
   estimateSportFrontHeight,
   pageExceedsCanvas,
+  pageHasBlankBand,
   planSchedulePages,
 } from "./newspaper-page.ts";
 
@@ -87,6 +91,27 @@ try {
   throw new Error("FAIL: overflow guard should throw");
 } catch (err) {
   assert(err instanceof Error && /NFL7/.test(err.message), "overflow guard names the tall folio");
+}
+
+assert(!pageHasBlankBand({ contentBottomPx: PAGE_CANVAS.height - 40 }), "40px of foot slack is packed");
+assert(
+  pageHasBlankBand({ contentBottomPx: PAGE_CANVAS.height - (PAGE_FOOT_SLACK_PX + 1) }),
+  "more than 60px above the footer is a blank band",
+);
+assert(
+  pageHasBlankBand({ contentBottomPx: PAGE_CANVAS.height, internalGapsPx: [PAGE_INTERNAL_GAP_PX + 1] }),
+  "an internal hole over 80px is a blank band",
+);
+assertPagesFilled([
+  { folio: "A1", contentBottomPx: PAGE_CANVAS.height - 20 },
+  { folio: "NFL1", contentBottomPx: PAGE_CANVAS.height - 10, internalGapsPx: [24] },
+  { folio: "NFL7", contentBottomPx: PAGE_CANVAS.height - 8, internalGapsPx: [12, 16] },
+]);
+try {
+  assertPagesFilled([{ folio: "NFL7", contentBottomPx: PAGE_CANVAS.height - 200 }]);
+  throw new Error("FAIL: blank-space guard should throw");
+} catch (err) {
+  assert(err instanceof Error && /NFL7/.test(err.message), "blank-space guard names the sparse folio");
 }
 
 console.log("newspaper-page ok");
