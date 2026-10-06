@@ -156,6 +156,10 @@ const other = card({
   headline: "Colts win",
   when: "2026-10-04T17:00:00Z",
 });
+const printedNfl = groupSportRecaps([playoff, other], "football/nfl");
+assert(printedNfl[0]?.title === "Marquee" && printedNfl[0].cards.length === 1, "a printed marquee band counts one card");
+assert(printedNfl[1]?.title === "The rest of the slate" && printedNfl[1].cards.length === 1, "the rest-of-slate band counts only what prints");
+
 const nflOrder = orderSportRecaps([other, playoff, chiefs], "football/nfl");
 assert(nflOrder[0]?.id === "wire-nfl-kc2", "favorite NFL game leads");
 assert(nflOrder[1]?.id === "wire-nfl-wc", "playoff games are marquee");

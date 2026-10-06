@@ -22,6 +22,8 @@ import {
   pageHasBlankBand,
   planRecapsScorePages,
   planSchedulePages,
+  recapsDeskBlurb,
+  recapsDeskPrinted,
 } from "./newspaper-page.ts";
 
 function assert(cond: unknown, msg: string) {
@@ -109,6 +111,13 @@ assert(
   cfbDesk.reduce((n, p) => n + p.count, 0) === 50,
   "split recaps pages keep every final",
 );
+
+const nfl2Printed = recapsDeskPrinted({ articles: 22, wraps: true, offset: 0, count: 6 });
+assert(nfl2Printed.wraps === 2 && nfl2Printed.boxes === 6, "NFL2 header counts only what prints");
+assert(recapsDeskBlurb(nfl2Printed) === "2 wraps · 6 boxes", recapsDeskBlurb(nfl2Printed));
+const nfl3Printed = recapsDeskPrinted({ articles: 22, wraps: false, offset: 6, count: 10 });
+assert(nfl3Printed.wraps === 0 && nfl3Printed.boxes === 10, "a later recaps folio does not claim the first page's wraps");
+assert(recapsDeskBlurb(nfl3Printed) === "10 boxes", recapsDeskBlurb(nfl3Printed));
 
 assert(!pageHasBlankBand({ contentBottomPx: PAGE_CANVAS.height - 40 }), "40px of foot slack is packed");
 assert(

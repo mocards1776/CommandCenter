@@ -381,6 +381,67 @@ export function leadersFromSummary(sum: EspnSummaryForWrap | null | undefined): 
   return out;
 }
 
+/** 2–4 sentence box wrap from a printed BoxGame when the ESPN recap is a one-line dek. */
+export function writeBoxWrapFromBoxGame(game: {
+  league: string;
+  path: string;
+  status: string;
+  round?: string | null;
+  away: {
+    name: string;
+    short: string;
+    abbrev: string;
+    score: string | null;
+    winner: boolean;
+    record: string | null;
+    lines: (number | null)[];
+  };
+  home: {
+    name: string;
+    short: string;
+    abbrev: string;
+    score: string | null;
+    winner: boolean;
+    record: string | null;
+    lines: (number | null)[];
+  };
+  leaders: { name: string; line: string | null; label?: string; team?: string | null }[];
+  periods: string[];
+}): string {
+  const n = Math.max(game.away.lines.length, game.home.lines.length, game.periods.length);
+  const lines = Array.from({ length: n }, (_, i) => ({
+    period: game.periods[i] ?? String(i + 1),
+    away: game.away.lines[i] ?? null,
+    home: game.home.lines[i] ?? null,
+  }));
+  return writeBoxWrap({
+    league: game.league,
+    path: game.path,
+    postseason: Boolean(game.round),
+    statusDetail: game.status,
+    away: {
+      name: game.away.name,
+      short: game.away.short,
+      abbrev: game.away.abbrev,
+      score: game.away.score,
+      winner: game.away.winner,
+      record: game.away.record,
+    },
+    home: {
+      name: game.home.name,
+      short: game.home.short,
+      abbrev: game.home.abbrev,
+      score: game.home.score,
+      winner: game.home.winner,
+      record: game.home.record,
+    },
+    leaders: game.leaders
+      .filter((l) => l.name && l.line)
+      .map((l) => ({ name: l.name, line: l.line!, label: l.label, team: l.team })),
+    lines,
+  }).body;
+}
+
 export function linesFromSummary(
   path: string,
   sum: EspnSummaryForWrap | null | undefined,

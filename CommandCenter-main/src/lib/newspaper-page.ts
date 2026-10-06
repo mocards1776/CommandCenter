@@ -124,6 +124,26 @@ export function planRecapsScorePages(
   return pages;
 }
 
+/** Wraps and boxes that actually print on this recaps folio — never the whole slate. */
+export function recapsDeskPrinted(opts: {
+  articles: number;
+  wraps: boolean;
+  offset?: number;
+  count?: number | null;
+}): { wraps: number; boxes: number } {
+  const wraps = opts.wraps && !opts.offset ? (opts.articles === 3 ? 3 : Math.min(2, Math.max(0, opts.articles))) : 0;
+  const boxes = Math.max(0, opts.count ?? 0);
+  return { wraps, boxes };
+}
+
+export function recapsDeskBlurb(printed: { wraps: number; boxes: number }): string {
+  const bits = [
+    printed.wraps ? `${printed.wraps} ${printed.wraps === 1 ? "wrap" : "wraps"}` : null,
+    printed.boxes ? `${printed.boxes} ${printed.boxes === 1 ? "box" : "boxes"}` : null,
+  ].filter(Boolean);
+  return bits.join(" · ") || "Box scores";
+}
+
 /**
  * Pixels from this element's top to the recaps-desk pack target (or soft cap).
  * Recap fill uses this so leftover matter on a compact card does not grow the sheet.

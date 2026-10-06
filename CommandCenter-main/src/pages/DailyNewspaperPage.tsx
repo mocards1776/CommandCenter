@@ -38,7 +38,7 @@ import {
   storyReadKeys,
 } from "@/lib/newspaper";
 import { fetchLeagueArticles, fetchTeamArticles } from "@/lib/newspaper-news";
-import { groupByDay, planRecapsScorePages, planSchedulePages } from "@/lib/newspaper-page";
+import { groupByDay, planRecapsScorePages, planSchedulePages, recapsDeskBlurb, recapsDeskPrinted } from "@/lib/newspaper-page";
 import {
   applyTableStandings,
   boardRecapCards,
@@ -86,6 +86,7 @@ import {
   SlateLine,
   DeskSnap,
 } from "@/components/newspaper/BoxScore";
+import { writeBoxWrapFromBoxGame } from "@/lib/newspaper-box-wrap";
 import { RecapBox, RecapChrome, RecapFill, RecapPhoto } from "@/components/newspaper/GameRecap";
 import { ReaderProvider } from "@/components/newspaper/PaperReader";
 import { useReader } from "@/components/newspaper/reader-context";
@@ -811,11 +812,14 @@ function RecapCard({
   game,
   lead,
   wide,
+  desk,
 }: {
   card: GameWrapCard;
   game?: BoxGame | null;
   lead?: boolean;
   wide?: boolean;
+  /** Recaps desk: full-width photo + graf, no leftover fill. */
+  desk?: boolean;
 }) {
   const path = game?.path ?? card.leaguePath ?? null;
   const eventId = game?.espnEventId ?? (card.gameId && /^\d{6,}$/.test(card.gameId) ? card.gameId : null);
@@ -846,11 +850,16 @@ function RecapCard({
   );
   const shown = source.headline !== card.headline ? { ...card, headline: source.headline } : card;
   const photo = live?.recap?.photo || card.photo || espnStory.data?.photo;
-  const graf = recapCardGraf(source.body, lead || wide ? RECAP_LEAD_GRAF : undefined);
+  const fromStory = recapCardGraf(source.body, lead || wide || desk ? RECAP_LEAD_GRAF : undefined);
+  const boxGraf =
+    desk && live && recapCardGraf(fromStory.body).body.split(/(?<=[.!?])\s+/).filter(Boolean).length < 2
+      ? recapCardGraf(writeBoxWrapFromBoxGame(live), RECAP_LEAD_GRAF)
+      : null;
+  const graf = boxGraf?.body ? boxGraf : fromStory;
   const drop = graf.body ? recapDropLead(graf.dateline ?? card.dateline, graf.body) : null;
   return (
     <article
-      className={cn("tt-recap-card", lead && "lead", wide && "wide")}
+      className={cn("tt-recap-card", lead && "lead", (wide || desk) && "wide", desk && "desk")}
       data-tt-keys={storyReadKeys(card).join("|")}
       data-tt-title={shown.headline}
     >
@@ -880,7 +889,7 @@ function RecapCard({
           </StoryLink>
         </p>
       </div>
-      <RecapFill card={card} game={live} density={lead || wide ? "page" : "card"} />
+      {desk ? null : <RecapFill card={card} game={live} density={lead || wide ? "page" : "card"} />}
     </article>
   );
 }
@@ -2877,7 +2886,10 @@ function WrapPlayers({ card }: { card: GameWrapCard }) {
 function WrapBrief({ card, wide, desk }: { card: GameWrapCard; wide?: boolean; desk?: boolean }) {
   const lookup = useContext(GameLookup);
   const game = lookup(card);
-  if (!desk && (game || (isSingleGameRecap(card) && cardLooksRecap(card, game)))) {
+  if (desk) {
+    return <RecapCard card={card} game={game} wide desk />;
+  }
+  if (game || (isSingleGameRecap(card) && cardLooksRecap(card, game))) {
     return <RecapCard card={card} game={game} wide={wide} />;
   }
   const copy = wrapBriefCopy(card, 4);
@@ -2929,9 +2941,9 @@ function WrapFlow({
     ? dedupeSportRecaps(shown, (c) => lookup(c)?.id ?? lookup(c)?.espnEventId ?? null)
     : unique;
   const printIds = new Set(print.map((c) => c.id));
-  const bands = groupSportRecaps(unique, path);
+  const bands = groupSportRecaps(print, path);
   const n = print.length;
-  const cols = n <= 1 ? 1 : n === 2 ? 2 : 3;
+  const cols = desk ? 1 : n <= 1 ? 1 : n === 2 ? 2 : 3;
   return (
     <div className={cn("tt-wrap-flow", `cols-${cols}`)}>
       {bands.map((band) => {
@@ -2940,7 +2952,7 @@ function WrapFlow({
         return (
           <section key={band.title} className="tt-wrap-band">
             <h3 className="wsj-band-title">
-              {band.title} <em>{band.cards.length}</em>
+              {band.title} <em>{visible.length}</em>
             </h3>
             {visible.map((card) => (
               <WrapBrief key={card.id} card={card} wide={n <= 2} desk={desk} />
@@ -3041,9 +3053,20 @@ function ScoresDesk({
     : isMlb
       ? "Box scores"
       : "Results";
+  const printedBoxes = (slicedBoard ? gridGames : rest).length;
+  const shortCont = !recapsWraps && gridGames.length > 0 && gridGames.length <= 4;
+  const matchedCont = allWraps.filter((c) =>
+    gridGames.some((g) => c.id === `box-${g.id}` || g.id === c.gameId || Boolean(c.gameId && g.espnEventId === c.gameId)),
+  );
+  const contWraps = shortCont
+    ? matchedCont.length
+      ? matchedCont
+      : gridGames.map((g) => boxStoryCard(g)).filter((c): c is GameWrapCard => Boolean(c))
+    : [];
   return (
     <div className="tt-scores">
-      {recapsWraps && wrapCards.length ? <WrapFlow cards={allWraps} shown={wrapCards} path={page.path} desk /> : null}
+      {recapsWraps && wrapCards.length ? <WrapFlow cards={wrapCards} shown={wrapCards} path={page.path} desk /> : null}
+      {shortCont && contWraps.length ? <WrapFlow cards={contWraps} shown={contWraps} path={page.path} desk /> : null}
       {recapsWraps && !wrapCards.length ? (
       <article
         className={cn("tt-feature", !photo && "graphic")}
@@ -3133,7 +3156,7 @@ function ScoresDesk({
       {(slicedBoard ? gridGames : rest).length ? (
         <section className="tt-results">
           <h3 className="wsj-band-title">
-            {restTitle} <em>{games.length} {games.length === 1 ? "game" : "games"}</em>
+            {restTitle} <em>{printedBoxes} {printedBoxes === 1 ? "game" : "games"}</em>
           </h3>
           <div
             className={cn("tt-score-grid", isMlb && "agate", sparse && "roomy")}
@@ -3155,6 +3178,7 @@ function ScoresDesk({
         </section>
       ) : null}
       {recapsWraps && sparse ? <StarsBand games={games} /> : null}
+      {shortCont ? <StarsBand games={gridGames} /> : null}
       {recapsWraps && behind.length ? (
         <section className="tt-strip-wrap">
           <h3 className="wsj-band-title">{board?.priorLabel ?? "Last week"} finals</h3>
@@ -3499,11 +3523,14 @@ function SportFront({
         ? `${results} ${results === 1 ? "final" : "finals"} · the night’s board`
         : "The section front",
     news: `${page.articles.length + results} stories and finals · ${leagueClubs.length || page.clubs.length} clubs`,
-    recaps: page.articles.length
-      ? `${page.articles.length} ${page.articles.length === 1 ? "wrap" : "wraps"} · every final in the window`
-      : results
-        ? `${results} ${results === 1 ? "final" : "finals"} · lines, decisions and the agate`
-        : "Box scores",
+    recaps: recapsDeskBlurb(
+      recapsDeskPrinted({
+        articles: page.articles.length,
+        wraps: page.recapsWraps !== false,
+        offset: page.recapsOffset ?? 0,
+        count: page.recapsCount ?? (page.recapsWraps === false ? results : null),
+      }),
+    ),
     teams: standings.length ? `${standings.length} ${standings.length === 1 ? "table" : "tables"} · your clubs marked` : "League tables",
     leaders: leaders.length
       ? `${leaders.length} categories · the top ${Math.max(...leaders.map((g) => g.rows.length), 5)} in each${postLeaders ? " · postseason" : ""}`

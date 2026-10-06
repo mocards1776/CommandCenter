@@ -2,7 +2,7 @@
  * Run with: node --experimental-strip-types src/lib/newspaper-box-wrap.test.ts
  * from CommandCenter-main/.
  */
-import { hasEspnRecap, lineHighlight, periodPhrase, wrapBriefSentences, writeBoxWrap, type BoxWrapGame } from "./newspaper-box-wrap.ts";
+import { hasEspnRecap, lineHighlight, periodPhrase, wrapBriefSentences, writeBoxWrap, writeBoxWrapFromBoxGame, type BoxWrapGame } from "./newspaper-box-wrap.ts";
 
 function assert(cond: unknown, msg: string) {
   if (!cond) throw new Error(`FAIL: ${msg}`);
@@ -67,5 +67,17 @@ const nfl: BoxWrapGame = {
 const kc = writeBoxWrap(nfl);
 assert(/in overtime/.test(kc.body), kc.body);
 assert(/P\. Mahomes/.test(kc.body), kc.body);
+
+const fromBox = writeBoxWrapFromBoxGame({
+  league: "NFL",
+  path: "football/nfl",
+  status: "Final",
+  away: { name: "Indianapolis Colts", short: "Colts", abbrev: "IND", score: "30", winner: true, record: "3-0", lines: [7, 10, 7, 6] },
+  home: { name: "Washington Commanders", short: "Commanders", abbrev: "WSH", score: "13", winner: false, record: "1-3", lines: [0, 7, 3, 3] },
+  leaders: [{ name: "J. Taylor", line: "2 TD", label: "Rushing", team: "IND" }],
+  periods: ["1", "2", "3", "4"],
+});
+assert((fromBox.match(/[.!?]/g) ?? []).length >= 2, `box wrap is at least two sentences, got ${fromBox}`);
+assert(!/Sip some tea/i.test(fromBox), "box wrap is not the one-line dek");
 
 console.log("newspaper-box-wrap ok");

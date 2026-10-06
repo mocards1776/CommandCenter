@@ -4971,6 +4971,12 @@ li.counting .tt-count.card {
   flex: 0 0 auto;
   min-height: 0;
 }
+.tt-scores .tt-wrap-flow.cols-1 .tt-recap-card.desk {
+  width: 100%;
+}
+.tt-scores .tt-wrap-flow.cols-1 .tt-recap-card.desk .tt-recap-card-copy {
+  grid-template-columns: minmax(220px, 0.82fr) minmax(0, 1.18fr);
+}
 .tt-scores .tt-results {
   flex: 0 1 auto;
   min-height: 0;
