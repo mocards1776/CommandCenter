@@ -1174,6 +1174,25 @@ assert(isInjuryNote(thorntonNote), "Thornton hed is an injury note");
 assert(isFavoriteGameResult(mizzouFinal), "Mizzou 45-17 is a favorite-team result");
 assert(!isFavoriteGameResult(thorntonNote), "an injury note is not a game result");
 assert(cannotLeadFront(thorntonNote, [thorntonNote, mizzouFinal]), "an injury note cannot lead over a favorite result");
+{
+  const moNote = card({
+    id: "mo-bailey",
+    headline: "Bailey Jumps Back In - HRCC's Committees",
+    sportLabel: "Missouri",
+    body: "A Missouri scout note. ".repeat(20),
+  });
+  assert(cannotLeadFront(moNote, [moNote, mizzouFinal]), "a statehouse note cannot lead over Mizzou's result");
+  const moPaper = buildEdition({
+    stories: [moNote, mizzouFinal],
+    clubs: [],
+    edition: "2026-10-05-evening",
+  });
+  const moA1 = moPaper.pages.find((p) => p.kind === "favorites-front");
+  assert(
+    moA1?.kind === "favorites-front" && moA1.lead?.id === "wire-cfb-mizzou-florida",
+    "A1 leads with Mizzou, not the Missouri newsletter",
+  );
+}
 assert(!cannotLeadFront(mizzouFinal, [thorntonNote, mizzouFinal]), "the Mizzou recap may lead");
 assert(
   storyRank(mizzouFinal, "2026-10-05-evening") > storyRank(thorntonNote, "2026-10-05-evening"),

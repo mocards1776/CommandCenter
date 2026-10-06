@@ -8,6 +8,7 @@ import {
   dedupeBoxGames,
   dropBogusSameSlot,
   footballWeeksBoard,
+  gamesNeedingRecap,
   formatFixtureWhen,
   formatKickoffLine,
   gameMatchesRecap,
@@ -384,5 +385,19 @@ const thu = slateKickoff({
 assert(/^Thu\s/.test(thu) && /\d{1,2}:\d{2}/.test(thu), `kickoff is weekday + clock (${thu})`);
 assert(!/[AP]M/i.test(thu), "slate kickoff drops AM/PM to fit the time cell");
 assert(!/Oct/.test(thu), "slate kickoff drops the calendar date");
+
+const mizzouPrior = game({
+  id: "miz-fla",
+  path: "football/college-football",
+  final: true,
+  espnEventId: "401628001",
+  round: null,
+  away: side({ id: "142", abbrev: "MIZ", name: "Missouri", short: "Missouri" }),
+  home: side({ id: "57", abbrev: "FLA", name: "Florida", short: "Florida" }),
+});
+assert(
+  gamesNeedingRecap({ results: [], slate: [], prior: [mizzouPrior] }).some((g) => g.id === "miz-fla"),
+  "last week's Mizzou final still gets a recap cut",
+);
 
 console.log("newspaper-box ok");

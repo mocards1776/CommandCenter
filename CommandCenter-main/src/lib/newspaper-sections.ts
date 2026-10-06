@@ -668,6 +668,9 @@ export function cannotLeadFront(card: GameWrapCard, pool: GameWrapCard[] = []): 
   if (isInjuryNote(card) && pool.some((other) => other.id !== card.id && isFavoriteGameResult(other))) {
     return true;
   }
+  if (card.sportLabel === "Missouri" && pool.some((other) => other.id !== card.id && isFavoriteGameResult(other))) {
+    return true;
+  }
   return false;
 }
 
@@ -682,7 +685,7 @@ function leadReplacement(bad: GameWrapCard, pool: GameWrapCard[], taken: Set<str
       hasStoryCopy(c),
   );
   if (recap) return recap;
-  if (!isInjuryNote(bad)) return null;
+  if (!isInjuryNote(bad) && bad.sportLabel !== "Missouri") return null;
   const results = pool
     .filter((c) => !taken.has(c.id) && c.id !== bad.id && isFavoriteGameResult(c) && hasStoryCopy(c))
     .sort((a, b) => favoriteDeskWeight(b.favoriteKey ?? "") - favoriteDeskWeight(a.favoriteKey ?? ""));

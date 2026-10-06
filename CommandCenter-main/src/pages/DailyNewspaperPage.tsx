@@ -221,6 +221,7 @@ import { isNarrowStoryImage } from "@/lib/newspaper-images";
 import {
   buildEdition,
   essentialsFromDesks,
+  isFavoriteGameResult,
   isFavoriteStory,
   isGameWrap,
   isRecapStory,
@@ -2527,6 +2528,10 @@ function stripFor(path: string, board: SectionBoard | null, edition: string): { 
   return [];
 }
 
+function boxGameKey(game: { id?: string | null; espnEventId?: string | null; away?: { abbrev?: string | null }; home?: { abbrev?: string | null }; day?: string | null }): string {
+  return game.id || game.espnEventId || `${game.away?.abbrev ?? ""}-${game.home?.abbrev ?? ""}-${game.day ?? ""}`;
+}
+
 function deskFolio(page: SportFrontPage, focus: SportFrontPage["focus"], fallback: string): string {
   return page.sectionDesks?.find((d) => d.focus === focus)?.folio ?? fallback;
 }
@@ -2590,8 +2595,12 @@ function SportSectionFront({
   const mlbPost =
     mlb && Boolean(playoffs?.active || playoffs?.rounds.some((round) => round.series.length));
   const tables = mlbPost ? [] : rankStandings(standings).slice(0, 2);
-  const stripIds = new Set(frontStrips.flatMap((strip) => strip.games.map((g) => g.id)));
-  const otherScores = recent.filter((g) => g.id !== leadGame?.id && !stripIds.has(g.id));
+  const stripIds = new Set(frontStrips.flatMap((strip) => strip.games.map((g) => boxGameKey(g))));
+  const leadKey = leadGame ? boxGameKey(leadGame) : "";
+  const otherScores = recent.filter((g) => {
+    const key = boxGameKey(g);
+    return key && key !== leadKey && !stripIds.has(key);
+  });
   const fixtures = (board?.slate ?? []).filter((g) => !g.final && !g.live);
   const printableLeaders = leaders.filter(leaderGroupHasValidData).slice(0, 4);
   const gameOf = (card: GameWrapCard) => gameForCard(card, recent, page.clubs);
@@ -2734,7 +2743,7 @@ function SportSectionFront({
         </div>
       )}
       {mlbPost && lead ? (
-        <div className="tt-front-fill">
+        <div className="tt-front-fill" data-tt-keep="">
           <PlayoffDesk tree={playoffs} />
         </div>
       ) : null}
@@ -5093,6 +5102,8 @@ function NewspaperDesk() {
         desks: "light" | "all",
       ) => {
         seedQueries(issue.queries, desks);
+        // A1's lead is last night's favorite result. It lives on tt-board.
+        releaseHeavy(["tt-board"]);
         const date = scheduleDateFor(issue.id);
         if (date) queryClient.setQueryData(["tt-day-ahead", date], extra.dayAhead);
         queryClient.setQueryData([issue.id, "tt-national"], extra.national);
@@ -5148,6 +5159,7 @@ function NewspaperDesk() {
 
       const finishDesks = (issue: PrintedIssue, extra: { dayAhead: DaySchedule | null; national: NationalDesk | null; beez: BeezDesk | null }) => {
         seedQueries(issue.queries, "light");
+        releaseHeavy(["tt-board"]);
         void writeLocalIssue({ ...issue, companions: extra }, cacheUserRef.current);
         void prefetchEditionImages(collectEditionImageUrls({ ...issue, companions: extra }));
         const idle = window.requestIdleCallback?.bind(window);
@@ -5304,8 +5316,8 @@ function NewspaperDesk() {
       const pageW = parseFloat(cs.getPropertyValue("--tt-page-w")) || 1032;
       const fit = Math.min(1, w / pageW);
       el.style.setProperty("--tt-fit", String(fit));
-      // Height is content + the CSS default. Do not grow the sheet to the viewport.
-      el.style.removeProperty("--tt-page-min");
+      // Height is the copy. Do not grow the sheet to the viewport or the 1290 fallback.
+      el.style.setProperty("--tt-page-min", "0px");
       el.dataset.fit = "1";
     };
     apply();
@@ -5320,7 +5332,7 @@ function NewspaperDesk() {
 
   const teamSnaps = useQuery({
     queryKey: [pressId, "tt-team-snaps", day, favKeys],
-    enabled: pressing,
+    enabled: teamFavs.length > 0,
     queryFn: async () =>
       Promise.all(
         teamFavs.map(async (fav) => {
@@ -5363,7 +5375,7 @@ function NewspaperDesk() {
       );
       return rows.filter(Boolean) as { fav: SportsFavorite; detail: TeamDetail }[];
     },
-    enabled: pressing && teamFavs.length > 0,
+    enabled: teamFavs.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -5664,7 +5676,7 @@ function NewspaperDesk() {
       );
       return Object.fromEntries(entries) as Record<string, LeagueClub[]>;
     },
-    enabled: pressing && sportPaths.length > 0,
+    enabled: sportPaths.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -5690,6 +5702,31 @@ function NewspaperDesk() {
     queryKey: [pressId, "tt-mlb-playoffs", day],
     queryFn: () => fetchMlbPlayoffTree(),
     enabled: sportPaths.includes("baseball/mlb"),
+    staleTime: Infinity,
+    gcTime: 20 * 60 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+
+  const leadBoardPaths = useMemo(
+    () => sportPaths.filter((path) => path === "football/college-football" || path === "baseball/mlb" || path === "football/nfl"),
+    [sportPaths],
+  );
+  const leadBoardQ = useQuery({
+    queryKey: [pressId, "tt-lead-board", day, leadBoardPaths.join("|")],
+    queryFn: async () => {
+      const entries = await Promise.all(
+        leadBoardPaths.map(async (path) => {
+          try {
+            return [path, await fetchSectionBoard(path, day)] as const;
+          } catch {
+            return [path, { results: [], slate: [] }] as const;
+          }
+        }),
+      );
+      return Object.fromEntries(entries) as Record<string, SectionBoard>;
+    },
+    enabled: leadBoardPaths.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -5725,7 +5762,7 @@ function NewspaperDesk() {
       );
       return Object.fromEntries(entries) as Record<string, StandGroup[]>;
     },
-    enabled: pressing && sportPaths.length > 0,
+    enabled: sportPaths.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -5790,7 +5827,9 @@ function NewspaperDesk() {
     (card: GameWrapCard): BoxGame | null => {
       // A week-wide roundup or club note must not inherit last night's box.
       if (!isSingleGameRecap(card)) return null;
-      const board = card.leaguePath ? boardQ.data?.[card.leaguePath] : undefined;
+      const board = card.leaguePath
+        ? (leadBoardQ.data?.[card.leaguePath] ?? boardQ.data?.[card.leaguePath])
+        : undefined;
       if (!board) return null;
       const games = [...board.results, ...board.slate, ...(board.prior ?? []), ...(board.week ?? [])];
       if (card.gameId) {
@@ -5801,7 +5840,7 @@ function NewspaperDesk() {
       }
       return games.find((g) => gameMatchesRecap(g, card)) ?? null;
     },
-    [boardQ.data],
+    [boardQ.data, leadBoardQ.data],
   );
 
   /**
@@ -5917,7 +5956,7 @@ function NewspaperDesk() {
       );
       return Object.fromEntries(rows.filter((r) => r[1])) as Record<string, ClubSheet>;
     },
-    enabled: pressing && teamFavs.length > 0,
+    enabled: teamFavs.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -5926,7 +5965,7 @@ function NewspaperDesk() {
 
   const weatherQ = useQuery({
     queryKey: [pressId, "tt-weather-marshfield"],
-    enabled: pressing,
+    enabled: true,
     queryFn: fetchMarshfieldWeather,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
@@ -6168,7 +6207,7 @@ function NewspaperDesk() {
     return out;
   }, [subjects, filesQ.data]);
   const boardRecaps = useMemo(() => {
-    const boards = boardQ.data ?? {};
+    const boards = { ...(boardQ.data ?? {}), ...(leadBoardQ.data ?? {}) };
     const seen = new Set<string>();
     const out: GameWrapCard[] = [];
     for (const club of clubs) {
@@ -6184,7 +6223,7 @@ function NewspaperDesk() {
       }
     }
     return out;
-  }, [boardQ.data, clubs]);
+  }, [boardQ.data, leadBoardQ.data, clubs]);
   const stories = useMemo(() => {
     const seen = new Set<string>();
     const merged: GameWrapCard[] = [];
@@ -6420,15 +6459,20 @@ function NewspaperDesk() {
   }
 
   useEffect(() => {
-    if (!pages.length) return;
-    const hash = typeof window !== "undefined" ? window.location.hash.replace(/^#/, "") : "";
-    if (!hash) return;
-    const idx = pages.findIndex((p) => p.folio === hash);
-    if (idx >= 0) {
-      const el = pagerRef.current;
-      if (el) el.scrollTo({ left: idx * el.clientWidth, behavior: "instant" });
-      setPageIndex(idx);
-    }
+    const goHash = () => {
+      const hash = typeof window !== "undefined" ? window.location.hash.replace(/^#/, "") : "";
+      if (!hash) return;
+      const list = pagesRef.current;
+      const idx = list.findIndex((p) => p.folio === hash);
+      if (idx >= 0) {
+        const el = pagerRef.current;
+        if (el) el.scrollTo({ left: idx * el.clientWidth, behavior: "instant" });
+        setPageIndex(idx);
+      }
+    };
+    goHash();
+    window.addEventListener("hashchange", goHash);
+    return () => window.removeEventListener("hashchange", goHash);
   }, [pages]);
 
   // Settle the folio once the swipe or glide comes to rest — not on every scroll frame.
@@ -6770,9 +6814,12 @@ function NewspaperDesk() {
     if (docPhase === "boot" || !sheets || revealFor.current === pressId) return;
     const front = pages.find((p) => p.kind === "favorites-front");
     const haveLead = front?.kind === "favorites-front" && Boolean(front.lead);
-    const boardsReady = sportPaths.length === 0 || boardQ.isFetched;
+    const leadIsResult =
+      front?.kind === "favorites-front" && Boolean(front.lead && isFavoriteGameResult(front.lead));
+    const haveResult = stories.some((card) => isFavoriteGameResult(card));
+    const boardsReady = leadBoardPaths.length === 0 || leadBoardQ.isFetched;
     const playoffsReady = !sportPaths.includes("baseball/mlb") || mlbPlayoffsQ.isFetched;
-    const copyReady = haveLead && boardsReady && playoffsReady;
+    const copyReady = haveLead && boardsReady && playoffsReady && (leadIsResult || !haveResult);
     let cancel = false;
     const cap = window.setTimeout(() => {
       if (cancel) return;
@@ -6806,8 +6853,10 @@ function NewspaperDesk() {
     recent,
     pages,
     sportPaths,
-    boardQ.isFetched,
+    leadBoardPaths,
+    leadBoardQ.isFetched,
     mlbPlayoffsQ.isFetched,
+    stories,
   ]);
 
   // A story that sat on the sheet counts as read. The next press leaves it out.

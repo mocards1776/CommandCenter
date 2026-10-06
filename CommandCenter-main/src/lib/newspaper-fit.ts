@@ -31,10 +31,9 @@ export function sheetLocalBottom(el: HTMLElement, sheet: Element): number {
 function overflowsClip(el: HTMLElement): boolean {
   const sheet = el.closest(".wsj-sheet");
   if (!sheet) return el.scrollHeight > el.clientHeight + 6;
-  const bottom = sheetLocalBottom(el, sheet);
-  if (bottom > HARD_PAGE_H + 6) return true;
-  if (bottom > SOFT_PAGE_H + 6) return true;
-  return false;
+  // scrollHeight is the unzoomed layout size, so 768 and 1280 pack the same
+  // 1032-wide sheet. getBoundingClientRect follows CSS zoom and the viewport.
+  return sheet.scrollHeight > SOFT_PAGE_H + 6;
 }
 
 function restoreFlow(root: HTMLElement): void {

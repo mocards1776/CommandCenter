@@ -2568,15 +2568,17 @@ li.counting .tt-count.card {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: grid;
-  grid-template-columns: repeat(var(--cols, 6), minmax(0, 1fr));
-  gap: 1px;
-  background: var(--w-hair);
-  border: 1px solid var(--w-hair);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  background: transparent;
+  border: 0;
 }
 .wsj-ticker li {
+  flex: 1 1 170px;
   min-width: 0;
   background: var(--w-card);
+  border: 1px solid var(--w-hair);
   box-shadow: inset 0 4px 0 var(--tt-team, var(--w-ink));
 }
 .wsj-ticker-cell {
@@ -7927,9 +7929,13 @@ li.counting .tt-count.card {
 /* The broadsheet is one size. Viewport queries above must not reflow it.
    These rules sit last and are scoped to the sheet, so a phone scales the
    page instead of restacking the columns. */
+.newspaper-root.wsj-shell {
+  --w-gutter: 20px;
+}
 .newspaper-root .wsj-sheet {
   padding: 14px 18px 28px;
   gap: 14px;
+  min-height: 0;
 }
 .newspaper-root .wsj-nameplate { font-size: 68px; }
 .newspaper-root .wsj-hl.xl { font-size: 46px; }
@@ -7970,7 +7976,11 @@ li.counting .tt-count.card {
 .newspaper-root .wsj-prose.c1 { columns: 1; }
 .newspaper-root .wsj-briefs { grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr)); }
 .newspaper-root .wsj-brief.featured { grid-column: span 2; }
-.newspaper-root .wsj-ticker { grid-template-columns: repeat(var(--cols, 5), minmax(0, 1fr)); }
+.newspaper-root .wsj-ticker {
+  display: flex;
+  flex-wrap: wrap;
+  grid-template-columns: unset;
+}
 .newspaper-root .wsj-deskboard ul { grid-template-columns: repeat(var(--cols, 6), minmax(0, 1fr)); }
 .newspaper-root .wsj-clubs-grid { grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr)); }
 .newspaper-root .wsj-shelved { grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr)); }

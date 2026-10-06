@@ -51,7 +51,7 @@ assert(
   "later write wins for the same key",
 );
 
-assert(heavyDesksForPage({ kind: "favorites-front" }).length === 0, "A1 does not wait on a heavy desk");
+assert(heavyDesksForPage({ kind: "favorites-front" }).includes("tt-board"), "A1 asks for the board so the lead recap can print");
 assert(heavyDesksForPage({ kind: "sport-front" }).includes("tt-board"), "a sport front asks for the board");
 assert(heavyDesksForPage({ kind: "favorites-continue" }).includes("tt-board"), "a jump folio may need a recap box");
 assert(heavyDesksForReader().includes("tt-wrap-bodies"), "the reader asks for wrap bodies");

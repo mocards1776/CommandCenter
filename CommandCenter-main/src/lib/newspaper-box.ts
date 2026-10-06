@@ -849,9 +849,23 @@ function needsRecapHydrate(game: BoxGame): boolean {
   return Boolean(game.round) || HYDRATE_SIDE.test(sides);
 }
 
+/** Favorite and postseason finals that still need the ESPN cut, including last week's board. */
+export function gamesNeedingRecap(board: SectionBoard): BoxGame[] {
+  const seen = new Set<string>();
+  const out: BoxGame[] = [];
+  for (const game of [...(board.results ?? []), ...(board.prior ?? [])]) {
+    if (!needsRecapHydrate(game)) continue;
+    const key = game.id || game.espnEventId || "";
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(game);
+  }
+  return out;
+}
+
 /** Pull the ESPN article cut onto favorite / postseason finals that the board left bare. */
 export async function hydrateSectionRecaps(board: SectionBoard): Promise<SectionBoard> {
-  const picks = board.results.filter(needsRecapHydrate).slice(0, 4);
+  const picks = gamesNeedingRecap(board).slice(0, 6);
   if (!picks.length) return board;
   const filled = await Promise.all(
     picks.map(async (game) => {
@@ -871,7 +885,12 @@ export async function hydrateSectionRecaps(board: SectionBoard): Promise<Section
     }),
   );
   const byId = new Map(filled.map((game) => [game.id, game]));
-  return { ...board, results: board.results.map((game) => byId.get(game.id) ?? game) };
+  const apply = (list: BoxGame[]) => list.map((game) => byId.get(game.id) ?? game);
+  return {
+    ...board,
+    results: apply(board.results),
+    prior: board.prior ? apply(board.prior) : board.prior,
+  };
 }
 
 /** Full ESPN game story for a recap headline, when the board only sent the blurb. */
