@@ -4752,16 +4752,6 @@ function FolioSlot({
   useEffect(() => {
     if (near) setShown(true);
   }, [near]);
-  useEffect(() => {
-    if (shown) return;
-    const ric = window.requestIdleCallback?.bind(window);
-    if (ric) {
-      const id = ric(() => setShown(true), { timeout: 500 + index * 40 });
-      return () => window.cancelIdleCallback(id);
-    }
-    const id = window.setTimeout(() => setShown(true), 180 + index * 30);
-    return () => window.clearTimeout(id);
-  }, [shown, index]);
   return (
     <section className="wsj-page" aria-label={`Page ${folio}`}>
       <div className="wsj-fit">
@@ -4779,7 +4769,12 @@ function FittedSheet({ children }: { children: ReactNode }) {
     if (!el) return;
     let cancel = false;
     const run = () => {
-      if (!cancel) fitSentencesIn(el);
+      if (cancel) return;
+      try {
+        fitSentencesIn(el);
+      } catch {
+        /* React owns this node this frame; the next pass will pack. */
+      }
     };
     run();
     void document.fonts?.ready.then(run);
