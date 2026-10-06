@@ -6,6 +6,7 @@ import type { GameWrapCard } from "./newspaper-sports.ts";
 import {
   attachRelatedGameCopy,
   groupSportRecaps,
+  isInjuryNote,
   isSecCard,
   isSportFiller,
   orderSportRecaps,
@@ -208,5 +209,20 @@ assert(
   !wrapLead.some((c) => c.id === "wire-nfl-old") || wrapLead[0]?.id !== "wire-nfl-old",
   "a holdover wrap never opens the section when a fresh game is on file",
 );
+
+const eaglesSurgery = card({
+  id: "league-bigsby",
+  headline: "Eagles RB Tank Bigsby to have surgery",
+  when: "2026-10-05T18:00:00Z",
+  editorFront: 0,
+  body: "Philadelphia said Tank Bigsby will have surgery. ".repeat(4),
+});
+assert(isInjuryNote(eaglesSurgery), "a surgery note is injury news");
+const injuryLead = orderSportSectionFront(
+  [eaglesSurgery, lastNight],
+  "football/nfl",
+  "2026-10-05-evening",
+);
+assert(injuryLead[0]?.id === "wire-nfl-sun", "NFL1 leads with last night's result, not an injury");
 
 console.log("newspaper-sport-desk ok");

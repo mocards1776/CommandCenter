@@ -7,6 +7,9 @@ import {
   type StandGroup,
   gameClock,
   gameDay,
+  shortBroadcast,
+  slateClock,
+  slateKickoff,
 } from "@/lib/newspaper-box";
 import {
   agateMinWidth,
@@ -516,15 +519,15 @@ function sidePaint(color: string | null, abbrev?: string, path?: string): string
 }
 
 /** The final the way the sports pages set it: both clubs, their marks, the score. */
-export function ScoreMast({ game }: { game: BoxGame }) {
+export function ScoreMast({ game, shortNames }: { game: BoxGame; shortNames?: boolean }) {
   return (
-    <div className="tt-score-mast">
+    <div className={cn("tt-score-mast", shortNames && "short")}>
       {[game.away, game.home].map((side, i) => (
         <div key={i} className={cn("tt-score-mast-side", side.winner && "won", game.final && !side.winner && "lost")} style={{ background: sidePaint(side.color, side.abbrev, game.path) }}>
-          <Mark src={side.logo} size="lg" />
+          <Mark src={side.logo} size={shortNames ? "sm" : "lg"} />
           <span>
             <em>{i === 0 ? "Away" : "Home"}</em>
-            <strong>{side.short}</strong>
+            <strong>{shortNames ? side.abbrev : side.short}</strong>
           </span>
           <b>{side.score ?? "–"}</b>
         </div>
@@ -656,6 +659,48 @@ export function MatchupCard({ game }: { game: BoxGame }) {
         {game.broadcasts.length ? <span className="tv">{game.broadcasts.join(" · ")}</span> : null}
       </footer>
     </article>
+  );
+}
+
+/** One compact slate row: time, crests, matchup, TV. Used so NFL7 fits the canvas. */
+export function SlateLine({ game, clockOnly }: { game: BoxGame; clockOnly?: boolean }) {
+  const when = clockOnly ? slateClock(game) : slateKickoff(game);
+  return (
+    <article className={cn("tt-slate-line", game.live && "live")}>
+      <time dateTime={game.startIso ?? undefined}>{when || game.status}</time>
+      <span className="tt-slate-line-side away">
+        <Mark src={game.away.logo} size="xs" />
+        <b>{game.away.abbrev}</b>
+      </span>
+      <i>at</i>
+      <span className="tt-slate-line-side home">
+        <Mark src={game.home.logo} size="xs" />
+        <b>{game.home.abbrev}</b>
+      </span>
+      <span className="tt-slate-line-tv">{shortBroadcast(game.broadcasts.filter(Boolean)[0]) || ""}</span>
+    </article>
+  );
+}
+
+/** Compact division snapshot: abbrev + W–L. Packs a remaining band without wrapping a full table. */
+export function DeskSnap({ tables }: { tables: StandGroup[] }) {
+  if (!tables.length) return null;
+  return (
+    <div className={cn("tt-desk-tables", tables.length >= 4 && "cols-4")}>
+      {tables.map((group) => (
+        <section key={group.name} className="tt-desk-div">
+          <h4>{group.name}</h4>
+          <ol>
+            {group.rows.map((row) => (
+              <li key={row.id || row.abbrev}>
+                <b>{row.abbrev}</b>
+                <em>{row.cells.slice(0, 2).join("–")}</em>
+              </li>
+            ))}
+          </ol>
+        </section>
+      ))}
+    </div>
   );
 }
 

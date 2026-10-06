@@ -48,6 +48,7 @@ export type BoxWrapGame = {
 
 export type EspnSummaryForWrap = {
   article?: { story?: string; headline?: string; images?: { url?: string; width?: number }[]; byline?: string };
+  news?: { articles?: { story?: string; description?: string; headline?: string }[] };
   header?: {
     competitions?: {
       notes?: { headline?: string }[];

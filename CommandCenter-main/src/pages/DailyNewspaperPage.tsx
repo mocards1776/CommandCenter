@@ -55,6 +55,7 @@ import {
   type StandGroup,
 } from "@/lib/newspaper-box";
 import { cleanStoryCopy, proseParas, tidy, truncateAtSentence } from "@/lib/newspaper-copy";
+import { fitSentencesIn } from "@/lib/newspaper-fit";
 import { recapBodyForPage, recapDropLead, recapIsScoreOnly, recapShouldDropCap, splitApDateline } from "@/lib/newspaper-recap";
 import {
   Face,
@@ -68,8 +69,11 @@ import {
   Leaders,
   Linescore,
   MlbAgate,
+  SlateLine,
+  DeskSnap,
 } from "@/components/newspaper/BoxScore";
 import { RecapBox, RecapChrome, RecapPhoto } from "@/components/newspaper/GameRecap";
+import { groupByDay, planSchedulePages } from "@/lib/newspaper-page";
 import { ReaderProvider } from "@/components/newspaper/PaperReader";
 import { useReader } from "@/components/newspaper/reader-context";
 import { CfbScheduleDesk } from "@/components/newspaper/CfbScheduleDesk";
@@ -1849,7 +1853,9 @@ function InsidePage({
               game={game}
               inset={game ? null : <StoryNames card={card} />}
             />
-            {game || (isSingleGameRecap(card) && card.recapGame) ? <RecapBox card={card} game={game ?? null} /> : null}
+            {game || (isSingleGameRecap(card) && card.recapGame) ? (
+              <RecapBox card={card} game={game ?? null} compact />
+            ) : null}
           </div>
         );
       })}
@@ -1985,7 +1991,9 @@ function ContinuePage({
               game={game}
               inset={game ? null : <StoryNames card={card} />}
             />
-            {game || (isSingleGameRecap(card) && card.recapGame) ? <RecapBox card={card} game={game ?? null} /> : null}
+            {game || (isSingleGameRecap(card) && card.recapGame) ? (
+              <RecapBox card={card} game={game ?? null} compact />
+            ) : null}
           </div>
         );
       })}
@@ -2306,8 +2314,10 @@ function SportSectionFront({
   const stories = page.articles.map((a) => a.card).filter((c) => c.headline);
   const folios = Object.fromEntries(page.articles.map((a) => [a.card.id, a.folio]));
   const lead = stories[0] ?? null;
-  const seconds = stories.filter((c) => c !== lead).slice(0, 4);
-  const more = stories.filter((c) => c !== lead && !seconds.includes(c)).slice(0, 6);
+  const rest = stories.filter((c) => c !== lead);
+  const underLead = rest.slice(0, 2);
+  const railSeconds = rest.slice(2, 4);
+  const more = rest.slice(4, 8);
   const leadGame = lead ? (gameById.get(lead.id) ?? null) : null;
   const recapsFolio = deskFolio(page, "recaps", `${page.section}2`);
   const crestFor = (card: GameWrapCard) =>
@@ -2317,12 +2327,12 @@ function SportSectionFront({
   return (
     <div className="tt-section-front">
       {lead ? (
-        <div className={cn("tt-front-grid", (seconds.length || railGames.length) && "with-side")}>
+        <div className={cn("tt-front-grid", (underLead.length || railSeconds.length || railGames.length) && "with-side")}>
           <div className="tt-front-lead">
             <Story
               className="lead"
               card={lead}
-              text={splitStoryCopy(cardCopy(lead), seconds.length ? 900 : 1200).teaser}
+              text={splitStoryCopy(cardCopy(lead), 1600).teaser}
               size="xl"
               cols={1}
               art="top"
@@ -2332,17 +2342,48 @@ function SportSectionFront({
               jump={folios[lead.id] && folios[lead.id] !== page.folio ? folios[lead.id] : undefined}
               onTurn={onTurn}
             />
-            {leadGame ? (
+            {leadGame && !isSingleGameRecap(lead) ? (
               <div className="tt-front-banner">
                 <ScoreMast game={leadGame} />
                 <Linescore game={leadGame} compact />
               </div>
             ) : null}
+            {underLead.length ? (
+              <div className="tt-front-under">
+                {underLead.map((card) => (
+                  <Story
+                    key={card.id}
+                    card={card}
+                    text={recapDek(card, 3)}
+                    size="md"
+                    art="none"
+                    readOn
+                    game={gameById.get(card.id) ?? null}
+                    jump={folios[card.id] && folios[card.id] !== page.folio ? folios[card.id] : undefined}
+                    onTurn={onTurn}
+                  />
+                ))}
+              </div>
+            ) : football && (board?.slate ?? []).some((g) => !g.final && !g.live) ? (
+              <section className="tt-front-under" aria-label="This week">
+                <h3 className="wsj-band-title">
+                  {board?.slateWeekNumber ? `Week ${board.slateWeekNumber}` : "This week"} <em>kickoffs</em>
+                </h3>
+                <div className="tt-slate-list cols-2">
+                  {(board?.slate ?? [])
+                    .filter((g) => !g.final && !g.live)
+                    .slice(0, 6)
+                    .map((g) => (
+                      <SlateLine key={g.id} game={g} />
+                    ))}
+                </div>
+              </section>
+            ) : null}
           </div>
           <div className="tt-front-side">
-            {seconds.length ? (
+            {railSeconds.length ? (
               <div className="wsj-sport-seconds">
-                {seconds.map((card) => (
+                {railSeconds.map((card) => (
                   <Story
                     key={card.id}
                     card={card}
@@ -2368,7 +2409,7 @@ function SportSectionFront({
                       </button>
                     </h3>
                     <ScoreStrip
-                      games={strip.games.slice(0, 10)}
+                      games={strip.games}
                       onOpen={(g) => {
                         const card = boxStoryCard(g);
                         if (card) open({ card, game: g });
@@ -2378,6 +2419,20 @@ function SportSectionFront({
                   </section>
                 ))}
               </div>
+            ) : null}
+            {football && (board?.slate ?? []).some((g) => !g.final && !g.live) ? (
+              <section className="tt-side-fill" aria-label="This week">
+                <h3 className="wsj-band-title">
+                  {board?.slateWeekNumber ? `Week ${board.slateWeekNumber}` : "This week"} <em>kickoffs · CT</em>
+                </h3>
+                <div className="tt-slate-list cols-1">
+                  {(board?.slate ?? [])
+                    .filter((g) => !g.final && !g.live)
+                    .map((g) => (
+                      <SlateLine key={g.id} game={g} />
+                    ))}
+                </div>
+              </section>
             ) : null}
           </div>
         </div>
@@ -2946,6 +3001,7 @@ function ScheduleDesk({
     enabled: college,
   });
   const games = board?.slate ?? [];
+  const nfl = page.path === "football/nfl";
   if (college) {
     return (
       <CfbScheduleDesk
@@ -2965,6 +3021,43 @@ function ScheduleDesk({
       days.set(g.day, list);
     }
     const mlb = page.path === "baseball/mlb";
+    if (nfl) {
+      const pages = planSchedulePages(games);
+      const pack = pages[0] ?? games;
+      const finals = (board?.week ?? board?.results ?? []).filter((g) => g.final);
+      return (
+        <div className="tt-schedule tt-schedule-fill tt-slate-desk">
+          {pages.length > 1 ? (
+            <p className="wsj-band-title">
+              This week <em>folio 1 of {pages.length}</em>
+            </p>
+          ) : null}
+          {groupByDay(pack).map(([day, list]) => (
+            <section key={day} className={list.length >= 6 ? "tt-slate-heavy" : undefined}>
+              <h3 className="wsj-band-title">
+                {dayHeading(day, edition)} <em>{list.length} {list.length === 1 ? "game" : "games"}</em>
+              </h3>
+              <div className="tt-slate-list">
+                {list.map((g) => (
+                  <SlateLine key={g.id} game={g} clockOnly />
+                ))}
+              </div>
+            </section>
+          ))}
+          <div className="tt-slate-fill">
+            <DeskSnap tables={standings} />
+            {finals.length ? (
+              <section aria-label="Last week">
+                <h3 className="wsj-band-title">
+                  Finals <em>{finals.length} games</em>
+                </h3>
+                <ScoreStrip games={finals} />
+              </section>
+            ) : null}
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="tt-schedule tt-schedule-fill">
         {[...days.entries()].map(([day, list]) => (
@@ -4176,9 +4269,31 @@ function FolioSlot({
   return (
     <section className="wsj-page" aria-label={`Page ${folio}`}>
       <div className="wsj-fit">
-        <div className="wsj-sheet">{shown ? <FolioBody render={render} /> : null}</div>
+        <FittedSheet>{shown ? <FolioBody render={render} /> : null}</FittedSheet>
       </div>
     </section>
+  );
+}
+
+function FittedSheet({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const run = () => fitSentencesIn(el);
+    run();
+    const ro = new ResizeObserver(run);
+    ro.observe(el);
+    for (const img of el.querySelectorAll("img")) img.addEventListener("load", run);
+    return () => {
+      ro.disconnect();
+      for (const img of el.querySelectorAll("img")) img.removeEventListener("load", run);
+    };
+  }, [children]);
+  return (
+    <div ref={ref} className="wsj-sheet">
+      {children}
+    </div>
   );
 }
 
@@ -4555,11 +4670,10 @@ function NewspaperDesk() {
       if (w < 40 || h < 40) return;
       const root = el.closest(".newspaper-root") ?? el;
       const cs = getComputedStyle(root);
-      const pageW = parseFloat(cs.getPropertyValue("--tt-page-w")) || 1032;
-      // Width only: the sheet fills the screen across and scrolls down, never shrinks to fit the height.
-      const fit = Math.min(1, w / pageW);
+      const pageW = parseFloat(cs.getPropertyValue("--tt-page-w")) || 1040;
+      const pageH = parseFloat(cs.getPropertyValue("--tt-page-h")) || 1480;
+      const fit = Math.min(1, w / pageW, h / pageH);
       el.style.setProperty("--tt-fit", String(fit));
-      el.style.setProperty("--tt-page-min", `${Math.ceil(h / fit)}px`);
       el.dataset.fit = "1";
     };
     apply();
@@ -5046,7 +5160,7 @@ function NewspaperDesk() {
       if (!isSingleGameRecap(card)) return null;
       const board = card.leaguePath ? boardQ.data?.[card.leaguePath] : undefined;
       if (!board) return null;
-      const games = [...board.results, ...board.slate, ...(board.prior ?? [])];
+      const games = [...board.results, ...board.slate, ...(board.prior ?? []), ...(board.week ?? [])];
       if (card.gameId) {
         const hit = games.find(
           (g) => g.espnEventId === card.gameId || (g.gamePk != null && String(g.gamePk) === card.gameId),

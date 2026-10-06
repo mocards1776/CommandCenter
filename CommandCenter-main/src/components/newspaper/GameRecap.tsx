@@ -113,17 +113,20 @@ export function RecapChrome({
   card,
   game,
   compact,
+  shortNames,
 }: {
   card: RecapCardBits;
   game?: BoxGame | null;
   compact?: boolean;
+  /** Narrow rails: print KC / LV, not Chiefs / Raiders, so the score never collides. */
+  shortNames?: boolean;
 }) {
   const pack = recapPackFor(card, game ?? null);
   const box = recapBoxGame(card, game);
   if (!box || (!box.final && !box.live)) return null;
   return (
     <section className={cn("tt-recap-chrome", compact && "compact")}>
-      <ScoreMast game={box} />
+      <ScoreMast game={box} shortNames={shortNames} />
       <header className="tt-recap-linehead">
         <b>{gameClock(box)}</b>
         <span>{[box.round, box.series, pack?.venue || box.venue].filter(Boolean).join(" · ")}</span>
@@ -145,24 +148,24 @@ export function RecapBox({
   compact?: boolean;
   forceFull?: boolean;
 }) {
-  const full = forceFull || (!compact && recapIsFull(card));
+  const show = forceFull || recapIsFull(card);
   const path = game?.path ?? card.leaguePath ?? null;
   const eventId = game?.espnEventId ?? (card.gameId && /^\d{6,}$/.test(card.gameId) ? card.gameId : null);
-  const espnBoxed = Boolean(full && eventId && path && ESPN_BOX_PATHS.has(path));
+  const espnBoxed = Boolean(show && eventId && path && ESPN_BOX_PATHS.has(path));
   const espnBox = useQuery({
     queryKey: ["tt-espn-box", path, eventId],
     queryFn: () => fetchEspnBox(path!, eventId!),
     enabled: espnBoxed,
     staleTime: game?.live ? 60_000 : 30 * 60_000,
   });
-  const showMlb = Boolean(full && game?.path === "baseball/mlb" && game.gamePk && !espnBox.data);
-  if (!full) return null;
+  const showMlb = Boolean(show && game?.path === "baseball/mlb" && game.gamePk && !espnBox.data);
+  if (!show) return null;
   if (!espnBoxed && !showMlb) return null;
   return (
-    <section className={cn("tt-recap-box", !full && "condensed")}>
+    <section className={cn("tt-recap-box", compact && "condensed")}>
       <h3>Box score</h3>
       {espnBox.data ? (
-        <EspnAgate box={espnBox.data} path={espnBox.data.game.path} />
+        <EspnAgate box={espnBox.data} path={espnBox.data.game.path} condensed={compact} />
       ) : showMlb && game ? (
         <MlbAgate game={game} />
       ) : espnBox.isLoading ? (

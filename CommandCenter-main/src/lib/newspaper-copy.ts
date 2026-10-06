@@ -104,9 +104,20 @@ export function stripGettyCredit(text: string): string {
 }
 
 const BOILERPLATE_LINE =
-  /^(?:-{3,}|_{3,}|\*{3,}|sign up for\b|subscribe:|jump to:|posted in\b|share this:|to read this\b|click here\b|download the app\b|follow us on\b|read more\b|advertisement\b|related stories\b|you may also like\b)/i;
+  /^(?:-{3,}|_{3,}|\*{3,}|sign up for\b|subscribe:|jump to:|posted in\b|share this:|to read this\b|click here\b|download the app\b|follow us on\b|read more\b|advertisement\b|related stories\b|you may also like\b|watch:|terms of use\b|privacy policy\b|privacy notice\b|cookie (?:policy|settings)\b)/i;
 
 const BOILERPLATE_GETTY = /^\(?getty(?:\s+images)?\)?\.?$/i;
+
+const GAMBLING_LINE =
+  /\b(?:1-800-gambler|1-800-522-4700|1-800-next-step|1-800-9-with-it|1-800-betsoff|gambling problem|gambling helpline|responsible gaming|draftkings|fanduel|betmgm|caesars sportsbook|if you or someone you know has a gambling|must be 21(?:\+| years)|gamblinghelp|visitgambling|ncpgambling|rg-help)\b/i;
+
+const LEGAL_LINE =
+  /\b(?:terms of use|privacy policy|privacy notice|cookie policy|all rights reserved|©\s*\d{4}|copyright\s*©|void where prohibited)\b/i;
+
+const RELATED_LINE =
+  /^(?:watch:|read more\b|related(?: stories| links)?:|more from\b|also on espn\b|click for (?:full )?story\b)/i;
+
+const VIDEO_STAMP = /\b\d{1,2}:\d{2}\b/;
 
 /** Conservative web-chrome lines that should never print. */
 export function isBoilerplateLine(line: string): boolean {
@@ -114,8 +125,65 @@ export function isBoilerplateLine(line: string): boolean {
   if (!t) return true;
   if (BOILERPLATE_GETTY.test(t)) return true;
   if (BOILERPLATE_LINE.test(t)) return true;
+  if (GAMBLING_LINE.test(t)) return true;
+  if (LEGAL_LINE.test(t) && t.length < 280) return true;
+  if (RELATED_LINE.test(t)) return true;
   if (/^sign up for\b/i.test(t) && /\balerts?\b/i.test(t)) return true;
+  if (isCaptionOnlyLine(t)) return true;
+  if (isVideoTitleLine(t)) return true;
   return false;
+}
+
+/** A photo credit or team-name stand-in, not a graf. */
+export function isCaptionOnlyLine(line: string): boolean {
+  const t = line.replace(/\s+/g, " ").trim();
+  if (!t) return true;
+  if (isTeamNameCaption(t)) return true;
+  if (/^(?:photo|image|courtesy|ap photo|getty)\b/i.test(t) && t.length < 80) return true;
+  if (/:\s*(?:game |full )?highlights\s*$/i.test(t) && t.length < 140) return true;
+  return false;
+}
+
+/** One ESPN video-rail title, often with a duration stamp. */
+export function isVideoTitleLine(line: string): boolean {
+  const t = line.replace(/\s+/g, " ").trim();
+  if (!t) return true;
+  if (/^watch:/i.test(t)) return true;
+  if (VIDEO_STAMP.test(t) && t.length < 160 && !/[.!]/.test(t.replace(VIDEO_STAMP, ""))) return true;
+  if (/^(?:did|is|are|can|will|why|how|what)\b.+\?$/i.test(t) && t.length < 140) return true;
+  return false;
+}
+
+/**
+ * Repeated video titles, duration stamps, and "Watch:" rails jammed into
+ * one blob — the usual ESPN story-page scrape.
+ */
+export function isVideoTitleSoup(text: string): boolean {
+  const raw = text.replace(/\s+/g, " ").trim();
+  if (raw.length < 40) return false;
+  if (/\bwatch:\b/i.test(raw) && VIDEO_STAMP.test(raw)) return true;
+  if (/(.{18,90})\s+\1/i.test(raw) && VIDEO_STAMP.test(raw)) return true;
+  if (/(.{18,90})\s+\1/i.test(raw) && /\b(?:film room|must-see|highlights?)\b/i.test(raw)) return true;
+  const questions = (raw.match(/\?/g) ?? []).length;
+  const sentences = (raw.match(/[.!](?=\s|$)/g) ?? []).length;
+  if (questions >= 2 && sentences < 2 && VIDEO_STAMP.test(raw)) return true;
+  const stamps = raw.match(/\b\d{1,2}:\d{2}\b/g)?.length ?? 0;
+  return stamps >= 2 && raw.length < 900;
+}
+
+export function isGamblingDisclaimer(text: string): boolean {
+  return GAMBLING_LINE.test(text);
+}
+
+/** Enough real prose to set as a story, not a caption or a chrome dump. */
+export const PRINTABLE_STORY_MIN = 160;
+
+export function isPrintableStoryBody(text: string | null | undefined): boolean {
+  const cleaned = sanitizeArticleBody(text);
+  if (cleaned.length < PRINTABLE_STORY_MIN) return false;
+  if (isNavSoup(cleaned) || isVideoTitleSoup(cleaned)) return false;
+  const sentences = cleaned.match(/[.!?]["')\]]?(?:\s|$)/g)?.length ?? 0;
+  return sentences >= 2;
 }
 
 export function stripBoilerplateCopy(text: string): string {
@@ -125,6 +193,36 @@ export function stripBoilerplateCopy(text: string): string {
     .filter((line) => !isBoilerplateLine(line))
     .join("\n\n")
     .trim();
+}
+
+const INLINE_JUNK_CUT =
+  /\b(?:terms of use|privacy policy|privacy notice|cookie policy|all rights reserved|©\s*\d{4}|1-800-gambler|gambling problem|responsible gaming|must be 21(?:\+| years)|visitgambling|ncpgambling|watch:\s*)/i;
+
+/**
+ * Extracted article text a desk can set: chrome, video rails, legal, and
+ * gambling disclaimers dropped. Empty when what remains is not a story.
+ */
+export function sanitizeArticleBody(text: string | null | undefined): string {
+  let raw = text ?? "";
+  if (!raw.trim()) return "";
+  if (looksLikeHtml(raw)) raw = htmlToNewspaperText(raw);
+  else raw = decodeNewspaperEntities(raw);
+  raw = stripBoilerplateCopy(raw);
+  raw = raw
+    .replace(/\bWatch:\s*[^.!?\n]{0,160}/gi, " ")
+    .replace(/\bRead more\b[:\s][^.!?\n]{0,160}/gi, " ")
+    .replace(/\b(?:Terms of Use|Privacy Policy|Cookie Policy)\b/gi, " ");
+  const paras = raw
+    .split(/\n{2,}/)
+    .map((p) => tidy(p.replace(/\s+/g, " ")))
+    .filter((p) => p && !isBoilerplateLine(p) && !isGamblingDisclaimer(p));
+  let out = paras.join("\n\n").trim();
+  const cut = out.search(INLINE_JUNK_CUT);
+  if (cut >= 40) out = out.slice(0, cut).trim();
+  else if (cut >= 0 && cut < 40) out = "";
+  out = collapseInline(out);
+  if (!out || isNavSoup(out) || isVideoTitleSoup(out)) return "";
+  return out;
 }
 
 export function isSubheadBlock(html: string): boolean {
@@ -182,6 +280,8 @@ export function tidy(text: string): string {
       .replace(/([‘'])\s+(\w)/g, "$1$2")
       .replace(/(["“])\s+/g, "$1")
       .replace(/\s+(["”])/g, "$1")
+      .replace(/([,;:.!?])(["“])(?=\S)/g, "$1 $2")
+      .replace(/\s*(?:--|—|–)[\s—–-]+/g, " — ")
       .replace(/\(\s+/g, "(")
       .replace(/\s+\)/g, ")"),
   )
@@ -214,10 +314,17 @@ export function truncateAtSentence(text: string, max = 260): string {
     out = next;
   }
   if (out && /[.!?…]["'”’)]*$/.test(out)) return out;
-  if (out.length >= Math.min(40, max / 3)) return out;
-  const slice = raw.slice(0, max);
-  const space = slice.lastIndexOf(" ");
-  return `${(space > 40 ? slice.slice(0, space) : slice).replace(/[,;:\-–—]+$/, "")}…`;
+  // Never cut mid-sentence. If the first sentence is longer than max, keep it whole.
+  const first = parts[0] ?? "";
+  if (first && /[.!?…]["'”’)]*$/.test(first)) return first;
+  return out;
+}
+
+/** Drop the last sentence. Empty when only one remains — leftover is a line of space. */
+export function dropLastSentence(text: string): string {
+  const parts = splitNewspaperSentences(tidy(text).replace(/\s+/g, " ").trim());
+  if (parts.length <= 1) return "";
+  return parts.slice(0, -1).join(" ");
 }
 
 /** A module spliced into the story: Athletic's reporter poll, ESPN's link rail. */
@@ -254,16 +361,7 @@ function stripLeadingMenu(text: string): string {
 }
 
 function prepareCopy(text: string | null | undefined): string {
-  let raw = text ?? "";
-  if (!raw.trim()) return "";
-  if (looksLikeHtml(raw)) raw = htmlToNewspaperText(raw);
-  else raw = decodeNewspaperEntities(raw);
-  raw = stripBoilerplateCopy(raw);
-  const paras = raw
-    .split(/\n{2,}/)
-    .map((p) => tidy(p.replace(/\s+/g, " ")))
-    .filter((p) => p && !isBoilerplateLine(p));
-  return paras.join("\n\n");
+  return sanitizeArticleBody(text);
 }
 
 /**

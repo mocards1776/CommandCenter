@@ -35,6 +35,7 @@ import {
   isHistoricNationalEvent,
   isHistoricNationalStory,
   isHoldoverGame,
+  isMajorStory,
   isPreviewStory,
   isBettingPreview,
   cannotLeadFront,
@@ -1357,6 +1358,14 @@ assert(
   "Sunday NFL is in Monday morning's game window",
 );
 assert(
+  gameWrapCovers("2026-10-04T20:15:00Z", "2026-10-05-evening", "football/nfl"),
+  "Sunday NFL is still in Monday evening's game window",
+);
+assert(
+  gameWrapCovers("2026-10-04T20:15:00Z", "2026-10-06-morning", "football/nfl"),
+  "Sunday NFL lands in Tuesday morning's paper",
+);
+assert(
   !gameWrapCovers("2026-10-03T16:00:00Z", "2026-10-07-morning", "football/nfl"),
   "Saturday NFL is not in Wednesday morning",
 );
@@ -1925,5 +1934,101 @@ assert(
   }).pages.some((p) => p.kind === "sport-front" && p.focus === "coaches"),
   "no coaches on file, no coaches page",
 );
+
+const packersInjury = card({
+  id: "league-packers-surgery",
+  headline: "Packers RB to have season-ending surgery",
+  dek: "Green Bay lost a starter for the year.",
+  sportLabel: "NFL",
+  leaguePath: "football/nfl",
+  when: "2026-10-05T18:00:00Z",
+  body: "The Packers said their running back will have season-ending surgery. ".repeat(6),
+});
+const broncosInjury = card({
+  id: "league-broncos-ankle",
+  headline: "Broncos WR doubtful with ankle injury",
+  sportLabel: "NFL",
+  leaguePath: "football/nfl",
+  when: "2026-10-05T18:30:00Z",
+  body: "Denver listed the receiver as doubtful. ".repeat(6),
+});
+assert(!isMajorStory(packersInjury), "a non-favorite injury is not major");
+assert(!isSectionAStory(packersInjury), "Packers injury stays out of Section A");
+assert(!isSectionAStory(broncosInjury), "Broncos injury stays out of Section A");
+
+const chiefsFinal = card({
+  id: "wire-nfl-kc-vegas",
+  headline: "Chiefs beat the Raiders 30-27",
+  favoriteKey: "nfl-kc",
+  followed: true,
+  teamName: "Chiefs",
+  sportLabel: "NFL",
+  leaguePath: "football/nfl",
+  status: "Final",
+  scoreLine: "KC 30 · LV 27",
+  gameId: "401772901",
+  when: "2026-10-04T20:15:00Z",
+  body: "Patrick Mahomes led Kansas City back in Las Vegas. ".repeat(12),
+});
+const cowboysFinal = card({
+  id: "wire-nfl-dal-hou",
+  headline: "Cowboys hold off the Texans 34-30",
+  favoriteKey: "nfl-dal",
+  followed: true,
+  teamName: "Cowboys",
+  sportLabel: "NFL",
+  leaguePath: "football/nfl",
+  status: "Final",
+  scoreLine: "DAL 34 · HOU 30",
+  gameId: "401772902",
+  when: "2026-10-04T17:00:00Z",
+  body: "Dak Prescott threw for three scores in Houston. ".repeat(12),
+});
+const lionsFinal = card({
+  id: "wire-nfl-det-car",
+  headline: "Panthers hold off Lions in a SNF thriller",
+  favoriteKey: "nfl-det",
+  followed: true,
+  teamName: "Lions",
+  sportLabel: "NFL",
+  leaguePath: "football/nfl",
+  status: "Final",
+  scoreLine: "CAR 32 · DET 26",
+  gameId: "401772903",
+  when: "2026-10-05T00:20:00Z",
+  body: "Detroit came up short in Carolina on Sunday night. ".repeat(12),
+});
+assert(isSectionAStory(chiefsFinal) && isSectionAStory(cowboysFinal) && isSectionAStory(lionsFinal), "favorite finals belong in A");
+
+const tuesdayFavorites = buildEdition({
+  stories: [chiefsFinal, cowboysFinal, lionsFinal, packersInjury, broncosInjury],
+  clubs: [chiefs],
+  edition: "2026-10-06-morning",
+});
+const tuesdayEssentials = tuesdayFavorites.pages.filter((p) => p.section === "A");
+const tuesdayAIds = JSON.stringify(tuesdayEssentials);
+assert(tuesdayAIds.includes("wire-nfl-kc-vegas"), "Chiefs recap prints in Section A on Tuesday morning");
+assert(tuesdayAIds.includes("wire-nfl-dal-hou"), "Cowboys recap prints in Section A on Tuesday morning");
+assert(tuesdayAIds.includes("wire-nfl-det-car"), "Lions recap prints in Section A on Tuesday morning");
+assert(!tuesdayAIds.includes("league-packers-surgery"), "Packers injury does not fill Section A");
+assert(!tuesdayAIds.includes("league-broncos-ankle"), "Broncos injury does not fill Section A");
+const tuesdayNflFront = tuesdayFavorites.pages.find((p) => p.kind === "sport-front" && p.section === "NFL" && p.focus === "front");
+assert(
+  tuesdayNflFront?.kind === "sport-front" && tuesdayNflFront.articles.every((a) => a.card.id !== "wire-nfl-kc-vegas"),
+  "the full Chiefs recap stays in A and does not reprint on NFL1",
+);
+assert(
+  tuesdayNflFront?.kind === "sport-front" && tuesdayNflFront.articles.some((a) => a.card.id === "league-packers-surgery"),
+  "non-favorite injury runs in the NFL section",
+);
+
+const eveningFiled = fileEditionStories({
+  fresh: [chiefsFinal, cowboysFinal, lionsFinal],
+  carried: [],
+  readKeys: new Set(),
+  pressId: "2026-10-05-evening",
+});
+assert(eveningFiled.some((c) => c.id === "wire-nfl-kc-vegas"), "Monday evening still files Sunday's Chiefs final");
+assert(eveningFiled.some((c) => c.id === "wire-nfl-dal-hou"), "Monday evening still files Sunday's Cowboys final");
 
 console.log("newspaper-sections ok");

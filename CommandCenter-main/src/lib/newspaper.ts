@@ -209,6 +209,8 @@ function asPressId(pressId: string): string {
 /**
  * When the game desk opens for this press. Morning papers cover every final
  * since the previous morning; Monday morning reaches back to Saturday
+ * morning. Evening and midday keep that same start so Sunday's finals are
+ * not dropped at 5 p.m. NFL also holds last weekend through Tuesday
  * morning. College football keeps last Saturday through the next Saturday
  * morning so the week does not vanish on Tuesday.
  */
@@ -221,9 +223,13 @@ export function gameWindowStart(pressId: string, leaguePath?: string | null): Da
     if (slot !== "morning" && wd === 6) return pressInstant(`${day}-morning`);
     return pressInstant(`${previousSaturday(day)}-morning`);
   }
-  if (slot === "morning" && wd === 1) return pressInstant(`${shiftDay(day, -2)}-morning`);
-  if (slot === "morning") return pressInstant(`${shiftDay(day, -1)}-morning`);
-  return pressInstant(`${day}-morning`);
+  // Sunday NFL still belongs in Monday evening and Tuesday morning.
+  if (leaguePath === "football/nfl" && (wd === 1 || wd === 2)) {
+    return pressInstant(`${shiftDay(day, wd === 1 ? -2 : -3)}-morning`);
+  }
+  if (wd === 1) return pressInstant(`${shiftDay(day, -2)}-morning`);
+  if (slot !== "morning") return pressInstant(`${shiftDay(day, -1)}-morning`);
+  return pressInstant(`${shiftDay(day, -1)}-morning`);
 }
 
 /** A game wrap belongs in this edition when its kickoff is inside the news-day window. */

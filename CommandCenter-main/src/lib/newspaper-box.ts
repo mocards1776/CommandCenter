@@ -906,7 +906,7 @@ export function gameDay(game: BoxGame): string {
   return "";
 }
 
-export function gameClock(game: BoxGame): string {
+export function gameClock(game: Pick<BoxGame, "final" | "live" | "status" | "startIso">): string {
   if (game.final) {
     if (/final/i.test(game.status) && !looksLikeEspnZoneClock(game.status)) return game.status;
     return "Final";
@@ -916,6 +916,39 @@ export function gameClock(game: BoxGame): string {
     return game.status;
   }
   return clockInCentral(game.startIso);
+}
+
+/** Clock for a packed slate cell — drop AM/PM so "Thu 7:15" fits a fixed column. */
+export function slateClock(game: Pick<BoxGame, "final" | "live" | "startIso" | "status">): string {
+  return gameClock(game).replace(/\s*[AP]M$/i, "").trim();
+}
+
+/** Weekday + clock for a packed slate cell — never the long "Sun Oct 11 · 12:00". */
+export function slateKickoff(game: Pick<BoxGame, "final" | "live" | "startIso" | "status">): string {
+  const clock = slateClock(game);
+  if (game.final || game.live) return clock;
+  if (!game.startIso) return clock || game.status;
+  const d = new Date(game.startIso);
+  if (Number.isNaN(d.getTime())) return clock || game.status;
+  const day = d.toLocaleDateString("en-US", { weekday: "short", timeZone: "America/Chicago" });
+  return clock ? `${day} ${clock}` : day;
+}
+
+/** National TV, short enough for a 3-column slate cell. */
+export function shortBroadcast(name: string | null | undefined): string {
+  const raw = (name ?? "").trim();
+  if (!raw) return "";
+  const n = raw.toLowerCase();
+  if (/prime|amazon/.test(n)) return "Prime";
+  if (/peacock/.test(n)) return "Peacock";
+  if (/netflix/.test(n)) return "Netflix";
+  if (/nfl\s*net/.test(n) || n === "nfln") return "NFLN";
+  if (/\bespn\b/.test(n)) return "ESPN";
+  if (/\bcbs\b/.test(n)) return "CBS";
+  if (/\bfox\b/.test(n)) return "FOX";
+  if (/\bnbc\b/.test(n)) return "NBC";
+  if (/\babc\b/.test(n)) return "ABC";
+  return raw.replace(/\s+(video|vision|sports|network|tv).*$/i, "").slice(0, 8);
 }
 
 /**
@@ -1585,6 +1618,68 @@ export function cfbNetworkLabel(game: BoxGame): string {
 }
 
 /**
+ * Pick the results week and the upcoming slate from already-fetched football
+ * boards. ESPN's default scoreboard is a date window; callers must pass the
+ * week payloads (`?week=&seasontype=`) so Sunday's games are not dropped.
+ */
+export function footballWeeksBoard(opts: {
+  day: string;
+  newsDay: string;
+  week: number | null;
+  thisGames: BoxGame[];
+  priorGames: BoxGame[];
+  nextGames: BoxGame[];
+  college: boolean;
+}): Omit<SectionBoard, "weekLabel" | "priorLabel"> & {
+  weekLabel: string | null;
+  priorLabel: string | null;
+} {
+  const desk = (list: BoxGame[]) =>
+    uniqueGames(opts.college ? list.filter(isCfbDeskGame) : list).sort(byStart);
+  const thisPlayed = opts.thisGames.filter((g) => g.final || g.live);
+  const resultsSource = thisPlayed.length ? opts.thisGames : opts.priorGames;
+  const resultsWeekNumber = thisPlayed.length
+    ? opts.week
+    : opts.week && opts.week > 1
+      ? opts.week - 1
+      : opts.week;
+  const thisUpcoming = opts.thisGames.filter((g) => !g.final && !g.live);
+  const nextUpcoming = opts.nextGames.filter((g) => !g.final && !g.live);
+  // NFL: once this week has finals, the schedule page is next week (TNF–MNF).
+  // CFB keeps the rest of this Saturday first, then rolls to next week.
+  const slateSource = opts.college
+    ? thisUpcoming.length
+      ? thisUpcoming
+      : nextUpcoming
+    : thisPlayed.length
+      ? nextUpcoming
+      : thisUpcoming;
+  const prior = desk(opts.priorGames.filter((g) => g.final));
+  const priorWeekNumber = opts.week && opts.week > 1 ? opts.week - 1 : null;
+  return {
+    results: desk(resultsSource.filter((g) => g.final || g.live)),
+    slate: desk(slateSource).sort(byDayThenStart),
+    week: desk(resultsSource),
+    weekLabel: resultsWeekNumber ? `Week ${resultsWeekNumber}` : null,
+    weekNumber: resultsWeekNumber ?? null,
+    prior,
+    priorLabel: priorWeekNumber ? `Week ${priorWeekNumber}` : null,
+    priorWeekNumber,
+    resultsWeekNumber: resultsWeekNumber ?? null,
+    slateWeekNumber:
+      opts.college
+        ? thisUpcoming.length
+          ? opts.week
+          : opts.week
+            ? opts.week + 1
+            : null
+        : thisPlayed.length && opts.week
+          ? opts.week + 1
+          : (opts.week ?? null),
+  };
+}
+
+/**
  * Results and slate for one sport section. Daily leagues read last night,
  * today and tomorrow; football reads this week and, when this week has no
  * finals yet, last week.
@@ -1618,38 +1713,22 @@ export async function fetchSectionBoard(path: string, edition: string): Promise<
   if (path.startsWith("football/")) {
     const college = path.includes("college-football");
     const current = await espnBoard(path, "");
-    const week = current?.week?.number;
+    const week = current?.week?.number ?? null;
     const seasonType = current?.season?.type ?? 2;
-    const games = boardGames(path, current, day);
-    const prev =
-      week && week > 1 ? await espnBoard(path, `&week=${week - 1}&seasontype=${seasonType}`) : null;
-    const priorRaw = prev ? boardGames(path, prev, newsDay).filter((g) => g.final) : [];
-    const prior = college ? priorRaw.filter(isCfbDeskGame) : priorRaw;
-    let upcoming = games.filter((g) => !g.final);
-    let fetchedNext = false;
-    if (college && !upcoming.length && week) {
-      const next = await espnBoard(path, `&week=${week + 1}&seasontype=${seasonType}`);
-      upcoming = next ? boardGames(path, next, day).filter((g) => !g.final) : [];
-      fetchedNext = upcoming.length > 0;
-    }
-    const desk = (list: BoxGame[]) =>
-      uniqueGames(college ? list.filter(isCfbDeskGame) : list).sort(byStart);
-    const played = games.filter((g) => g.final || g.live);
-    const results = desk(played.length ? played : college ? prior : played);
-    const slate = desk(upcoming);
-    const priorWeekNumber = week && week > 1 ? week - 1 : (prev?.week?.number ?? null);
-    return {
-      results,
-      slate,
-      week: uniqueGames(games).sort(byStart),
-      weekLabel: week ? `Week ${week}` : null,
-      weekNumber: week ?? null,
-      prior: uniqueGames(prior).sort(byStart),
-      priorLabel: priorWeekNumber ? `Week ${priorWeekNumber}` : null,
-      priorWeekNumber,
-      resultsWeekNumber: played.length ? (week ?? null) : priorWeekNumber,
-      slateWeekNumber: fetchedNext && week ? week + 1 : (week ?? null),
-    };
+    const [thisBoard, prev, next] = await Promise.all([
+      week ? espnBoard(path, `&week=${week}&seasontype=${seasonType}`) : Promise.resolve(current),
+      week && week > 1 ? espnBoard(path, `&week=${week - 1}&seasontype=${seasonType}`) : Promise.resolve(null),
+      week ? espnBoard(path, `&week=${week + 1}&seasontype=${seasonType}`) : Promise.resolve(null),
+    ]);
+    return footballWeeksBoard({
+      day,
+      newsDay,
+      week,
+      thisGames: boardGames(path, thisBoard ?? current, day),
+      priorGames: prev ? boardGames(path, prev, newsDay).filter((g) => g.final) : [],
+      nextGames: next ? boardGames(path, next, day) : [],
+      college,
+    });
   }
   const ymd = (d: string) => d.replace(/-/g, "");
   if (path.startsWith("soccer/")) {
