@@ -1854,7 +1854,7 @@ function sportPages(
     if (!isStoryFocus(f)) return [];
     if (f === "recaps") return recapsLeft.length > 0 ? (["recaps"] as const) : [];
     if (f === "news") {
-      if (!newsLeft.length && !offseason) return [];
+      if (!newsLeft.length) return [];
       const n = Math.max(1, Math.ceil(newsLeft.length / NEWS_STORIES_PER_PAGE));
       return Array.from({ length: n }, () => "news" as const);
     }

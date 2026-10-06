@@ -4986,8 +4986,11 @@ function FolioSlot({
   render: () => ReactNode;
 }) {
   const current = useContext(PagerIndexContext);
-  const near = index < 3 || Math.abs(index - current) <= 1;
-  const [shown, setShown] = useState(index < 3);
+  // Section A/B/C stay painted so races, jumps, and the essentials aren't
+  // mistaken for empty lazy slots. Sport desks still mount when nearby.
+  const essential = /^[ABC]\d+$/.test(folio);
+  const near = essential || index < 3 || Math.abs(index - current) <= 2;
+  const [shown, setShown] = useState(essential || index < 3);
   useEffect(() => {
     if (near) setShown(true);
   }, [near]);
@@ -7029,6 +7032,8 @@ function NewspaperDesk() {
     let cancel = false;
     const cap = window.setTimeout(() => {
       if (cancel) return;
+      // Never drop the cover onto an empty A1. Keep holding until the front has a lead.
+      if (!haveLead) return;
       revealFor.current = pressId;
       setRevealed(true);
     }, copyReady ? 7_000 : 22_000);
