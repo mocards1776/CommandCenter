@@ -125,8 +125,8 @@ assertEqual(byKey["2026-10"]?.booksFinished, 0, "current empty month stays in th
 assertEqual(byKey["2024-01"], undefined, "finish outside the window is dropped");
 assertEqual(series.totalBooks, 4, "a + b + iso + logged");
 
-assertEqual(series.months[0]?.tick, "Nov '25", "first tick shows the year");
-assertEqual(series.months.find((m) => m.key === "2026-01")?.tick, "Jan '26", "January shows the new year");
-assertEqual(series.months.find((m) => m.key === "2026-02")?.tick, "Feb", "other months stay short");
+assertEqual(series.months[0]?.tick, "Nov", "ticks stay three letters");
+assertEqual(series.months.find((m) => m.key === "2026-01")?.tick, "Jan", "January has no year suffix");
+assertEqual(series.months.find((m) => m.key === "2026-02")?.tick, "Feb", "February tick");
 
 console.log("reading-year.test.ts ok");

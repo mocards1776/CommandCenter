@@ -27,7 +27,7 @@ export type RollingMonthPoint = {
   month: string;
   /** 2026 */
   year: number;
-  /** Short tick: `Nov` or `Jan '26` when the year changes. */
+  /** Three-letter tick, no year — year lives in the range subtitle. */
   tick: string;
   /** March 2026 */
   label: string;
@@ -151,19 +151,17 @@ export function rolling12MonthStats(
     }
   }
 
-  const months: RollingMonthPoint[] = keys.map((key, i) => {
+  const months: RollingMonthPoint[] = keys.map((key) => {
     const year = Number(key.slice(0, 4));
     const monthIdx = Number(key.slice(5, 7)) - 1;
     const month = MONTHS[monthIdx] ?? key;
-    const prevYear = i > 0 ? Number(keys[i - 1]!.slice(0, 4)) : year - 1;
-    const showYear = i === 0 || year !== prevYear;
     const logged = pagesLogged.get(key) ?? 0;
     const estimated = pagesEstimated.get(key) ?? 0;
     return {
       key,
       month,
       year,
-      tick: showYear ? `${month} '${String(year).slice(2)}` : month,
+      tick: month,
       label: monthRangeLabel(key),
       booksFinished: booksFinished.get(key) ?? 0,
       pagesLogged: logged,

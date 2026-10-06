@@ -47,15 +47,16 @@ export default function ReadingYearChart({
   const bookMax = niceMax(Math.max(...series.months.map((m) => m.booksFinished)), 4);
 
   const W = 640;
-  const H = 212;
-  const padL = 36;
-  const padR = 28;
-  const padT = 14;
-  const padB = 28;
+  const H = 176;
+  const padL = 34;
+  const padR = 26;
+  const padT = 12;
+  const padB = 8;
   const innerW = W - padL - padR;
   const innerH = H - padT - padB;
   const colW = innerW / series.months.length;
-  const barW = Math.min(22, colW * 0.46);
+  const barW = Math.min(26, colW * 0.52);
+  const range = `${series.months[0]!.month} ${series.months[0]!.year} – ${series.months.at(-1)!.month} ${series.months.at(-1)!.year}`;
 
   const x = (i: number) => padL + colW * i + colW / 2;
   const yBooks = (n: number) => padT + innerH - (n / bookMax) * innerH;
@@ -89,6 +90,7 @@ export default function ReadingYearChart({
       <div className="mb-3 flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
         <div>
           <h2 className="rule-head">Last 12 months</h2>
+          <p className="text-chalk-dim mt-1 text-[10.5px] tracking-[0.04em]">{range}</p>
           <p className="mt-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <span>
               <span className="numeral text-cream text-[22px] leading-none">
@@ -196,7 +198,7 @@ export default function ReadingYearChart({
 
           {series.months.map((m, i) => {
             const cx = x(i);
-            const barH = Math.max(m.pages > 0 ? 3 : 0, ((m.pages / pageMax) * innerH));
+            const barH = Math.max(2, (m.pages / pageMax) * innerH);
             const by = padT + innerH - barH;
             const isOn = active === m.key;
             return (
@@ -208,27 +210,17 @@ export default function ReadingYearChart({
                   height={barH}
                   rx={2}
                   fill="url(#ry-bar)"
-                  opacity={active && !isOn ? 0.45 : m.pages === 0 ? 0 : 0.92}
+                  opacity={active && !isOn ? 0.4 : m.pages === 0 ? 0.22 : 0.95}
                 />
                 <circle
                   cx={cx}
                   cy={yBooks(m.booksFinished)}
-                  r={isOn ? 4.2 : 3.2}
+                  r={isOn ? 4.4 : 3.3}
                   fill={m.booksFinished > 0 ? "var(--color-cream)" : "var(--color-field)"}
                   stroke="var(--color-cream)"
-                  strokeWidth={m.booksFinished > 0 ? 1.25 : 1}
-                  opacity={active && !isOn ? 0.45 : 1}
+                  strokeWidth={m.booksFinished > 0 ? 1.35 : 1.1}
+                  opacity={active && !isOn ? 0.4 : 1}
                 />
-                <text
-                  x={cx}
-                  y={H - 8}
-                  textAnchor="middle"
-                  fill={isOn ? "var(--color-cream)" : "rgba(237,239,245,0.38)"}
-                  fontSize="9"
-                  fontFamily="var(--font-body)"
-                >
-                  {m.tick}
-                </text>
               </g>
             );
           })}
@@ -260,6 +252,26 @@ export default function ReadingYearChart({
               />
             ))}
           </div>
+        </div>
+        <div
+          className="pointer-events-none flex pb-2"
+          style={{
+            paddingLeft: `${(padL / W) * 100}%`,
+            paddingRight: `${(padR / W) * 100}%`,
+          }}
+        >
+          {series.months.map((m) => (
+            <span
+              key={m.key}
+              className={cn(
+                "min-w-0 flex-1 text-center text-[9px] leading-none sm:text-[10px]",
+                active === m.key ? "text-cream" : "text-chalk-dim",
+              )}
+            >
+              <span className="sm:hidden">{m.month[0]}</span>
+              <span className="hidden sm:inline">{m.tick}</span>
+            </span>
+          ))}
         </div>
 
         {selected && (
@@ -295,7 +307,7 @@ export default function ReadingYearChart({
         )}
       >
         {series.totalEstimated > 0
-          ? `${series.totalLogged.toLocaleString()} pages from logged sessions; ${series.totalEstimated.toLocaleString()} estimated from page counts on finishes with no sessions (imported history).`
+          ? `${series.totalLogged.toLocaleString()} pages logged · ${series.totalEstimated.toLocaleString()} estimated from page counts (finishes with no sessions).`
           : "Pages are summed from logged reading sessions. Empty months are zero."}
       </p>
     </div>
