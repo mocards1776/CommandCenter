@@ -3,8 +3,8 @@
  * These routes are only opened by the screenshot runner — the printed paper
  * does not import this file.
  */
-import { truncateAtSentence, tidy } from "./newspaper-copy.ts";
-import { PRESS_HOURS } from "./newspaper.ts";
+import { truncateAtSentence, tidy, printHeadline } from "./newspaper-copy.ts";
+import { PRESS_HOURS, favoriteDeskWeight } from "./newspaper.ts";
 import { scheduleDateFor, type DayEvent, type DaySchedule } from "./newspaper-day-ahead.ts";
 import { buildEdition, storyBodyForJump, type FavoritesFrontPage, type FavoritesInsidePage } from "./newspaper-sections.ts";
 import type { GameWrapCard } from "./newspaper-sports.ts";
@@ -13,6 +13,8 @@ import { isWatchPreseasonLowTier, sampleWatchSlate, type WatchGame } from "./new
 /** Portrait iPhone CSS size. times-shots.mjs clips every alert image to this at 3x. */
 export const PHONE_CARD_SIZE = { width: 430, height: 932 } as const;
 export const PHONE_CARD_SCALE = 3;
+/** Last ink on the 430×932 canvas must sit at or above this CSS px. */
+export const PHONE_FIT_BOTTOM = 915;
 export const PHONE_CARD_PX = {
   width: PHONE_CARD_SIZE.width * PHONE_CARD_SCALE,
   height: PHONE_CARD_SIZE.height * PHONE_CARD_SCALE,
@@ -111,7 +113,7 @@ export function trimPhoneWeatherFit(fit: PhoneWeatherFit): PhoneWeatherFit | nul
 }
 
 function slimFront(card: GameWrapCard | null | undefined, dekMax: number): PhoneFrontStory | null {
-  const headline = String(card?.headline ?? "").replace(/\s+/g, " ").trim();
+  const headline = printHeadline(card?.headline ?? "");
   if (!card || !headline) return null;
   const dek = phoneStoryDek(card, dekMax);
   const photo = typeof card.photo === "string" && card.photo ? card.photo : null;
@@ -126,6 +128,30 @@ function slimFront(card: GameWrapCard | null | undefined, dekMax: number): Phone
   };
 }
 
+export function isPhonePreseasonNote(card: Pick<GameWrapCard, "preseason" | "headline" | "dek" | "status">): boolean {
+  if (card.preseason) return true;
+  return /\bpreseason\b/i.test(`${card.headline} ${card.dek ?? ""} ${card.status ?? ""}`);
+}
+
+export function isPhoneFavoriteResult(card: GameWrapCard): boolean {
+  if (isPhonePreseasonNote(card)) return false;
+  if (!card.favoriteKey && !card.followed) return false;
+  if (/^(?:wire|recap|wrap)-/.test(card.id)) return true;
+  if (card.scoreLine) return true;
+  return /\b(beat|beats|win|won|rout|trounc|defeat|fall|fell|lose|lost)\b/i.test(card.headline);
+}
+
+/** Favorite-team results first; preseason notes last. Never reorders just for a photo. */
+export function phoneFrontRank(card: GameWrapCard): number {
+  if (isPhonePreseasonNote(card)) return 900;
+  if (isPhoneFavoriteResult(card)) {
+    const weight = card.favoriteKey ? favoriteDeskWeight(card.favoriteKey) : 10;
+    const result = card.won === true ? 0 : card.won === false ? 6 : 2;
+    return 100 - weight + result;
+  }
+  return 200;
+}
+
 /** A1 lead, second, third, briefs, then more Section A — phone card only. */
 export function phoneFrontStories(stories: unknown[], edition: string): PhoneFrontStory[] {
   try {
@@ -138,20 +164,35 @@ export function phoneFrontStories(stories: unknown[], edition: string): PhoneFro
       seen.add(row.id);
       out.push(row);
     };
+    const pool: GameWrapCard[] = [];
+    const seenCard = new Set<string>();
+    const queue = (card: GameWrapCard | null | undefined) => {
+      if (!card?.id || seenCard.has(card.id) || !String(card.headline ?? "").trim()) return;
+      seenCard.add(card.id);
+      pool.push(card);
+    };
     const front = paper.pages.find((p) => p.kind === "favorites-front") as FavoritesFrontPage | undefined;
     if (front) {
-      take(front.lead, 240);
-      take(front.second, 110);
-      take(front.third, 110);
-      for (const brief of front.briefs ?? []) take(brief, 90);
+      queue(front.lead);
+      queue(front.second);
+      queue(front.third);
+      for (const brief of front.briefs ?? []) queue(brief);
     }
     for (const page of paper.pages) {
       if (page.section !== "A" || page.kind !== "favorites-inside") continue;
       const inside = page as FavoritesInsidePage;
-      take(inside.primary, 90);
-      take(inside.secondary, 90);
-      for (const brief of inside.briefs ?? []) take(brief, 80);
+      queue(inside.primary);
+      queue(inside.secondary);
+      for (const brief of inside.briefs ?? []) queue(brief);
     }
+    const ranked = pool
+      .map((card, i) => ({ card, i }))
+      .sort((a, b) => phoneFrontRank(a.card) - phoneFrontRank(b.card) || a.i - b.i)
+      .map((row) => row.card);
+    take(ranked[0], 240);
+    for (const card of ranked.slice(1, 3)) take(card, 110);
+    for (const card of ranked.slice(3, 8)) take(card, 90);
+    for (const card of ranked.slice(8)) take(card, 80);
     return out;
   } catch {
     return [];

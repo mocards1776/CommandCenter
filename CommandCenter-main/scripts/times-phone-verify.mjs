@@ -93,6 +93,10 @@ async function facts(page, card) {
       photo: cardEl?.getAttribute("data-front-photo"),
       artNatural: art instanceof HTMLImageElement ? art.naturalWidth : null,
       artCss: art instanceof HTMLElement ? Math.round(art.getBoundingClientRect().width) : null,
+      leadId: cardEl?.getAttribute("data-front-lead"),
+      leadHed: document.querySelector(".tt-phone-front-stories li.lead h2")?.textContent ?? "",
+      smashedApos: /(?:76ers|Bears)['’](?:preseason|starting)/i.test(document.body.innerText),
+      lastBottom: cardEl ? Number(cardEl.getAttribute("data-fit-bottom")) : null,
       wxDays: cardEl?.getAttribute("data-wx-days"),
       wxRain: cardEl?.getAttribute("data-wx-rain"),
       rainLegend: rain,
@@ -192,7 +196,7 @@ async function main() {
         card === "watch"
           ? ` (kept ${shot.kept} of ${shot.source}; GOTD ${shot.facts.gotd}${shot.facts.gotdPreseason === "1" ? " PRESEASON" : ""})`
           : card === "front"
-            ? ` (stories=${shot.facts.stories} photo=${shot.facts.photo} art ${shot.facts.artCss}css/${shot.facts.artNatural}nat)`
+            ? ` (lead=${shot.facts.leadId} stories=${shot.facts.stories} photo=${shot.facts.photo} bottom=${shot.facts.lastBottom} art ${shot.facts.artCss}css/${shot.facts.artNatural}nat)`
             : card === "weather"
               ? ` (days=${shot.facts.wxDays} rainLegend=${shot.facts.rainLegend} creditBottom=${shot.facts.creditBottom})`
               : "";
@@ -202,8 +206,14 @@ async function main() {
         throw new Error(`${card} is ${size.width}x${size.height}, expected ${PHONE.width * PHONE_SCALE}x${PHONE.height * PHONE_SCALE}`);
       }
       if (card === "front") {
-        if (Number(shot.facts.stories) < 3) throw new Error(`front only showed ${shot.facts.stories} stories`);
-        if (shot.facts.photo !== "1") throw new Error("front is missing the lead photo");
+        if (!/Missouri|Mizzou/i.test(`${shot.facts.leadHed} ${shot.facts.leadId}`)) {
+          throw new Error(`front lead is not the A1 favorite-team result (${shot.facts.leadId} ${shot.facts.leadHed})`);
+        }
+        if (shot.facts.smashedApos) throw new Error("front still has a glued apostrophe (76ers'preseason / Bears'starting)");
+        if (shot.facts.lastBottom == null || shot.facts.lastBottom > 915) {
+          throw new Error(`front last ink at ${shot.facts.lastBottom}, must be ≤ 915`);
+        }
+        if (Number(shot.facts.stories) < 2) throw new Error(`front only showed ${shot.facts.stories} stories`);
         if (shot.facts.artCss && shot.facts.artNatural && shot.facts.artCss > shot.facts.artNatural + 1) {
           throw new Error(`lead photo CSS-upscaled ${shot.facts.artCss} > native ${shot.facts.artNatural}`);
         }

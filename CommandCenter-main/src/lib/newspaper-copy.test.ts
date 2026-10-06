@@ -17,6 +17,7 @@ import {
   sanitizeArticleBody,
   stripBoilerplateCopy,
   stripGettyCredit,
+  printHeadline,
   tidy,
   truncateAtSentence,
 } from "./newspaper-copy.ts";
@@ -31,6 +32,17 @@ function assertEqual(got: unknown, want: unknown, msg: string) {
 
 assertEqual(tidy("Tyreek Hill 's catch"), "Tyreek Hill's catch", "space before apostrophe");
 assertEqual(tidy("Blake Craig 's kick"), "Blake Craig's kick", "another possessive");
+assertEqual(tidy("76ers' preseason opener"), "76ers' preseason opener", "possessive keeps the space after the mark");
+assertEqual(tidy("the Bears' starting quarterback"), "the Bears' starting quarterback", "Bears' starting keeps its space");
+assertEqual(tidy("76ers'preseason opener"), "76ers' preseason opener", "repairs a possessive that already lost its space");
+assertEqual(tidy("Bears'starting quarterback"), "Bears' starting quarterback", "repairs Bears'starting");
+assertEqual(tidy("don't sit"), "don't sit", "contractions stay glued");
+assertEqual(tidy("Giants'36-24 win"), "Giants' 36-24 win", "score after a possessive keeps a space");
+assertEqual(
+  printHeadline("James, Embiid, Maxey sit out 76ers'preseason opener vs. Knicks"),
+  "James, Embiid, Maxey sit out 76ers' preseason opener vs. Knicks",
+  "printHeadline repairs a filed 76ers sit-out hed",
+);
 assertEqual(tidy('" The Greatest Offense There Is "'), '"The Greatest Offense There Is"', "quoted title inner spaces");
 assertEqual(tidy("Raiders ."), "Raiders.", "space before a period still drops");
 assertEqual(tidy('Prescott said,"I knew it was a touchdown."'), 'Prescott said, "I knew it was a touchdown."', "space after comma before a quote");

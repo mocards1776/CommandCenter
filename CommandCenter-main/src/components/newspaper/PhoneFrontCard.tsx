@@ -62,6 +62,7 @@ export function PhoneFrontCard({
       aria-label="Page A1"
       data-front-stories={shown.length}
       data-front-photo={value.showPhoto && shown[0]?.photo ? "1" : "0"}
+      data-front-lead={shown[0]?.id ?? ""}
     >
       <div className="tt-phone-fit-body" ref={ref}>
         <header className="tt-phone-front-mast">

@@ -35,7 +35,7 @@ import {
   withinEditionHours,
   withoutEditorStamps,
 } from "./newspaper.ts";
-import { cleanStoryCopy, isPeripheralClubStory, killedSource } from "./newspaper-copy.ts";
+import { cleanStoryCopy, isPeripheralClubStory, killedSource, printHeadline } from "./newspaper-copy.ts";
 import { storySource } from "./newspaper-source.ts";
 import type { GameWrapCard } from "./newspaper-sports";
 import {
@@ -1689,7 +1689,11 @@ export function deskCopy(stories: GameWrapCard[], edition: string): GameWrapCard
     (card) =>
       isDeskStory(card) && !isNewsMuted(card) && !staleNamedPackage(card, edition) && inEditionWindow(card, edition),
   );
-  return dedupeStories(inWindow);
+  return dedupeStories(inWindow).map((card) => ({
+    ...card,
+    headline: printHeadline(card.headline),
+    dek: card.dek != null ? printHeadline(card.dek) : card.dek,
+  }));
 }
 
 /**

@@ -6,9 +6,12 @@ import {
   isPhoneCardKind,
   phoneCardDate,
   phoneCardEditionLabel,
+  phoneFrontRank,
+  phoneFrontStories,
   phoneWatchPriority,
   PHONE_CARD_PX,
   PHONE_CARD_SIZE,
+  PHONE_FIT_BOTTOM,
   rankPhoneWatchGames,
   sampleDaySchedule,
   sampleFrontStories,
@@ -27,6 +30,7 @@ function assert(cond: unknown, msg: string) {
 
 assert(PHONE_CARD_SIZE.width === 430 && PHONE_CARD_SIZE.height === 932, "phone CSS size is 430×932");
 assert(PHONE_CARD_PX.width === 1290 && PHONE_CARD_PX.height === 2796, "phone PNG is 1290×2796 at 3x");
+assert(PHONE_FIT_BOTTOM === 915, "last ink must sit at or above 915 CSS px");
 
 assert(isPhoneCardKind("front") && isPhoneCardKind("weather") && isPhoneCardKind("day") && isPhoneCardKind("watch"), "known cards");
 assert(!isPhoneCardKind("a1") && !isPhoneCardKind(""), "unknown cards are rejected");
@@ -85,5 +89,55 @@ const front = sampleFrontStories();
 assert(front.length >= 6 && /Missouri/.test(front[0]!.headline), "sample front is the Oct 5 evening A1 shape");
 assert(front[0]!.photo && (front[0]!.photoWidth ?? 0) >= 1, "sample lead has a photo at native width");
 assert(front.every((s) => s.dek), "sample headlines carry short deks");
+
+const sixersNote = {
+  id: "news-76ers-sit",
+  favoriteKey: "nba-phi",
+  teamName: "76ers",
+  teamHref: "",
+  sportLabel: "NBA",
+  leaguePath: "basketball/nba",
+  headline: "James, Embiid, Maxey sit out 76ers'preseason opener vs. Knicks",
+  dek: null,
+  body: "LeBron James, Joel Embiid and Tyrese Maxey will sit out the 76ers' preseason opener against the Knicks on Monday night. The rest of the rotation is in.",
+  scoreLine: null,
+  when: "2026-10-05T21:19:12Z",
+  won: null,
+  gameHref: null,
+  wrapHref: null,
+  feedUrl: null,
+  gameId: null,
+  stats: [],
+  leaders: [],
+  teamStats: [],
+  division: [],
+  photo: "https://example.com/lebron.jpg",
+  photoWidth: 600,
+  followed: true,
+  preseason: false,
+  status: "Final",
+};
+const mizzouWrap = {
+  ...sixersNote,
+  id: "wire-college-football-401856708",
+  favoriteKey: "cfb-mizzou",
+  teamName: "Mizzou FB",
+  sportLabel: "CFB",
+  leaguePath: "football/college-football",
+  headline: "No. 25 Missouri trounces No. 8 Florida 45-17 to snap 9-game skid against Top 25 opponents",
+  dek: null,
+  body: "Austin Simmons threw for 340 yards and two touchdowns, Jamal Roberts ran for 211 yards and three more scores, and No. 25 Missouri trounced eighth-ranked Florida 45-17 on Saturday.",
+  scoreLine: "MIZ 45 · FLA 17",
+  when: "2026-10-03T19:50Z",
+  won: true,
+  photo: "https://example.com/mizzou.jpg",
+  photoWidth: 576,
+  holdover: true,
+  status: "Final",
+};
+assert(phoneFrontRank(mizzouWrap) < phoneFrontRank(sixersNote), "a favorite-team result outranks a preseason sit-out");
+const ordered = phoneFrontStories([sixersNote, mizzouWrap], "2026-10-05-evening");
+assert(ordered[0]?.id === "wire-college-football-401856708", "phone lead is the Mizzou wrap, not the 76ers note with a photo");
+assert(/76ers' preseason/.test(ordered.find((s) => s.id === "news-76ers-sit")?.headline ?? ""), "filed 76ers hed gets its space back");
 
 console.log("newspaper-phone-cards ok");

@@ -270,24 +270,43 @@ export function htmlToNewspaperText(html: string): string {
   return paras.join("\n\n").trim();
 }
 
+/**
+ * Keep the space after a possessive (`76ers' preseason`). Contractions
+ * (`don't`, `it's`) stay glued. Also repairs copy that already lost the space.
+ */
+export function restorePossessiveSpace(text: string): string {
+  return text
+    .replace(/(\p{L}|\d)(['’])(?!(?:s|t|ll|re|ve|d|m)\b)(\p{L})/gu, "$1$2 $3")
+    .replace(/(\p{L})(['’])(\d)/gu, "$1$2 $3");
+}
+
+/** Filed / wire headline for print — same apostrophe repair as tidy. */
+export function printHeadline(text: string): string {
+  return restorePossessiveSpace(String(text ?? "").replace(/\s+/g, " ").trim());
+}
+
 /** Wire copy arrives with link residue: "Raiders ." and "Chiefs ,". */
 export function tidy(text: string): string {
-  return joinBrokenDecimals(
-    decodeNewspaperEntities(stripGettyCredit(text))
-      .replace(/\s+([,;:!?])/g, "$1")
-      .replace(/\s+\.(?!\d)/g, ".")
-      .replace(/(\w)\s+([’'])/g, "$1$2")
-      .replace(/([‘'])\s+(\w)/g, "$1$2")
-      .replace(/(["“])\s+/g, "$1")
-      .replace(/\s+(["”])/g, "$1")
-      .replace(/([,;:.!?])(["“])(?=\S)/g, "$1 $2")
-      .replace(/\s*(?:--|—|–)[\s—–-]+/g, " — ")
-      .replace(/\(\s+/g, "(")
-      .replace(/\s+\)/g, ")"),
-  )
-    .replace(/[^\S\n]{2,}/g, " ")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  return restorePossessiveSpace(
+    joinBrokenDecimals(
+      decodeNewspaperEntities(stripGettyCredit(text))
+        .replace(/\s+([,;:!?])/g, "$1")
+        .replace(/\s+\.(?!\d)/g, ".")
+        .replace(/(\w)\s+([’'])/g, "$1$2")
+        // Opening quote, not a possessive: "' Hello" → "'Hello". A letter
+        // before the mark (`76ers' preseason`) must keep the following space.
+        .replace(/(?<!\w)([‘'])\s+(\w)/g, "$1$2")
+        .replace(/(["“])\s+/g, "$1")
+        .replace(/\s+(["”])/g, "$1")
+        .replace(/([,;:.!?])(["“])(?=\S)/g, "$1 $2")
+        .replace(/\s*(?:--|—|–)[\s—–-]+/g, " — ")
+        .replace(/\(\s+/g, "(")
+        .replace(/\s+\)/g, ")"),
+    )
+      .replace(/[^\S\n]{2,}/g, " ")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim(),
+  );
 }
 
 /**
