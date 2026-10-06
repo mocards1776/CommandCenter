@@ -23,6 +23,8 @@ import {
 import { nflInternationalMidfieldLogo } from "@/lib/nfl-venue";
 import type { MlbHighlight } from "@/lib/mlb";
 import { useSportsBack, useSwipeBack } from "@/hooks/useSwipeBack";
+import { toNflMomentSnapshot } from "@/lib/game-moment-sources";
+import { GameMomentLayer } from "@/components/sports/GameMomentAlert";
 import { cn, formatSportsDateLong } from "@/lib/utils";
 
 const LOWER_IS_BETTER = /penalt|turnover|fumble|interception/i;
@@ -236,6 +238,7 @@ export function NflGameDetailView({
 
   return (
     <div className="space-y-5">
+      <GameMomentLayer snapshot={toNflMomentSnapshot(g)} />
       <header className="relative overflow-hidden rounded-xl border border-white/[0.1] bg-[#07101d] shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
         <div
           className={cn(

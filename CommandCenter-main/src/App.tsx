@@ -57,6 +57,7 @@ const SoccerGamePage = lazy(() => import("@/pages/SoccerGamePage"));
 const HeatAlertPreviewPage = lazy(() => import("@/pages/HeatAlertPreviewPage"));
 const FieldDrivePreviewPage = lazy(() => import("@/pages/FieldDrivePreviewPage"));
 const MlbPbpPreviewPage = lazy(() => import("@/pages/MlbPbpPreviewPage"));
+const MomentAlertPreviewPage = lazy(() => import("@/pages/MomentAlertPreviewPage"));
 
 function PageHold() {
   return (
@@ -152,6 +153,7 @@ export default function App() {
             <Route path="/story/:token" element={<PublicStoryPage />} />
             <Route path="/sports/field-drive-preview" element={<FieldDrivePreviewPage />} />
             <Route path="/sports/mlb-pbp-preview" element={<MlbPbpPreviewPage />} />
+            <Route path="/sports/moment-alert-preview" element={<MomentAlertPreviewPage />} />
             <Route path="/newspaper/watch-preview" element={<NewspaperWatchPreviewPage />} />
             <Route path="/newspaper/a1-preview" element={<NewspaperA1PreviewPage />} />
             <Route path="/newspaper/sport-preview" element={<NewspaperSportPreviewPage />} />
