@@ -27,16 +27,25 @@ function overflowsClip(el: HTMLElement): boolean {
  * Restore full copy, then drop the last sentence that does not fit the
  * clipping column or the folio. Leftover space stays empty.
  */
+let fitting = false;
 export function fitSentencesIn(root: HTMLElement): void {
-  const nodes = [...root.querySelectorAll<HTMLElement>(COPY_SEL)];
-  for (const node of nodes) {
-    if (node.dataset.fitFull == null) node.dataset.fitFull = node.textContent ?? "";
-    node.textContent = node.dataset.fitFull;
-  }
-  let guard = 80;
-  while (guard--) {
-    const hit = [...nodes].reverse().find((node) => (node.textContent ?? "").trim() && overflowsClip(node));
-    if (!hit) break;
-    hit.textContent = dropLastSentence(hit.textContent ?? "");
+  if (fitting) return;
+  fitting = true;
+  try {
+    const nodes = [...root.querySelectorAll<HTMLElement>(COPY_SEL)];
+    for (const node of nodes) {
+      if (node.dataset.fitFull == null) node.dataset.fitFull = node.textContent ?? "";
+      if (node.textContent !== node.dataset.fitFull) node.textContent = node.dataset.fitFull;
+    }
+    let guard = 80;
+    while (guard--) {
+      const hit = [...nodes].reverse().find((node) => (node.textContent ?? "").trim() && overflowsClip(node));
+      if (!hit) break;
+      const next = dropLastSentence(hit.textContent ?? "");
+      if (next === hit.textContent) break;
+      hit.textContent = next;
+    }
+  } finally {
+    fitting = false;
   }
 }
