@@ -48,8 +48,8 @@ type PressModule = {
     },
     bag: Record<string, unknown> | null,
   ) => Promise<
-    | { done: false; bag: Record<string, unknown>; flush: PrintedQuery[] }
-    | { done: true; issue: Issue; flush: PrintedQuery[] }
+    | { done: false; bag: Record<string, unknown>; flush: PrintedQuery[]; stories?: unknown[] }
+    | { done: true; issue: Issue; flush: PrintedQuery[]; stories?: unknown[] }
   >;
 };
 
@@ -266,15 +266,14 @@ Deno.serve(async (req) => {
     let carried: unknown[] = [];
     let carriedMissouri: unknown[] = [];
     // Only the Missouri desk (8) and story file (15) need yesterday's paper.
-    // Loading it on every hop doubled finalize's heap.
-    if (prevId && (bagStage === 8 || bagStage >= 15)) {
+    if (prevId && (bagStage === 8 || (bagStage === 15 && !Array.isArray(bag?.filed)))) {
       const { data: prev } = await supabase
         .from("newspaper_issues")
         .select(bagStage === 8 ? "queries" : "stories")
         .eq("id", prevId)
         .eq("status", "ready")
         .maybeSingle();
-      if (bagStage >= 15 && Array.isArray(prev?.stories)) carried = prev.stories;
+      if (bagStage === 15 && !Array.isArray(bag?.filed) && Array.isArray(prev?.stories)) carried = prev.stories;
       if (bagStage === 8) {
         const queries = Array.isArray(prev?.queries) ? prev.queries : [];
         for (const query of queries) {
@@ -303,11 +302,13 @@ Deno.serve(async (req) => {
       bag,
     );
     const flush = (step.flush ?? []).map(slimPrintedQuery);
+    const storyFlush = step.stories ?? (!step.done ? [] : step.issue.stories);
     const dbUrl = Deno.env.get("SUPABASE_DB_URL");
     if (!dbUrl) throw new Error("Missing database URL");
     if (!step.done) {
-      // Persist only this hop's flush + the slim bag. Postgres concatenates
-      // already-filed desks so this isolate never reloads them.
+      // Persist only this hop's flush + story slice + the slim bag.
+      // Postgres concatenates desks and stories so this isolate never
+      // reloads or stringifies the whole edition.
       const bag = checkpointBag(step.bag ?? { stage: 0 });
       const pool = new Pool(dbUrl, 1);
       const connection = await pool.connect();
@@ -316,6 +317,10 @@ Deno.serve(async (req) => {
           `update public.newspaper_issues
               set status = 'printing',
                   printed_at = now(),
+                  stories = case
+                    when coalesce(($1::jsonb->>'stage')::int, 0) < 18 then '[]'::jsonb
+                    else coalesce(stories, '[]'::jsonb) || $4::jsonb
+                  end,
                   queries = jsonb_build_object(
                     'checkpoint', true,
                     'bag', $1::jsonb,
@@ -328,7 +333,7 @@ Deno.serve(async (req) => {
                     ) || $2::jsonb
                   )
             where id = $3`,
-          [JSON.stringify(bag), JSON.stringify(flush), press.id],
+          [JSON.stringify(bag), JSON.stringify(flush), press.id, JSON.stringify(storyFlush)],
         );
         await connection.queryObject(
           "select net.http_post(url := $1::text, headers := jsonb_build_object('Content-Type', 'application/json', 'Authorization', $2::text), body := $3::text::jsonb, timeout_milliseconds := 150000)",
@@ -339,17 +344,22 @@ Deno.serve(async (req) => {
         await pool.end();
       }
       const stage = typeof step.bag.stage === "number" ? step.bag.stage : null;
-      return Response.json({ ok: true, id: press.id, stage, flushed: flush.length });
+      return Response.json({
+        ok: true,
+        id: press.id,
+        stage,
+        flushed: flush.length,
+        stories: storyFlush.length,
+      });
     }
-    const stories = step.issue.stories;
     const pool = new Pool(dbUrl, 1);
     const connection = await pool.connect();
     try {
-      const filed = await connection.queryObject<{ n: number }>(
+      const filed = await connection.queryObject<{ n: number; ns: number }>(
         `update public.newspaper_issues
             set version = $1,
                 status = 'ready',
-                stories = $2::jsonb,
+                stories = coalesce(stories, '[]'::jsonb) || $2::jsonb,
                 queries = coalesce(
                   case
                     when jsonb_typeof(queries) = 'object' then queries->'desks'
@@ -359,11 +369,12 @@ Deno.serve(async (req) => {
                 ) || $3::jsonb,
                 printed_at = now()
           where id = $4
-          returning jsonb_array_length(queries) as n`,
-        [ISSUE_VERSION, JSON.stringify(stories), JSON.stringify(flush), press.id],
+          returning jsonb_array_length(queries) as n, jsonb_array_length(stories) as ns`,
+        [ISSUE_VERSION, JSON.stringify(storyFlush ?? []), JSON.stringify(flush), press.id],
       );
       const queryCount = filed.rows[0]?.n ?? flush.length;
-      return Response.json({ ok: true, id: press.id, stories: stories.length, queries: queryCount });
+      const storyCount = filed.rows[0]?.ns ?? storyFlush.length;
+      return Response.json({ ok: true, id: press.id, stories: storyCount, queries: queryCount });
     } finally {
       connection.release();
       await pool.end();
