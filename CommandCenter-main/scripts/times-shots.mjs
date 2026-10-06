@@ -1,8 +1,13 @@
 /**
- * Thompson Times image alert runner: screenshots four iPhone cards (front, weather,
- * The Day Ahead, Best Games to Watch) at the locked phone size and hands the PNGs
- * to times-telegram-shots, which sends them on @ThompsonTimes_bot (front first,
- * with caption + Mini App button).
+ * Thompson Times image alert runner: screenshots the printed A1 (same page as
+ * the iPad paper) plus three iPhone cards (weather, The Day Ahead, Best Games
+ * to Watch) and hands the PNGs to times-telegram-shots, which sends them on
+ * @ThompsonTimes_bot (front first, with caption + Mini App button).
+ *
+ * Front: open /newspaper?solo=1 at the iPad viewport (768×1024), wait for the
+ * revealed A1, then fit that exact page into the locked 430×932 phone canvas
+ * (never taller; cream below if the iPad fold is shorter). Width/scale fit
+ * math on the paper is untouched (--tt-page-w 1032).
  *
  * Run by .github/workflows/times-telegram-shots.yml (auth: GitHub Actions OIDC, no secrets).
  * Manual test from a machine holding the admin secret:
@@ -14,7 +19,6 @@
  * The browser is read-only: every write to Supabase REST and every call to the press or
  * editor functions is aborted, so opening the paper here can never change the desk or an issue.
  * Day Ahead and watch cards are skipped when there is no schedule row / no games.
- * The printed iPad paper (width-only fit at 1032) is never opened or resized here.
  */
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -27,7 +31,9 @@ const AUDIENCE = "times-telegram-shots";
 /** Portrait iPhone CSS size; every alert image is clipped to this at 3x (1290×2796 px). */
 const PHONE = { width: 430, height: 932 };
 const PHONE_SCALE = 3;
-const PHONE_CARDS = ["front", "weather", "day", "watch"];
+/** iPad paper viewport Josh reads — front shot captures this page, then fits to PHONE. */
+const IPAD = { width: 768, height: 1024 };
+const PHONE_CARDS = ["weather", "day", "watch"];
 
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(`--${name}`);
@@ -153,6 +159,65 @@ async function pinClock(page, issueId) {
   await page.clock.setFixedTime(at);
 }
 
+/** Fit an iPad A1 PNG onto the locked 430×932 canvas. Never grow the canvas. */
+async function fitA1ToPhone(browser, png, issueId) {
+  const page = await browser.newPage({
+    viewport: PHONE,
+    deviceScaleFactor: PHONE_SCALE,
+    colorScheme: "light",
+  });
+  try {
+    const b64 = Buffer.from(png).toString("base64");
+    await page.setContent(
+      `<!doctype html><html><head><style>
+        html,body{margin:0;padding:0;background:#fbfaf6;width:${PHONE.width}px;height:${PHONE.height}px;overflow:hidden}
+        img{display:block;width:${PHONE.width}px;height:auto}
+      </style></head><body><img alt="" src="data:image/png;base64,${b64}"></body></html>`,
+      { waitUntil: "load" },
+    );
+    await page.locator("img").waitFor({ state: "visible", timeout: 10_000 });
+    const out = await page.screenshot({
+      clip: { x: 0, y: 0, width: PHONE.width, height: PHONE.height },
+      animations: "disabled",
+    });
+    log(`front fitted ${png.length} → ${out.length} bytes onto ${PHONE.width}x${PHONE.height} from iPad A1 ${issueId}`);
+    return out;
+  } finally {
+    await page.close();
+  }
+}
+
+/** Printed A1 — same route and layout as the iPad paper. */
+async function shootPaperA1(context, browser, issueId) {
+  const page = await context.newPage();
+  page.on("pageerror", (err) => log("A1 page error:", err.message));
+  try {
+    await page.setViewportSize(IPAD);
+    await pinClock(page, issueId);
+    await page.goto(`${APP}/newspaper?solo=1`, { waitUntil: "domcontentloaded", timeout: 60_000 });
+    if (new URL(page.url()).pathname.startsWith("/login")) throw new Error("Session was not accepted (landed on /login)");
+    await page.waitForFunction(
+      () => document.querySelector("[data-times-ready]")?.getAttribute("data-times-ready") === "1",
+      { timeout: 50_000 },
+    );
+    await page.locator(".wsj-front").waitFor({ state: "visible", timeout: 20_000 });
+    await settle(page, ".wsj-front");
+    const lead = await page.locator(".wsj-front .wsj-story.lead h2, .wsj-front .lead h2, .wsj-front h2").first().textContent().catch(() => "");
+    log("A1 lead:", (lead || "").replace(/\s+/g, " ").trim().slice(0, 160));
+    const png = await page.screenshot({
+      clip: { x: 0, y: 0, width: IPAD.width, height: IPAD.height },
+      animations: "disabled",
+    });
+    log(`A1 ${png.length} bytes at ${IPAD.width}x${IPAD.height} css`);
+    return fitA1ToPhone(browser, png, issueId);
+  } catch (err) {
+    log("A1 not shot:", err.message);
+    throw err;
+  } finally {
+    await page.close();
+  }
+}
+
 /** Phone cards: dedicated route, hard-clipped to 430×932 CSS at 3x. Skip when empty/error. */
 async function shootPhoneCard(context, issueId, card) {
   const page = await context.newPage();
@@ -213,6 +278,21 @@ async function shoot(claim) {
   try {
     const blocked = [];
     const init = sessionInit(claim);
+    const ipad = await browser.newContext({
+      viewport: IPAD,
+      deviceScaleFactor: 2,
+      hasTouch: true,
+      locale: "en-US",
+      timezoneId: "America/Chicago",
+      colorScheme: "light",
+      userAgent:
+        "Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
+    });
+    await harden(ipad, blocked);
+    await ipad.addInitScript(init.script, init.arg);
+    const frontPng = await shootPaperA1(ipad, browser, claim.issue_id);
+    await ipad.close();
+
     const phone = await browser.newContext({
       viewport: PHONE,
       deviceScaleFactor: PHONE_SCALE,
@@ -229,8 +309,8 @@ async function shoot(claim) {
     }
     await phone.close();
     if (blocked.length) log("blocked writes:", [...new Set(blocked)].join(", "));
-    if (!extras.frontPng) throw new Error("front card missing");
-    return { frontPng: extras.frontPng, weatherPng: extras.weatherPng, dayPng: extras.dayPng, watchPng: extras.watchPng };
+    if (!frontPng) throw new Error("front A1 missing");
+    return { frontPng, weatherPng: extras.weatherPng, dayPng: extras.dayPng, watchPng: extras.watchPng };
   } finally {
     await browser.close();
   }

@@ -138,6 +138,41 @@ const mizzouWrap = {
 assert(phoneFrontRank(mizzouWrap) < phoneFrontRank(sixersNote), "a favorite-team result outranks a preseason sit-out");
 const ordered = phoneFrontStories([sixersNote, mizzouWrap], "2026-10-05-evening");
 assert(ordered[0]?.id === "wire-college-football-401856708", "phone lead is the Mizzou wrap, not the 76ers note with a photo");
-assert(/76ers' preseason/.test(ordered.find((s) => s.id === "news-76ers-sit")?.headline ?? ""), "filed 76ers hed gets its space back");
+assert(
+  !ordered.some((s) => s.id === "news-76ers-sit"),
+  "phone front stays on the printed A1 and does not add a 76ers sit-out",
+);
+const middayPhone = phoneFrontStories(
+  [
+    {
+      ...sixersNote,
+      id: "box-nba-401898999",
+      headline: "Knicks 97, 76ers 120",
+      dek: "Times box wrap",
+      body: "Philadelphia 76ers beat New York Knicks 120-97 in preseason play. ".repeat(8),
+      scoreLine: "NY 97 · PHI 120",
+      wrapKind: "box",
+      caption: "Times box wrap",
+    },
+    {
+      ...mizzouWrap,
+      id: "news-cowboys-midday",
+      favoriteKey: "nfl-dal",
+      teamName: "Cowboys",
+      sportLabel: "NFL",
+      leaguePath: "football/nfl",
+      headline: "Cowboys get healthy ahead of Tampa Bay",
+      scoreLine: null,
+      won: null,
+      holdover: false,
+      photo: null,
+      when: "2026-10-06T15:00:00Z",
+      status: null,
+    },
+  ],
+  "2026-10-06-midday",
+);
+assert(middayPhone[0]?.id !== "box-nba-401898999", "Telegram A1 list does not lead with 76ers");
+assert(middayPhone[0]?.id === "news-cowboys-midday", "Telegram A1 list matches the paper Cowboys lead");
 
 console.log("newspaper-phone-cards ok");

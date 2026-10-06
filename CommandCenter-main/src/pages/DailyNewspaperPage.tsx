@@ -227,6 +227,8 @@ import {
   buildEdition,
   dropEmptyFolios,
   essentialsFromDesks,
+  a1ComingUp,
+  isA1Muted,
   isFavoriteGameResult,
   isFavoriteStory,
   isGameWrap,
@@ -1713,6 +1715,7 @@ function FrontPage({
   const seenIds = new Set<string>();
   const pool = [lead, second, third, ...briefs, ...(news ?? [])].filter((card): card is GameWrapCard => {
     if (!card?.headline) return false;
+    if (isA1Muted(card, editionDay)) return false;
     if (seenIds.has(card.id)) return false;
     seenIds.add(card.id);
     return true;
@@ -6905,7 +6908,7 @@ function NewspaperDesk() {
                   teams={teams}
                   tonight={tonight}
                   bracket={bracket}
-                  comingUp={comingUp}
+                  comingUp={a1ComingUp(comingUp)}
                   sections={edition.sections}
                   folios={edition.favoriteFolioByStory}
                   clubsFolio={pages.find((p) => p.kind === "favorites-clubs" && p.weatherPart === "outlook")?.folio ?? "A3"}
