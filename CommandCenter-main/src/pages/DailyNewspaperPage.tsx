@@ -1660,7 +1660,7 @@ function FrontPage({
             className="lead"
             card={pageLead}
             team={teamForCard(teams, pageLead)}
-            text={copyOf(pageLead, pageLeadTeaser)}
+            text={splitStoryCopy(copyOf(pageLead, pageLeadTeaser), 480).teaser}
             size="xl"
             cols={2}
             art="top"
@@ -2569,7 +2569,7 @@ function SportSectionFront({
               </div>
             ) : null}
             {underLead.length ? (
-              <div className="tt-front-under">
+              <div className="tt-front-under" data-tt-flow="">
                 {underLead.map((card) => (
                   <Story
                     key={card.id}
@@ -2713,7 +2713,11 @@ function SportSectionFront({
         {soccer ? (
           <>
             {lead
-              ? tables.slice(0, 1).map((group) => <StandingsTable key={group.name} group={group} mine={mine} />)
+              ? tables.slice(0, 1).map((group) => (
+                  <div key={group.name} data-tt-flow="">
+                    <StandingsTable group={group} mine={mine} />
+                  </div>
+                ))
               : null}
             {tables.length > 1 ? (
               <div data-tt-flow="">
@@ -2735,7 +2739,7 @@ function SportSectionFront({
               </section>
             ) : null}
             {fixtures.length ? (
-              <section className="tt-front-fixtures" aria-label="Upcoming fixtures">
+              <section className="tt-front-fixtures" aria-label="Upcoming fixtures" data-tt-flow="">
                 <h3 className="wsj-band-title">Upcoming fixtures</h3>
                 <ul className="tt-fixture-dates">
                   {fixtures.slice(0, 8).map((g) => (

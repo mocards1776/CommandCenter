@@ -9052,7 +9052,8 @@ li.counting .tt-count.card {
   overflow-x: clip;
 }
 .tt-front-lead .tt-recap-photo.wide img,
-.wsj-inside-story .tt-recap-photo.wide img {
+.wsj-inside-story .tt-recap-photo.wide img,
+.wsj-front .wsj-story.lead .tt-recap-photo.wide img {
   max-height: 220px;
 }
 .tt-rail-recap {
