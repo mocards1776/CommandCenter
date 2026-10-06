@@ -5332,7 +5332,7 @@ function NewspaperDesk() {
 
   const teamSnaps = useQuery({
     queryKey: [pressId, "tt-team-snaps", day, favKeys],
-    enabled: teamFavs.length > 0,
+    enabled: pressing,
     queryFn: async () =>
       Promise.all(
         teamFavs.map(async (fav) => {
@@ -5375,7 +5375,7 @@ function NewspaperDesk() {
       );
       return rows.filter(Boolean) as { fav: SportsFavorite; detail: TeamDetail }[];
     },
-    enabled: teamFavs.length > 0,
+    enabled: pressing && teamFavs.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -5676,7 +5676,7 @@ function NewspaperDesk() {
       );
       return Object.fromEntries(entries) as Record<string, LeagueClub[]>;
     },
-    enabled: sportPaths.length > 0,
+    enabled: pressing && sportPaths.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -5747,7 +5747,7 @@ function NewspaperDesk() {
       );
       return Object.fromEntries(entries) as Record<string, SectionBoard>;
     },
-    enabled: sportPaths.length > 0,
+    enabled: pressing && sportPaths.length > 0 && leadBoardQ.isFetched,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -5762,7 +5762,7 @@ function NewspaperDesk() {
       );
       return Object.fromEntries(entries) as Record<string, StandGroup[]>;
     },
-    enabled: sportPaths.length > 0,
+    enabled: pressing && sportPaths.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -5956,7 +5956,7 @@ function NewspaperDesk() {
       );
       return Object.fromEntries(rows.filter((r) => r[1])) as Record<string, ClubSheet>;
     },
-    enabled: teamFavs.length > 0,
+    enabled: pressing && teamFavs.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,

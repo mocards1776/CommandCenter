@@ -134,6 +134,13 @@ export async function newspaperEspnGet(path: string, opts?: NewspaperEspnGetOpts
   const clean = path.replace(/^\/+/, "");
   const headers = { Accept: "application/json" };
   const hosts = opts?.site === 3 ? [ESPN_WEB_V3, ESPN_API_V3, ESPN_API, ESPN_WEB] : [ESPN_API, ESPN_WEB];
+  // The sports-edge proxy first: browsers on localhost are CORS-blocked from
+  // site.api, and waiting 12s per host starves the A1 lead recap.
+  try {
+    return await espnViaSportsProxy(clean);
+  } catch {
+    /* fall through to the public hosts */
+  }
   for (const host of hosts) {
     try {
       const { signal, clear } = abortAfter(12_000);
@@ -152,5 +159,5 @@ export async function newspaperEspnGet(path: string, opts?: NewspaperEspnGetOpts
       /* try next */
     }
   }
-  return espnViaSportsProxy(clean);
+  throw new Error(`ESPN ${clean} failed`);
 }
