@@ -77,7 +77,8 @@ assert(trimPhoneWatchFit({ keepRest: 3 })?.keepRest === 2, "watch drops the lowe
 assert(trimPhoneWatchFit({ keepRest: 0 }) === null, "watch keeps the feature game");
 assert(trimPhoneDayFit({ comingDays: 2, rundown: 4, allDay: 1 })?.comingDays === 1, "day ahead drops Coming Up first");
 assert(trimPhoneDayFit({ comingDays: 0, rundown: 2, allDay: 1 })?.rundown === 1, "then later rundown rows");
-assert(trimPhoneFrontFit({ stories: 3, showDek: true, showPhoto: true })?.stories === 2, "front drops the lowest story");
+assert(trimPhoneFrontFit({ stories: 3, showDek: true, showPhoto: true, lastDek: true })?.lastDek === false, "front drops the last dek before a story");
+assert(trimPhoneFrontFit({ stories: 3, showDek: true, showPhoto: true, lastDek: false })?.stories === 2, "front then drops the lowest story");
 assert(trimPhoneWeatherFit({ showAlmanac: true, showToday: true, days: 7, showHourly: true })?.showAlmanac === false, "weather drops almanac first");
 
 const front = sampleFrontStories();

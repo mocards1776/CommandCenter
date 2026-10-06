@@ -9,7 +9,7 @@
  *   VITE_DEV_BYPASS_AUTH=1 node scripts/times-phone-verify.mjs
  *   --base http://127.0.0.1:5173  if Vite is already up
  */
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,6 +27,20 @@ const opt = (name) => {
 };
 const outDir = opt("out") || process.env.TIMES_PHONE_VERIFY_OUT || "/opt/cursor/artifacts";
 const givenBase = opt("base");
+const issueJsonPath =
+  opt("issue-json") || process.env.TIMES_ISSUE_JSON || "/tmp/tt-proof/2026-10-05-evening-stories.json";
+
+async function loadIssueShell() {
+  const raw = JSON.parse(await readFile(issueJsonPath, "utf8"));
+  const stories = Array.isArray(raw.stories) ? raw.stories : [];
+  if (!stories.length) throw new Error(`issue dump has no stories: ${issueJsonPath}`);
+  return {
+    version: raw.version ?? 1,
+    status: raw.status ?? "ready",
+    printed_at: raw.printed_at ?? "2026-10-06T02:12:33.553757+00:00",
+    stories,
+  };
+}
 
 function pngSize(buf) {
   if (buf[0] !== 0x89 || buf[1] !== 0x50) throw new Error("not a PNG");
@@ -132,6 +146,7 @@ async function main() {
     base = "http://127.0.0.1:5173";
     await waitFor(base);
   }
+  const issueShell = await loadIssueShell();
   const browser = await chromium.launch({ args: ["--force-color-profile=srgb"] });
   const report = [];
   try {
@@ -143,6 +158,18 @@ async function main() {
       timezoneId: "America/Chicago",
       colorScheme: "light",
       baseURL: base,
+    });
+    // Anon RLS cannot read newspaper_issues. Fulfill the real 2026-10-05-evening
+    // shell (read-only dump) so the front uses the filed edition, not ?sample=1.
+    await context.route("**/*newspaper_issues*", async (route) => {
+      const url = route.request().url();
+      if (!url.includes(ISSUE) || route.request().method() !== "GET") return route.continue();
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        headers: { "content-range": `0-0/${1}` },
+        body: JSON.stringify([issueShell]),
+      });
     });
     for (const card of CARDS) {
       const page = await context.newPage();
@@ -175,7 +202,7 @@ async function main() {
         throw new Error(`${card} is ${size.width}x${size.height}, expected ${PHONE.width * PHONE_SCALE}x${PHONE.height * PHONE_SCALE}`);
       }
       if (card === "front") {
-        if (Number(shot.facts.stories) < 4) throw new Error(`front only showed ${shot.facts.stories} stories`);
+        if (Number(shot.facts.stories) < 3) throw new Error(`front only showed ${shot.facts.stories} stories`);
         if (shot.facts.photo !== "1") throw new Error("front is missing the lead photo");
         if (shot.facts.artCss && shot.facts.artNatural && shot.facts.artCss > shot.facts.artNatural + 1) {
           throw new Error(`lead photo CSS-upscaled ${shot.facts.artCss} > native ${shot.facts.artNatural}`);

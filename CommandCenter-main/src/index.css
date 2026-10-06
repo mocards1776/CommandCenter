@@ -9348,7 +9348,7 @@ body:has(.tt-phone-shot) {
   padding: 0;
 }
 .tt-phone-front-stories li {
-  padding: 10px 0;
+  padding: 8px 0;
   border-bottom: 1px solid var(--w-hair);
 }
 .tt-phone-front-stories li.lead {
@@ -9358,6 +9358,7 @@ body:has(.tt-phone-shot) {
   display: block;
   width: auto;
   max-width: 100%;
+  max-height: 300px;
   height: auto;
   object-fit: contain;
   object-position: top center;

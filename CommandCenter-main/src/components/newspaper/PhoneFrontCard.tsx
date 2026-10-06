@@ -15,7 +15,9 @@ function LeadArt({ src, nativeWidth }: { src: string; nativeWidth: number | null
   const style: CSSProperties = {
     width: "auto",
     maxWidth: natural ? `min(100%, ${natural}px)` : "100%",
+    maxHeight: 300,
     height: "auto",
+    objectFit: "contain",
   };
   return (
     <img
@@ -48,7 +50,7 @@ export function PhoneFrontCard({
 }) {
   const ballot = electionEar(date);
   const { ref, value } = usePhoneCardFit<PhoneFrontFit>(
-    { stories: stories.length, showDek: true, showPhoto: true },
+    { stories: stories.length, showDek: true, showPhoto: true, lastDek: true },
     trimPhoneFrontFit,
     `${date}:${stories.map((s) => s.id).join(",")}`,
   );
@@ -81,7 +83,9 @@ export function PhoneFrontCard({
                 ) : null}
                 {story.teamName ? <p className="tt-phone-front-team">{story.teamName}</p> : null}
                 <h2>{story.headline}</h2>
-                {value.showDek && story.dek ? <p className="tt-phone-front-dek">{story.dek}</p> : null}
+                {value.showDek && story.dek && (i < shown.length - 1 || value.lastDek) ? (
+                  <p className="tt-phone-front-dek">{story.dek}</p>
+                ) : null}
               </li>
             ))}
           </ol>

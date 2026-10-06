@@ -84,10 +84,11 @@ export function trimPhoneDayFit(fit: PhoneDayFit): PhoneDayFit | null {
   return null;
 }
 
-export type PhoneFrontFit = { stories: number; showDek: boolean; showPhoto: boolean };
+export type PhoneFrontFit = { stories: number; showDek: boolean; showPhoto: boolean; lastDek: boolean };
 
 export function trimPhoneFrontFit(fit: PhoneFrontFit): PhoneFrontFit | null {
-  if (fit.stories > 1) return { ...fit, stories: fit.stories - 1 };
+  if (fit.lastDek) return { ...fit, lastDek: false };
+  if (fit.stories > 1) return { ...fit, stories: fit.stories - 1, lastDek: true };
   if (fit.showDek) return { ...fit, showDek: false };
   if (fit.showPhoto) return { ...fit, showPhoto: false };
   return null;
@@ -140,16 +141,16 @@ export function phoneFrontStories(stories: unknown[], edition: string): PhoneFro
     const front = paper.pages.find((p) => p.kind === "favorites-front") as FavoritesFrontPage | undefined;
     if (front) {
       take(front.lead, 240);
-      take(front.second, 160);
-      take(front.third, 160);
-      for (const brief of front.briefs ?? []) take(brief, 140);
+      take(front.second, 110);
+      take(front.third, 110);
+      for (const brief of front.briefs ?? []) take(brief, 90);
     }
     for (const page of paper.pages) {
       if (page.section !== "A" || page.kind !== "favorites-inside") continue;
       const inside = page as FavoritesInsidePage;
-      take(inside.primary, 140);
-      take(inside.secondary, 140);
-      for (const brief of inside.briefs ?? []) take(brief, 140);
+      take(inside.primary, 90);
+      take(inside.secondary, 90);
+      for (const brief of inside.briefs ?? []) take(brief, 80);
     }
     return out;
   } catch {
