@@ -8952,6 +8952,11 @@ li.counting .tt-count.card {
   display: grid;
   grid-template-columns: 1fr 1fr;
 }
+.tt-front-rail .tt-strip li:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+  justify-self: center;
+  width: calc((100% - 6px) / 2);
+}
 .tt-front-lead,
 .tt-front-side {
   overflow: hidden;

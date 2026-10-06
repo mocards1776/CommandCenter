@@ -55,6 +55,7 @@ import {
   type StandGroup,
 } from "@/lib/newspaper-box";
 import { cleanStoryCopy, proseParas, tidy, truncateAtSentence } from "@/lib/newspaper-copy";
+import { fitSentencesIn } from "@/lib/newspaper-fit";
 import { recapBodyForPage, recapDropLead, recapIsScoreOnly, recapShouldDropCap, splitApDateline } from "@/lib/newspaper-recap";
 import {
   Face,
@@ -4268,9 +4269,31 @@ function FolioSlot({
   return (
     <section className="wsj-page" aria-label={`Page ${folio}`}>
       <div className="wsj-fit">
-        <div className="wsj-sheet">{shown ? <FolioBody render={render} /> : null}</div>
+        <FittedSheet>{shown ? <FolioBody render={render} /> : null}</FittedSheet>
       </div>
     </section>
+  );
+}
+
+function FittedSheet({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const run = () => fitSentencesIn(el);
+    run();
+    const ro = new ResizeObserver(run);
+    ro.observe(el);
+    for (const img of el.querySelectorAll("img")) img.addEventListener("load", run);
+    return () => {
+      ro.disconnect();
+      for (const img of el.querySelectorAll("img")) img.removeEventListener("load", run);
+    };
+  }, [children]);
+  return (
+    <div ref={ref} className="wsj-sheet">
+      {children}
+    </div>
   );
 }
 

@@ -13,6 +13,7 @@ import {
   isVideoTitleSoup,
   joinBrokenDecimals,
   newsImageCaption,
+  dropLastSentence,
   sanitizeArticleBody,
   stripBoilerplateCopy,
   stripGettyCredit,
@@ -101,10 +102,18 @@ assertEqual(
   "Mr. Smith and St. Louis visit vs. the Jr. varsity on Saturday night.",
   "Mr. St. vs. Jr. stay inside the sentence",
 );
+const oneLong = "With Page, the No. 1 overall pick is expected to start Saturday.";
 assert(
-  !truncateAtSentence("With Page, the No. 1 overall pick is expected to start Saturday.", 24).endsWith("No."),
+  !truncateAtSentence(oneLong, 24).endsWith("No."),
   "a short max does not land on No.",
 );
+assert(
+  truncateAtSentence(oneLong, 24) === oneLong,
+  "a single sentence longer than max stays whole",
+);
+assert(!truncateAtSentence(oneLong, 24).includes("…"), "fitted copy never ellipsizes mid-sentence");
+assertEqual(dropLastSentence("One done. Two done. Three done."), "One done. Two done.", "drops the last sentence");
+assertEqual(dropLastSentence("Only one remains."), "", "one sentence that does not fit leaves a blank");
 
 assertEqual(stripGettyCredit("The rotunda (Getty images)."), "The rotunda.", "getty slug strips from a caption");
 assertEqual(stripGettyCredit("(Getty Images)"), "", "a bare getty caption is empty");

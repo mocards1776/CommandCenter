@@ -13,6 +13,7 @@ import {
   type StandGroup,
 } from "@/lib/newspaper-box";
 import { isPrintableStoryBody, proseParas, sanitizeArticleBody } from "@/lib/newspaper-copy";
+import { fitSentencesIn } from "@/lib/newspaper-fit";
 import { newspaperEspnGet } from "@/lib/newspaper-espn";
 import { editionDateline, editionIssue, romanNumeral } from "@/lib/newspaper";
 import {
@@ -161,6 +162,7 @@ function LockedSheet({ folio, children }: { folio: string; children: ReactNode }
     const el = ref.current;
     if (!el) return;
     const check = () => {
+      fitSentencesIn(el);
       setOverflow(el.scrollHeight > PAGE_CANVAS.height + 1);
       const box = el.getBoundingClientRect();
       const folio = el.querySelector(".wsj-folio");

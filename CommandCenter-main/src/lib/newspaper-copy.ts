@@ -314,10 +314,17 @@ export function truncateAtSentence(text: string, max = 260): string {
     out = next;
   }
   if (out && /[.!?…]["'”’)]*$/.test(out)) return out;
-  if (out.length >= Math.min(40, max / 3)) return out;
-  const slice = raw.slice(0, max);
-  const space = slice.lastIndexOf(" ");
-  return `${(space > 40 ? slice.slice(0, space) : slice).replace(/[,;:\-–—]+$/, "")}…`;
+  // Never cut mid-sentence. If the first sentence is longer than max, keep it whole.
+  const first = parts[0] ?? "";
+  if (first && /[.!?…]["'”’)]*$/.test(first)) return first;
+  return out;
+}
+
+/** Drop the last sentence. Empty when only one remains — leftover is a line of space. */
+export function dropLastSentence(text: string): string {
+  const parts = splitNewspaperSentences(tidy(text).replace(/\s+/g, " ").trim());
+  if (parts.length <= 1) return "";
+  return parts.slice(0, -1).join(" ");
 }
 
 /** A module spliced into the story: Athletic's reporter poll, ESPN's link rail. */
