@@ -1727,7 +1727,7 @@ function FrontPage({
     return true;
   };
   const leadPoster = wantsPoster(pageLead);
-  const underCandidates = [pageSecond, pageThird, ...pageBriefs].filter((c): c is GameWrapCard => Boolean(c));
+  const underCandidates = pool.filter((c) => c !== pageLead);
   const playable = underCandidates.filter((c) => !isPhonePreseasonNote(c));
   const underScore = (card: GameWrapCard) =>
     (isFavoriteGameResult(card) ? 100 + favoriteDeskWeight(card.favoriteKey) : 0) +
