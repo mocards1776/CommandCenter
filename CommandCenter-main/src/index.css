@@ -2561,7 +2561,7 @@ li.counting .tt-count.card {
   display: flex;
   flex-direction: column;
   flex: 0 1 auto;
-  gap: 18px;
+  gap: 10px;
   min-height: 0;
 }
 .wsj-ticker {
@@ -2666,11 +2666,11 @@ li.counting .tt-count.card {
   object-fit: cover;
 }
 .wsj-front .wsj-ticker {
-  gap: 5px;
+  gap: 4px;
 }
 .wsj-front .wsj-ticker-cell {
-  padding: 5px 6px 4px;
-  gap: 1px;
+  padding: 4px 6px 3px;
+  gap: 0;
 }
 .wsj-front .wsj-ticker-place {
   display: none;
