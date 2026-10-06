@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { competitiveCaption, loadTciLogoDataUri, sd30SampleCard } from "./card.ts";
 import { rasterizeSvg } from "./png.ts";
+import { planCompetitiveSend } from "./send.ts";
 import { renderCompetitiveSvg } from "./svg.ts";
 import { parseChatIds, sendTelegramPhoto } from "./telegram.ts";
 
@@ -8,17 +9,22 @@ import { parseChatIds, sendTelegramPhoto } from "./telegram.ts";
  * Competitive Telegram card renderer for Thompson Communications.
  *
  * SVG → PNG → JPEG q≈95, then sendPhoto. Same path as sports-finals.
- * Do not screenshot the Times site.
+ * Do not screenshot the Times site. Do not add a competitive_buys INSERT trigger.
  *
  * Secrets (never commit the token):
  *   TELEGRAM_COMPETITIVE_BOT_TOKEN
  *   TELEGRAM_COMPETITIVE_CRON_SECRET
  *   TELEGRAM_COMPETITIVE_CHAT_IDS
+ *   ALMANAC_SUPABASE_URL                 (Thompson Almanac, not Command Center)
+ *   ALMANAC_SUPABASE_SERVICE_ROLE_KEY
  *
- * POST { "action": "render" }             → JPEG (SD-30 sample)
+ * POST { "action": "render" }             → JPEG (SD-30 sample / preview only)
  * POST { "action": "render", "format": "png" | "svg" }
- * POST { "action": "send" }               → sendPhoto
- * POST { "action": "send", "dryRun": true }
+ * POST { "action": "send", "race_slug": "mo-sd30", "buy_ids": ["…"] }
+ *     Almanac: one call per finished load batch. Empty buy_ids → skip.
+ *     Just In = those buys (spend + GRP). Race / pies = live Almanac totals.
+ *     If Almanac keys are unset, also pass just_in + buyers (or totals).
+ * POST { "action": "send", "dryRun": true, ... }
  */
 
 const CORS: Record<string, string> = {
@@ -48,10 +54,7 @@ function authorized(req: Request): boolean {
   return Boolean(got && expected && got === expected);
 }
 
-async function buildCard() {
-  const logo = await loadTciLogoDataUri();
-  return sd30SampleCard(logo);
-}
+const env = { get: (name: string) => Deno.env.get(name) };
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -70,25 +73,23 @@ Deno.serve(async (req: Request) => {
   if (action !== "render" && action !== "send") return json({ error: "Unknown action" }, 400);
 
   try {
-    const card = await buildCard();
-    const svg = renderCompetitiveSvg(card);
-    const caption = competitiveCaption(card);
-    const format = String(body.format ?? (action === "render" ? "jpeg" : "jpeg")).toLowerCase();
-
-    if (action === "render" && format === "svg") {
-      return new Response(svg, {
-        headers: { ...CORS, "Content-Type": "image/svg+xml", "Cache-Control": "no-store" },
-      });
-    }
-
-    const png = await rasterizeSvg(svg);
-    if (action === "render" && format === "png") {
-      return new Response(png, {
-        headers: { ...CORS, "Content-Type": "image/png", "Cache-Control": "no-store" },
-      });
-    }
+    const logo = await loadTciLogoDataUri();
 
     if (action === "render") {
+      const card = sd30SampleCard(logo);
+      const svg = renderCompetitiveSvg(card);
+      const format = String(body.format ?? "jpeg").toLowerCase();
+      if (format === "svg") {
+        return new Response(svg, {
+          headers: { ...CORS, "Content-Type": "image/svg+xml", "Cache-Control": "no-store" },
+        });
+      }
+      const png = await rasterizeSvg(svg);
+      if (format === "png") {
+        return new Response(png, {
+          headers: { ...CORS, "Content-Type": "image/png", "Cache-Control": "no-store" },
+        });
+      }
       const { pngToJpeg } = await import("./telegram-jpeg.ts");
       const jpeg = pngToJpeg(png, 95);
       return new Response(jpeg, {
@@ -96,26 +97,43 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    const plan = await planCompetitiveSend(body, { env });
+    if (!plan.ok) return json({ error: plan.error }, plan.status);
+    if (plan.skipped) {
+      return json({ ok: true, skipped: true, reason: plan.reason, race_slug: plan.race_slug });
+    }
+
+    const card = { ...plan.card, logoData: logo };
+    const svg = renderCompetitiveSvg(card);
+    const caption = competitiveCaption(card);
     const meta = {
+      race_slug: plan.race_slug,
+      buy_ids: plan.buy_ids,
+      source: plan.source,
       race: card.race,
       market: card.market,
+      justIn: card.justIn.map((row) => ({
+        sponsor: row.sponsor,
+        amount: row.amount,
+        grp: row.grp,
+        station: row.station,
+      })),
       buyers: card.buyers.map((row) => ({
         name: row.name,
         spend: row.spend,
         grp: row.grp,
-        cpp: row.cpp,
       })),
       caption,
-      bytes: png.byteLength,
     };
     if (body.dryRun === true) return json({ ok: true, dryRun: true, ...meta });
 
+    const png = await rasterizeSvg(svg);
     const token = Deno.env.get("TELEGRAM_COMPETITIVE_BOT_TOKEN")?.trim() ?? "";
     if (!token) return json({ error: "TELEGRAM_COMPETITIVE_BOT_TOKEN is not set" }, 503);
     const chats = parseChatIds(Deno.env.get("TELEGRAM_COMPETITIVE_CHAT_IDS"));
     if (!chats.length) return json({ error: "TELEGRAM_COMPETITIVE_CHAT_IDS is empty" }, 503);
     for (const chatId of chats) await sendTelegramPhoto(token, chatId, png, caption);
-    return json({ ok: true, chats, ...meta });
+    return json({ ok: true, chats, bytes: png.byteLength, ...meta });
   } catch (err) {
     const message = err instanceof Error ? err.message : "render failed";
     console.error("competitive-telegram", action, message);

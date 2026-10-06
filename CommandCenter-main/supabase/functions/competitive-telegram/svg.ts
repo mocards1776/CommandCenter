@@ -10,9 +10,11 @@ import {
   CARD_WIDTH,
   affiliationTotals,
   barWidth,
+  displayMedia,
   formatGrp,
   formatSpendExact,
   formatSpendShort,
+  landscapeBuyers,
   maxGrp,
   maxSpend,
   raceSpendTotal,
@@ -110,7 +112,7 @@ function justInHero(buys: readonly JustInBuy[], y: number): string {
     parts.push(text("added", cx, tileY + 98, { size: 14, fill: MUTED, anchor: "middle" }));
     parts.push(text(formatSpendExact(buy.amount), cx, tileY + 150, { size: 40, fill: INK, anchor: "middle", weight: 700 }));
     parts.push(
-      text(`in ${buy.market} ${buy.media} for ${formatGrp(buy.grp)} GRP`, cx, tileY + 186, {
+      text(`in ${buy.market} ${displayMedia(buy.media)} for ${formatGrp(buy.grp)} GRP`, cx, tileY + 186, {
         size: 15,
         fill: MUTED,
         anchor: "middle",
@@ -141,14 +143,15 @@ function buyerTile(row: BuyerRow, x: number, y: number, w: number, h: number, sp
 }
 
 function raceGrid(buyers: readonly BuyerRow[], y: number): string {
+  const shown = landscapeBuyers(buyers);
   const gap = 14;
   const colW = Math.round((W - 80 - gap) / 2);
   const rowH = 156;
   const x0 = Math.round((W - (colW * 2 + gap)) / 2);
-  const spendMax = maxSpend(buyers);
-  const grpMax = maxGrp(buyers);
+  const spendMax = maxSpend(shown);
+  const grpMax = maxGrp(shown);
   const parts = [sectionLabel("RACE", y + 8)];
-  buyers.forEach((row, i) => {
+  shown.forEach((row, i) => {
     const col = i % 2;
     const r = Math.floor(i / 2);
     parts.push(buyerTile(row, x0 + col * (colW + gap), y + 24 + r * (rowH + gap), colW, rowH, spendMax, grpMax));

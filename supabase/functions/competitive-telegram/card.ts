@@ -30,6 +30,7 @@ export type AffiliationSlice = {
 
 /** A buy that just filed — sponsor / market / media / amount / GRP. */
 export type JustInBuy = {
+  id?: string;
   sponsor: string;
   amount: number;
   market: string;
@@ -37,6 +38,7 @@ export type JustInBuy = {
   station: string;
   grp: number;
   color: string;
+  flightStart?: string;
 };
 
 export type AheadItem = {
@@ -71,27 +73,32 @@ export const SD30_SAMPLE_BUYERS: readonly BuyerRow[] = [
 ];
 
 /**
- * Concrete new TV from the Oct 6 SD-30 book (KYTV lines), not process notes.
- * Fogle KYTV $70,420 / 939 GRP; Stinnett KYTV 10/5 start $52,745 / 704 GRP.
+ * Current broadcast week (Mon 10/5–Sun 10/11) KYTV deltas — not last week's
+ * Fogle $70,420 / 939 GRP flight that started 9/29.
+ * MSCC KYTV $47,440 / 274.8 GRP (10/5); Fogle KYTV $32,300 / 358.9 GRP (10/6).
  */
 export const SD30_SAMPLE_JUST_IN: readonly JustInBuy[] = [
   {
-    sponsor: "Betsy Fogle",
-    amount: 70420,
+    id: "a59019d1-ff74-46d4-b119-b1e78c0dce09",
+    sponsor: "MSCC",
+    amount: 47440,
     market: "Springfield",
     media: "TV",
     station: "KYTV",
-    grp: 939,
-    color: "#0A84FF",
+    grp: 274.8,
+    color: "#5E5CE6",
+    flightStart: "2026-10-05",
   },
   {
-    sponsor: "Melanie Stinnett",
-    amount: 52745,
+    id: "16c2dcfa-5d5d-4fc0-a9e3-08312dce1fa5",
+    sponsor: "Betsy Fogle",
+    amount: 32300,
     market: "Springfield",
     media: "TV",
     station: "KYTV",
-    grp: 704,
-    color: "#FF3B30",
+    grp: 358.9,
+    color: "#0A84FF",
+    flightStart: "2026-10-06",
   },
 ];
 
@@ -126,30 +133,115 @@ export function formatCpp(cpp: number): string {
   return `$${Math.round(cpp)}`;
 }
 
-/** "Betsy Fogle added $70,420 in Springfield TV for 939 GRP" */
+export const SAMPLE_AS_OF = "2026-10-06";
+
+/** US broadcast week is Monday–Sunday. */
+export function broadcastWeekBounds(asOf = SAMPLE_AS_OF): { start: string; end: string } {
+  const [y, m, d] = asOf.split("-").map(Number);
+  const date = new Date(Date.UTC(y!, m! - 1, d));
+  const dow = date.getUTCDay();
+  const back = dow === 0 ? 6 : dow - 1;
+  date.setUTCDate(date.getUTCDate() - back);
+  const start = ymd(date);
+  date.setUTCDate(date.getUTCDate() + 6);
+  return { start, end: ymd(date) };
+}
+
+export function inBroadcastWeek(flightStart: string | undefined, asOf = SAMPLE_AS_OF): boolean {
+  if (!flightStart) return false;
+  const { start, end } = broadcastWeekBounds(asOf);
+  return flightStart >= start && flightStart <= end;
+}
+
+function ymd(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+export function displayMedia(media: string): string {
+  const key = media.trim().toLowerCase();
+  if (key === "broadcast" || key === "tv") return "TV";
+  if (key === "radio") return "radio";
+  if (key === "cable") return "cable";
+  return media || "TV";
+}
+
+/** "MSCC added $47,440 in Springfield TV for 274.8 GRP" */
 export function formatJustInLine(buy: JustInBuy): string {
-  return `${buy.sponsor} added ${formatSpendExact(buy.amount)} in ${buy.market} ${buy.media} for ${formatGrp(buy.grp)} GRP`;
+  return `${buy.sponsor} added ${formatSpendExact(buy.amount)} in ${buy.market} ${displayMedia(buy.media)} for ${formatGrp(buy.grp)} GRP`;
 }
 
 export const SD30_CAPTION_WHATS_NEW = SD30_SAMPLE_JUST_IN.map(formatJustInLine).join("; ");
 
-export function sd30SampleCard(logoData: string | null = null): CompetitiveCard {
+export type RaceMeta = {
+  slug: string;
+  title: string;
+  race: string;
+  market: string;
+  office: string;
+};
+
+export const RACE_CATALOG: Record<string, RaceMeta> = {
+  "mo-sd30": { slug: "mo-sd30", title: "Missouri SD-30", race: "SD-30", market: "Springfield", office: "Missouri Senate" },
+  "mo-sd8": { slug: "mo-sd8", title: "Missouri SD-8", race: "SD-8", market: "Kansas City", office: "Missouri Senate" },
+};
+
+export function raceMeta(slug: string, fallbackMarket = ""): RaceMeta {
+  const known = RACE_CATALOG[slug];
+  if (known) return known;
+  const district = slug.replace(/^mo-/, "").toUpperCase();
+  return {
+    slug,
+    title: `Missouri ${district}`,
+    race: district,
+    market: fallbackMarket,
+    office: "Missouri Senate",
+  };
+}
+
+export function formatDateLabel(ymdDate: string): string {
+  const [y, m, d] = ymdDate.split("-").map(Number);
+  const date = new Date(Date.UTC(y!, m! - 1, d));
+  return date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
+}
+
+export function buildCompetitiveCard(opts: {
+  slug: string;
+  justIn: JustInBuy[];
+  buyers: BuyerRow[];
+  asOf?: string;
+  logoData?: string | null;
+  market?: string;
+}): CompetitiveCard {
+  const asOf = opts.asOf ?? SAMPLE_AS_OF;
+  const meta = raceMeta(opts.slug, opts.market ?? opts.justIn[0]?.market ?? opts.buyers[0]?.name ?? "");
+  const justIn = opts.justIn.map((row) => ({ ...row, media: displayMedia(row.media) }));
   return {
     kicker: "COMPETITIVE",
-    office: "Missouri Senate",
-    race: "SD-30",
-    title: "Missouri SD-30",
-    market: "Springfield",
-    dateLabel: "October 6, 2026",
+    office: meta.office,
+    race: meta.race,
+    title: meta.title,
+    market: opts.market || meta.market,
+    dateLabel: formatDateLabel(asOf),
     justInTitle: "Just in",
-    buyers: SD30_SAMPLE_BUYERS.map((row) => ({ ...row })),
-    justIn: SD30_SAMPLE_JUST_IN.map((row) => ({ ...row })),
-    stillAhead: SD30_SAMPLE_AHEAD.map((row) => ({ ...row })),
-    captionWhatsNew: SD30_CAPTION_WHATS_NEW,
-    logoData,
+    buyers: opts.buyers.map((row) => ({ ...row })),
+    justIn,
+    stillAhead: [],
+    captionWhatsNew: justIn.map(formatJustInLine).join("; "),
+    logoData: opts.logoData ?? null,
     footer: "Thompson Communications",
     handle: "@ThompsonCompetitive_bot",
   };
+}
+
+export function sd30SampleCard(logoData: string | null = null): CompetitiveCard {
+  return buildCompetitiveCard({
+    slug: "mo-sd30",
+    justIn: SD30_SAMPLE_JUST_IN.filter((buy) => inBroadcastWeek(buy.flightStart, SAMPLE_AS_OF)).map((row) => ({ ...row })),
+    buyers: SD30_SAMPLE_BUYERS.map((row) => ({ ...row })),
+    asOf: SAMPLE_AS_OF,
+    logoData,
+    market: "Springfield",
+  });
 }
 
 export function raceSpendTotal(buyers: readonly BuyerRow[]): number {
@@ -164,10 +256,21 @@ export function affiliationTotals(buyers: readonly BuyerRow[]): AffiliationSlice
     bucket.spend += row.spend;
     bucket.grp += row.grp;
   }
+  const parties = (side: Affiliation) =>
+    buyers
+      .filter((row) => (row.side === "gop" ? "gop" : "dem") === side)
+      .sort((a, b) => b.spend - a.spend)
+      .slice(0, 2)
+      .map((row) => row.name)
+      .join(" + ");
   return [
-    { id: "dem", label: "Dem", parties: "Fogle + Forward", spend: dem.spend, grp: dem.grp, color: "#0A84FF" },
-    { id: "gop", label: "GOP", parties: "Stinnett + MSCC", spend: gop.spend, grp: gop.grp, color: "#FF3B30" },
+    { id: "dem", label: "Dem", parties: parties("dem"), spend: dem.spend, grp: dem.grp, color: "#0A84FF" },
+    { id: "gop", label: "GOP", parties: parties("gop"), spend: gop.spend, grp: gop.grp, color: "#FF3B30" },
   ];
+}
+
+export function landscapeBuyers(buyers: readonly BuyerRow[], limit = 4): BuyerRow[] {
+  return [...buyers].sort((a, b) => b.spend - a.spend).slice(0, limit);
 }
 
 export function maxSpend(buyers: readonly BuyerRow[]): number {
