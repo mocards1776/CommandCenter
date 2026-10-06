@@ -122,7 +122,7 @@ function SeriesLog({ tree }: { tree: MlbPlayoffTree }) {
     .sort((a, b) => Number(a.completed) - Number(b.completed));
   if (!series.length) return null;
   return (
-    <section className="tt-br-log">
+    <section className="tt-br-log" data-tt-flow="">
       <h4 className="wsj-band-title">Series by series</h4>
       <div className="tt-br-log-grid">
         {series.map((s) => (

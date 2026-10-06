@@ -4212,7 +4212,6 @@ function ClubFormGrid({
     {full.length ? (
     <div
       className={cn("wsj-form-grid", wide && "wide")}
-      data-tt-keep=""
       style={{ ["--cols" as string]: String(cols) }}
     >
       {full.map((club, i) => {
@@ -4236,7 +4235,7 @@ function ClubFormGrid({
               href: l.href && l.href.startsWith("/") ? l.href : null,
             }));
         return (
-          <article key={club.key} className="wsj-form-card" style={tint(club.color)} {...(i > 3 ? { "data-tt-flow": "" } : {})}>
+          <article key={club.key} className="wsj-form-card" style={tint(club.color)} {...(i > 1 ? { "data-tt-flow": "" } : {})}>
             <header className="wsj-club-card-head">
               <span className="wsj-disc">
                 <TeamLogo src={club.logo} size="md" />

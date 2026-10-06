@@ -8119,6 +8119,11 @@ li.counting .tt-count.card {
 .newspaper-root .tt-stand-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
 .newspaper-root .tt-stand-grid.single { grid-template-columns: 1fr !important; }
 .newspaper-root .tt-front-grid.with-side { grid-template-columns: minmax(0, 1.7fr) minmax(260px, 1fr) !important; }
+.newspaper-root .tt-front-lead .wsj-story.lead img,
+.newspaper-root .wsj-front-main .wsj-story.lead img {
+  max-height: 340px;
+  object-fit: cover;
+}
 .newspaper-root .wsj-sport-lead-grid.with-side { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr) !important; }
 .newspaper-root .wsj-sport-lead-grid.with-side > .wsj-story.lead {
   padding-right: var(--w-gutter);
