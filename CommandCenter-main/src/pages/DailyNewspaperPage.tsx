@@ -1666,7 +1666,7 @@ function FrontPage({
             art="top"
             poster={leadPoster}
             drop
-            compactBox
+            chrome={false}
             jump={pageLeadContinue}
             onTurn={onTurn}
           />
