@@ -235,6 +235,7 @@ import {
 import {
   favoriteKeyForGame,
   groupSportRecaps,
+  isWrapLead,
   lastMatchCardFromChip,
   orderSportSectionFront,
   preferFrontCard,
@@ -2355,7 +2356,7 @@ function mergeFrontStories(
       const key = favoriteKeyFromCopy(c, page.clubs);
       return key && key !== c.favoriteKey ? { ...c, favoriteKey: key, followed: true } : c;
     });
-  const extras: GameWrapCard[] = [...(fill?.leftover ?? [])];
+  const extras: GameWrapCard[] = (fill?.leftover ?? []).filter((c) => isWrapLead(c) || Boolean(c.favoriteKey));
   if (board) {
     for (const g of [...(board.results ?? []), ...(board.prior ?? [])]) {
       const card = stampBoardCard(g, page.clubs);
@@ -2363,42 +2364,44 @@ function mergeFrontStories(
       extras.push(card);
     }
   }
-  for (const tile of fill?.coaches ?? []) {
-    extras.push(...tile.headlines.filter((c) => c.headline));
-    const last = tile.lastGame;
-    const club = page.clubs.find((c) => c.key === tile.teamAbbrev || squash(c.shortName) === squash(tile.teamName ?? tile.teamAbbrev));
-    if (last && club) {
+  if (page.path.startsWith("soccer/")) {
+    for (const tile of fill?.coaches ?? []) {
+      extras.push(...tile.headlines.filter((c) => c.headline));
+      const last = tile.lastGame;
+      const club = page.clubs.find((c) => c.key === tile.teamAbbrev || squash(c.shortName) === squash(tile.teamName ?? tile.teamAbbrev));
+      if (last && club) {
+        extras.push(
+          lastMatchCardFromChip({
+            key: club.key,
+            name: tile.teamName || club.shortName,
+            shortName: club.shortName,
+            logo: tile.teamLogo || club.logo,
+            leaguePath: page.path,
+            sportLabel: page.sectionTitle,
+            last: {
+              label: `${last.homeAway === "at" ? "@" : "vs"} ${last.opponent ?? "OPP"}`,
+              detail: last.score,
+              when: last.date,
+              won: last.result === "W" ? true : last.result === "L" ? false : null,
+            },
+          }),
+        );
+      }
+    }
+    for (const snap of fill?.snaps ?? []) {
+      if (!snap.lastGame) continue;
       extras.push(
         lastMatchCardFromChip({
-          key: club.key,
-          name: tile.teamName || club.shortName,
-          shortName: club.shortName,
-          logo: tile.teamLogo || club.logo,
+          key: snap.key,
+          name: snap.name,
+          shortName: snap.shortName,
+          logo: snap.logo,
           leaguePath: page.path,
           sportLabel: page.sectionTitle,
-          last: {
-            label: `${last.homeAway === "at" ? "@" : "vs"} ${last.opponent ?? "OPP"}`,
-            detail: last.score,
-            when: last.date,
-            won: last.result === "W" ? true : last.result === "L" ? false : null,
-          },
+          last: snap.lastGame,
         }),
       );
     }
-  }
-  for (const snap of fill?.snaps ?? []) {
-    if (!snap.lastGame) continue;
-    extras.push(
-      lastMatchCardFromChip({
-        key: snap.key,
-        name: snap.name,
-        shortName: snap.shortName,
-        logo: snap.logo,
-        leaguePath: page.path,
-        sportLabel: page.sectionTitle,
-        last: snap.lastGame,
-      }),
-    );
   }
   const pooled: GameWrapCard[] = [];
   for (const extra of [...filed, ...extras]) {

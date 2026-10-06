@@ -257,9 +257,15 @@ export function favoriteKeyForGame(
   return "";
 }
 
+/** Team crests are not a recap cut. */
+export function isStoryPhoto(url: string | null | undefined): boolean {
+  if (!url) return false;
+  return !/teamlogos|\/team-logos\/|\/logos\//i.test(url);
+}
+
 /** Photo + copy beats a long box wrap with no cut. */
 export function frontCardWeight(card: GameWrapCard): number {
-  return (card.photo ? 2_000 : 0) + (isBoxStub(card) ? 0 : 800) + Math.min(800, card.body?.length ?? 0);
+  return (isStoryPhoto(card.photo) ? 2_000 : 0) + (isBoxStub(card) ? 0 : 800) + Math.min(800, card.body?.length ?? 0);
 }
 
 export function preferFrontCard(a: GameWrapCard, b: GameWrapCard): GameWrapCard {
@@ -273,16 +279,19 @@ export function pickSectionFrontLead(
   editorLead?: GameWrapCard,
   newsLead?: GameWrapCard,
 ): GameWrapCard | undefined {
-  const quality = wraps.filter((c) => !isBoxStub(c) && (Boolean(c.photo) || (c.body?.length ?? 0) >= 280));
-  const pictured = quality.filter((c) => Boolean(c.photo));
+  const quality = wraps.filter((c) => !isBoxStub(c) && (isStoryPhoto(c.photo) || (c.body?.length ?? 0) >= 280));
+  const pictured = quality.filter((c) => isStoryPhoto(c.photo));
   const picturedFresh = pictured.filter((c) => !c.holdover);
   const picturedPost = pictured.filter((c) => c.postseason);
   const qualityFresh = quality.filter((c) => !c.holdover);
   const qualityPost = quality.filter((c) => c.postseason);
+  const favOf = (cs: GameWrapCard[]) => cs.filter((c) => c.favoriteKey || c.followed);
   const nonStubFresh = wraps.filter((c) => !c.holdover && !isBoxStub(c));
   const nonStub = wraps.filter((c) => !isBoxStub(c));
   const freshWraps = wraps.filter((c) => !c.holdover);
   return (
+    favOf(picturedFresh)[0] ??
+    favOf(qualityFresh)[0] ??
     picturedFresh[0] ??
     picturedPost[0] ??
     pictured[0] ??

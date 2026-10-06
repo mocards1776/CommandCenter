@@ -427,6 +427,35 @@ const photoBeatsBox = orderSportSectionFront(
 );
 assert(photoBeatsBox[0]?.id === "ap-miz-photo", "a photo recap leads over a long box wrap with no cut");
 
+const ndPhoto = card({
+  id: "box-nd-photo",
+  headline: "Notre Dame beats North Carolina 37-26",
+  wrapKind: "espn",
+  leaguePath: "football/college-football",
+  sportLabel: "CFB",
+  scoreLine: "ND 37 · UNC 26",
+  when: "2026-10-04T16:00:00Z",
+  photo: "https://a.espncdn.com/photo/nd.jpg",
+  body: "Notre Dame won in the rain. ".repeat(10),
+});
+const mizNoArt = card({
+  id: "ap-miz-plain",
+  headline: "No. 25 Missouri trounces No. 8 Florida 45-17",
+  favoriteKey: "cfb-mizzou",
+  followed: true,
+  leaguePath: "football/college-football",
+  sportLabel: "CFB",
+  scoreLine: "MIZ 45 · FLA 17",
+  when: "2026-10-04T16:00:00Z",
+  body: "Missouri scored early in Columbia and never let Florida back in. ".repeat(8),
+});
+const favBeatsOtherPhoto = orderSportSectionFront(
+  [ndPhoto, mizNoArt],
+  "football/college-football",
+  "2026-10-05-evening",
+);
+assert(favBeatsOtherPhoto[0]?.id === "ap-miz-plain", "Mizzou still leads CFB when another wrap has the only photo");
+
 const last = lastMatchCardFromChip({
   key: "eng-wrexham",
   name: "Wrexham AFC",
