@@ -3,10 +3,13 @@ import { dropLastSentence } from "./newspaper-copy";
 const COPY_SEL = ".wsj-prose p, .wsj-dek, .wsj-brief-dek, .tt-under-story p";
 
 /**
- * Soft pack target from the #326 folio lock. Not a clip: if copy still
- * does not fit after dropping sentences, the sheet grows and nothing is hidden.
+ * Soft pack target: compose to one newspaper page. The sheet may grow to
+ * HARD_PAGE_H only to keep a sentence intact. Whole blocks marked
+ * [data-tt-flow] then continue on the next folio instead of stretching.
  */
-const SOFT_PAGE_H = 1480;
+export const SOFT_PAGE_H = 1480;
+export const HARD_PAGE_H = 1650;
+const FLOW_SEL = "[data-tt-flow]";
 
 function isVerticalClip(overflow: string, overflowY: string): boolean {
   return overflow === "hidden" || overflowY === "hidden" || overflowY === "clip";
@@ -45,16 +48,36 @@ function overflowsClip(el: HTMLElement): boolean {
   return false;
 }
 
+function restoreFlow(root: HTMLElement): void {
+  for (const node of root.querySelectorAll<HTMLElement>(FLOW_SEL)) {
+    node.hidden = false;
+    delete node.dataset.ttFlowed;
+  }
+}
+
+function hideOverflowBlocks(root: HTMLElement): void {
+  const sheet = root.closest(".wsj-sheet") ?? root;
+  let guard = 24;
+  while (guard-- && sheet.scrollHeight > HARD_PAGE_H + 8) {
+    const last = [...root.querySelectorAll<HTMLElement>(FLOW_SEL)].reverse().find((node) => !node.hidden);
+    if (!last) break;
+    last.hidden = true;
+    last.dataset.ttFlowed = "1";
+  }
+}
+
 /**
  * Restore full copy, then drop the last sentence that does not fit the
- * clipping column, the folio, or the soft 1480 pack target. Leftover
- * space stays empty; leftover copy is never clipped out of view.
+ * clipping column, the folio, or the soft 1480 pack target. Whole extra
+ * blocks marked [data-tt-flow] hide past HARD_PAGE_H so they can run on
+ * the next section folio instead of stretching this sheet.
  */
 let fitting = false;
 export function fitSentencesIn(root: HTMLElement): void {
   if (fitting) return;
   fitting = true;
   try {
+    restoreFlow(root);
     const nodes = [...root.querySelectorAll<HTMLElement>(COPY_SEL)];
     for (const node of nodes) {
       if (node.dataset.fitFull == null) node.dataset.fitFull = node.textContent ?? "";
@@ -68,6 +91,7 @@ export function fitSentencesIn(root: HTMLElement): void {
       if (next === hit.textContent) break;
       hit.textContent = next;
     }
+    hideOverflowBlocks(root);
   } finally {
     fitting = false;
   }

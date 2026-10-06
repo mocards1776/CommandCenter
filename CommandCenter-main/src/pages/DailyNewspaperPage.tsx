@@ -77,10 +77,10 @@ import {
   DeskSnap,
 } from "@/components/newspaper/BoxScore";
 import { RecapBox, RecapChrome, RecapPhoto } from "@/components/newspaper/GameRecap";
-import { groupByDay, planSchedulePages } from "@/lib/newspaper-page";
+import { frontPageLeftover, groupByDay, planSchedulePages } from "@/lib/newspaper-page";
 import { ReaderProvider } from "@/components/newspaper/PaperReader";
 import { useReader } from "@/components/newspaper/reader-context";
-import { CfbFill, CfbScheduleDesk } from "@/components/newspaper/CfbScheduleDesk";
+import { CfbScheduleDesk } from "@/components/newspaper/CfbScheduleDesk";
 import { HeadlineSave } from "@/components/newspaper/SaveMark";
 import { SavedDrawer } from "@/components/newspaper/SavedDrawer";
 import { SavedProvider } from "@/components/newspaper/saved-context";
@@ -236,7 +236,6 @@ import {
 import {
   favoriteKeyForGame,
   groupSportRecaps,
-  isWrapLead,
   lastMatchCardFromChip,
   orderSportSectionFront,
   preferFrontCard,
@@ -1271,15 +1270,24 @@ function DeskFiller({
   onTurn?: (folio: string) => void;
 }) {
   const empty = (cols - (count % cols)) % cols;
-  if (!empty || !onTurn) return null;
+  if (!empty) return null;
+  const tile = (
+    <>
+      <strong>The clubs desk</strong>
+      <span>
+        Slates, tables &amp; leaders · <b>Page A2 →</b>
+      </span>
+    </>
+  );
   return (
-    <li className="wsj-filler" style={{ gridColumn: `span ${empty}` }}>
-      <button type="button" onClick={() => onTurn("A2")}>
-        <strong>The clubs desk</strong>
-        <span>
-          Slates, tables &amp; leaders · <b>Page A2 →</b>
-        </span>
-      </button>
+    <li className="wsj-filler" style={{ ["--tt-fill-span" as string]: String(empty) }}>
+      {onTurn ? (
+        <button type="button" onClick={() => onTurn("A2")}>
+          {tile}
+        </button>
+      ) : (
+        <span className="wsj-filler-static">{tile}</span>
+      )}
     </li>
   );
 }
@@ -1534,6 +1542,7 @@ function FrontPage({
   second,
   third,
   briefs,
+  news,
   teams,
   postseason,
   tonight,
@@ -1553,6 +1562,7 @@ function FrontPage({
   second: GameWrapCard | null;
   third: GameWrapCard | null;
   briefs: GameWrapCard[];
+  news?: GameWrapCard[];
   teams: TeamInfobox[];
   postseason: string[];
   tonight: WireGame[];
@@ -1581,22 +1591,36 @@ function FrontPage({
     />
   );
 
-  if (!lead) {
+  const seenIds = new Set<string>();
+  const pool = [lead, second, third, ...briefs, ...(news ?? [])].filter((card): card is GameWrapCard => {
+    if (!card?.headline) return false;
+    if (seenIds.has(card.id)) return false;
+    seenIds.add(card.id);
+    return true;
+  });
+  const pageLead = pool[0] ?? null;
+  const pageSecond = pool[1] ?? null;
+  const pageThird = pool[2] ?? null;
+  const pageBriefs = pool.slice(3, 9);
+  const pageLeadContinue = pageLead && pageLead.id === lead?.id ? leadContinue : folios[pageLead?.id ?? ""];
+  const pageSecondContinue = pageSecond && pageSecond.id === second?.id ? secondContinue : folios[pageSecond?.id ?? ""];
+  const pageThirdContinue = pageThird && pageThird.id === third?.id ? thirdContinue : folios[pageThird?.id ?? ""];
+  const pageLeadTeaser = pageLead && pageLead.id === lead?.id ? leadTeaser : undefined;
+  const pageSecondTeaser = pageSecond && pageSecond.id === second?.id ? secondTeaser : undefined;
+  const pageThirdTeaser = pageThird && pageThird.id === third?.id ? thirdTeaser : undefined;
+
+  if (!pageLead) {
     return (
       <div className="wsj-front">
         <ClubTicker teams={teams} onTurn={onTurn} />
         <div className="wsj-front-grid">
           <div className="wsj-front-main">
-            <p className="wsj-empty">
-              No fresh copy on your clubs this morning. The clubs desk is on page A2, and every
-              sport section follows.
-            </p>
-            {teams[0] ? <StatPoster team={teams[0]} /> : null}
+            <DeskBoard teams={teams} title="Your clubs this edition" onTurn={onTurn} />
+            <TurnBar onTurn={onTurn} folio="A2" label="The clubs desk — every slate, table and leader" />
           </div>
           {rail}
         </div>
         {scoutBand}
-        <DeskBoard teams={teams} onTurn={onTurn} />
       </div>
     );
   }
@@ -1613,14 +1637,14 @@ function FrontPage({
     postered.add(team.fav.key);
     return true;
   };
-  const leadPoster = wantsPoster(lead);
-  const secondPoster = wantsPoster(second);
-  const thirdPoster = wantsPoster(third);
+  const leadPoster = wantsPoster(pageLead);
+  const secondPoster = wantsPoster(pageSecond);
+  const thirdPoster = wantsPoster(pageThird);
   const thin = (card: GameWrapCard | null, teaser: string | undefined, poster: boolean) =>
     Boolean(card && !card.photo && !poster && !substantive(card, copyOf(card, teaser)));
   const stack =
-    Boolean(second && third) &&
-    (thin(second, secondTeaser, secondPoster) || thin(third, thirdTeaser, thirdPoster));
+    Boolean(pageSecond && pageThird) &&
+    (thin(pageSecond, pageSecondTeaser, secondPoster) || thin(pageThird, pageThirdTeaser, thirdPoster));
 
   return (
     <div className="wsj-front">
@@ -1629,43 +1653,43 @@ function FrontPage({
         <div className="wsj-front-main">
           <Story
             className="lead"
-            card={lead}
-            team={teamForCard(teams, lead)}
-            text={copyOf(lead, leadTeaser)}
+            card={pageLead}
+            team={teamForCard(teams, pageLead)}
+            text={copyOf(pageLead, pageLeadTeaser)}
             size="xl"
             cols={2}
             art="top"
             poster={leadPoster}
             drop
-            jump={leadContinue}
+            jump={pageLeadContinue}
             onTurn={onTurn}
           />
-          {second || third ? (
-            <div className={cn("wsj-front-row", stack ? "stack" : second && third ? "two" : "one")}>
-              {second ? (
+          {pageSecond || pageThird ? (
+            <div className={cn("wsj-front-row", stack ? "stack" : pageSecond && pageThird ? "two" : "one")}>
+              {pageSecond ? (
                 <Story
-                  card={second}
-                  team={teamForCard(teams, second)}
-                  text={copyOf(second, secondTeaser)}
+                  card={pageSecond}
+                  team={teamForCard(teams, pageSecond)}
+                  text={copyOf(pageSecond, pageSecondTeaser)}
                   size="lg"
-                  cols={second.photo || secondPoster ? 1 : 2}
+                  cols={pageSecond.photo || secondPoster ? 1 : 2}
                   art={stack ? "side" : "top"}
                   poster={secondPoster}
-                  jump={secondContinue}
+                  jump={pageSecondContinue}
                   onTurn={onTurn}
                   trim={14}
                 />
               ) : null}
-              {third ? (
+              {pageThird ? (
                 <Story
-                  card={third}
-                  team={teamForCard(teams, third)}
-                  text={copyOf(third, thirdTeaser)}
+                  card={pageThird}
+                  team={teamForCard(teams, pageThird)}
+                  text={copyOf(pageThird, pageThirdTeaser)}
                   size="md"
                   cols={stack ? 2 : 1}
                   art={stack ? "side" : "top"}
                   poster={thirdPoster}
-                  jump={thirdContinue}
+                  jump={pageThirdContinue}
                   onTurn={onTurn}
                   trim={24}
                 />
@@ -1677,7 +1701,7 @@ function FrontPage({
       </div>
       {scoutBand}
       <BriefGrid
-        cards={briefs}
+        cards={pageBriefs}
         title="More from your clubs"
         folios={folios}
         here="A1"
@@ -2357,12 +2381,14 @@ function mergeFrontStories(
       const key = favoriteKeyFromCopy(c, page.clubs);
       return key && key !== c.favoriteKey ? { ...c, favoriteKey: key, followed: true } : c;
     });
-  const extras: GameWrapCard[] = (fill?.leftover ?? []).filter((c) => isWrapLead(c) || Boolean(c.favoriteKey));
+  const extras: GameWrapCard[] = frontPageLeftover(filed, fill?.leftover ?? [], 2);
   if (board) {
+    let added = 0;
     for (const g of [...(board.results ?? []), ...(board.prior ?? [])]) {
       const card = stampBoardCard(g, page.clubs);
-      if (!card) continue;
+      if (!card?.favoriteKey) continue;
       extras.push(card);
+      if (++added >= 2) break;
     }
   }
   if (page.path.startsWith("soccer/")) {
@@ -2458,10 +2484,7 @@ function SportSectionFront({
   leagueClubs,
   standings,
   edition,
-  playoffs,
   leaders,
-  heisman,
-  poll,
   leftover,
   snaps,
   coaches,
@@ -2493,9 +2516,9 @@ function SportSectionFront({
   const folios = Object.fromEntries(page.articles.map((a) => [a.card.id, a.folio]));
   const lead = stories[0] ?? null;
   const rest = stories.filter((c) => c !== lead);
-  const underLead = rest.slice(0, cfb || mlb ? 1 : 2);
-  const railSeconds = rest.slice(underLead.length, underLead.length + 2);
-  const more = rest.slice(underLead.length + railSeconds.length, underLead.length + railSeconds.length + 6);
+  const underLead = rest.slice(0, 1);
+  const railSeconds = rest.slice(1, cfb || mlb ? 2 : 3);
+  const more = cfb || mlb ? [] : rest.slice(railSeconds.length + 1, railSeconds.length + 5);
   const leadGame = lead ? gameForCard(lead, recent, page.clubs) : null;
   const recapsFolio = deskFolio(page, "recaps", `${page.section}2`);
   const crestFor = (card: GameWrapCard) =>
@@ -2517,7 +2540,7 @@ function SportSectionFront({
             <Story
               className="lead"
               card={lead}
-              text={splitStoryCopy(cardCopy(lead), 3200).teaser}
+              text={splitStoryCopy(cardCopy(lead), 1100).teaser}
               size="xl"
               cols={1}
               art="top"
@@ -2645,33 +2668,29 @@ function SportSectionFront({
         </div>
       )}
       {more.length ? (
-        <BriefGrid
-          cards={more}
-          title="Also in this section"
-          folios={folios}
-          here={page.folio}
-          onTurn={onTurn}
-          crestFor={crestFor}
-        />
+        <div data-tt-flow="">
+          <BriefGrid
+            cards={more}
+            title="Also in this section"
+            folios={folios}
+            here={page.folio}
+            onTurn={onTurn}
+            crestFor={crestFor}
+          />
+        </div>
       ) : null}
+      {soccer || (mlb && otherScores.length) || (!cfb && !mlb && printableLeaders.length) ? (
       <div className="tt-front-fill">
-        {cfb ? <CfbFill poll={poll} standings={standings} heisman={heisman} /> : null}
-        {mlb && playoffs ? (
-          <section className="tt-front-bracket" aria-label="Playoff bracket">
+        {mlb && otherScores.length ? (
+          <section className="tt-front-rail" aria-label="Other scores" data-tt-flow="">
             <h3 className="wsj-band-title">
-              {playoffs.season} postseason
+              The rest of the postseason
               <button type="button" className="tt-band-link" onClick={() => onTurn(deskFolio(page, "playoffs", `${page.section}2`))}>
                 Bracket, page {deskFolio(page, "playoffs", `${page.section}2`)} →
               </button>
             </h3>
-            <PlayoffBracket tree={playoffs} />
-          </section>
-        ) : null}
-        {mlb && otherScores.length ? (
-          <section className="tt-front-rail" aria-label="Other scores">
-            <h3 className="wsj-band-title">The rest of the postseason</h3>
             <ScoreStrip
-              games={otherScores}
+              games={otherScores.slice(0, 8)}
               onOpen={(g) => {
                 const card = stampBoardCard(g, page.clubs);
                 if (card) open({ card, game: g });
@@ -2682,13 +2701,20 @@ function SportSectionFront({
         {soccer ? (
           <>
             {lead
-              ? tables.map((group) => <StandingsTable key={group.name} group={group} mine={mine} />)
+              ? tables.slice(0, 1).map((group) => <StandingsTable key={group.name} group={group} mine={mine} />)
               : null}
+            {tables.length > 1 ? (
+              <div data-tt-flow="">
+                {tables.slice(1).map((group) => (
+                  <StandingsTable key={group.name} group={group} mine={mine} />
+                ))}
+              </div>
+            ) : null}
             {otherScores.length ? (
-              <section className="tt-front-rail" aria-label="Recent results">
+              <section className="tt-front-rail" aria-label="Recent results" data-tt-flow="">
                 <h3 className="wsj-band-title">Recent results</h3>
                 <ScoreStrip
-                  games={otherScores}
+                  games={otherScores.slice(0, 8)}
                   onOpen={(g) => {
                     const card = stampBoardCard(g, page.clubs);
                     if (card) open({ card, game: g });
@@ -2700,7 +2726,7 @@ function SportSectionFront({
               <section className="tt-front-fixtures" aria-label="Upcoming fixtures">
                 <h3 className="wsj-band-title">Upcoming fixtures</h3>
                 <ul className="tt-fixture-dates">
-                  {fixtures.map((g) => (
+                  {fixtures.slice(0, 8).map((g) => (
                     <li key={g.id}>
                       <time dateTime={g.startIso ?? undefined}>
                         {(g.startIso && formatFixtureWhen(g.startIso)) || g.status}
@@ -2715,8 +2741,8 @@ function SportSectionFront({
             ) : null}
           </>
         ) : null}
-        {!cfb && printableLeaders.length ? (
-          <section className="tt-lleaders tt-front-leaders" aria-label="League leaders">
+        {!cfb && !mlb && printableLeaders.length ? (
+          <section className="tt-lleaders tt-front-leaders" aria-label="League leaders" data-tt-flow="">
             <h3 className="wsj-band-title">Leaders</h3>
             <div className="tt-lleaders-grid">
               {printableLeaders.map((group) => (
@@ -2742,6 +2768,7 @@ function SportSectionFront({
           </section>
         ) : null}
       </div>
+      ) : null}
     </div>
   );
 }
@@ -3192,10 +3219,10 @@ function ScoresDesk({
       {isMlb && !wrapCards.length ? <MlbAgate game={featured} enabled={active} /> : null}
       {[
         { title: collegeSplit?.title ?? "", rows: yesterdayRest, count: collegeSplit?.yesterday.length ?? 0 },
-        { title: "Rest of the week", rows: weekRest, count: weekRest.length },
+        { title: "Rest of the week", rows: weekRest, count: weekRest.length, flow: true },
       ].map((band) =>
         band.rows.length ? (
-          <section className="tt-results" key={band.title}>
+          <section className="tt-results" key={band.title} {...(band.flow ? { "data-tt-flow": "" } : {})}>
             <h3 className="wsj-band-title">
               {band.title} <em>{band.count} {band.count === 1 ? "game" : "games"}</em>
             </h3>
@@ -3219,7 +3246,7 @@ function ScoresDesk({
         ) : null,
       )}
       {rest.length ? (
-        <section className="tt-results">
+        <section className="tt-results" data-tt-flow="">
           <h3 className="wsj-band-title">
             {restTitle} <em>{games.length} {games.length === 1 ? "game" : "games"}</em>
           </h3>
@@ -3245,7 +3272,7 @@ function ScoresDesk({
       ) : null}
       {sparse ? <StarsBand games={games} /> : null}
       {behind.length ? (
-        <section className="tt-strip-wrap">
+        <section className="tt-strip-wrap" data-tt-flow="">
           <h3 className="wsj-band-title">{board?.priorLabel ?? "Last week"} finals</h3>
           <ScoreStrip
             games={behind}
@@ -3257,7 +3284,7 @@ function ScoresDesk({
         </section>
       ) : null}
       {ahead.length ? (
-        <section className="tt-ahead">
+        <section className="tt-ahead" data-tt-flow="">
           <h3 className="wsj-band-title">Up next</h3>
           <div className="tt-matchups" style={{ ["--cols" as string]: String(balancedCols(ahead.length, [3, 2, 4])) }}>
             {ahead.map((g, i) => (
@@ -4613,7 +4640,7 @@ function FolioSlot({
   );
 }
 
-/** Height is dynamic. The sentence fitter packs toward a soft 1480 target; it never hides leftover copy. */
+/** Height is dynamic. Pack toward 1480; hide [data-tt-flow] blocks past 1650. */
 function FittedSheet({ children }: { children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -6415,6 +6442,7 @@ function NewspaperDesk() {
                   second={page.second}
                   third={page.third}
                   briefs={page.briefs}
+                  news={page.news}
                   teams={teams}
                   postseason={wireQ.data?.postseasonLeagues ?? []}
                   tonight={tonight}
@@ -6486,12 +6514,15 @@ function NewspaperDesk() {
                   sheets={sheetsQ.data ?? {}}
                   leaders={leadersQ.data?.[page.path] ?? []}
                   heisman={page.path.includes("college-football") ? heismanQ.data ?? null : null}
-                  leftover={pages.flatMap((p) =>
-                    p.kind === "sport-front" && p.path === page.path
-                      ? p.articles.map((a) => a.card)
-                      : p.kind === "sport-inside" && p.path === page.path
-                        ? [p.primary, p.secondary].filter((c): c is GameWrapCard => Boolean(c))
-                        : [],
+                  leftover={frontPageLeftover(
+                    page.articles.map((a) => a.card),
+                    pages.flatMap((p) =>
+                      p.kind === "sport-front" && p.path === page.path && p.folio !== page.folio
+                        ? p.articles.map((a) => a.card)
+                        : p.kind === "sport-inside" && p.path === page.path
+                          ? [p.primary, p.secondary].filter((c): c is GameWrapCard => Boolean(c))
+                          : [],
+                    ),
                   )}
                   snaps={(teamSnaps.data ?? []).filter((s) => page.clubs.some((c) => c.key === s.key))}
                   onTurn={goFolio}

@@ -1576,7 +1576,9 @@ function sportPages(
     const gameDay = card.when ? instantDay(card.when) : null;
     return Boolean(gameDay && gameDay === newsDay);
   });
-  const FRONT_SHOW = 5;
+  // Three stories fill a ~1480 front with the lead art and score rail.
+  // The rest continue on recaps / news folios (CFB2, CFB3…), not a taller CFB1.
+  const FRONT_SHOW = 3;
   const frontShown = frontPool.slice(0, FRONT_SHOW);
   const shownIds = new Set(frontShown.map((card) => card.id));
   const recapsLeft = recapPool.filter((card) => !shownIds.has(card.id));

@@ -8,6 +8,7 @@ import {
   PAGE_CHROME_PX,
   PAGE_FOOT_SLACK_PX,
   PAGE_INTERNAL_GAP_PX,
+  PAGE_SOFT_CAP_H,
   assertPagesFilled,
   assertPagesFitCanvas,
   estimateA1Height,
@@ -16,7 +17,9 @@ import {
   estimateScheduleHeight,
   estimateScoreGridHeight,
   estimateSportFrontHeight,
+  frontPageLeftover,
   pageExceedsCanvas,
+  pageExceedsSoftCap,
   pageHasBlankBand,
   planSchedulePages,
 } from "./newspaper-page.ts";
@@ -26,9 +29,22 @@ function assert(cond: unknown, msg: string) {
 }
 
 assert(PAGE_CANVAS.width === 1040 && PAGE_CANVAS.height === 1480, "locked canvas is 1040×1480");
+assert(PAGE_SOFT_CAP_H === 1650, "soft cap is 1650 so a wrap is not cut mid-thought");
 assert(PAGE_CANVAS.height / PAGE_CANVAS.width > 1.4 && PAGE_CANVAS.height / PAGE_CANVAS.width < 1.45, "page ratio ~1.42");
 assert(!pageExceedsCanvas(PAGE_CANVAS.height), "the canvas itself fits");
-assert(pageExceedsCanvas(PAGE_CANVAS.height + 1), "one pixel over is a miss");
+assert(pageExceedsCanvas(PAGE_CANVAS.height + 1), "one pixel over the target is a compose miss");
+assert(!pageExceedsSoftCap(1600), "1600 is a modest grow past 1480");
+assert(pageExceedsSoftCap(PAGE_SOFT_CAP_H + 1), "anything past 1650 must start a new folio");
+assert(
+  frontPageLeftover([{ id: "lead" }], [
+    { id: "lead", favoriteKey: "cfb-mizzou" },
+    { id: "a", favoriteKey: "cfb-mizzou" },
+    { id: "b", favoriteKey: "eng-wrexham" },
+    { id: "c", favoriteKey: "mlb-stl" },
+    { id: "wire", favoriteKey: "" },
+  ]).map((c) => c.id).join() === "a,b",
+  "front leftover is unused favorite wraps, max 2",
+);
 
 const week5 = [
   { day: "2026-10-08", id: "tnf" },
@@ -62,6 +78,8 @@ assert(
 const frontH = estimateSportFrontHeight({ railGames: 15, extraStories: 2 });
 assert(frontH <= PAGE_BODY_PX, `NFL1 with a 15-game rail fits (${frontH} <= ${PAGE_BODY_PX})`);
 assert(!pageExceedsCanvas(PAGE_CHROME_PX + frontH), "NFL1 folio stays on the canvas");
+const dumpedFront = PAGE_CHROME_PX + estimateSportFrontHeight({ railGames: 15, extraStories: 18 });
+assert(pageExceedsSoftCap(dumpedFront), "dumping the section's leftover stories overflows 1650 and must paginate");
 
 const a1H = estimateA1Height({ railItems: 2, hasLeadPhoto: true, fillRows: 3 });
 assert(a1H <= PAGE_BODY_PX, `A1 with photo, two rail wraps, and a kickoff fill fits (${a1H} <= ${PAGE_BODY_PX})`);

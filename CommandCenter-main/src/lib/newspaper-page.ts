@@ -1,8 +1,30 @@
 /**
- * Locked Times broadsheet. Every folio is this canvas — never taller,
- * never padded out with empty columns. Overflow is cut, not scrolled.
+ * Locked Times broadsheet. Compose each folio to this canvas (~1480 tall).
+ * A page may grow modestly to PAGE_SOFT_CAP_H only to keep a story intact.
+ * Anything past that continues on the next folio in the same section
+ * (CFB1 → CFB2 → CFB3), not on a taller sheet.
  */
 export const PAGE_CANVAS = { width: 1040, height: 1480 } as const;
+
+/** Soft grow past the canvas so a wrap is not cut mid-thought. */
+export const PAGE_SOFT_CAP_H = 1650;
+
+/** Favorite wraps that may fill a section front. The rest stay on later folios. */
+export function frontPageLeftover<T extends { id: string; favoriteKey?: string | null }>(
+  onFront: { id: string }[],
+  pool: T[],
+  max = 2,
+): T[] {
+  const seen = new Set(onFront.map((card) => card.id));
+  const out: T[] = [];
+  for (const card of pool) {
+    if (seen.has(card.id) || !card.favoriteKey) continue;
+    seen.add(card.id);
+    out.push(card);
+    if (out.length >= max) break;
+  }
+  return out;
+}
 
 /** Masthead + folio + sheet padding reserved on every page. */
 export const PAGE_CHROME_PX = 188;
@@ -62,6 +84,10 @@ export function planSchedulePages<T extends { day: string }>(games: T[]): T[][] 
 
 export function pageExceedsCanvas(heightPx: number): boolean {
   return heightPx > PAGE_CANVAS.height;
+}
+
+export function pageExceedsSoftCap(heightPx: number): boolean {
+  return heightPx > PAGE_SOFT_CAP_H;
 }
 
 /** Sport-front budget: lead + rail of `n` week games in two columns. */

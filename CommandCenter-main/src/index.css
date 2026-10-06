@@ -3106,8 +3106,10 @@ li.counting .tt-count.card {
 .wsj-filler {
   background: var(--w-paper) !important;
   box-shadow: none !important;
+  grid-column: span var(--tt-fill-span, 1);
 }
-.wsj-filler button {
+.wsj-filler button,
+.wsj-filler-static {
   all: unset;
   box-sizing: border-box;
   cursor: pointer;
@@ -3120,6 +3122,9 @@ li.counting .tt-count.card {
   padding: 10px 14px;
   background:
     repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in srgb, var(--w-ink) 4%, transparent) 6px 7px);
+}
+.wsj-filler-static {
+  cursor: default;
 }
 .wsj-filler strong {
   font-family: var(--w-head);
@@ -7947,7 +7952,7 @@ li.counting .tt-count.card {
   flex-direction: unset;
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
 }
-.newspaper-root .wsj-filler { grid-column: auto; }
+.newspaper-root .wsj-filler { grid-column: span var(--tt-fill-span, 1); }
 .newspaper-root .wsj-filler button {
   flex-direction: column;
   align-items: stretch;
@@ -8726,7 +8731,7 @@ li.counting .tt-count.card {
 .tt-front-fill {
   display: flex;
   flex-direction: column;
-  flex: 1 0 auto;
+  flex: 0 0 auto;
   gap: 14px;
 }
 .tt-front-bracket {

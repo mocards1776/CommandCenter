@@ -1575,8 +1575,8 @@ assert(
   "the Chiefs recap still runs in Section A",
 );
 assert(
-  firstNfl?.kind === "sport-front" && firstNfl.articles.some((a) => a.card.id === "wire-nfl-ind-lead"),
-  "Sunday's other wrap still sits on the NFL front or is consumed into recaps",
+  firstNfl?.kind === "sport-front" && firstNfl.articles.length <= 3,
+  "the section front holds three stories; overflow continues on later folios",
 );
 assert(
   recapsFirst.pages.some(
@@ -1585,7 +1585,7 @@ assert(
       p.section === "NFL" &&
       p.articles.some((a) => a.card.id === "wire-nfl-ind-lead"),
   ),
-  "the rest of Sunday's wraps still run",
+  "Sunday's other wrap still sits on the NFL front or is consumed into recaps",
 );
 assert(
   !JSON.stringify(recapsFirst.pages.filter((p) => p.section === "NFL")).includes("league-highlights"),
