@@ -166,6 +166,9 @@ export type FavoritesClubsPage = PageBase & {
   kind: "favorites-clubs";
   /** A2 is today's weather; the next folio is the outlook plus the clubs desk. */
   weatherPart?: "today" | "outlook";
+  /** Slice of the clubs grid so A2 can fill without reprinting every card. */
+  clubOffset?: number;
+  clubLimit?: number;
 };
 
 /** Deep club form pages that pad Section A to the minimum page count. */
@@ -1495,6 +1498,8 @@ function favoritePages(
     sectionPage: 2,
     sectionCount: 0,
     weatherPart: "today",
+    clubOffset: 0,
+    clubLimit: 3,
   };
 
   const weatherOutlook: FavoritesClubsPage = {
@@ -1505,6 +1510,8 @@ function favoritePages(
     sectionPage: 3,
     sectionCount: 0,
     weatherPart: "outlook",
+    clubOffset: 3,
+    clubLimit: 99,
   };
 
   const pages: (

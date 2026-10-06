@@ -104,6 +104,7 @@ assert(
 );
 assert(planStandingsPages(2, STAND_TABLES_PER_PAGE_PRO).length === 1, "two pro tables stay on one folio");
 assert(planNewsPages(9).length === 3, "nine leftover news stories become three folios");
+assert(planNewsPages(6).length === 2, "six leftover news stories become two folios");
 assert(planNewsPages(0)[0]?.count === 0, "an empty news desk still has a placeholder slice");
 
 const a1H = estimateA1Height({ railItems: 2, hasLeadPhoto: true, fillRows: 3 });

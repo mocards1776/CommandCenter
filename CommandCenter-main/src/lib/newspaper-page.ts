@@ -91,7 +91,7 @@ export const STAND_TABLES_PER_PAGE_COLLEGE = 3;
 /** Pro divisions are shorter; four tables still sit under the soft cap. */
 export const STAND_TABLES_PER_PAGE_PRO = 4;
 /** League-news stories per folio after the section front. */
-export const NEWS_STORIES_PER_PAGE = 4;
+export const NEWS_STORIES_PER_PAGE = 3;
 
 export function estimateStandingsHeight(groups: { rows: unknown[] }[]): number {
   let h = 36;

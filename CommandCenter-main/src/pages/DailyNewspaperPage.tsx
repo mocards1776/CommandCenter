@@ -1779,10 +1779,19 @@ function TurnBar({
 
 /* ───────────────────────── clubs desk ───────────────────────── */
 
-function ClubsDesk({ teams }: { teams: TeamInfobox[] }) {
+function ClubsDesk({
+  teams,
+  offset = 0,
+  limit,
+}: {
+  teams: TeamInfobox[];
+  offset?: number;
+  limit?: number;
+}) {
   const openers = useContext(OpenerContext);
-  const active = teams.filter((t) => !clubIsOffseason(t, openers.get(t.fav.key)));
-  const shelved = teams.filter((t) => clubIsOffseason(t, openers.get(t.fav.key)));
+  const allActive = teams.filter((t) => !clubIsOffseason(t, openers.get(t.fav.key)));
+  const active = allActive.slice(offset, limit != null ? offset + limit : undefined);
+  const shelved = offset > 0 ? [] : teams.filter((t) => clubIsOffseason(t, openers.get(t.fav.key)));
   const cols = balancedCols(active.length, [5, 4, 3, 6, 2]);
   return (
     <div className="wsj-clubs-desk">
@@ -1795,7 +1804,7 @@ function ClubsDesk({ teams }: { teams: TeamInfobox[] }) {
       </header>
       {active.length ? (
         <ul className="wsj-clubs-grid" style={{ ["--cols" as string]: String(cols) }}>
-          {active.map((t) => {
+          {active.map((t, i) => {
             const slate = (t.detail?.upcoming ?? []).slice(0, 4);
             const table = tableWindow(
               (t.detail?.division ?? []).map((row) => ({
@@ -1808,7 +1817,7 @@ function ClubsDesk({ teams }: { teams: TeamInfobox[] }) {
             );
             const leaders = teamLeaders(t).slice(0, 3);
             return (
-              <li key={t.fav.key}>
+              <li key={t.fav.key} {...(i > 0 ? { "data-tt-flow": "" } : {})}>
                 <ExternalOrLink href={t.href} className="wsj-club-card wsj-a" style={tint(teamColor(t))}>
                   <header className="wsj-club-card-head">
                     <span className="wsj-disc">
@@ -2857,7 +2866,7 @@ function SportNewsDesk({
   const gameById = new Map<string, BoxGame>();
   // Recaps of games your clubs played run in Section A; the league desk takes the rest.
   const newsContinue = (page.newsSlice?.offset ?? 0) > 0;
-  const recapCards = newsContinue
+  const recapCards = newsContinue || page.path === "baseball/mlb"
     ? []
     : recent
     .filter((g) => !involvesClub(g, page.clubs))
@@ -2888,8 +2897,8 @@ function SportNewsDesk({
   const folios = Object.fromEntries(page.articles.map((a) => [a.card.id, a.folio]));
   const withArt = stories.filter((c) => c.photo);
   const lead = withArt[0] ?? stories[0] ?? null;
-  const seconds = stories.filter((c) => c !== lead && c.photo).slice(0, 2);
-  const briefs = stories.filter((c) => c !== lead && !seconds.includes(c)).slice(0, newsContinue ? 6 : 4);
+  const seconds = stories.filter((c) => c !== lead && c.photo).slice(0, newsContinue ? 2 : 1);
+  const briefs = stories.filter((c) => c !== lead && !seconds.includes(c)).slice(0, newsContinue ? 4 : 3);
   const crestFor = (card: GameWrapCard) =>
     leagueClubs.find((c) => c.short && card.teamName?.toLowerCase().includes(c.short.toLowerCase()))?.logo ?? null;
 
@@ -2932,7 +2941,7 @@ function SportNewsDesk({
             onTurn={onTurn}
           />
           {seconds.length ? (
-            <div className="wsj-sport-seconds">
+            <div className="wsj-sport-seconds" data-tt-flow="">
               {seconds.map((card, i) => (
                 <Story
                   key={card.id}
@@ -6542,7 +6551,11 @@ function NewspaperDesk() {
                     weather={weatherQ.data}
                     part={page.weatherPart === "outlook" ? "outlook" : page.weatherPart === "today" ? "today" : "all"}
                   />
-                  {page.weatherPart !== "today" ? <ClubsDesk teams={teams} /> : null}
+                  <ClubsDesk
+                    teams={teams}
+                    offset={page.clubOffset ?? (page.weatherPart === "today" ? 0 : 3)}
+                    limit={page.clubLimit ?? (page.weatherPart === "today" ? 3 : 99)}
+                  />
                 </>
               ) : page.kind === "favorites-form" ? (
                 <div className="wsj-clubs-desk">
