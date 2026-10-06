@@ -122,6 +122,7 @@ import { fileExtracts, gatherStories, sportPathsOf, urlsToExtract } from "@/lib/
 import {
   ISSUE_VERSION,
   listLocalIssues,
+  readCacheUserId,
   readLocalIssue,
   writeLocalIssue,
   type PrintedIssue,
@@ -130,10 +131,30 @@ import {
   askRemoteEditor,
   listRecentIssues,
   readRemoteIssue,
+  readRemoteIssueShell,
+  readRemoteQueries,
   readRemoteStories,
+  subscribeReadyIssues,
   writeDesk,
   writeRemoteIssue,
 } from "@/lib/newspaper-issue-remote";
+import {
+  heavyDesksForPage,
+  heavyDesksForReader,
+  isHeavyDesk,
+  mergeQueries,
+  queryDeskName,
+  splitQueries,
+} from "@/lib/newspaper-payload";
+import {
+  cacheTimesShell,
+  collectEditionImageUrls,
+  prefetchEditionImages,
+  prefetchFiledEdition,
+  postTimesPrecache,
+  registerTimesWorker,
+  timesShellUrlsFromPerformance,
+} from "@/lib/newspaper-offline";
 import {
   backEditionNote,
   editionPickerLabel,
@@ -143,6 +164,7 @@ import {
 } from "@/lib/newspaper-editions";
 import {
   COMPANION_WAIT_MS,
+  ISSUE_POLL_MS,
   ISSUE_WAIT_MS,
   queryNamed,
   waitForPrintedReveal,
@@ -4492,17 +4514,23 @@ function NewspaperDesk() {
         ]),
       );
     })();
-    const pulse = window.setInterval(() => {
+    const refresh = () => {
+      if (document.visibilityState === "hidden") return;
       void listRecentIssues()
         .then((rows) => {
           if (rows.length) setRecent(rows);
         })
         .catch(() => {});
-    }, 60_000);
+    };
+    const pulse = window.setInterval(refresh, ISSUE_POLL_MS);
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("focus", refresh);
     return () => {
       cancel = true;
       window.clearTimeout(fallback);
       window.clearInterval(pulse);
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("focus", refresh);
     };
   }, []);
 
@@ -4541,10 +4569,34 @@ function NewspaperDesk() {
     [viewId, params, setParams, latestId],
   );
 
-  // One complete file (stories + desks + companions), never stories first then desks.
+  // Stories and light desks first so A1 can print. Heavy desks (wrap bodies,
+  // raw board, league news) arrive after first paint or when a folio / reader asks.
   const loadedRef = useRef<string | null>(null);
   const latestRef = useRef(latestId);
   latestRef.current = latestId;
+  const pendingHeavyRef = useRef<PrintedIssue["queries"]>([]);
+  const cacheUser = user?.id ?? readCacheUserId();
+  const seedQueries = useCallback(
+    (queries: PrintedIssue["queries"], mode: "light" | "all") => {
+      const { light, heavy } = splitQueries(queries);
+      for (const q of mode === "all" ? queries : light) queryClient.setQueryData(q.key, q.data);
+      pendingHeavyRef.current = mode === "all" ? [] : heavy;
+    },
+    [queryClient],
+  );
+  const releaseHeavy = useCallback(
+    (names?: string[]) => {
+      const keep: PrintedIssue["queries"] = [];
+      for (const q of pendingHeavyRef.current) {
+        const name = queryDeskName(q);
+        if (!names || (name && names.includes(name))) queryClient.setQueryData(q.key, q.data);
+        else keep.push(q);
+      }
+      pendingHeavyRef.current = keep;
+    },
+    [queryClient],
+  );
+
   useEffect(() => {
     if (loadedRef.current === pressId) return;
     let cancel = false;
@@ -4559,8 +4611,9 @@ function NewspaperDesk() {
       const apply = (
         issue: PrintedIssue,
         extra: { dayAhead: DaySchedule | null; national: NationalDesk | null; beez: BeezDesk | null },
+        desks: "light" | "all",
       ) => {
-        for (const q of issue.queries) queryClient.setQueryData(q.key, q.data);
+        seedQueries(issue.queries, desks);
         const date = scheduleDateFor(issue.id);
         if (date) queryClient.setQueryData(["tt-day-ahead", date], extra.dayAhead);
         queryClient.setQueryData([issue.id, "tt-national"], extra.national);
@@ -4575,7 +4628,8 @@ function NewspaperDesk() {
         });
         setDocPhase("document");
         loadedRef.current = issue.id;
-        void writeLocalIssue({ ...issue, companions: extra });
+        void writeLocalIssue({ ...issue, companions: extra }, cacheUser);
+        void prefetchEditionImages(collectEditionImageUrls({ ...issue, companions: extra }));
       };
 
       const loadCompanions = (cached?: {
@@ -4595,33 +4649,9 @@ function NewspaperDesk() {
         ] as const);
       };
 
-      const local = await withDeadline(readLocalIssue(pressId).catch(() => null), COMPANION_WAIT_MS, null);
-      if (cancel) return;
-      if (local?.id === pressId) {
-        const cachedDay = asStoredSchedule(local.companions?.dayAhead);
-        const cachedNat = asStoredNational(local.companions?.national);
-        const cachedBeez = asStoredBeez(local.companions?.beez);
-        const [dayAhead, national, beez] = await loadCompanions({
-          dayAhead: cachedDay,
-          national: cachedNat,
-          beez: cachedBeez,
-        });
-        if (cancel) return;
-        apply(local, {
-          dayAhead: cachedDay ?? dayAhead,
-          national: cachedNat ?? national,
-          beez: cachedBeez ?? beez,
-        });
-        return;
-      }
-
-      const remote = await withDeadline(readRemoteIssue(pressId).catch(() => null), ISSUE_WAIT_MS, null);
-      if (cancel) return;
-      if (remote?.id === pressId && isIssueWithinLookback(remote)) {
-        const [dayAhead, national, beez] = await loadCompanions();
-        if (cancel) return;
+      const attachLiveDesks = async (issue: PrintedIssue) => {
         const isLatest = latestRef.current === pressId;
-        let queries = remote.queries;
+        let queries = issue.queries;
         if (isLatest && queryNamed(queries, "tt-weather-marshfield") == null) {
           const wx = await withDeadline(fetchMarshfieldWeather().catch(() => null), COMPANION_WAIT_MS, null);
           if (wx) queries = [...queries, { key: [pressId, "tt-weather-marshfield"], data: wx }];
@@ -4634,8 +4664,84 @@ function NewspaperDesk() {
           );
           queries = [...queries, { key: [pressId, "tt-watch", day], data: watch }];
         }
+        return { ...issue, queries };
+      };
+
+      const finishDesks = (issue: PrintedIssue, extra: { dayAhead: DaySchedule | null; national: NationalDesk | null; beez: BeezDesk | null }) => {
+        seedQueries(issue.queries, "light");
+        void writeLocalIssue({ ...issue, companions: extra }, cacheUser);
+        void prefetchEditionImages(collectEditionImageUrls({ ...issue, companions: extra }));
+        const idle = window.requestIdleCallback?.bind(window);
+        const run = () => {
+          if (!cancel) seedQueries(issue.queries, "all");
+        };
+        if (idle) idle(run, { timeout: 4_000 });
+        else window.setTimeout(run, 800);
+      };
+
+      const local = await withDeadline(readLocalIssue(pressId, cacheUser).catch(() => null), COMPANION_WAIT_MS, null);
+      if (cancel) return;
+      if (local?.id === pressId) {
+        const cachedDay = asStoredSchedule(local.companions?.dayAhead);
+        const cachedNat = asStoredNational(local.companions?.national);
+        const cachedBeez = asStoredBeez(local.companions?.beez);
+        apply(
+          local,
+          {
+            dayAhead: cachedDay,
+            national: cachedNat,
+            beez: cachedBeez,
+          },
+          "all",
+        );
+        void loadCompanions({
+          dayAhead: cachedDay,
+          national: cachedNat,
+          beez: cachedBeez,
+        }).then(([dayAhead, national, beez]) => {
+          if (cancel) return;
+          setCompanions((prev) =>
+            prev?.id === pressId
+              ? {
+                  ...prev,
+                  dayAhead: cachedDay ?? dayAhead,
+                  national: cachedNat ?? national,
+                  beez: cachedBeez ?? beez,
+                }
+              : prev,
+          );
+        });
+        const missingHeavy = !local.queries.some((q) => isHeavyDesk(queryDeskName(q)));
+        if (missingHeavy) {
+          void readRemoteQueries(pressId)
+            .then(async (queries) => {
+              if (cancel || !queries) return;
+              const filled = await attachLiveDesks({ ...local, queries: mergeQueries(local.queries, queries) });
+              if (cancel) return;
+              finishDesks(filled, {
+                dayAhead: cachedDay,
+                national: cachedNat,
+                beez: cachedBeez,
+              });
+            })
+            .catch(() => {});
+        }
+        return;
+      }
+
+      const queriesP = readRemoteQueries(pressId).catch(() => null);
+      const shell = await withDeadline(readRemoteIssueShell(pressId).catch(() => null), ISSUE_WAIT_MS, null);
+      if (cancel) return;
+      if (shell?.id === pressId && isIssueWithinLookback(shell)) {
+        const [dayAhead, national, beez] = await loadCompanions();
         if (cancel) return;
-        apply({ ...remote, queries }, { dayAhead, national, beez });
+        apply(shell, { dayAhead, national, beez }, "light");
+        void queriesP.then(async (queries) => {
+          if (cancel || !queries) return;
+          const filled = await attachLiveDesks({ ...shell, queries: mergeQueries(shell.queries, queries) });
+          if (cancel) return;
+          finishDesks(filled, { dayAhead, national, beez });
+        });
         return;
       }
 
@@ -4645,7 +4751,48 @@ function NewspaperDesk() {
       cancel = true;
       window.clearTimeout(bootEscape);
     };
-  }, [pressId, queryClient, day, clockPress.id, teamFavs]);
+  }, [pressId, queryClient, day, clockPress.id, teamFavs, cacheUser, seedQueries]);
+
+  useEffect(() => {
+    void registerTimesWorker().then(async () => {
+      const urls = timesShellUrlsFromPerformance();
+      await cacheTimesShell(urls);
+      await postTimesPrecache(urls);
+    });
+  }, []);
+
+  useEffect(() => {
+    const onNeed = (event: Event) => {
+      const names = (event as CustomEvent<string[]>).detail;
+      if (Array.isArray(names) && names.length) releaseHeavy(names);
+      else releaseHeavy(heavyDesksForReader());
+    };
+    window.addEventListener("tt-need-desks", onNeed);
+    return () => window.removeEventListener("tt-need-desks", onNeed);
+  }, [releaseHeavy]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const onReady = (row: FiledIssueMeta) => {
+      setRecent((prev) => filterRecentFiledIssues([row, ...(prev ?? [])]));
+      void prefetchFiledEdition(row.id, user.id);
+    };
+    const stop = subscribeReadyIssues(onReady);
+    return () => stop();
+  }, [user?.id]);
+
+  useEffect(() => {
+    const newest = recent?.[0]?.id;
+    if (!newest || newest === viewId) return;
+    let cancel = false;
+    void prefetchFiledEdition(newest, cacheUser).then((issue) => {
+      if (cancel || !issue) return;
+      if (!askedEdition) selectEdition(newest);
+    });
+    return () => {
+      cancel = true;
+    };
+  }, [recent, viewId, askedEdition, cacheUser, selectEdition]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -5602,7 +5749,7 @@ function NewspaperDesk() {
         beez: beezQ.data ?? companions?.beez ?? null,
       },
     };
-    void writeLocalIssue(issue);
+    void writeLocalIssue(issue, cacheUser);
     void writeRemoteIssue(issue);
   }, [
     pressing,
@@ -5694,6 +5841,11 @@ function NewspaperDesk() {
     [clubs, teams],
   );
   const pages = edition.pages;
+  useEffect(() => {
+    const page = pages[pageIndex];
+    const names = heavyDesksForPage(page);
+    if (names.length) releaseHeavy(names);
+  }, [pageIndex, pages, releaseHeavy]);
   const weatherFolio = useMemo(() => pages.find((p) => p.kind === "favorites-clubs")?.folio ?? null, [pages]);
   // A club's numbers print once in Section A — on the first story page it owns.
   const notebookByFolio = useMemo(() => {

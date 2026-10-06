@@ -48,8 +48,29 @@ function nhlApiDevProxy(): Plugin {
   };
 }
 
+function timesPrecache(): Plugin {
+  return {
+    name: "times-precache",
+    generateBundle(_, bundle) {
+      const files = Object.values(bundle).flatMap((item) => {
+        const name = item.fileName;
+        if (!name) return [];
+        const keep =
+          name.endsWith(".css") ||
+          /(?:^|\/)(?:index|vendor|DailyNewspaper|newspaper|TimesHold)/i.test(name);
+        return keep ? [`/${name}`] : [];
+      });
+      this.emitFile({
+        type: "asset",
+        fileName: "times-precache.json",
+        source: JSON.stringify({ files: [...new Set(files)], generatedAt: new Date().toISOString() }),
+      });
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [tailwindcss(), react(), nhlApiDevProxy()],
+  plugins: [tailwindcss(), react(), nhlApiDevProxy(), timesPrecache()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
@@ -65,6 +86,24 @@ export default defineConfig({
   },
   build: {
     cssMinify: "esbuild",
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return;
+          if (
+            id.includes("node_modules/react-dom") ||
+            id.includes("node_modules/react/") ||
+            id.includes("node_modules/scheduler")
+          ) {
+            return "vendor-react";
+          }
+          if (id.includes("node_modules/react-router")) return "vendor-router";
+          if (id.includes("node_modules/@supabase")) return "vendor-supabase";
+          if (id.includes("node_modules/@tanstack")) return "vendor-query";
+          return "vendor";
+        },
+      },
+    },
   },
   server: {
     port: 5173,

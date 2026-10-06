@@ -72,6 +72,9 @@ function PaperReader({ story, onClose }: { story: ReaderStory; onClose: () => vo
   const { card, game } = story;
   const queryClient = useQueryClient();
   const sheetRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("tt-need-desks", { detail: ["tt-wrap-bodies", "tt-board"] }));
+  }, [card.id]);
   const source = httpUrl(card.wrapHref) ?? httpUrl(game?.recap?.url) ?? httpUrl(card.gameHref);
   const espnEvent = espnEventOf(story);
   const path = game?.path ?? card.leaguePath;

@@ -2,6 +2,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 import { AuthContext, type AuthState } from "./auth-context";
+import { readCacheUserId, writeCacheUserId } from "./newspaper-issue";
+import { clearTimesOffline } from "./newspaper-offline";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
@@ -11,11 +13,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // getSession() resolves from storage first so a refresh doesn't flash the
     // login screen; onAuthStateChange then keeps it current.
     supabase.auth.getSession().then(({ data }) => {
+      writeCacheUserId(data.session?.user?.id ?? null);
       setSession(data.session);
       setLoading(false);
     });
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
+      writeCacheUserId(next?.user?.id ?? null);
       setSession(next);
       setLoading(false);
     });
@@ -45,6 +49,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
 
     async signOut() {
+      const userId = session?.user?.id ?? readCacheUserId();
+      await clearTimesOffline(userId);
+      writeCacheUserId(null);
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
     },

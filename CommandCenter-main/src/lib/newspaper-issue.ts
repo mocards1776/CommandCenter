@@ -1,11 +1,14 @@
 /**
  * A printed edition is a document: the stories and the desks, saved together
  * so opening the Times shows that issue instead of setting it again.
+ *
+ * Cached files are per signed-in user. Sign-out clears that user's copies.
  */
 
 import { isIssueWithinLookback } from "./newspaper-editions.ts";
 
 export const ISSUE_VERSION = 1;
+export const CACHE_USER_KEY = "tt-cache-user";
 
 export type PrintedQuery = {
   key: unknown[];
@@ -28,6 +31,7 @@ export type PrintedIssue = {
 };
 
 const DB_NAME = "thompson-times";
+const DB_VERSION = 2;
 const STORE = "issues";
 
 function isQuery(value: unknown): value is PrintedQuery {
@@ -93,12 +97,46 @@ export function retainCachedIssues<T extends { id: string; printedAt?: string }>
   return rows.filter((row) => row.id === keepId || isIssueWithinLookback(row, now));
 }
 
+export function readCacheUserId(): string | null {
+  if (typeof localStorage === "undefined") return null;
+  try {
+    const id = localStorage.getItem(CACHE_USER_KEY);
+    return id && id.trim() ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeCacheUserId(userId: string | null): void {
+  if (typeof localStorage === "undefined") return;
+  try {
+    if (userId) localStorage.setItem(CACHE_USER_KEY, userId);
+    else localStorage.removeItem(CACHE_USER_KEY);
+  } catch {
+    /* private mode */
+  }
+}
+
+/** IndexedDB key: user + press id. A tab is not a valid user or press character. */
+export function issueCacheKey(userId: string, id: string): string {
+  return `${userId}\t${id}`;
+}
+
+export function issueCacheOwner(key: string): string | null {
+  const i = key.indexOf("\t");
+  return i > 0 ? key.slice(0, i) : null;
+}
+
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = () => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = (event) => {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
+      // v1 keys were bare press ids (any profile on the iPad). Drop them.
+      if (event.oldVersion < 2) {
+        req.transaction?.objectStore(STORE).clear();
+      }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -114,13 +152,19 @@ function rowAsIssue(id: string, row: unknown): PrintedIssue | null {
   });
 }
 
-export async function readLocalIssue(id: string): Promise<PrintedIssue | null> {
+function resolveUser(userId?: string | null): string | null {
+  return userId || readCacheUserId();
+}
+
+export async function readLocalIssue(id: string, userId?: string | null): Promise<PrintedIssue | null> {
   if (typeof indexedDB === "undefined") return null;
+  const owner = resolveUser(userId);
+  if (!owner) return null;
   try {
     const db = await openDb();
     const row = await new Promise<unknown>((resolve, reject) => {
       const tx = db.transaction(STORE, "readonly");
-      const req = tx.objectStore(STORE).get(id);
+      const req = tx.objectStore(STORE).get(issueCacheKey(owner, id));
       req.onsuccess = () => resolve(req.result ?? null);
       req.onerror = () => reject(req.error);
     });
@@ -132,21 +176,30 @@ export async function readLocalIssue(id: string): Promise<PrintedIssue | null> {
   }
 }
 
-/** Every locally cached issue that is still a valid press file. */
-export async function listLocalIssues(): Promise<PrintedIssue[]> {
+/** Every locally cached issue for this user that is still a valid press file. */
+export async function listLocalIssues(userId?: string | null): Promise<PrintedIssue[]> {
   if (typeof indexedDB === "undefined") return [];
+  const owner = resolveUser(userId);
+  if (!owner) return [];
   try {
     const db = await openDb();
-    const rows = await new Promise<unknown[]>((resolve, reject) => {
+    const rows = await new Promise<{ key: IDBValidKey; value: unknown }[]>((resolve, reject) => {
+      const out: { key: IDBValidKey; value: unknown }[] = [];
       const tx = db.transaction(STORE, "readonly");
-      const req = tx.objectStore(STORE).getAll();
-      req.onsuccess = () => resolve((req.result as unknown[]) ?? []);
+      const req = tx.objectStore(STORE).openCursor();
+      req.onsuccess = () => {
+        const cursor = req.result;
+        if (!cursor) return resolve(out);
+        out.push({ key: cursor.key, value: cursor.value });
+        cursor.continue();
+      };
       req.onerror = () => reject(req.error);
     });
     db.close();
-    return rows.flatMap((row) => {
-      if (!row || typeof row !== "object") return [];
-      const raw = row as PrintedIssue;
+    return rows.flatMap(({ key, value }) => {
+      if (typeof key !== "string" || issueCacheOwner(key) !== owner) return [];
+      if (!value || typeof value !== "object") return [];
+      const raw = value as PrintedIssue;
       const issue = rowAsIssue(raw.id, raw);
       return issue ? [issue] : [];
     });
@@ -155,23 +208,71 @@ export async function listLocalIssues(): Promise<PrintedIssue[]> {
   }
 }
 
-export async function writeLocalIssue(issue: PrintedIssue): Promise<void> {
+export async function writeLocalIssue(issue: PrintedIssue, userId?: string | null): Promise<void> {
   if (typeof indexedDB === "undefined") return;
+  const owner = resolveUser(userId);
+  if (!owner) return;
   const slim = slimIssue(issue);
   const db = await openDb();
   await new Promise<void>((resolve, reject) => {
     const tx = db.transaction(STORE, "readwrite");
     const store = tx.objectStore(STORE);
-    store.put(slim, slim.id);
-    const all = store.getAll();
-    all.onsuccess = () => {
-      const kept = new Set(retainCachedIssues((all.result as PrintedIssue[]) ?? [], slim.id).map((row) => row.id));
-      for (const row of (all.result as PrintedIssue[]) ?? []) {
-        if (row?.id && !kept.has(row.id)) store.delete(row.id);
+    store.put(slim, issueCacheKey(owner, slim.id));
+    const cursor = store.openCursor();
+    const mine: PrintedIssue[] = [];
+    const keys: { key: IDBValidKey; id: string }[] = [];
+    cursor.onsuccess = () => {
+      const row = cursor.result;
+      if (!row) {
+        const kept = new Set(retainCachedIssues(mine, slim.id).map((item) => item.id));
+        for (const item of keys) {
+          if (!kept.has(item.id)) store.delete(item.key);
+        }
+        return;
       }
+      if (typeof row.key === "string" && issueCacheOwner(row.key) === owner) {
+        const value = row.value as PrintedIssue | undefined;
+        if (value?.id) {
+          mine.push(value);
+          keys.push({ key: row.key, id: value.id });
+        }
+      }
+      row.continue();
     };
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
   db.close();
+}
+
+/** Drop one user's cached editions, or every Times file when `userId` is omitted. */
+export async function clearLocalIssues(userId?: string | null): Promise<void> {
+  if (typeof indexedDB === "undefined") return;
+  try {
+    const db = await openDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE, "readwrite");
+      const store = tx.objectStore(STORE);
+      if (!userId) {
+        store.clear();
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+        return;
+      }
+      const req = store.openCursor();
+      req.onsuccess = () => {
+        const cursor = req.result;
+        if (!cursor) return;
+        if (typeof cursor.key === "string" && issueCacheOwner(cursor.key) === userId) {
+          cursor.delete();
+        }
+        cursor.continue();
+      };
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch {
+    /* private mode */
+  }
 }

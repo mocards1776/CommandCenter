@@ -7,55 +7,64 @@ import { useAuth } from "@/lib/auth-context";
 import { CelebrationProvider } from "@/components/Celebration";
 import AppShell from "@/components/layout/AppShell";
 import LoginPage from "@/pages/LoginPage";
-import DashboardPage from "@/pages/DashboardPage";
-import TodosPage from "@/pages/TodosPage";
-import HabitsPage from "@/pages/HabitsPage";
-import ReadingPage from "@/pages/ReadingPage";
-import FinancePage from "@/pages/FinancePage";
-import SportsPage from "@/pages/SportsPage";
-import MlbPage from "@/pages/MlbPage";
-import RuwtPage from "@/pages/RuwtPage";
-import CardinalsProspectsPage from "@/pages/CardinalsProspectsPage";
-import TagPlayersPage from "@/pages/TagPlayersPage";
-import MlbPlayerPage from "@/pages/MlbPlayerPage";
-import MlbGamePage from "@/pages/MlbGamePage";
-import MlbManagersPage from "@/pages/MlbManagersPage";
-import MlbManagerPage from "@/pages/MlbManagerPage";
-import HotSeatPage from "@/pages/HotSeatPage";
-import CfbPlayerPage from "@/pages/CfbPlayerPage";
-import CfbPage from "@/pages/CfbPage";
-import CfbGamePage from "@/pages/CfbGamePage";
-import CfbTeamPage from "@/pages/CfbTeamPage";
-import CfbCoachPage from "@/pages/CfbCoachPage";
-import GolferPage from "@/pages/GolferPage";
-import NflPage from "@/pages/NflPage";
-import NflGamePage from "@/pages/NflGamePage";
-import NflPlayerPage from "@/pages/NflPlayerPage";
-import NflTeamPage from "@/pages/NflTeamPage";
-import NflCoachPage from "@/pages/NflCoachPage";
-import NhlPage from "@/pages/NhlPage";
-import NhlGamePage from "@/pages/NhlGamePage";
-import NhlPlayerPage from "@/pages/NhlPlayerPage";
-import NhlTeamPage from "@/pages/NhlTeamPage";
-import NhlCoachPage from "@/pages/NhlCoachPage";
-import SoccerGamePage from "@/pages/SoccerGamePage";
-import HeatAlertPreviewPage from "@/pages/HeatAlertPreviewPage";
-import FieldDrivePreviewPage from "@/pages/FieldDrivePreviewPage";
-import MlbPbpPreviewPage from "@/pages/MlbPbpPreviewPage";
-import NewspaperWatchPreviewPage from "@/pages/NewspaperWatchPreviewPage";
-import NewspaperA1PreviewPage from "@/pages/NewspaperA1PreviewPage";
-import NewspaperSportPreviewPage from "@/pages/NewspaperSportPreviewPage";
-import NewspaperTimesPreviewPage from "@/pages/NewspaperTimesPreviewPage";
-import NewspaperCoachesPreviewPage from "@/pages/NewspaperCoachesPreviewPage";
-const RssPage = lazy(() => import("@/pages/RssPage"));
-import PublicStoryPage from "@/pages/PublicStoryPage";
-import BuenaVistaNotebookPage from "@/pages/BuenaVistaNotebookPage";
-import DailyNewspaperPage from "@/pages/DailyNewspaperPage";
 import { TimesHoldShell } from "@/components/newspaper/TimesHold";
-const NewspaperPhoneCardPage = lazy(() => import("@/pages/NewspaperPhoneCardPage"));
 import { homePath, markReadingSolo, safeNextPath } from "@/lib/reading-home";
 import { markSportsSolo } from "@/lib/sports-home";
 import { markRssSolo } from "@/lib/rss-home";
+
+const DailyNewspaperPage = lazy(() => import("@/pages/DailyNewspaperPage"));
+const NewspaperPhoneCardPage = lazy(() => import("@/pages/NewspaperPhoneCardPage"));
+const NewspaperWatchPreviewPage = lazy(() => import("@/pages/NewspaperWatchPreviewPage"));
+const NewspaperA1PreviewPage = lazy(() => import("@/pages/NewspaperA1PreviewPage"));
+const NewspaperSportPreviewPage = lazy(() => import("@/pages/NewspaperSportPreviewPage"));
+const NewspaperTimesPreviewPage = lazy(() => import("@/pages/NewspaperTimesPreviewPage"));
+const NewspaperCoachesPreviewPage = lazy(() => import("@/pages/NewspaperCoachesPreviewPage"));
+const RssPage = lazy(() => import("@/pages/RssPage"));
+const PublicStoryPage = lazy(() => import("@/pages/PublicStoryPage"));
+const DashboardPage = lazy(() => import("@/pages/DashboardPage"));
+const TodosPage = lazy(() => import("@/pages/TodosPage"));
+const HabitsPage = lazy(() => import("@/pages/HabitsPage"));
+const ReadingPage = lazy(() => import("@/pages/ReadingPage"));
+const FinancePage = lazy(() => import("@/pages/FinancePage"));
+const BuenaVistaNotebookPage = lazy(() => import("@/pages/BuenaVistaNotebookPage"));
+const SportsPage = lazy(() => import("@/pages/SportsPage"));
+const MlbPage = lazy(() => import("@/pages/MlbPage"));
+const RuwtPage = lazy(() => import("@/pages/RuwtPage"));
+const CardinalsProspectsPage = lazy(() => import("@/pages/CardinalsProspectsPage"));
+const TagPlayersPage = lazy(() => import("@/pages/TagPlayersPage"));
+const MlbPlayerPage = lazy(() => import("@/pages/MlbPlayerPage"));
+const MlbGamePage = lazy(() => import("@/pages/MlbGamePage"));
+const MlbManagersPage = lazy(() => import("@/pages/MlbManagersPage"));
+const MlbManagerPage = lazy(() => import("@/pages/MlbManagerPage"));
+const HotSeatPage = lazy(() => import("@/pages/HotSeatPage"));
+const CfbPlayerPage = lazy(() => import("@/pages/CfbPlayerPage"));
+const CfbPage = lazy(() => import("@/pages/CfbPage"));
+const CfbGamePage = lazy(() => import("@/pages/CfbGamePage"));
+const CfbTeamPage = lazy(() => import("@/pages/CfbTeamPage"));
+const CfbCoachPage = lazy(() => import("@/pages/CfbCoachPage"));
+const GolferPage = lazy(() => import("@/pages/GolferPage"));
+const NflPage = lazy(() => import("@/pages/NflPage"));
+const NflGamePage = lazy(() => import("@/pages/NflGamePage"));
+const NflPlayerPage = lazy(() => import("@/pages/NflPlayerPage"));
+const NflTeamPage = lazy(() => import("@/pages/NflTeamPage"));
+const NflCoachPage = lazy(() => import("@/pages/NflCoachPage"));
+const NhlPage = lazy(() => import("@/pages/NhlPage"));
+const NhlGamePage = lazy(() => import("@/pages/NhlGamePage"));
+const NhlPlayerPage = lazy(() => import("@/pages/NhlPlayerPage"));
+const NhlTeamPage = lazy(() => import("@/pages/NhlTeamPage"));
+const NhlCoachPage = lazy(() => import("@/pages/NhlCoachPage"));
+const SoccerGamePage = lazy(() => import("@/pages/SoccerGamePage"));
+const HeatAlertPreviewPage = lazy(() => import("@/pages/HeatAlertPreviewPage"));
+const FieldDrivePreviewPage = lazy(() => import("@/pages/FieldDrivePreviewPage"));
+const MlbPbpPreviewPage = lazy(() => import("@/pages/MlbPbpPreviewPage"));
+
+function PageHold() {
+  return (
+    <div className="min-h-screen grid place-items-center">
+      <span className="label-caps animate-pulse">Loading</span>
+    </div>
+  );
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -129,6 +138,7 @@ export default function App() {
       <AuthProvider>
         <CelebrationProvider>
         <BrowserRouter>
+          <Suspense fallback={<PageHold />}>
           <Routes>
             <Route
               path="/login"
@@ -150,7 +160,14 @@ export default function App() {
             <Route element={<Protected />}>
               <Route path="/" element={<HomeRedirect />} />
               <Route path="/dashboard" element={<DashboardPage />} />
-              <Route path="/newspaper" element={<DailyNewspaperPage />} />
+              <Route
+                path="/newspaper"
+                element={
+                  <Suspense fallback={<TimesHoldShell />}>
+                    <DailyNewspaperPage />
+                  </Suspense>
+                }
+              />
               <Route
                 path="/newspaper/phone-card"
                 element={
@@ -215,6 +232,7 @@ export default function App() {
             </Route>
             <Route path="*" element={<HomeRedirect />} />
           </Routes>
+          </Suspense>
         </BrowserRouter>
         </CelebrationProvider>
         <Toaster
