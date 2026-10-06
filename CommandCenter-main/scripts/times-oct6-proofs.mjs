@@ -18,16 +18,20 @@ const outDir = path.resolve(arg("--out", "/opt/cursor/artifacts"));
 const port = Number(arg("--port", "4188"));
 const ISSUE_ID = "2026-10-06-morning";
 
-const FOLIOS = [
+const ONLY = arg("--only", "");
+const ALL_FOLIOS = [
   { hash: "A1", file: "2026-10-06-morning_A1_768x1024.png", wait: /Stephen A|Cowboys|MoScout|Wilson Targeted/i },
-  { hash: "A3", file: "2026-10-06-morning_A3_768x1024.png", wait: /Blues|Missouri|Mizzou|RZ|Central/i },
-  { hash: "A9", file: "2026-10-06-morning_A9_watch_768x1024.png", wait: /WATCH|Tonight|viewing/i },
+  { hash: "A2", file: "2026-10-06-morning_A2_weather_768x1024.png", wait: /Marshfield|feels|wind|Today/i },
+  { hash: "A3", file: "2026-10-06-morning_A3_768x1024.png", wait: /Blues|Missouri|Mizzou|Central|Chiefs|Cowboys|rain/i },
+  { hash: "A7", file: "2026-10-06-morning_A7_form_768x1024.png", wait: /Pts\/G|RZ|Sacks|Goals|form|Missouri|Blues/i },
+  { hash: "A9", file: "2026-10-06-morning_A9_watch_768x1024.png", wait: /WATCH|Tonight|viewing|must/i },
   { hash: "B1", file: "2026-10-06-morning_B1_national_768x1024.png", wait: /Hasan|Hastert|National/i },
   { hash: "MLB1", file: "2026-10-06-morning_MLB1_768x1024.png", wait: /Rays|Yankees|ALDS|White Sox/i },
   { hash: "NFL1", file: "2026-10-06-morning_NFL1_768x1024.png", wait: /Patriots|Kincaid|Giants|Cardinals/i },
   { hash: "NFL2", file: "2026-10-06-morning_NFL2_768x1024.png", wait: /Chiefs|Raiders|Mahomes/i },
   { hash: "CFB1", file: "2026-10-06-morning_CFB1_768x1024.png", wait: /Missouri|Mizzou|SEC|college/i },
 ];
+const FOLIOS = ONLY ? ALL_FOLIOS.filter((f) => f.hash === ONLY) : ALL_FOLIOS;
 
 function arg(name, fallback) {
   const i = args.indexOf(name);
@@ -88,10 +92,6 @@ function selectKind(select) {
 async function main() {
   if (!existsSync(path.join(dist, "index.html"))) throw new Error(`No build at ${dist}`);
   const { issue, nationalRow } = loadFixture();
-  const planted = {
-    ...issue,
-    companions: { national: nationalRow },
-  };
   const server = await serveDist();
   const browser = await puppeteer.launch({
     executablePath: "/usr/local/bin/google-chrome",
@@ -103,13 +103,9 @@ async function main() {
   try {
     const page = await browser.newPage();
     await page.setViewport({ width: 768, height: 1024, deviceScaleFactor: 1 });
-    await page.evaluateOnNewDocument(
-      (payload) => {
-        localStorage.setItem("newspaper-solo", "1");
-        globalThis.__TT_PROOF_ISSUE__ = payload;
-      },
-      planted,
-    );
+    await page.evaluateOnNewDocument(() => {
+      localStorage.setItem("newspaper-solo", "1");
+    });
     const cors = {
       "access-control-allow-origin": "*",
       "access-control-allow-headers": "*",
@@ -186,28 +182,94 @@ async function main() {
     });
     page.on("pageerror", (err) => console.log("PAGEERROR", err.message));
 
-    for (const folio of FOLIOS) {
-      await page.goto(`http://127.0.0.1:${port}/newspaper?solo=1&edition=${ISSUE_ID}#${folio.hash}`, {
-        waitUntil: "domcontentloaded",
-        timeout: 120_000,
+    await page.goto(`http://127.0.0.1:${port}/newspaper?solo=1&edition=${ISSUE_ID}`, {
+      waitUntil: "domcontentloaded",
+      timeout: 120_000,
+    });
+    await page
+      .waitForFunction(
+        () => {
+          const ready = document.querySelector(".newspaper-root")?.getAttribute("data-times-ready") === "1";
+          const text = document.body?.innerText || "";
+          return ready && /Thompson Times|Cowboys|Stephen A|Marshfield/i.test(text);
+        },
+        { timeout: 90_000 },
+      )
+      .catch(async () => {
+        const flags = await page.evaluate(() => ({
+          ready: document.querySelector(".newspaper-root")?.getAttribute("data-times-ready"),
+          body: document.body?.innerText?.slice(0, 400),
+        }));
+        console.log("ready wait failed", flags);
       });
+    await new Promise((r) => setTimeout(r, 2000));
+    let currentIdx = 0;
+
+    for (const folio of FOLIOS) {
+      const target = await page.evaluate((hash) => {
+        const sheets = [...document.querySelectorAll(".wsj-page")];
+        return sheets.findIndex(
+          (node) => (node.getAttribute("aria-label") || "").replace(/^Page\s+/, "") === hash,
+        );
+      }, folio.hash);
+      const delta = target - currentIdx;
+      for (let i = 0; i < Math.abs(delta); i++) {
+        await page.keyboard.press(delta > 0 ? "ArrowRight" : "ArrowLeft");
+        await new Promise((r) => setTimeout(r, 80));
+      }
+      currentIdx = target;
+      await new Promise((r) => setTimeout(r, 400));
+      await page.evaluate((hash) => {
+        const sheets = [...document.querySelectorAll(".wsj-page")];
+        for (const sheet of sheets) {
+          const label = (sheet.getAttribute("aria-label") || "").replace(/^Page\s+/, "");
+          sheet.style.display = label === hash ? "flex" : "none";
+        }
+      }, folio.hash);
       await page
         .waitForFunction(
-          () => document.querySelector(".newspaper-root")?.getAttribute("data-times-ready") === "1",
-          { timeout: 90_000 },
+          (hash) => {
+            const pager = document.querySelector(".wsj-pager");
+            if (!pager) return false;
+            const hit = [...pager.querySelectorAll(".wsj-page")].find((node) => {
+              const r = node.getBoundingClientRect();
+              return r.left > -40 && r.left < pager.clientWidth * 0.55;
+            });
+            const label = hit?.getAttribute("aria-label")?.replace(/^Page\s+/, "") ?? "";
+            return label === hash;
+          },
+          { timeout: 15_000 },
+          folio.hash,
         )
         .catch(() => {});
-      await page.evaluate((hash) => {
-        window.location.hash = hash;
-      }, folio.hash);
-      await new Promise((r) => setTimeout(r, 2500));
+      await new Promise((r) => setTimeout(r, 800));
       const dest = path.join(outDir, folio.file);
       await page.screenshot({ path: dest, clip: { x: 0, y: 0, width: 768, height: 1024 } });
       const text = await page.evaluate(() => document.body?.innerText || "");
+      const visible = await page.evaluate(() => {
+        const pager = document.querySelector(".wsj-pager");
+        const hit = pager
+          ? [...pager.querySelectorAll(".wsj-page")].find((node) => {
+              const r = node.getBoundingClientRect();
+              return r.left > -40 && r.left < pager.clientWidth * 0.55;
+            })
+          : null;
+        return hit?.getAttribute("aria-label") ?? "";
+      });
       const hit = folio.wait.test(text);
       const junk = /Join Washington Examiner|Laura Ingraham|Hegseth ['‘]s|1% rain/.test(text);
-      notes.push({ folio: folio.hash, file: dest, matched: hit, junk });
-      console.log(folio.hash, dest, "matched", hit, "junk", junk);
+      notes.push({
+        folio: folio.hash,
+        visible,
+        file: dest,
+        matched: hit,
+        junk,
+        snippet: text.slice(0, 220).replace(/\s+/g, " "),
+      });
+      await page.evaluate(() => {
+        for (const sheet of document.querySelectorAll(".wsj-page")) sheet.style.display = "";
+      });
+      console.log(folio.hash, "visible", visible, dest, "matched", hit, "junk", junk);
     }
   } finally {
     await browser.close();
