@@ -59,7 +59,7 @@ import {
   type StandGroup,
 } from "@/lib/newspaper-box";
 import { cleanStoryCopy, proseParas, tidy, truncateAtSentence } from "@/lib/newspaper-copy";
-import { prefetchSrc } from "@/lib/newspaper-fit";
+import { applyScaledFitBox, pageFit, prefetchSrc, sheetNeedsTransformFit } from "@/lib/newspaper-fit";
 import { FitCopy, FittedSheet } from "@/components/newspaper/FittedSheet";
 import { TimesCommitBoundary } from "@/components/newspaper/TimesCommitBoundary";
 import { recapBodyForPage, recapDropLead, recapIsScoreOnly, recapPhotoKind, recapShouldDropCap, splitApDateline } from "@/lib/newspaper-recap";
@@ -164,6 +164,7 @@ import {
 } from "@/lib/newspaper-offline";
 import {
   backEditionNote,
+  editionFolioLine,
   editionPickerLabel,
   filterRecentFiledIssues,
   isIssueWithinLookback,
@@ -695,6 +696,8 @@ function Masthead({
 }) {
   const { volume, issue } = editionIssue(day);
   const ballot = electionEar(day);
+  const stand = uniqueEditionStand(editions);
+  const others = stand.filter((row) => row.id !== selectedId);
   return (
     <header className="wsj-mast">
       <div className="wsj-mast-row">
@@ -712,24 +715,22 @@ function Masthead({
           <span>{clubs} clubs on the desk</span>
         </div>
       </div>
-      {editions.length ? (
-        <nav className="tt-editions" aria-label="Editions">
-          <span className="tt-editions-label">Edition</span>
-          {uniqueEditionStand(editions).map((row, i, stand) => (
-            <Fragment key={row.id}>
-              {i > 0 ? <span className="tt-editions-dot">·</span> : null}
-              <button
-                type="button"
-                className={row.id === selectedId ? "is-current" : undefined}
-                aria-current={row.id === selectedId ? "page" : undefined}
-                onClick={() => onSelectEdition(row.id)}
-              >
-                {editionPickerLabel(row.id, stand)}
-              </button>
-            </Fragment>
-          ))}
-        </nav>
-      ) : null}
+      <nav className="tt-editions" aria-label="Edition">
+        <span className="tt-editions-label">Edition</span>
+        <span className="tt-editions-current">{editionFolioLine(selectedId)}</span>
+        {others.length ? (
+          <details className="tt-editions-more">
+            <summary>More</summary>
+            <div className="tt-editions-menu">
+              {others.map((row) => (
+                <button key={row.id} type="button" onClick={() => onSelectEdition(row.id)}>
+                  {editionPickerLabel(row.id, stand)}
+                </button>
+              ))}
+            </div>
+          </details>
+        ) : null}
+      </nav>
       {readingNote ? <p className="tt-reading-note">{readingNote}</p> : null}
       <div className="wsj-dateline-bar">
         <span>
@@ -5520,16 +5521,41 @@ function NewspaperDesk() {
       const cs = getComputedStyle(root);
       // LOCKED: width-only fit at --tt-page-w 1032. Do not add height terms; owner requirement.
       const pageW = parseFloat(cs.getPropertyValue("--tt-page-w")) || 1032;
-      const fit = Math.min(1, w / pageW);
+      const fit = pageFit(w, pageW);
       el.style.setProperty("--tt-fit", String(fit));
       // Height is the copy. Do not grow the sheet to the viewport or the 1290 fallback.
       el.style.setProperty("--tt-page-min", "0px");
       el.dataset.fit = "1";
+      // iPad: CSS zoom + sticky desyncs the columns (rail jumps, left goes white).
+      // Keep the same fit math; switch that device to a height-corrected scale wrapper.
+      const useTransform = fit < 1 && sheetNeedsTransformFit();
+      el.classList.toggle("tt-fit-scaled", fit < 1);
+      el.classList.toggle("tt-fit-transform", useTransform);
+      for (const page of el.querySelectorAll<HTMLElement>(".wsj-page")) {
+        const fitBox = page.querySelector<HTMLElement>(".wsj-fit");
+        const sheet = page.querySelector<HTMLElement>(".wsj-sheet");
+        if (!fitBox || !sheet) continue;
+        applyScaledFitBox(fitBox, sheet, pageW, fit, useTransform);
+      }
     };
     apply();
     const ro = new ResizeObserver(apply);
     ro.observe(el);
-    return () => ro.disconnect();
+    const seen = new Set<Element>();
+    const watchSheets = () => {
+      for (const sheet of el.querySelectorAll(".wsj-sheet")) {
+        if (seen.has(sheet)) continue;
+        seen.add(sheet);
+        ro.observe(sheet);
+      }
+    };
+    watchSheets();
+    const mo = new MutationObserver(watchSheets);
+    mo.observe(el, { childList: true, subtree: true });
+    return () => {
+      ro.disconnect();
+      mo.disconnect();
+    };
   }, [docPhase]);
 
   const favKeys = teamFavs.map((t) => t.key).join(",");

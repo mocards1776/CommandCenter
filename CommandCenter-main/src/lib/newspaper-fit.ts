@@ -26,6 +26,70 @@ export function sheetZoom(sheet: Element): number {
   return Number.isFinite(z) && z > 0 ? z : 1;
 }
 
+/** Width-only fit. LOCKED: never add a height term. */
+export function pageFit(viewportW: number, pageW = 1032): number {
+  if (!(pageW > 0) || !(viewportW > 0)) return 1;
+  return Math.min(1, viewportW / pageW);
+}
+
+/** Visual box of a scaled 1032-wide sheet. Wrapper height must match this or iOS leaves a white void. */
+export function scaledFitBox(pageW: number, sheetH: number, fit: number): { width: number; height: number } {
+  const f = fit > 0 ? fit : 1;
+  return { width: pageW * f, height: Math.max(0, sheetH) * f };
+}
+
+/** iPad / no-zoom-layout: use transform:scale and a height-corrected wrapper. */
+export function sheetNeedsTransformFit(
+  ua = typeof navigator === "undefined" ? "" : navigator.userAgent,
+  opts?: { maxTouchPoints?: number; platform?: string; zoomShrinksLayout?: boolean; supportsZoom?: boolean },
+): boolean {
+  const touch = opts?.maxTouchPoints ?? (typeof navigator === "undefined" ? 0 : navigator.maxTouchPoints);
+  const platform = opts?.platform ?? (typeof navigator === "undefined" ? "" : navigator.platform);
+  if (/iPad|iPhone|iPod/.test(ua)) return true;
+  if (platform === "MacIntel" && touch > 1) return true;
+  if (opts?.supportsZoom === false) return true;
+  if (opts?.zoomShrinksLayout === false) return true;
+  if (opts?.zoomShrinksLayout === true || opts?.supportsZoom === true) return false;
+  if (typeof document === "undefined") return false;
+  try {
+    if (typeof CSS !== "undefined" && CSS.supports && !CSS.supports("zoom", "1")) return true;
+  } catch {
+    /* ignore */
+  }
+  const probe = document.createElement("div");
+  probe.style.cssText = "width:100px;height:100px;zoom:0.5;position:absolute;left:-9999px;visibility:hidden;pointer-events:none";
+  document.body.appendChild(probe);
+  const layout = probe.offsetHeight;
+  probe.remove();
+  return layout > 90;
+}
+
+/** Size the fit wrapper to the visual sheet when using transform:scale (not CSS zoom). */
+export function applyScaledFitBox(
+  fitBox: HTMLElement,
+  sheet: HTMLElement,
+  pageW: number,
+  fit: number,
+  useTransform: boolean,
+): void {
+  if (!useTransform || fit >= 1) {
+    fitBox.classList.remove("tt-fit-transform");
+    fitBox.style.width = "";
+    fitBox.style.height = "";
+    fitBox.style.overflow = "";
+    sheet.style.transform = "";
+    sheet.style.transformOrigin = "";
+    return;
+  }
+  const box = scaledFitBox(pageW, sheet.offsetHeight, fit);
+  fitBox.classList.add("tt-fit-transform");
+  fitBox.style.width = `${box.width}px`;
+  fitBox.style.height = `${box.height}px`;
+  fitBox.style.overflow = "hidden";
+  sheet.style.transform = `scale(${fit})`;
+  sheet.style.transformOrigin = "top left";
+}
+
 /** Convert a zoomed viewport distance into unzoomed sheet CSS pixels. */
 export function unzoomedPx(zoomedPx: number, zoom: number): number {
   const z = zoom > 0 ? zoom : 1;
