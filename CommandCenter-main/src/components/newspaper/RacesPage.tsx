@@ -56,6 +56,20 @@ function SpendTable({ rows }: { rows: RaceSpend[] }) {
   );
 }
 
+function WhatsNew({ lines }: { lines: string[] }) {
+  if (!lines.length) return null;
+  return (
+    <div className="tt-races-whatsnew">
+      <h4 className="wsj-band-title">What’s new</h4>
+      <ul className="tt-races-bullets">
+        {lines.map((line, i) => (
+          <li key={`${line.slice(0, 24)}-${i}`}>{line}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function RaceBlock({ race }: { race: RaceBrief }) {
   const bullets = race.bullets.slice(0, 5);
   return (
@@ -64,14 +78,8 @@ function RaceBlock({ race }: { race: RaceBrief }) {
         <p className="tt-races-code">{raceLabel(race.race)}</p>
         <h3>{race.headline || `${raceLabel(race.race)} on the air`}</h3>
       </header>
+      <WhatsNew lines={bullets} />
       <SpendTable rows={race.spend} />
-      {bullets.length ? (
-        <ul className="tt-races-bullets">
-          {bullets.map((line, i) => (
-            <li key={`${line.slice(0, 24)}-${i}`}>{line}</li>
-          ))}
-        </ul>
-      ) : null}
       {race.notes.length ? (
         <ul className="tt-races-notes">
           {race.notes.map((note, i) => (
