@@ -1,8 +1,8 @@
 /**
- * Thompson Times image alert runner: screenshots the edition's front page (A1)
- * at 13-inch iPad width, then phone-sized cards for weather, The Day Ahead, and
- * Best Games to Watch. Hands the PNGs to times-telegram-shots, which sends them
- * on @ThompsonTimes_bot (front page first, with caption + Mini App button).
+ * Thompson Times image alert runner: screenshots four iPhone cards (front, weather,
+ * The Day Ahead, Best Games to Watch) at the locked phone size and hands the PNGs
+ * to times-telegram-shots, which sends them on @ThompsonTimes_bot (front first,
+ * with caption + Mini App button).
  *
  * Run by .github/workflows/times-telegram-shots.yml (auth: GitHub Actions OIDC, no secrets).
  * Manual test from a machine holding the admin secret:
@@ -14,6 +14,7 @@
  * The browser is read-only: every write to Supabase REST and every call to the press or
  * editor functions is aborted, so opening the paper here can never change the desk or an issue.
  * Day Ahead and watch cards are skipped when there is no schedule row / no games.
+ * The printed iPad paper (width-only fit at 1032) is never opened or resized here.
  */
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -23,15 +24,10 @@ const SUPABASE_URL = (process.env.TIMES_SUPABASE_URL || "https://esdgrgulaxnewmh
 const SHOTS_URL = `${SUPABASE_URL}/functions/v1/times-telegram-shots`;
 const PROJECT_REF = new URL(SUPABASE_URL).hostname.split(".")[0];
 const AUDIENCE = "times-telegram-shots";
-/** iPad Pro 13-inch, portrait, in CSS pixels; rendered at 2x. Front page only. */
-const VIEW = { width: 1032, height: 1376 };
-const SCALE = 2;
-/** Portrait iPhone CSS width; phone cards render at 3x. */
+/** Portrait iPhone CSS size; every alert image is clipped to this at 3x (1290×2796 px). */
 const PHONE = { width: 430, height: 932 };
 const PHONE_SCALE = 3;
-/** Taller than this (CSS px) and the front is cut to its top, so Telegram's 2560px cap keeps it legible. */
-const FRONT_MAX_H = 1720;
-const PHONE_CARDS = ["weather", "day", "watch"];
+const PHONE_CARDS = ["front", "weather", "day", "watch"];
 
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(`--${name}`);
@@ -157,17 +153,23 @@ async function pinClock(page, issueId) {
   await page.clock.setFixedTime(at);
 }
 
-/** Phone cards: dedicated route, 430 CSS px at 3x. Skip when the card reports empty/error. */
+/** Phone cards: dedicated route, hard-clipped to 430×932 CSS at 3x. Skip when empty/error. */
 async function shootPhoneCard(context, issueId, card) {
   const page = await context.newPage();
   page.on("pageerror", (err) => log(`${card} page error:`, err.message));
   try {
+    await page.setViewportSize(PHONE);
+    await page.addInitScript(() => {
+      document.documentElement.style.margin = "0";
+      document.documentElement.style.padding = "0";
+    });
     await pinClock(page, issueId);
     await page.goto(`${APP}/newspaper/phone-card?card=${card}&issue=${encodeURIComponent(issueId)}&solo=1`, {
       waitUntil: "domcontentloaded",
       timeout: 60_000,
     });
     if (new URL(page.url()).pathname.startsWith("/login")) throw new Error("Session was not accepted (landed on /login)");
+    await page.addStyleTag({ content: "html,body{margin:0;padding:0;overflow:hidden;background:#fbfaf6}" });
     const root = page.locator(`[data-phone-card="${card}"]`);
     await root.waitFor({ state: "attached", timeout: 45_000 });
     await page.waitForFunction(
@@ -186,16 +188,16 @@ async function shootPhoneCard(context, issueId, card) {
     const body = page.locator(".tt-phone-card");
     await body.waitFor({ state: "visible", timeout: 15_000 });
     await settle(page, ".tt-phone-card");
-    const box = await body.boundingBox();
-    if (box) {
-      await page.setViewportSize({
-        width: PHONE.width,
-        height: Math.max(PHONE.height, Math.ceil(box.height) + 24),
-      });
-      await page.waitForTimeout(400);
-    }
-    const png = await body.screenshot({ animations: "disabled" });
-    log(`${card} ${png.length} bytes`);
+    await page
+      .waitForFunction(() => document.querySelector(".tt-phone-card")?.getAttribute("data-phone-fit") === "1", {
+        timeout: 8_000,
+      })
+      .catch(() => log(`${card} fit wait timed out; clipping anyway`));
+    const png = await page.screenshot({
+      clip: { x: 0, y: 0, width: PHONE.width, height: PHONE.height },
+      animations: "disabled",
+    });
+    log(`${card} ${png.length} bytes, clipped ${PHONE.width}x${PHONE.height} css @${PHONE_SCALE}x`);
     return png;
   } catch (err) {
     log(`${card} not shot:`, err.message);
@@ -211,41 +213,6 @@ async function shoot(claim) {
   try {
     const blocked = [];
     const init = sessionInit(claim);
-    const pad = await browser.newContext({
-      viewport: VIEW,
-      deviceScaleFactor: SCALE,
-      hasTouch: true,
-      locale: "en-US",
-      timezoneId: "America/Chicago",
-      colorScheme: "light",
-    });
-    await harden(pad, blocked);
-    await pad.addInitScript(init.script, init.arg);
-    const page = await pad.newPage();
-    page.on("pageerror", (err) => log("page error:", err.message));
-
-    // The stand opens whatever edition the clock says; pin the clock if the alert is for another.
-    await pinClock(page, claim.issue_id);
-
-    await page.goto(`${APP}/newspaper?solo=1#A1`, { waitUntil: "domcontentloaded", timeout: 60_000 });
-    if (new URL(page.url()).pathname.startsWith("/login")) throw new Error("Session was not accepted (landed on /login)");
-    const front = page.locator('section.wsj-page[aria-label="Page A1"] .wsj-sheet');
-    await front.locator(".wsj-body").first().waitFor({ state: "visible", timeout: 90_000 });
-    await settle(page, 'section.wsj-page[aria-label="Page A1"]');
-
-    // Let the whole sheet lay out, then cut to the top if it runs long.
-    const sheetH = await front.evaluate((el) => Math.ceil(el.getBoundingClientRect().height));
-    await page.setViewportSize({ width: VIEW.width, height: Math.max(VIEW.height, sheetH + 200) });
-    await page.waitForTimeout(600);
-    const box = await front.boundingBox();
-    if (!box) throw new Error("Front sheet has no box");
-    const frontPng = await page.screenshot({
-      clip: { x: box.x, y: box.y, width: box.width, height: Math.min(box.height, FRONT_MAX_H) },
-      animations: "disabled",
-    });
-    log(`front ${Math.round(box.width)}x${Math.round(box.height)} css, kept ${Math.min(box.height, FRONT_MAX_H)}`);
-    await pad.close();
-
     const phone = await browser.newContext({
       viewport: PHONE,
       deviceScaleFactor: PHONE_SCALE,
@@ -262,7 +229,8 @@ async function shoot(claim) {
     }
     await phone.close();
     if (blocked.length) log("blocked writes:", [...new Set(blocked)].join(", "));
-    return { frontPng, weatherPng: extras.weatherPng, dayPng: extras.dayPng, watchPng: extras.watchPng };
+    if (!extras.frontPng) throw new Error("front card missing");
+    return { frontPng: extras.frontPng, weatherPng: extras.weatherPng, dayPng: extras.dayPng, watchPng: extras.watchPng };
   } finally {
     await browser.close();
   }

@@ -9159,6 +9159,22 @@ li.counting .tt-count.card {
 }
 
 /* ── Telegram phone cards (screenshot runner only; not the printed paper) ─ */
+html:has(.tt-phone-shot),
+body:has(.tt-phone-shot) {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: #fbfaf6;
+}
+.tt-phone-shot {
+  box-sizing: border-box;
+  width: 430px;
+  height: 932px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: #fbfaf6;
+}
 .tt-phone-page {
   --w-paper: #fbfaf6;
   --w-paper-2: #f2efe6;
@@ -9181,9 +9197,12 @@ li.counting .tt-count.card {
   --wx-cloud-dark: #c9ced6;
   box-sizing: border-box;
   width: 430px;
-  max-width: 100%;
-  margin: 0 auto;
+  height: 932px;
+  max-width: 430px;
+  max-height: 932px;
+  margin: 0;
   padding: 0;
+  overflow: hidden;
   background: var(--w-paper);
   color: var(--w-ink);
   font-family: var(--w-label);
@@ -9191,8 +9210,11 @@ li.counting .tt-count.card {
 .tt-phone-card {
   box-sizing: border-box;
   width: 430px;
-  max-width: 100%;
-  padding: 18px 18px 16px;
+  height: 932px;
+  max-width: 430px;
+  max-height: 932px;
+  padding: 16px 16px 14px;
+  overflow: hidden;
   background: var(--w-paper);
 }
 .tt-phone-mast {
@@ -9314,20 +9336,83 @@ li.counting .tt-count.card {
 .tt-phone-front .tt-election-ear.is-today .tt-election-line {
   font-size: 10px;
 }
+.tt-phone-front-stories {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+}
+.tt-phone-front-stories li {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--w-hair);
+}
+.tt-phone-front-stories li.lead {
+  padding-top: 12px;
+}
+.tt-phone-front-art {
+  display: block;
+  width: 100%;
+  height: 168px;
+  object-fit: cover;
+  margin: 0 0 10px;
+  background: var(--w-paper-2);
+}
+.tt-phone-front-team {
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--w-red);
+}
+.tt-phone-front-stories h2 {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font-family: var(--w-head);
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  line-height: 1.12;
+  text-transform: none;
+}
+.tt-phone-front-stories li.lead h2 {
+  font-size: 28px;
+}
+.tt-phone-front-dek {
+  margin: 8px 0 0;
+  font-family: var(--w-body);
+  font-size: 15px;
+  line-height: 1.35;
+  color: var(--w-ink-soft);
+}
 
+.tt-phone-wx .tt-phone-now,
+.tt-phone-wx .tt-phone-today,
+.tt-phone-wx .tt-phone-facts,
+.tt-phone-wx .tt-phone-hourly,
+.tt-phone-wx .tt-phone-days,
+.tt-phone-wx .tt-phone-almanac {
+  width: 100%;
+  max-width: none;
+}
 .tt-phone-now {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
+  width: 100%;
   margin: 14px 0 10px;
+}
+.tt-phone-now > div {
+  flex: 1;
+  min-width: 0;
 }
 .tt-phone-temp {
   display: block;
   font-family: var(--w-cond);
-  font-size: 76px;
+  font-size: 92px;
   font-weight: 600;
-  line-height: 0.88;
-  letter-spacing: -0.03em;
+  line-height: 0.84;
+  letter-spacing: -0.04em;
 }
 .tt-phone-sum {
   margin: 4px 0 0;
@@ -9369,9 +9454,19 @@ li.counting .tt-count.card {
   margin: 0 0 14px;
   border-top: 2px solid var(--w-rule);
 }
+.tt-phone-wx .tt-phone-facts {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  width: 100%;
+}
 .tt-phone-facts div {
   padding: 8px 8px 6px 0;
   border-bottom: 1px solid var(--w-hair);
+}
+.tt-phone-wx .tt-phone-facts div {
+  padding: 8px 6px 6px 0;
+}
+.tt-phone-wx .tt-phone-facts dd {
+  font-size: 18px;
 }
 .tt-phone-facts dt {
   font-size: 10.5px;

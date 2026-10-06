@@ -5,7 +5,98 @@
  */
 import { PRESS_HOURS } from "./newspaper.ts";
 import { scheduleDateFor, type DayEvent, type DaySchedule } from "./newspaper-day-ahead.ts";
-import type { WatchGame } from "./newspaper-watch.ts";
+import { buildEdition, type FavoritesFrontPage } from "./newspaper-sections.ts";
+import type { GameWrapCard } from "./newspaper-sports.ts";
+import { sampleWatchSlate, type WatchGame } from "./newspaper-watch-page.ts";
+
+/** Portrait iPhone CSS size. times-shots.mjs clips every alert image to this at 3x. */
+export const PHONE_CARD_SIZE = { width: 430, height: 932 } as const;
+export const PHONE_CARD_SCALE = 3;
+export const PHONE_CARD_PX = {
+  width: PHONE_CARD_SIZE.width * PHONE_CARD_SCALE,
+  height: PHONE_CARD_SIZE.height * PHONE_CARD_SCALE,
+} as const;
+
+export type PhoneFrontStory = {
+  id: string;
+  headline: string;
+  teamName: string | null;
+  dek: string | null;
+  photo: string | null;
+};
+
+/** Favorites first, then heat (national / stakes). Used only by the phone watch card. */
+export function rankPhoneWatchGames(games: WatchGame[]): WatchGame[] {
+  return [...games].sort((a, b) => {
+    const fav = Number(Boolean(b.favorite)) - Number(Boolean(a.favorite));
+    if (fav) return fav;
+    return b.heat - a.heat || String(a.when ?? "").localeCompare(String(b.when ?? "")) || a.id.localeCompare(b.id);
+  });
+}
+
+export type PhoneWatchFit = { keepRest: number };
+
+export function trimPhoneWatchFit(fit: PhoneWatchFit): PhoneWatchFit | null {
+  return fit.keepRest > 0 ? { keepRest: fit.keepRest - 1 } : null;
+}
+
+export type PhoneDayFit = { comingDays: number; rundown: number; allDay: number };
+
+export function trimPhoneDayFit(fit: PhoneDayFit): PhoneDayFit | null {
+  if (fit.comingDays > 0) return { ...fit, comingDays: fit.comingDays - 1 };
+  if (fit.rundown > 1) return { ...fit, rundown: fit.rundown - 1 };
+  if (fit.allDay > 0) return { ...fit, allDay: fit.allDay - 1 };
+  return null;
+}
+
+export type PhoneFrontFit = { stories: number; showDek: boolean; showPhoto: boolean };
+
+export function trimPhoneFrontFit(fit: PhoneFrontFit): PhoneFrontFit | null {
+  if (fit.stories > 1) return { ...fit, stories: fit.stories - 1 };
+  if (fit.showDek) return { ...fit, showDek: false };
+  if (fit.showPhoto) return { ...fit, showPhoto: false };
+  return null;
+}
+
+export type PhoneWeatherFit = {
+  showAlmanac: boolean;
+  showToday: boolean;
+  days: number;
+  showHourly: boolean;
+};
+
+export function trimPhoneWeatherFit(fit: PhoneWeatherFit): PhoneWeatherFit | null {
+  if (fit.showAlmanac) return { ...fit, showAlmanac: false };
+  if (fit.showToday) return { ...fit, showToday: false };
+  if (fit.days > 3) return { ...fit, days: fit.days - 1 };
+  if (fit.showHourly) return { ...fit, showHourly: false };
+  if (fit.days > 1) return { ...fit, days: fit.days - 1 };
+  return null;
+}
+
+function slimFront(card: GameWrapCard | null | undefined): PhoneFrontStory | null {
+  const headline = String(card?.headline ?? "").replace(/\s+/g, " ").trim();
+  if (!card || !headline) return null;
+  return {
+    id: card.id,
+    headline,
+    teamName: card.teamName ?? null,
+    dek: card.dek ? String(card.dek).replace(/\s+/g, " ").trim() : null,
+    photo: card.photo ?? null,
+  };
+}
+
+/** A1 lead + two more, same order the paper sets. Phone card only. */
+export function phoneFrontStories(stories: unknown[], edition: string): PhoneFrontStory[] {
+  try {
+    const paper = buildEdition({ stories: stories as GameWrapCard[], clubs: [], edition });
+    const front = paper.pages.find((p) => p.kind === "favorites-front") as FavoritesFrontPage | undefined;
+    if (!front) return [];
+    return [front.lead, front.second, front.third].map(slimFront).filter((s): s is PhoneFrontStory => Boolean(s));
+  } catch {
+    return [];
+  }
+}
 
 export const PHONE_CARD_KINDS = ["front", "weather", "day", "watch"] as const;
 export type PhoneCardKind = (typeof PHONE_CARD_KINDS)[number];
@@ -67,6 +158,38 @@ function nextDay(date: string, days: number): string {
   const dt = new Date(Date.UTC(y, m - 1, d));
   dt.setUTCDate(dt.getUTCDate() + days);
   return dt.toISOString().slice(0, 10);
+}
+
+/** A1-shaped stand-in from the 2026-10-05-evening issue (headlines only). */
+export function sampleFrontStories(): PhoneFrontStory[] {
+  return [
+    {
+      id: "wire-college-football-401856708",
+      headline: "No. 25 Missouri trounces No. 8 Florida 45-17 to snap 9-game skid against Top 25 opponents",
+      teamName: "Mizzou FB",
+      dek: null,
+      photo: null,
+    },
+    {
+      id: "wire-nhl-401892439",
+      headline: "Necas and Roy score quick goals as the Avalanche rout the Blues 6-1",
+      teamName: "Blues",
+      dek: null,
+      photo: null,
+    },
+    {
+      id: "wire-nfl-401872978",
+      headline: "Young, McMillan connect for 2 TDs to lead Panthers past Lions 32-26",
+      teamName: "Lions",
+      dek: null,
+      photo: null,
+    },
+  ];
+}
+
+/** Full printed slate — more games than a phone card can hold. */
+export function sampleHeavyWatchGames(day = "2026-10-05"): WatchGame[] {
+  return sampleWatchSlate(day);
 }
 
 /** Realistic stand-in if today's RUWT slate is empty. */

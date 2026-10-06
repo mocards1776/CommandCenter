@@ -1,6 +1,11 @@
 import type { CSSProperties } from "react";
+import { usePhoneCardFit } from "@/hooks/usePhoneCardFit";
 import {
-  composeWatchPage,
+  rankPhoneWatchGames,
+  trimPhoneWatchFit,
+  type PhoneWatchFit,
+} from "@/lib/newspaper-phone-cards";
+import {
   printClock,
   printNetworks,
   watchClockState,
@@ -28,6 +33,16 @@ function Crest({ side, league, size }: { side: WatchSide; league: WatchGame["lea
 
 function teamTitle(side: WatchSide): string {
   return side.rank ? `No. ${side.rank} ${watchTeamShort(side)}` : watchTeamShort(side);
+}
+
+function asListing(game: WatchGame): WatchListing {
+  return {
+    ...game,
+    tier: game.favorite ? "must" : game.heat >= 70 ? "worth" : "around",
+    reason: game.printReason ?? null,
+    networks: printNetworks(game.tv),
+    clock: printClock(game.when),
+  };
 }
 
 function BannerSide({
@@ -88,22 +103,34 @@ function PhoneCard({ game }: { game: WatchListing }) {
   );
 }
 
-/** Portrait iPhone watch card. Same recap language as the paper's viewing guide. */
+/** Portrait iPhone watch card. Favorites first, then national heat; extras drop to fit. */
 export function PhoneWatchCard({ games, editionLabel }: { games: WatchGame[]; editionLabel: string }) {
-  const page = composeWatchPage(games);
-  const feature = page.feature;
-  if (!feature) return null;
+  const ranked = rankPhoneWatchGames(games);
+  const { ref, value } = usePhoneCardFit<PhoneWatchFit>(
+    { keepRest: Math.max(0, ranked.length - 1) },
+    trimPhoneWatchFit,
+    ranked.map((g) => g.id).join(","),
+  );
+  const featureGame = ranked[0];
+  if (!featureGame) return null;
+  const feature = asListing(featureGame);
+  const rest = ranked.slice(1, 1 + value.keepRest).map(asListing);
   const clock = watchClockState(feature);
   const showScore = clock.kind !== "pre";
-  const rest = page.slots.flatMap((s) => s.listings);
   const starters = watchStarters(feature);
 
   return (
-    <article className="tt-phone-card tt-phone-watch" aria-label="Best Games to Watch Today">
+    <article
+      ref={ref}
+      className="tt-phone-card tt-phone-watch"
+      aria-label="Best Games to Watch Today"
+      data-watch-source={games.length}
+      data-watch-kept={1 + rest.length}
+    >
       <header className="tt-phone-mast">
         <p className="tt-phone-kicker">The Viewing Guide · {editionLabel}</p>
         <h1>Today&apos;s Games</h1>
-        <p className="tt-phone-dek">Ranked by RUWT — stakes, closeness, and the clubs you care about.</p>
+        <p className="tt-phone-dek">Favorite clubs first, then the top national games.</p>
       </header>
 
       <section className="tt-phone-feature" aria-label="Game of the day">

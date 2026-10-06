@@ -1,3 +1,4 @@
+import { usePhoneCardFit } from "@/hooks/usePhoneCardFit";
 import {
   MARSHFIELD,
   clock,
@@ -10,6 +11,7 @@ import {
   type WxHour,
 } from "@/lib/newspaper-weather";
 import { SkyIcon } from "@/components/newspaper/WeatherReport";
+import { trimPhoneWeatherFit, type PhoneWeatherFit } from "@/lib/newspaper-phone-cards";
 
 function weekday(date: string, style: "short" | "long" = "short"): string {
   const [y, m, d] = date.split("-").map(Number) as [number, number, number];
@@ -34,14 +36,14 @@ function MoonDisc({ lit, waxing, size = 36 }: { lit: number; waxing: boolean; si
 
 function HourlyChart({ hours }: { hours: WxHour[] }) {
   if (hours.length < 4) return null;
-  const W = 390;
+  const W = 398;
   const H = 156;
   const top = 28;
   const base = 104;
   const temps = hours.map((h) => h.tempF);
   const lo = Math.min(...temps) - 2;
   const hi = Math.max(...temps) + 2;
-  const x = (i: number) => 16 + (i * (W - 32)) / (hours.length - 1);
+  const x = (i: number) => 8 + (i * (W - 16)) / (hours.length - 1);
   const y = (t: number) => base - ((t - lo) / (hi - lo || 1)) * (base - top);
   const line = hours.map((h, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(h.tempF).toFixed(1)}`).join("");
   const area = `${line}L${x(hours.length - 1)} ${base}L${x(0)} ${base}Z`;
@@ -90,9 +92,15 @@ export function PhoneWeatherCard({ weather }: { weather: MarshfieldWeather }) {
   const today = days[0];
   if (!today) return null;
   const moon = moonPhase(today.date);
-  const outlook = days.slice(1, 8);
+  const week = days.slice(1, 8);
+  const { ref, value } = usePhoneCardFit<PhoneWeatherFit>(
+    { showAlmanac: true, showToday: true, days: week.length, showHourly: true },
+    trimPhoneWeatherFit,
+    weather.observedAt,
+  );
+  const outlook = week.slice(0, value.days);
   return (
-    <article className="tt-phone-card tt-phone-wx" aria-label={`Weather for ${MARSHFIELD.place}`}>
+    <article ref={ref} className="tt-phone-card tt-phone-wx" aria-label={`Weather for ${MARSHFIELD.place}`}>
       <header className="tt-phone-mast">
         <p className="tt-phone-kicker">Thompson Times</p>
         <h1>
@@ -114,9 +122,11 @@ export function PhoneWeatherCard({ weather }: { weather: MarshfieldWeather }) {
         </div>
       </section>
 
-      <p className="tt-phone-today">
-        <span>Today</span> {writtenForecast(weather)}
-      </p>
+      {value.showToday ? (
+        <p className="tt-phone-today">
+          <span>Today</span> {writtenForecast(weather)}
+        </p>
+      ) : null}
 
       <dl className="tt-phone-facts">
         <div>
@@ -147,7 +157,7 @@ export function PhoneWeatherCard({ weather }: { weather: MarshfieldWeather }) {
         </div>
       </dl>
 
-      <HourlyChart hours={hours} />
+      {value.showHourly ? <HourlyChart hours={hours} /> : null}
 
       {outlook.length ? (
         <section className="tt-phone-days" aria-label="Seven-day forecast">
@@ -169,40 +179,42 @@ export function PhoneWeatherCard({ weather }: { weather: MarshfieldWeather }) {
         </section>
       ) : null}
 
-      <section className="tt-phone-almanac" aria-label="Almanac">
-        <h2>Almanac</h2>
-        <div className="tt-phone-sunmoon">
-          <div>
-            <span>Sunrise</span>
-            <b>{clock(today.sunrise)}</b>
-          </div>
-          <div>
-            <span>Sunset</span>
-            <b>{clock(today.sunset)}</b>
-          </div>
-          {dayLength(today.sunrise, today.sunset) ? (
+      {value.showAlmanac ? (
+        <section className="tt-phone-almanac" aria-label="Almanac">
+          <h2>Almanac</h2>
+          <div className="tt-phone-sunmoon">
             <div>
-              <span>Daylight</span>
-              <b>{dayLength(today.sunrise, today.sunset)}</b>
+              <span>Sunrise</span>
+              <b>{clock(today.sunrise)}</b>
             </div>
-          ) : null}
-        </div>
-        <div className="tt-phone-moon">
-          <MoonDisc lit={moon.lit} waxing={moon.waxing} />
-          <div>
-            <b>{moon.name}</b>
-            <em>{Math.round(moon.lit * 100)}% illuminated</em>
+            <div>
+              <span>Sunset</span>
+              <b>{clock(today.sunset)}</b>
+            </div>
+            {dayLength(today.sunrise, today.sunset) ? (
+              <div>
+                <span>Daylight</span>
+                <b>{dayLength(today.sunrise, today.sunset)}</b>
+              </div>
+            ) : null}
           </div>
-        </div>
-        {yesterday ? (
-          <p className="tt-phone-yday">
-            Yesterday <b>{yesterday.highF}°</b> / {yesterday.lowF}°
-            <span>
-              · Precip. {yesterday.precipIn > 0 ? `${yesterday.precipIn.toFixed(2)} in.` : "None"}
-            </span>
-          </p>
-        ) : null}
-      </section>
+          <div className="tt-phone-moon">
+            <MoonDisc lit={moon.lit} waxing={moon.waxing} />
+            <div>
+              <b>{moon.name}</b>
+              <em>{Math.round(moon.lit * 100)}% illuminated</em>
+            </div>
+          </div>
+          {yesterday ? (
+            <p className="tt-phone-yday">
+              Yesterday <b>{yesterday.highF}°</b> / {yesterday.lowF}°
+              <span>
+                · Precip. {yesterday.precipIn > 0 ? `${yesterday.precipIn.toFixed(2)} in.` : "None"}
+              </span>
+            </p>
+          ) : null}
+        </section>
+      ) : null}
       <p className="tt-phone-credit">Forecast data: Open-Meteo</p>
     </article>
   );

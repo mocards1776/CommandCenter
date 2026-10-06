@@ -6,13 +6,25 @@ import {
   isPhoneCardKind,
   phoneCardDate,
   phoneCardEditionLabel,
+  PHONE_CARD_PX,
+  PHONE_CARD_SIZE,
+  rankPhoneWatchGames,
   sampleDaySchedule,
+  sampleFrontStories,
+  sampleHeavyWatchGames,
   sampleWatchGames,
+  trimPhoneDayFit,
+  trimPhoneFrontFit,
+  trimPhoneWatchFit,
+  trimPhoneWeatherFit,
 } from "./newspaper-phone-cards.ts";
 
 function assert(cond: unknown, msg: string) {
   if (!cond) throw new Error(`FAIL: ${msg}`);
 }
+
+assert(PHONE_CARD_SIZE.width === 430 && PHONE_CARD_SIZE.height === 932, "phone CSS size is 430×932");
+assert(PHONE_CARD_PX.width === 1290 && PHONE_CARD_PX.height === 2796, "phone PNG is 1290×2796 at 3x");
 
 assert(isPhoneCardKind("front") && isPhoneCardKind("weather") && isPhoneCardKind("day") && isPhoneCardKind("watch"), "known cards");
 assert(!isPhoneCardKind("a1") && !isPhoneCardKind(""), "unknown cards are rejected");
@@ -31,5 +43,24 @@ assert((day.upcoming ?? []).length === 5 && day.upcoming?.[0]?.date === "2026-10
 const watch = sampleWatchGames();
 assert(watch.length >= 3 && watch[0]!.heat >= watch[1]!.heat, "sample watch is hottest first");
 assert(watch.every((g) => g.away.abbrev && g.home.abbrev), "sample games have both clubs");
+
+const heavy = sampleHeavyWatchGames("2026-10-05");
+assert(heavy.length > watch.length, "heavy slate has more games than the short sample");
+const ranked = rankPhoneWatchGames(heavy);
+const firstNonFav = ranked.findIndex((g) => !g.favorite);
+assert(firstNonFav === -1 || ranked.slice(0, firstNonFav).every((g) => g.favorite), "favorites rank ahead of national games");
+if (firstNonFav >= 0 && ranked[firstNonFav + 1]) {
+  assert(ranked[firstNonFav]!.heat >= ranked[firstNonFav + 1]!.heat, "national games stay heat-ordered");
+}
+
+assert(trimPhoneWatchFit({ keepRest: 3 })?.keepRest === 2, "watch drops the lowest-priority leftover");
+assert(trimPhoneWatchFit({ keepRest: 0 }) === null, "watch keeps the feature game");
+assert(trimPhoneDayFit({ comingDays: 2, rundown: 4, allDay: 1 })?.comingDays === 1, "day ahead drops Coming Up first");
+assert(trimPhoneDayFit({ comingDays: 0, rundown: 2, allDay: 1 })?.rundown === 1, "then later rundown rows");
+assert(trimPhoneFrontFit({ stories: 3, showDek: true, showPhoto: true })?.stories === 2, "front drops the lowest story");
+assert(trimPhoneWeatherFit({ showAlmanac: true, showToday: true, days: 7, showHourly: true })?.showAlmanac === false, "weather drops almanac first");
+
+const front = sampleFrontStories();
+assert(front.length === 3 && /Missouri/.test(front[0]!.headline), "sample front is the Oct 5 evening A1 shape");
 
 console.log("newspaper-phone-cards ok");
