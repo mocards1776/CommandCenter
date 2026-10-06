@@ -2,6 +2,17 @@
 
 ---
 
+## Reading: split last-12-months charts + iPhone tap — October 6, 2026
+
+- `/reading` (above Tags) now stacks two charts: books finished, then
+  pages. Same rolling 12-month window and data rules.
+- A single tap pins that month’s counts in a detail card. It no longer
+  opens the fullscreen breakdown sheet (the iPhone “yank”). Use
+  **Books that month** / **Pages that month** — or a desktop
+  double-click — for the list. Chart SVGs are not tappable images.
+
+---
+
 ## Reading: last-12-months chart sits above Tags — October 6, 2026
 
 - The rolling 12-month books + pages chart on `/reading` (and
