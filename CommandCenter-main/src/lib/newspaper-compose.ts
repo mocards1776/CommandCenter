@@ -213,6 +213,7 @@ type PressBag = {
   leaders?: unknown;
   heisman?: unknown;
   extractCursor?: number;
+  extractFileCursor?: number;
   extracts?: Record<string, RssArticle>;
   extractUrls?: string[];
   raw?: GameWrapCard[];
@@ -616,10 +617,24 @@ export async function pressStep(
       state.extractCursor = cursor + slice.length;
       return pause();
     }
-    if (extractUrls.length) put([pressId, "tt-extracts", day, extractUrls.join("|")], extracts);
-    const extras = essentialsFromDesks(null, state.missouri);
-    state.fresh = fileExtracts([...(state.raw ?? []), ...extras], extractUrls.length ? extracts : undefined);
-    dropBagKeys(state, ["raw", "extracts", "extractUrls", "extractCursor"]);
+    if (state.extractFileCursor == null) {
+      if (extractUrls.length) put([pressId, "tt-extracts", day, extractUrls.join("|")], extracts);
+      const extras = essentialsFromDesks(null, state.missouri);
+      state.raw = [...(state.raw ?? []), ...extras];
+      state.fresh = [];
+      state.extractFileCursor = 0;
+      return pause();
+    }
+    const queue = state.raw ?? [];
+    const fileAt = state.extractFileCursor;
+    if (fileAt < queue.length) {
+      const slice = queue.slice(fileAt, fileAt + STORY_FLUSH_PER_HOP);
+      const filed = fileExtracts(slice, extractUrls.length ? extracts : undefined);
+      state.fresh = [...(state.fresh ?? []), ...filed];
+      state.extractFileCursor = fileAt + slice.length;
+      return pause();
+    }
+    dropBagKeys(state, ["raw", "extracts", "extractUrls", "extractCursor", "extractFileCursor"]);
     state.stage = 15;
     return pause();
   }

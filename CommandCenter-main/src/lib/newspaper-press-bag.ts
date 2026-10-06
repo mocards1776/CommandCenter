@@ -34,7 +34,7 @@ export function deadBagKeys(stage: number): readonly string[] {
     dead.push(...DROP_AFTER_BOARD_DESKS);
     dead.push(...DROP_AFTER_GATHER);
   }
-  if (stage >= 15) dead.push("raw", "extracts", "extractUrls", "extractCursor");
+  if (stage >= 15) dead.push("raw", "extracts", "extractUrls", "extractCursor", "extractFileCursor");
   if (stage >= 16) dead.push("fresh", "missouri", "cleanCursor");
   if (stage >= 18) dead.push("dedupeQueue", "dedupeGroups", "dedupeCursor", "deskCopy");
   if (stage >= 19) dead.push("filed", "storyCursor");
