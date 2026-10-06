@@ -3,6 +3,8 @@ import { cn, todayStr } from "@/lib/utils";
 import {
   lastDayOfMonth,
   rolling12MonthStats,
+  type RollingMonthPoint,
+  type RollingYearSeries,
   type YearChartBook,
   type YearChartSession,
 } from "@/lib/reading-year";
@@ -31,6 +33,15 @@ function compact(n: number): string {
   return String(n);
 }
 
+function monthFocus(point: RollingMonthPoint, kind: "finished" | "pages"): ReadingYearFocus {
+  return {
+    kind,
+    label: `${point.label} · ${kind === "finished" ? "books finished" : "pages"}`,
+    from: `${point.key}-01`,
+    to: lastDayOfMonth(point.key),
+  };
+}
+
 export default function ReadingYearChart({
   books,
   sessions,
@@ -41,110 +52,188 @@ export default function ReadingYearChart({
   onBreakdown?: (focus: ReadingYearFocus) => void;
 }) {
   const series = useMemo(() => rolling12MonthStats(books, sessions, todayStr()), [books, sessions]);
-  const [active, setActive] = useState<string | null>(null);
+  const [pinned, setPinned] = useState<string | null>(null);
+  const [hover, setHover] = useState<string | null>(null);
+  const active = pinned ?? hover;
+  const selected = series.months.find((m) => m.key === active) ?? null;
+  const range = `${series.months[0]!.month} ${series.months[0]!.year} – ${series.months.at(-1)!.month} ${series.months.at(-1)!.year}`;
 
-  const pageMax = niceMax(Math.max(...series.months.map((m) => m.pages)), 100);
-  const bookMax = niceMax(Math.max(...series.months.map((m) => m.booksFinished)), 4);
+  const pinMonth = (key: string) => {
+    setPinned((cur) => (cur === key ? null : key));
+  };
 
+  const openList = (kind: "finished" | "pages") => {
+    if (!onBreakdown || !selected) return;
+    onBreakdown(monthFocus(selected, kind));
+  };
+
+  return (
+    <section className="flex flex-col gap-4">
+      <div>
+        <h2 className="rule-head">Last 12 months</h2>
+        <p className="text-chalk-dim mt-1 text-[10.5px] tracking-[0.04em]">{range}</p>
+      </div>
+
+      <MonthBars
+        title="Books finished"
+        series={series}
+        values={series.months.map((m) => m.booksFinished)}
+        total={series.totalBooks}
+        unit={(n) => (n === 1 ? "book" : "books")}
+        fill="cream"
+        floor={4}
+        active={active}
+        onHover={setHover}
+        onPin={pinMonth}
+        onOpenList={() => openList("finished")}
+      />
+
+      <MonthBars
+        title="Pages"
+        series={series}
+        values={series.months.map((m) => m.pages)}
+        total={series.totalPages}
+        unit={() => "pages"}
+        fill="accent"
+        floor={100}
+        active={active}
+        onHover={setHover}
+        onPin={pinMonth}
+        onOpenList={() => openList("pages")}
+      />
+
+      {selected && (
+        <div className="rounded-sm border border-white/10 bg-ink/80 px-3 py-2.5">
+          <p className="text-cream text-[13px] font-medium">{selected.label}</p>
+          <p className="text-chalk mt-1 text-[12px]">
+            <span className="numeral text-cream">{selected.booksFinished}</span>{" "}
+            {selected.booksFinished === 1 ? "book" : "books"}
+            <span className="text-chalk-dim/50 mx-1.5">·</span>
+            <span className="numeral text-accent">{selected.pages.toLocaleString()}</span> pages
+            {selected.pagesEstimated > 0 && selected.pagesLogged > 0 && (
+              <span className="text-chalk-dim">
+                {" "}
+                ({selected.pagesLogged.toLocaleString()} logged)
+              </span>
+            )}
+            {selected.pagesEstimated > 0 && selected.pagesLogged === 0 && (
+              <span className="text-chalk-dim"> estimated</span>
+            )}
+          </p>
+          {onBreakdown && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => openList("finished")}
+                className="text-accent hover:text-cream text-[11px] uppercase tracking-[0.12em]"
+              >
+                Books that month
+              </button>
+              <button
+                type="button"
+                onClick={() => openList("pages")}
+                className="text-accent hover:text-cream text-[11px] uppercase tracking-[0.12em]"
+              >
+                Pages that month
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {!selected && (
+        <p className="text-chalk-dim text-[10.5px]">Tap a month for the exact count.</p>
+      )}
+
+      <p
+        className={cn(
+          "text-chalk-dim text-[10.5px] leading-relaxed",
+          series.totalEstimated === 0 && "sr-only",
+        )}
+      >
+        {series.totalEstimated > 0
+          ? `${series.totalLogged.toLocaleString()} pages logged · ${series.totalEstimated.toLocaleString()} estimated from page counts (finishes with no sessions).`
+          : "Pages are summed from logged reading sessions. Empty months are zero."}
+      </p>
+    </section>
+  );
+}
+
+function MonthBars({
+  title,
+  series,
+  values,
+  total,
+  unit,
+  fill,
+  floor,
+  active,
+  onHover,
+  onPin,
+  onOpenList,
+}: {
+  title: string;
+  series: RollingYearSeries;
+  values: number[];
+  total: number;
+  unit: (n: number) => string;
+  fill: "cream" | "accent";
+  floor: number;
+  active: string | null;
+  onHover: (key: string | null) => void;
+  onPin: (key: string) => void;
+  onOpenList: () => void;
+}) {
+  const max = niceMax(Math.max(...values), floor);
   const W = 640;
-  const H = 176;
+  const H = 148;
   const padL = 34;
-  const padR = 26;
-  const padT = 12;
-  const padB = 8;
+  const padR = 12;
+  const padT = 10;
+  const padB = 6;
   const innerW = W - padL - padR;
   const innerH = H - padT - padB;
   const colW = innerW / series.months.length;
   const barW = Math.min(26, colW * 0.52);
-  const range = `${series.months[0]!.month} ${series.months[0]!.year} – ${series.months.at(-1)!.month} ${series.months.at(-1)!.year}`;
+  const gradId = fill === "accent" ? "ry-fill-accent" : "ry-fill-cream";
+  const grid = [0, 0.5, 1];
 
   const x = (i: number) => padL + colW * i + colW / 2;
-  const yBooks = (n: number) => padT + innerH - (n / bookMax) * innerH;
-
-  const line = series.months
-    .map((m, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)} ${yBooks(m.booksFinished).toFixed(1)}`)
-    .join(" ");
-  const area = `${line} L${x(series.months.length - 1).toFixed(1)} ${(padT + innerH).toFixed(1)} L${x(0).toFixed(1)} ${(padT + innerH).toFixed(1)} Z`;
-
-  const selected = series.months.find((m) => m.key === active) ?? null;
-  const selectedIdx = selected ? series.months.indexOf(selected) : -1;
-  const tipLeft =
-    selectedIdx < 0 ? 50 : Math.min(86, Math.max(14, ((selectedIdx + 0.5) / series.months.length) * 100));
-
-  const openMonth = (key: string, kind: "finished" | "pages") => {
-    if (!onBreakdown) return;
-    const point = series.months.find((m) => m.key === key);
-    if (!point) return;
-    onBreakdown({
-      kind,
-      label: `${point.label} · ${kind === "finished" ? "books finished" : "pages"}`,
-      from: `${key}-01`,
-      to: lastDayOfMonth(key),
-    });
-  };
-
-  const grid = [0, 0.5, 1];
 
   return (
     <div>
-      <div className="mb-3 flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
-        <div>
-          <h2 className="rule-head">Last 12 months</h2>
-          <p className="text-chalk-dim mt-1 text-[10.5px] tracking-[0.04em]">{range}</p>
-          <p className="mt-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <span>
-              <span className="numeral text-cream text-[22px] leading-none">
-                {series.totalBooks.toLocaleString()}
-              </span>
-              <span className="text-chalk-dim ml-1.5 text-[11px]">
-                {series.totalBooks === 1 ? "book" : "books"}
-              </span>
-            </span>
-            <span className="text-chalk-dim/40">·</span>
-            <span>
-              <span className="numeral text-accent text-[22px] leading-none">
-                {series.totalPages.toLocaleString()}
-              </span>
-              <span className="text-chalk-dim ml-1.5 text-[11px]">pages</span>
-            </span>
-          </p>
-        </div>
-        <div className="flex items-center gap-3 text-[10px] uppercase tracking-[0.14em]">
-          <span className="text-chalk flex items-center gap-1.5">
-            <i className="inline-block h-2 w-2 rounded-full bg-cream ring-1 ring-cream/40" />
-            Books
+      <div className="mb-2 flex items-baseline justify-between gap-3">
+        <h3 className="text-chalk text-[10px] font-semibold uppercase tracking-[0.18em]">{title}</h3>
+        <p>
+          <span
+            className={cn(
+              "numeral text-[20px] leading-none",
+              fill === "accent" ? "text-accent" : "text-cream",
+            )}
+          >
+            {total.toLocaleString()}
           </span>
-          <span className="text-chalk flex items-center gap-1.5">
-            <i className="from-accent-deep to-accent inline-block h-2.5 w-2 rounded-[1px] bg-gradient-to-t" />
-            Pages
-          </span>
-        </div>
+          <span className="text-chalk-dim ml-1.5 text-[11px]">{unit(total)}</span>
+        </p>
       </div>
 
       <div className="relative overflow-hidden rounded-sm border border-white/[0.06] bg-gradient-to-b from-white/[0.04] to-transparent">
         <svg
           viewBox={`0 0 ${W} ${H}`}
-          className="block h-auto w-full"
-          role="img"
-          aria-label={`Last 12 months: ${series.totalBooks} books finished, ${series.totalPages.toLocaleString()} pages`}
+          className="pointer-events-none block h-auto w-full"
+          aria-hidden="true"
+          focusable="false"
         >
           <defs>
-            <linearGradient id="ry-bar" x1="0" y1="1" x2="0" y2="0">
+            <linearGradient id="ry-fill-accent" x1="0" y1="1" x2="0" y2="0">
               <stop offset="0%" stopColor="var(--color-accent-dark)" />
               <stop offset="55%" stopColor="var(--color-accent-deep)" />
               <stop offset="100%" stopColor="var(--color-accent)" />
             </linearGradient>
-            <linearGradient id="ry-area" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--color-cream)" stopOpacity="0.18" />
-              <stop offset="100%" stopColor="var(--color-cream)" stopOpacity="0" />
+            <linearGradient id="ry-fill-cream" x1="0" y1="1" x2="0" y2="0">
+              <stop offset="0%" stopColor="#c9c4b6" />
+              <stop offset="100%" stopColor="var(--color-cream)" />
             </linearGradient>
-            <filter id="ry-glow" x="-40%" y="-40%" width="180%" height="180%">
-              <feGaussianBlur stdDeviation="1.4" result="b" />
-              <feMerge>
-                <feMergeNode in="b" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
           </defs>
 
           {grid.map((t) => {
@@ -167,64 +256,31 @@ export default function ReadingYearChart({
                   fontSize="9"
                   fontFamily="var(--font-body)"
                 >
-                  {t === 0 ? "0" : compact(pageMax * t)}
+                  {t === 0 ? "0" : compact(max * t)}
                 </text>
-                {t > 0 && (
-                  <text
-                    x={W - padR + 6}
-                    y={y + 3}
-                    textAnchor="start"
-                    fill="rgba(244,241,233,0.36)"
-                    fontSize="9"
-                    fontFamily="var(--font-body)"
-                  >
-                    {Math.round(bookMax * t)}
-                  </text>
-                )}
               </g>
             );
           })}
 
-          <path d={area} fill="url(#ry-area)" />
-          <path
-            d={line}
-            fill="none"
-            stroke="var(--color-cream)"
-            strokeWidth="2"
-            strokeLinejoin="round"
-            strokeLinecap="round"
-            filter="url(#ry-glow)"
-          />
-
           {series.months.map((m, i) => {
-            const cx = x(i);
-            const barH = Math.max(2, (m.pages / pageMax) * innerH);
-            const by = padT + innerH - barH;
+            const value = values[i] ?? 0;
+            const barH = Math.max(2, (value / max) * innerH);
             const isOn = active === m.key;
             return (
-              <g key={m.key}>
-                <rect
-                  x={cx - barW / 2}
-                  y={by}
-                  width={barW}
-                  height={barH}
-                  rx={2}
-                  fill="url(#ry-bar)"
-                  opacity={active && !isOn ? 0.4 : m.pages === 0 ? 0.22 : 0.95}
-                />
-                <circle
-                  cx={cx}
-                  cy={yBooks(m.booksFinished)}
-                  r={isOn ? 4.4 : 3.3}
-                  fill={m.booksFinished > 0 ? "var(--color-cream)" : "var(--color-field)"}
-                  stroke="var(--color-cream)"
-                  strokeWidth={m.booksFinished > 0 ? 1.35 : 1.1}
-                  opacity={active && !isOn ? 0.4 : 1}
-                />
-              </g>
+              <rect
+                key={m.key}
+                x={x(i) - barW / 2}
+                y={padT + innerH - barH}
+                width={barW}
+                height={barH}
+                rx={2}
+                fill={`url(#${gradId})`}
+                opacity={active && !isOn ? 0.35 : value === 0 ? 0.22 : 0.95}
+              />
             );
           })}
         </svg>
+
         <div
           className="absolute inset-0"
           style={{
@@ -235,24 +291,29 @@ export default function ReadingYearChart({
           }}
         >
           <div className="flex h-full">
-            {series.months.map((m) => (
-              <button
-                key={m.key}
-                type="button"
-                className="h-full min-w-0 flex-1 rounded-sm focus-visible:bg-white/[0.06] focus-visible:outline-none"
-                aria-label={`${m.label}: ${m.booksFinished} ${m.booksFinished === 1 ? "book" : "books"}, ${m.pages.toLocaleString()} pages`}
-                onPointerEnter={() => setActive(m.key)}
-                onPointerLeave={() => setActive((cur) => (cur === m.key ? null : cur))}
-                onFocus={() => setActive(m.key)}
-                onBlur={() => setActive((cur) => (cur === m.key ? null : cur))}
-                onClick={() => {
-                  setActive(m.key);
-                  openMonth(m.key, "finished");
-                }}
-              />
-            ))}
+            {series.months.map((m, i) => {
+              const value = values[i] ?? 0;
+              return (
+                <button
+                  key={m.key}
+                  type="button"
+                  className="h-full min-w-0 flex-1 touch-manipulation rounded-sm focus-visible:bg-white/[0.06] focus-visible:outline-none [-webkit-touch-callout:none]"
+                  aria-pressed={active === m.key}
+                  aria-label={`${m.label}: ${value.toLocaleString()} ${unit(value)}`}
+                  onPointerEnter={(e) => {
+                    if (e.pointerType === "mouse") onHover(m.key);
+                  }}
+                  onPointerLeave={(e) => {
+                    if (e.pointerType === "mouse") onHover(null);
+                  }}
+                  onClick={() => onPin(m.key)}
+                  onDoubleClick={onOpenList}
+                />
+              );
+            })}
           </div>
         </div>
+
         <div
           className="pointer-events-none flex pb-2"
           style={{
@@ -273,43 +334,7 @@ export default function ReadingYearChart({
             </span>
           ))}
         </div>
-
-        {selected && (
-          <div
-            className="pointer-events-none absolute top-3 z-10 w-[11.5rem] -translate-x-1/2 rounded-sm border border-white/10 bg-ink/95 px-3 py-2 shadow-xl backdrop-blur-sm"
-            style={{ left: `${tipLeft}%` }}
-          >
-            <p className="text-cream text-[12px] font-medium">{selected.label}</p>
-            <p className="text-chalk mt-1 text-[12px]">
-              <span className="numeral text-cream">{selected.booksFinished}</span>{" "}
-              {selected.booksFinished === 1 ? "book" : "books"}
-            </p>
-            <p className="text-chalk text-[12px]">
-              <span className="numeral text-accent">{selected.pages.toLocaleString()}</span> pages
-              {selected.pagesEstimated > 0 && selected.pagesLogged > 0 && (
-                <span className="text-chalk-dim">
-                  {" "}
-                  ({selected.pagesLogged.toLocaleString()} logged)
-                </span>
-              )}
-              {selected.pagesEstimated > 0 && selected.pagesLogged === 0 && (
-                <span className="text-chalk-dim"> estimated</span>
-              )}
-            </p>
-          </div>
-        )}
       </div>
-
-      <p
-        className={cn(
-          "text-chalk-dim mt-2 text-[10.5px] leading-relaxed",
-          series.totalEstimated === 0 && "sr-only",
-        )}
-      >
-        {series.totalEstimated > 0
-          ? `${series.totalLogged.toLocaleString()} pages logged · ${series.totalEstimated.toLocaleString()} estimated from page counts (finishes with no sessions).`
-          : "Pages are summed from logged reading sessions. Empty months are zero."}
-      </p>
     </div>
   );
 }
