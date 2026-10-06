@@ -129,13 +129,41 @@ async function espnViaSportsProxy(clean: string): Promise<unknown> {
   throw new Error(`ESPN ${clean} failed`);
 }
 
+async function espnViaDevProxy(clean: string, site?: 2 | 3): Promise<unknown> {
+  try {
+    if (!(import.meta as { env?: { DEV?: boolean } }).env?.DEV) {
+      throw new Error("not dev");
+    }
+  } catch {
+    throw new Error("not dev");
+  }
+  const { signal, clear } = abortAfter(20_000);
+  try {
+    const res = await fetch(`/api/espn?path=${encodeURIComponent(clean)}&site=${site === 3 ? 3 : 2}`, {
+      headers: { Accept: "application/json" },
+      signal,
+    });
+    if (!res.ok) throw new Error(`dev proxy ${res.status}`);
+    const data = await res.json();
+    if (data && typeof data === "object" && (data as { error?: string }).error) {
+      throw new Error(String((data as { error: string }).error));
+    }
+    return data;
+  } finally {
+    clear();
+  }
+}
+
 /** ESPN site API with the same hosts, headers, timeouts, and proxy fallback as espnGet. */
 export async function newspaperEspnGet(path: string, opts?: NewspaperEspnGetOpts): Promise<unknown> {
   const clean = path.replace(/^\/+/, "");
   const headers = { Accept: "application/json" };
   const hosts = opts?.site === 3 ? [ESPN_WEB_V3, ESPN_API_V3, ESPN_API, ESPN_WEB] : [ESPN_API, ESPN_WEB];
-  // The sports-edge proxy first: browsers on localhost are CORS-blocked from
-  // site.api, and waiting 12s per host starves the A1 lead recap.
+  try {
+    return await espnViaDevProxy(clean, opts?.site);
+  } catch {
+    /* production, tests, or the local middleware is down */
+  }
   try {
     return await espnViaSportsProxy(clean);
   } catch {
