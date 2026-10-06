@@ -12,6 +12,7 @@ import {
   formatKickoffLine,
   gameMatchesRecap,
   groupCfbGamesByDay,
+  boxLeaderLabel,
   leaderCategoryLabel,
   leaderGroupHasValidData,
   scoresInHeadline,
@@ -219,6 +220,8 @@ assertEqual(
 );
 
 assertEqual(leaderCategoryLabel("rating", "RAT", "RAT"), "Rating", "RAT prints as Rating");
+assertEqual(boxLeaderLabel("RAT", "baseball/mlb"), "BAT", "MLB box RAT prints as BAT");
+assertEqual(boxLeaderLabel("RAT", "basketball/nba"), "Rating", "NBA box RAT prints as Rating");
 assert(
   !leaderGroupHasValidData({ category: "PER", rows: [{ name: "A", team: "UTA", line: "0.0", headshot: null }] }),
   "all-zero PER is hidden",

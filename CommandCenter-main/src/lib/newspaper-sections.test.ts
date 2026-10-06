@@ -134,6 +134,14 @@ assert(
   isResultCopy({ headline: "Chiefs' Mahomes perfect on play-action passes in win vs. Dolphins" }),
   "a win story is a result",
 );
+assert(
+  isResultCopy({ headline: "No. 25 Missouri trounces No. 8 Florida 45-17 to snap 9-game skid" }),
+  "a trounces + score hed is a result",
+);
+assert(
+  isResultCopy({ headline: "Chourio's 2-run single with 2 outs in 9th lifts Brewers over Padres" }),
+  "a walk-off lift is a result",
+);
 
 const weekend = card({
   id: "wire-nfl-weekend",

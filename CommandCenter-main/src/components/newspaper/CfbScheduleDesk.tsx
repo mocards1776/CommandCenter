@@ -97,7 +97,7 @@ function CfbBlock({
   );
 }
 
-function CfbFill({
+export function CfbFill({
   poll,
   standings,
   heisman,

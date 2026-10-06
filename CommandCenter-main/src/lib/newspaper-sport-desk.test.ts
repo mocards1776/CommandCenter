@@ -5,10 +5,13 @@
 import type { GameWrapCard } from "./newspaper-sports.ts";
 import {
   attachRelatedGameCopy,
+  favoriteKeyForGame,
   groupSportRecaps,
+  isBoxStub,
   isInjuryNote,
   isSecCard,
   isSportFiller,
+  isWrapLead,
   orderSportRecaps,
   isEflChampionshipStory,
   orderSportSectionFront,
@@ -330,5 +333,84 @@ const mlbFront = orderSportSectionFront(
   "2026-10-05-evening",
 );
 assert(mlbFront[0]?.id === "league-50108019", "an NLDS recap leads MLB over an offseason surgery feature");
+
+const mizTrounces = card({
+  id: "league-miz-ap",
+  headline: "No. 25 Missouri trounces No. 8 Florida 45-17 to snap 9-game skid against Top 25 opponents",
+  favoriteKey: "cfb-mizzou",
+  followed: true,
+  leaguePath: "football/college-football",
+  sportLabel: "CFB",
+  sec: true,
+  when: "2026-10-04T16:00:00Z",
+  photo: "https://example.com/miz-big.jpg",
+  body: "Missouri scored early in Columbia and never let Florida back in. ".repeat(20),
+});
+const volsQb = card({
+  id: "league-vols-qb",
+  headline: "Vols QB Joey Aguilar named SEC offensive player of the week",
+  leaguePath: "football/college-football",
+  sportLabel: "CFB",
+  editorFront: 0,
+  photo: "https://example.com/vols.jpg",
+  when: "2026-10-05T18:00:00Z",
+  body: "Tennessee's quarterback threw for 300 yards. ".repeat(8),
+});
+assert(isWrapLead(mizTrounces), "a trounces + 45-17 hed is a wrap lead");
+assert(!isWrapLead(volsQb), "a QB award is news, not a wrap");
+const mizLeadsVols = orderSportSectionFront(
+  [volsQb, mizTrounces],
+  "football/college-football",
+  "2026-10-05-evening",
+);
+assert(mizLeadsVols[0]?.id === "league-miz-ap", "Mizzou's recap leads CFB over a Vols QB note");
+
+const whiteSoxStub = card({
+  id: "box-cws",
+  headline: "White Sox 4, Mariners 3",
+  wrapKind: "box",
+  leaguePath: "baseball/mlb",
+  sportLabel: "MLB",
+  scoreLine: "CWS 4 · SEA 3",
+  when: "2026-10-05T20:00:00Z",
+  body: "Chicago held on. Seattle left the tying run on.",
+});
+const nldsPhoto = card({
+  id: "league-nlds-g2",
+  headline: "Braves hold off Dodgers in NLDS Game 2",
+  leaguePath: "baseball/mlb",
+  sportLabel: "MLB",
+  status: "Recap",
+  postseason: true,
+  holdover: true,
+  when: "2026-10-05T02:10:00Z",
+  photo: "https://example.com/atl.jpg",
+  body: "Atlanta scored twice in the eighth and closed it out. ".repeat(16),
+});
+assert(isBoxStub(whiteSoxStub), "a Times box wrap is a stub");
+const mlbPhotoLead = orderSportSectionFront(
+  [whiteSoxStub, nldsPhoto],
+  "baseball/mlb",
+  "2026-10-05-evening",
+);
+assert(mlbPhotoLead[0]?.id === "league-nlds-g2", "a photo postseason recap leads over a box-wrap stub");
+
+assert(
+  favoriteKeyForGame(
+    { away: { short: "Florida", name: "Florida Gators" }, home: { short: "Missouri", name: "Missouri Tigers" } },
+    [{ key: "cfb-mizzou", shortName: "Mizzou" }],
+  ) === "cfb-mizzou",
+  "Missouri on the board stamps the Mizzou desk",
+);
+assert(
+  favoriteKeyForGame(
+    { away: { short: "Wrexham", name: "Wrexham AFC" }, home: { short: "Wolves", name: "Wolverhampton" } },
+    [
+      { key: "eng-wrexham", shortName: "Wrexham" },
+      { key: "eng-wolves", shortName: "Wolves" },
+    ],
+  ) === "eng-wrexham",
+  "a Wrexham final stamps the Championship desk",
+);
 
 console.log("newspaper-sport-desk ok");

@@ -302,11 +302,15 @@ export function isResultCopy(input: {
   return (
     /\bin (?:a |the )?(?:win|loss|defeat)\b/.test(hay) ||
     /\bwin (?:over|vs\.?|against)\b/.test(hay) ||
-    /\b(?:beat|defeated|edged|routed|downed|topped) the\b/.test(hay) ||
-    /\b(?:lifts|lifted)\b[^.]{0,48}\b(?:win|victory)\b/.test(hay) ||
+    /\b(?:beat|beats|defeated|edged|routed|routs|downed|topped|trounced|trounces|blanked|pounded|thrashed|clobbered)\b/.test(
+      hay,
+    ) ||
+    /\b(?:lifts|lifted)\b[^.]{0,48}\b(?:win|victory|over)\b/.test(hay) ||
+    /\bwalk-?off\b/.test(hay) ||
     /\bposts? \d+ points\b/.test(hay) ||
     /\brecaps?\b/.test(hay) ||
-    /\b\d{1,3}\s*[-–]\s*\d{1,3}\s+(?:win|loss|victory|defeat)\b/.test(hay)
+    /\b\d{1,3}\s*[-–]\s*\d{1,3}\s+(?:win|loss|victory|defeat)\b/.test(hay) ||
+    /\b\d{1,3}\s*[-–]\s*\d{1,3}\b/.test(hay)
   );
 }
 

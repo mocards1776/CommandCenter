@@ -1565,7 +1565,17 @@ function sportPages(
   const newsPool = unique
     .filter((card) => !isGameWrap(card) && !isSportFiller(card, recapPool))
     .slice(0, SPORT_NEWS_CAP);
-  const frontPool = orderSportSectionFront([...recapPool, ...newsPool], id.path, edition);
+  const newsDay = editionNewsDay(edition);
+  const frontPool = orderSportSectionFront([...recapPool, ...newsPool], id.path, edition).filter((card) => {
+    // Last night's favorite wrap may lead its section. Older Section A
+    // recaps already ran in A — do not reprint them on a later front.
+    // Home-desk and Championship clubs always stay (Mizzou, Wrexham).
+    if (!(isSectionAStory(card) && (isGameWrap(card) || isRecapStory(card)))) return true;
+    if (id.path.startsWith("soccer/")) return true;
+    if (favoriteDeskWeight(card.favoriteKey) >= 100) return true;
+    const gameDay = card.when ? instantDay(card.when) : null;
+    return Boolean(gameDay && gameDay === newsDay);
+  });
   const FRONT_SHOW = 5;
   const frontShown = frontPool.slice(0, FRONT_SHOW);
   const shownIds = new Set(frontShown.map((card) => card.id));

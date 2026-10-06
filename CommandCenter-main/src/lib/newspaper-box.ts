@@ -710,9 +710,10 @@ function espnGame(path: string, ev: EspnEventRaw, day: string): BoxGame | null {
     const top = g.leaders?.[0];
     if (!top?.athlete) continue;
     const name = top.athlete.shortName || top.athlete.displayName || "";
-    if (leaders.some((l) => l.name === name && l.label === g.shortDisplayName)) continue;
+    const label = boxLeaderLabel(g.shortDisplayName || g.displayName || "", path);
+    if (leaders.some((l) => l.name === name && l.label === label)) continue;
     leaders.push({
-      label: g.shortDisplayName || g.displayName || "",
+      label,
       id: top.athlete.id ?? null,
       name,
       line: top.displayValue ?? null,
@@ -967,6 +968,7 @@ export function boxStoryCard(game: BoxGame): GameWrapCard | null {
   return {
     id: `box-${game.id}`,
     favoriteKey: "",
+    wrapKind: recap?.html && body && body.length >= 280 ? "espn" : recap?.html || recap?.photo ? "espn" : "box",
     teamName: winner?.short ?? game.home.short,
     teamHref: game.href ?? "/",
     sportLabel: game.league,
@@ -1365,6 +1367,15 @@ export function leaderCategoryLabel(name: string, displayName?: string, abbrevia
   if (displayName && displayName.length > 3) return displayName;
   if (name && name.length > 3 && !/^[A-Z]{2,4}$/.test(name)) return name;
   return displayName || abbreviation || name;
+}
+
+/** Box-score chip: MLB "RAT" is a batting mark, not the three-letter stub. */
+export function boxLeaderLabel(label: string, path?: string): string {
+  const key = label.toLowerCase().replace(/[^a-z]/g, "");
+  if (key === "rat" || key === "rating") {
+    return path === "baseball/mlb" ? "BAT" : "Rating";
+  }
+  return leaderCategoryLabel(label, label, label);
 }
 
 function parseLeaderValue(line: string): number | null {

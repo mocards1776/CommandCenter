@@ -1525,16 +1525,6 @@ mark.rss-hl {
   min-width: 0;
   min-height: 0;
 }
-[data-tt-trimmed] {
-  display: none !important;
-}
-.wsj-sheet[data-tt-tight] .wsj-cut img,
-.wsj-sheet[data-tt-tight] .tt-nat-cut img,
-.wsj-sheet[data-tt-tight] .tt-mo-photo img,
-.wsj-sheet[data-tt-tight] .tt-feature-photo img {
-  max-height: 240px;
-}
-
 .wsj-logo {
   display: block;
   object-fit: contain;
@@ -4869,12 +4859,11 @@ li.counting .tt-count.card {
 .tt-strip-st {
   font-size: 8.5px;
   font-weight: 800;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--w-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  line-height: 1.2;
 }
 .tt-strip-row {
   display: flex;
@@ -8733,6 +8722,45 @@ li.counting .tt-count.card {
   gap: 16px;
   flex: 1;
   min-height: 0;
+}
+.tt-front-fill {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 14px;
+  margin-top: auto;
+}
+.tt-front-bracket {
+  min-height: 0;
+}
+.tt-front-leaders .tt-lleaders-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.tt-fixture-dates {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 16px;
+}
+.tt-fixture-dates li {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--w-hair);
+  font-size: 13px;
+}
+.tt-fixture-dates time {
+  font-family: var(--w-cond);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+  white-space: nowrap;
 }
 .tt-front-grid {
   display: grid;

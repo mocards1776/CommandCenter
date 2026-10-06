@@ -4,6 +4,7 @@
  */
 
 import { favoriteDeskWeight, gameWrapCovers, isGameWrapStory, isResultCopy } from "./newspaper.ts";
+import { scoresInHeadline } from "./newspaper-box.ts";
 import { isNewspaperSecGame } from "./newspaper-espn.ts";
 import { wrapBriefSentences } from "./newspaper-box-wrap.ts";
 import { storySource } from "./newspaper-source.ts";
@@ -214,8 +215,16 @@ export function isSecCard(card: GameWrapCard): boolean {
   return false;
 }
 
-function isWrapLead(card: GameWrapCard): boolean {
+/** Times box-wrap stub — a two-sentence score line, not a filed recap. */
+export function isBoxStub(card: GameWrapCard): boolean {
+  if (card.wrapKind === "box") return true;
+  if (card.id.startsWith("box-") && !card.photo && (card.body?.length ?? 0) < 400) return true;
+  return false;
+}
+
+export function isWrapLead(card: GameWrapCard): boolean {
   if (isGameWrapCard(card) || Boolean(card.scoreLine && /\d/.test(card.scoreLine))) return true;
+  if (scoresInHeadline(card.headline ?? "")) return true;
   return isResultCopy({
     headline: card.headline,
     dek: card.dek,
@@ -223,6 +232,56 @@ function isWrapLead(card: GameWrapCard): boolean {
     scoreLine: card.scoreLine,
     type: card.id.startsWith("news-") || card.id.startsWith("league-") ? card.status : null,
   });
+}
+
+const CLUB_ALIASES: Record<string, RegExp> = {
+  "cfb-mizzou": /mizzou|missouri/,
+  "eng-wrexham": /wrexham/,
+  "eng-wolves": /wolves|wolverhampton/,
+};
+
+export function favoriteKeyForGame(
+  game: { away: { short?: string | null; name?: string | null }; home: { short?: string | null; name?: string | null } },
+  clubs: { key: string; shortName: string }[],
+): string {
+  const sides = [game.away.short, game.away.name, game.home.short, game.home.name]
+    .map((s) => (s ?? "").toLowerCase().replace(/[^a-z0-9]/g, ""))
+    .filter(Boolean);
+  for (const club of clubs) {
+    const alias = CLUB_ALIASES[club.key];
+    if (alias && sides.some((s) => alias.test(s))) return club.key;
+    const n = club.shortName.toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (!n || n.length < 3) continue;
+    if (sides.some((s) => s === n || s.includes(n) || n.includes(s))) return club.key;
+  }
+  return "";
+}
+
+/** Never open on a box stub when a photo recap (even a holdover) is on file. */
+export function pickSectionFrontLead(
+  wraps: GameWrapCard[],
+  pool: GameWrapCard[],
+  editorLead?: GameWrapCard,
+  newsLead?: GameWrapCard,
+): GameWrapCard | undefined {
+  const quality = wraps.filter((c) => !isBoxStub(c) && (Boolean(c.photo) || (c.body?.length ?? 0) >= 280));
+  const qualityFresh = quality.filter((c) => !c.holdover);
+  const qualityPost = quality.filter((c) => c.postseason);
+  const nonStubFresh = wraps.filter((c) => !c.holdover && !isBoxStub(c));
+  const nonStub = wraps.filter((c) => !isBoxStub(c));
+  const freshWraps = wraps.filter((c) => !c.holdover);
+  return (
+    qualityFresh[0] ??
+    qualityPost[0] ??
+    quality[0] ??
+    nonStubFresh[0] ??
+    nonStub[0] ??
+    freshWraps[0] ??
+    wraps[0] ??
+    editorLead ??
+    newsLead ??
+    pool[0]
+  );
 }
 
 function isFreshSectionLead(card: GameWrapCard, path: string, edition: string): boolean {
@@ -256,14 +315,12 @@ export function orderSportSectionFront(
   const fresh = unique.filter((card) => isFreshSectionLead(card, path, edition));
   const pool = fresh.length ? fresh : unique;
   const wraps = orderSportRecaps(pool.filter(isWrapLead), path);
-  const freshWraps = wraps.filter((card) => !card.holdover);
   const news = pool
     .filter((card) => !isWrapLead(card))
     .sort((a, b) => (a.editorRank ?? 99) - (b.editorRank ?? 99) || String(b.when ?? "").localeCompare(String(a.when ?? "")));
   const newsLead = news.find((card) => !isInjuryNote(card));
   const editorLead = pool.find((card) => card.editorFront === 0 && !isInjuryNote(card));
-  // Wraps beat editor news. A holdover wrap still leads when every final is marked holdover.
-  const lead = (freshWraps[0] ?? wraps[0]) ?? editorLead ?? newsLead ?? news[0] ?? pool[0];
+  const lead = pickSectionFrontLead(wraps, pool, editorLead, newsLead);
   if (!lead) return [];
   const rest = pool.filter((card) => card.id !== lead.id);
   const withPhoto = rest.filter((card) => card.photo);
