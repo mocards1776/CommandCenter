@@ -22,6 +22,7 @@ import { useAuth } from "@/lib/auth-context";
 import {
   editionCovers,
   editionDateline,
+  favoriteDeskWeight,
   editionIssue,
   editionNewsDay,
   fileEditionStories,
@@ -1728,12 +1729,12 @@ function FrontPage({
   const leadPoster = wantsPoster(pageLead);
   const underCandidates = [pageSecond, pageThird, ...pageBriefs].filter((c): c is GameWrapCard => Boolean(c));
   const playable = underCandidates.filter((c) => !isPhonePreseasonNote(c));
+  const underScore = (card: GameWrapCard) =>
+    (isFavoriteGameResult(card) ? 100 + favoriteDeskWeight(card.favoriteKey) : 0) +
+    (card.photo ? 20 : 0) +
+    (card.scoreLine && /\d/.test(card.scoreLine) ? 10 : 0);
   const underLead =
-    playable.find((c) => isFavoriteGameResult(c) && Boolean(c.photo)) ??
-    playable.find((c) => isFavoriteGameResult(c)) ??
-    playable.find((c) => Boolean(c.photo)) ??
-    playable[0] ??
-    pageSecond;
+    [...playable].sort((a, b) => underScore(b) - underScore(a))[0] ?? pageSecond;
   const underContinue =
     underLead && underLead.id === second?.id
       ? pageSecondContinue
