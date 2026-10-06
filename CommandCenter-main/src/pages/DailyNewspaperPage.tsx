@@ -38,7 +38,7 @@ import {
   storyReadKeys,
 } from "@/lib/newspaper";
 import { fetchLeagueArticles, fetchTeamArticles } from "@/lib/newspaper-news";
-import { groupByDay, planRecapsScorePages, planSchedulePages, recapsDeskBlurb, recapsDeskPrinted } from "@/lib/newspaper-page";
+import { groupByDay, planRecapsScorePages, planSchedulePages, recapsDeskBlurb, recapsDeskPrinted, scoreGridLastSpan } from "@/lib/newspaper-page";
 import {
   applyTableStandings,
   boardRecapCards,
@@ -207,6 +207,8 @@ import {
   buildEdition,
   dedupeSportRecaps,
   insertMissingRecaps,
+  sameRecapGame,
+  storyGameId,
   essentialsFromDesks,
   isFavoriteStory,
   isGameWrap,
@@ -2977,6 +2979,21 @@ function WrapFlow({
   );
 }
 
+/** A wrap already used this game's one treatment — keep it off the box grid. */
+function recapWrapCoversGame(card: GameWrapCard, game: BoxGame): boolean {
+  const ids = [storyGameId(card), card.gameId, card.id].filter((id): id is string => Boolean(id));
+  if (ids.some((id) => recapWrapIdCoversGame(id, game))) return true;
+  const box = boxStoryCard(game);
+  return Boolean(box && sameRecapGame(card, box));
+}
+
+function recapWrapIdCoversGame(id: string, game: BoxGame): boolean {
+  if (!id) return false;
+  if (game.id === id || game.espnEventId === id) return true;
+  if (game.gamePk != null && String(game.gamePk) === id) return true;
+  return id === `box-${game.id}`;
+}
+
 /** Box scores: the best game set large with its recap, the rest in agate. */
 function ScoresDesk({
   page,
@@ -3050,7 +3067,20 @@ function ScoresDesk({
   const yesterdayRest = collegeSplit?.yesterday.filter((g) => g !== featured) ?? [];
   const weekRest = collegeSplit?.rest.filter((g) => g.final && g !== featured) ?? [];
   const gridSource = collegeSplit ? [...yesterdayRest, ...weekRest] : rest;
-  const gridGames = sliceGames(gridSource);
+  const sliced = sliceGames(gridSource);
+  const leadWrapIds = page.recapsWrapIds ?? [];
+  const gridGames =
+    recapsOffset > 0 && (leadWrapIds.length || wrapCards.length)
+      ? sliced.filter((g) => {
+          if (leadWrapIds.some((id) => recapWrapIdCoversGame(id, g))) return false;
+          // Continuation articles are the leftover slate — do not treat their
+          // first two as the lead wraps. Only the stamped ids (or same-game
+          // match against those wrap cards) drop a rematch.
+          return leadWrapIds.length
+            ? true
+            : !wrapCards.some((c) => recapWrapCoversGame(c, g));
+        })
+      : sliced;
   const slicedBoard = recapsCount != null || recapsOffset > 0;
   const card = boxStoryCard(featured);
   const isMlb = page.path === "baseball/mlb";
@@ -3066,7 +3096,10 @@ function ScoresDesk({
     : isMlb
       ? "Box scores"
       : "Results";
-  const printedBoxes = (slicedBoard ? gridGames : rest).length;
+  const boxGridList = slicedBoard ? gridGames : rest;
+  const boxGridCols = isMlb ? 2 : 3;
+  const boxGridFill = scoreGridLastSpan(boxGridList.length, boxGridCols);
+  const printedBoxes = boxGridList.length;
   const shortCont = !recapsWraps && gridGames.length > 0 && gridGames.length <= 4;
   const matchedCont = allWraps.filter((c) =>
     gridGames.some((g) => c.id === `box-${g.id}` || g.id === c.gameId || Boolean(c.gameId && g.espnEventId === c.gameId)),
@@ -3166,21 +3199,30 @@ function ScoresDesk({
             ) : null,
           )
         : null}
-      {(slicedBoard ? gridGames : rest).length ? (
+      {boxGridList.length ? (
         <section className="tt-results">
           <h3 className="wsj-band-title">
             {restTitle} <em>{printedBoxes} {printedBoxes === 1 ? "game" : "games"}</em>
           </h3>
           <div
-            className={cn("tt-score-grid", isMlb && "agate", (sparse || shortCont) && "roomy")}
-            style={{ ["--cols" as string]: String(isMlb ? 2 : balancedCols((slicedBoard ? gridGames : rest).length, [3, 2, 4])) }}
+            className={cn(
+              "tt-score-grid",
+              isMlb && "agate",
+              (sparse || shortCont) && "roomy",
+              boxGridFill.leftover > 0 && "fill-last",
+            )}
+            style={{
+              ["--cols" as string]: String(boxGridCols),
+              ...(boxGridFill.leftover ? { ["--last-span" as string]: String(boxGridFill.lastSpan) } : {}),
+            }}
           >
-            {(slicedBoard ? gridGames : rest).map((g) => (
+            {boxGridList.map((g, i) => (
               <ScoreCard
                 key={g.id}
                 game={g}
                 agate={isMlb}
                 agateEnabled={active}
+                className={boxGridFill.leftover > 0 && i >= boxGridList.length - boxGridFill.leftover ? "fill-span" : undefined}
                 onOpen={(game) => {
                   const c = boxStoryCard(game);
                   if (c) open({ card: c, game });

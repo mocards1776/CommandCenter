@@ -124,6 +124,19 @@ export function planRecapsScorePages(
   return pages;
 }
 
+/** Games that still need a box after the lead wraps have used their one treatment. */
+export function recapsBoxPoolCount(boardGames: number, wrapCards: number): number {
+  return Math.max(0, boardGames - Math.min(Math.max(0, wrapCards), boardGames));
+}
+
+/** Last-row leftover in a `cols` grid, and the span that fills those tracks. */
+export function scoreGridLastSpan(n: number, cols: number): { leftover: number; lastSpan: number } {
+  if (n <= 0 || cols <= 1) return { leftover: 0, lastSpan: 0 };
+  const leftover = n % cols;
+  if (!leftover) return { leftover: 0, lastSpan: 0 };
+  return { leftover, lastSpan: (cols * 2) / leftover };
+}
+
 /** Wraps and boxes that actually print on this recaps folio — never the whole slate. */
 export function recapsDeskPrinted(opts: {
   articles: number;
@@ -135,11 +148,19 @@ export function recapsDeskPrinted(opts: {
 }): { wraps: number; boxes: number } {
   const offset = opts.offset ?? 0;
   const board = Math.max(0, opts.boardGames ?? 0);
+  const wrapTake = opts.articles === 3 ? 3 : Math.min(2, Math.max(0, opts.articles));
+  const boxed = board ? recapsBoxPoolCount(board, wrapTake) : 0;
+  // Folio offsets come from insertMissingRecaps, which pages the full board.
   const planned = planRecapsScorePages(board || Math.max(0, opts.count ?? 0), { mlb: opts.mlb });
   const slice = planned.find((s) => s.offset === offset) ?? planned[0];
   const remain = board ? Math.max(0, board - offset) : Math.max(0, opts.count ?? 0);
-  const boxes = Math.min(slice?.count ?? remain, remain || Math.max(0, opts.count ?? 0));
-  const leadWraps = opts.wraps && !offset ? (opts.articles === 3 ? 3 : Math.min(2, Math.max(0, opts.articles))) : 0;
+  let boxes = Math.min(slice?.count ?? remain, remain || Math.max(0, opts.count ?? 0));
+  const firstBoxes = planned[0]?.count ?? 0;
+  // When wrap games sit in the leftover slice, drop them — one treatment per edition.
+  if (offset > 0 && boxed > firstBoxes) {
+    boxes = Math.min(boxes, boxed - firstBoxes);
+  }
+  const leadWraps = opts.wraps && !offset ? wrapTake : 0;
   const contWraps = !opts.wraps && boxes > 0 && boxes <= 4 ? boxes : 0;
   return { wraps: leadWraps || contWraps, boxes };
 }

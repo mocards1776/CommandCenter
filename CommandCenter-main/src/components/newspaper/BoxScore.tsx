@@ -25,7 +25,9 @@ import {
   type ScoringPeriod,
   type StarPick,
 } from "@/lib/newspaper-agate";
-import { mlbTeamColor } from "@/lib/newspaper-recap";
+import { mlbTeamColor, recapIsTeaserLead, recapScoreCardGraf } from "@/lib/newspaper-recap";
+import { fetchEspnRecapStory } from "@/lib/newspaper-box";
+import { writeBoxWrapFromBoxGame } from "@/lib/newspaper-box-wrap";
 import { cn } from "@/lib/utils";
 import { PersonName } from "./PlayerPop";
 import "./box-agate.css";
@@ -560,14 +562,28 @@ export function ScoreCard({
   onOpen,
   agate,
   agateEnabled,
+  className,
 }: {
   game: BoxGame;
   onOpen?: (game: BoxGame) => void;
   agate?: boolean;
   agateEnabled?: boolean;
+  className?: string;
 }) {
+  const haveHtml = Boolean(game.recap?.html && game.recap.html.length >= 200);
+  const dek = game.recap?.blurb ?? "";
+  const needStory = Boolean(game.recap && !haveHtml && (recapIsTeaserLead(dek) || dek.split(/(?<=[.!?])\s+/).filter(Boolean).length < 2));
+  const espn = useQuery({
+    queryKey: ["tt-espn-recap-story", game.path, game.espnEventId],
+    queryFn: () => fetchEspnRecapStory(game.path, game.espnEventId!),
+    enabled: Boolean(needStory && game.path && game.espnEventId),
+    staleTime: 30 * 60_000,
+  });
+  const graf = game.recap
+    ? recapScoreCardGraf(dek, haveHtml ? game.recap.html : espn.data?.html, writeBoxWrapFromBoxGame(game))
+    : "";
   return (
-    <article className={cn("tt-scorecard", game.live && "live")}>
+    <article className={cn("tt-scorecard", game.live && "live", className)}>
       <header>
         <span>{headOf(game)}</span>
         <b>{gameClock(game)}</b>
@@ -579,7 +595,7 @@ export function ScoreCard({
       {game.recap ? (
         <button type="button" className="tt-scorecard-recap" onClick={() => onOpen?.(game)}>
           <strong>{game.recap.headline}</strong>
-          {game.recap.blurb ? <span>{game.recap.blurb}</span> : null}
+          {graf ? <span>{graf}</span> : null}
           <em>Click for full story →</em>
         </button>
       ) : onOpen && (game.final || game.live) ? (

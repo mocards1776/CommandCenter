@@ -17,6 +17,7 @@ import {
   recapCardSource,
   recapDeskGraf,
   recapIsTeaserLead,
+  recapScoreCardGraf,
   recapKicker,
   recapTeamNick,
   recapPrintStory,
@@ -302,6 +303,20 @@ const deskUgly = recapDeskGraf(
 assert(!/ugly win/i.test(deskUgly.body), "desk graf does not print the one-line dek");
 assert(deskUgly.body.includes("Jordan Love"), "a teaser-only story uses the box wrap");
 assert((deskUgly.body.match(/[.!?]/g) ?? []).length >= 2, "desk fallback is at least two sentences");
+const cardTea = recapScoreCardGraf(
+  "Sip some tea, score some touchdowns.",
+  "Jonathan Taylor ran for two touchdowns and Daniel Jones added a rushing score as the Colts beat the Commanders on Sunday. Indianapolis scored on its first three drives.",
+);
+assert(!/Sip some tea/i.test(cardTea), "a score card drops the one-line dek");
+assert(cardTea.includes("Jonathan Taylor"), "a score card uses the story body");
+const cardMaye = recapScoreCardGraf("Drake Maye didn't have to be perfect…", "Drake Maye shook off two first-half turnovers and threw three touchdown passes. New England held off Buffalo 29-26.");
+assert(!/didn't have to be perfect/i.test(cardMaye) || cardMaye.includes("three touchdown"), "Maye teaser yields a real graf");
+const cardUgly = recapScoreCardGraf(
+  "An ugly win left the Green Bay Packers dissatisfied.",
+  "Jordan Love threw for 245 yards and two scores as Green Bay held off Tampa Bay. The Packers scored on their first two second-half drives.",
+);
+assert(!/ugly win/i.test(cardUgly), "a score card drops the mood dek");
+assert(cardUgly.includes("Jordan Love"), "a score card uses the story body for a mood dek");
 const longGraf = recapCardGraf(
   "KANSAS CITY -- — Patrick Mahomes threw for 285 yards and two touchdowns on Sunday night as the Kansas City Chiefs held off the Las Vegas Raiders in a four-quarter scrap at Arrowhead Stadium.\n\nLas Vegas had led since the second quarter and left points on the field.",
 );

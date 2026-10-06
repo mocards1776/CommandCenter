@@ -22,8 +22,10 @@ import {
   pageHasBlankBand,
   planRecapsScorePages,
   planSchedulePages,
+  recapsBoxPoolCount,
   recapsDeskBlurb,
   recapsDeskPrinted,
+  scoreGridLastSpan,
 } from "./newspaper-page.ts";
 
 function assert(cond: unknown, msg: string) {
@@ -116,8 +118,11 @@ const nfl2Printed = recapsDeskPrinted({ articles: 22, wraps: true, offset: 0, bo
 assert(nfl2Printed.wraps === 2 && nfl2Printed.boxes === 6, "NFL2 header counts only what prints");
 assert(recapsDeskBlurb(nfl2Printed) === "2 wraps · 6 boxes", recapsDeskBlurb(nfl2Printed));
 const nfl3Printed = recapsDeskPrinted({ articles: 22, wraps: false, offset: 6, boardGames: 16 });
-assert(nfl3Printed.wraps === 0 && nfl3Printed.boxes === 10, "a later recaps folio does not claim the first page's wraps");
-assert(recapsDeskBlurb(nfl3Printed) === "10 boxes", recapsDeskBlurb(nfl3Printed));
+assert(nfl3Printed.wraps === 0 && nfl3Printed.boxes === 8, "NFL3 drops the two games that already ran as wraps");
+assert(recapsDeskBlurb(nfl3Printed) === "8 boxes", recapsDeskBlurb(nfl3Printed));
+assert(recapsBoxPoolCount(16, 2) === 14, "wrap games do not also take a box");
+assert(scoreGridLastSpan(8, 3).leftover === 2 && scoreGridLastSpan(8, 3).lastSpan === 3, "8 boxes fill a 3-3-2 last row");
+assert(scoreGridLastSpan(10, 3).leftover === 1 && scoreGridLastSpan(10, 3).lastSpan === 6, "a lone last card spans the row");
 const mlb3Printed = recapsDeskPrinted({ articles: 8, wraps: false, offset: 2, boardGames: 4, mlb: true });
 assert(mlb3Printed.wraps === 2 && mlb3Printed.boxes === 2, "MLB3 header matches the two leftover boxes");
 assert(recapsDeskBlurb(mlb3Printed) === "2 wraps · 2 boxes", recapsDeskBlurb(mlb3Printed));

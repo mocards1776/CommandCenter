@@ -6421,6 +6421,15 @@ li.counting .tt-count.card {
 .tt-score-grid {
   grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
 }
+.tt-score-grid.fill-last {
+  grid-template-columns: repeat(calc(var(--cols, 3) * 2), minmax(0, 1fr));
+}
+.tt-score-grid.fill-last > * {
+  grid-column: span 2;
+}
+.tt-score-grid.fill-last > .fill-span {
+  grid-column: span var(--last-span, 3);
+}
 .tt-score-grid.roomy .tt-scorecard {
   padding: 12px 14px;
 }
@@ -7632,6 +7641,9 @@ li.counting .tt-count.card {
   .tt-score-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+  .tt-score-grid.fill-last {
+    grid-template-columns: repeat(calc(var(--cols, 3) * 2), minmax(0, 1fr));
+  }
   .tt-score-grid.agate,
   .tt-stand-grid,
   .tt-feature,
@@ -7664,6 +7676,9 @@ li.counting .tt-count.card {
   .tt-agate-cols,
   .wsj-sport-seconds {
     grid-template-columns: 1fr;
+  }
+  .tt-score-grid.fill-last {
+    grid-template-columns: repeat(calc(var(--cols, 3) * 2), minmax(0, 1fr));
   }
   .tt-reader-body {
     columns: 1;
@@ -8124,6 +8139,10 @@ li.counting .tt-count.card {
 .newspaper-root .tt-wrap-copy { font-size: 15px; }
 .newspaper-root .tt-score-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .newspaper-root .tt-score-grid.agate { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.newspaper-root .tt-score-grid.fill-last,
+.newspaper-root .tt-score-grid.fill-last.agate {
+  grid-template-columns: repeat(calc(var(--cols, 3) * 2), minmax(0, 1fr));
+}
 .newspaper-root .tt-stand-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .newspaper-root .tt-stand-grid.single { grid-template-columns: 1fr; }
 .newspaper-root .tt-front-grid.with-side { grid-template-columns: minmax(0, 1.7fr) minmax(260px, 1fr); }

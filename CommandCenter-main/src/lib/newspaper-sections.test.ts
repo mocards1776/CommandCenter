@@ -2308,6 +2308,19 @@ assert(
   patched.pages.filter((p) => p.kind === "sport-front" && p.section === "NFL" && p.focus === "recaps").length >= 2,
   "15 NFL finals overflow the recaps desk onto another folio",
 );
+const patchedNflFolios = patched.pages.filter(
+  (p) => p.kind === "sport-front" && p.section === "NFL" && p.focus === "recaps",
+);
+assert(
+  patchedNflFolios.every((p) => p.kind === "sport-front" && (p.recapsWrapIds?.length ?? 0) >= 2),
+  "every NFL recaps folio remembers the two lead-wrap games",
+);
+assert(
+  patchedNflFolios[0]?.kind === "sport-front" &&
+    patchedNflFolios[1]?.kind === "sport-front" &&
+    (patchedNflFolios[0].recapsWrapIds ?? []).join("|") === (patchedNflFolios[1].recapsWrapIds ?? []).join("|"),
+  "NFL3 drops the same two games NFL2 already ran as wraps",
+);
 
 const hugeBoard = Array.from({ length: 50 }, (_, i) =>
   card({

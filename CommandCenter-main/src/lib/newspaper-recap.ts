@@ -677,6 +677,7 @@ export function recapIsTeaserLead(text: string): boolean {
   const words = recapWordCount(first);
   if (words >= 20) return false;
   if (/\d/.test(first)) return false;
+  if (/[…]|\.\.\.\s*$/.test(t) && words <= 18) return true;
   return words <= 14;
 }
 
@@ -705,4 +706,13 @@ export function recapDeskGraf(
   }
   if (meat.length) return { dateline: lead.dateline, body: meat.join(" "), dropCap: lead.dropCap };
   return lead;
+}
+
+/** Score-card blurb: skip a teaser dek, then 2–4 sentences of the story. */
+export function recapScoreCardGraf(
+  blurb: string | null | undefined,
+  story?: string | null,
+  fallback?: string,
+): string {
+  return recapDeskGraf(story || blurb || "", fallback, RECAP_CARD_GRAF).body;
 }
