@@ -128,6 +128,30 @@ export function planNewsPages(storyCount: number, perPage = NEWS_STORIES_PER_PAG
 
 const PRESEASON_MS = 18 * 24 * 60 * 60 * 1000;
 
+/** Ticker W-L: current season only. Before tip-off, print the opener, not last year. */
+export function clubTickerRecord(
+  record: string | null | undefined,
+  inSeason: boolean,
+  opensLabel?: string | null,
+): string {
+  if (!inSeason) return opensLabel?.trim() || "—";
+  const r = (record ?? "").trim();
+  if (!r || /^0-0(-0)?$/.test(r)) return opensLabel?.trim() || "—";
+  return r;
+}
+
+/** "Opens Nov 3" from an opener ISO or a board chip like "Tue Nov 3". */
+export function clubOpensLabel(iso?: string | null, when?: string | null): string | null {
+  if (iso) {
+    const d = new Date(iso);
+    if (!Number.isNaN(d.getTime())) {
+      return `Opens ${d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "America/Chicago" })}`;
+    }
+  }
+  const hit = when?.match(/[A-Z][a-z]{2}\s+\d{1,2}/);
+  return hit ? `Opens ${hit[0]}` : null;
+}
+
 /** A club card with only a future slate — drop the empty form grid until it has numbers. */
 export function clubFormIsThin(
   club: {

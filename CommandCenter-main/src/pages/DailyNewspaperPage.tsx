@@ -77,7 +77,7 @@ import {
   DeskSnap,
 } from "@/components/newspaper/BoxScore";
 import { RecapBox, RecapChrome, RecapPhoto } from "@/components/newspaper/GameRecap";
-import { clubFormIsThin, formStatColumns, frontPageLeftover, groupByDay, planSchedulePages } from "@/lib/newspaper-page";
+import { clubFormIsThin, clubOpensLabel, clubTickerRecord, formStatColumns, frontPageLeftover, groupByDay, planSchedulePages } from "@/lib/newspaper-page";
 import { ReaderProvider } from "@/components/newspaper/PaperReader";
 import { useReader } from "@/components/newspaper/reader-context";
 import { CfbFill, CfbScheduleDesk } from "@/components/newspaper/CfbScheduleDesk";
@@ -230,6 +230,7 @@ import {
   nationalStoryCard,
   paginateEditionDesks,
   sortComingUp,
+  sportInSeason,
   storyBodyForJump,
   type ClubDesk,
   type EditionPage,
@@ -253,6 +254,7 @@ import {
   fetchLeagueClubs,
   fetchLeagueSlate,
   fetchNewspaperWire,
+  postseasonRailGames,
   markFavoriteClubs,
   type LeagueClub,
   type LeagueSlateGame,
@@ -1338,26 +1340,41 @@ function DeskFiller({
 }
 
 /** The front's scoreboard: every club, its record, its last five. */
-function ClubTicker({ teams, onTurn }: { teams: TeamInfobox[]; onTurn?: (folio: string) => void }) {
+function ClubTicker({
+  teams,
+  editionDay,
+  onTurn,
+}: {
+  teams: TeamInfobox[];
+  editionDay: string;
+  onTurn?: (folio: string) => void;
+}) {
+  const openers = useContext(OpenerContext);
   if (!teams.length) return null;
   const cols = balancedCols(teams.length, [5, 4, 3]);
   return (
     <ul className="wsj-ticker" style={{ ["--cols" as string]: String(cols) }}>
-      {teams.map((t, i) => (
-        <li key={t.fav.key} style={tint(teamColor(t))} data-tt-trim={55 + i}>
-          <ExternalOrLink href={t.href} className="wsj-ticker-cell wsj-a">
-            <span className="wsj-ticker-id">
-              <TeamLogo src={t.snap.logo || t.detail?.logo} size="sm" />
-              <strong>{t.fav.shortName}</strong>
-            </span>
-            <span className="wsj-ticker-rec">
-              <b>{clubRecord(t) || "—"}</b>
-              <FormDots form={t.form} />
-            </span>
-            <em className="wsj-ticker-place">{t.snap.standing || t.fav.league}</em>
-          </ExternalOrLink>
-        </li>
-      ))}
+      {teams.map((t, i) => {
+        const path = leaguePathFromEspn(t.fav.espnPath);
+        const inSeason = !path || sportInSeason(path, editionDay);
+        const opener = openers.get(t.fav.key) ?? null;
+        const opensLine = clubOpensLabel(opener?.iso, t.snap.nextGame?.when ?? t.detail?.upcoming?.[0]?.when);
+        return (
+          <li key={t.fav.key} style={tint(teamColor(t))} data-tt-trim={55 + i}>
+            <ExternalOrLink href={t.href} className="wsj-ticker-cell wsj-a">
+              <span className="wsj-ticker-id">
+                <TeamLogo src={t.snap.logo || t.detail?.logo} size="sm" />
+                <strong>{t.fav.shortName}</strong>
+              </span>
+              <span className="wsj-ticker-rec">
+                <b>{clubTickerRecord(clubRecord(t), inSeason, opensLine)}</b>
+                <FormDots form={inSeason ? t.form : []} />
+              </span>
+              <em className="wsj-ticker-place">{inSeason ? t.snap.standing || t.fav.league : t.fav.league}</em>
+            </ExternalOrLink>
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -1423,17 +1440,31 @@ function AgateBox({
 
 /* ───────────────────────── front page ───────────────────────── */
 
+function bracketWhen(game: WireGame): string {
+  if (game.live) return game.statusDetail;
+  if (game.final) {
+    const a = game.away.score;
+    const h = game.home.score;
+    return a != null && h != null ? `Final ${a}–${h}` : "Final";
+  }
+  if (game.startedAt) {
+    const when = formatFixtureWhen(game.startedAt);
+    return when ? `${when} CT` : game.statusDetail;
+  }
+  return game.statusDetail;
+}
+
 function FrontRail({
   teams,
-  postseason,
   tonight,
+  bracket,
   comingUp,
   sections,
   onTurn,
 }: {
   teams: TeamInfobox[];
-  postseason: string[];
   tonight: WireGame[];
+  bracket: WireGame[];
   comingUp: ComingUp[];
   sections: EditionSection[];
   onTurn: (folio: string) => void;
@@ -1474,18 +1505,13 @@ function FrontRail({
         </section>
       ) : null}
 
-      {postseason.length || tonight.length ? (
+      {tonight.length || bracket.length ? (
         <section className="wsj-rail-block">
           <h3>
             <span className="wsj-live-dot" aria-hidden="true" />
             {tonight.length ? "Live" : "Postseason"}
           </h3>
           <ul className="wsj-rail-list">
-            {postseason.map((league) => (
-              <li key={`post-${league}`}>
-                <strong>{league}</strong> is in the postseason — bracket games lead the wire.
-              </li>
-            ))}
             {tonight.map((g) => (
               <li key={g.id}>
                 <ExternalOrLink href={g.href} className="wsj-a">
@@ -1496,6 +1522,20 @@ function FrontRail({
                 <span className="wsj-ref">{g.live ? g.statusDetail : faceOff(g.startedAt)}</span>
               </li>
             ))}
+            {bracket
+              .filter((g) => !tonight.some((live) => live.id === g.id))
+              .map((g) => (
+                <li key={g.id}>
+                  <ExternalOrLink href={g.href} className="wsj-a">
+                    <strong>
+                      {g.away.short} at {g.home.short}
+                    </strong>
+                  </ExternalOrLink>{" "}
+                  <span className="wsj-ref">
+                    {[g.round, g.series, bracketWhen(g)].filter(Boolean).join(" · ")}
+                  </span>
+                </li>
+              ))}
           </ul>
         </section>
       ) : null}
@@ -1588,12 +1628,13 @@ function FrontPage({
   briefs,
   news,
   teams,
-  postseason,
   tonight,
+  bracket,
   comingUp,
   sections,
   folios,
   clubsFolio = "A3",
+  editionDay,
   onTurn,
   leadContinue,
   secondContinue,
@@ -1609,12 +1650,13 @@ function FrontPage({
   briefs: GameWrapCard[];
   news?: GameWrapCard[];
   teams: TeamInfobox[];
-  postseason: string[];
   tonight: WireGame[];
+  bracket: WireGame[];
   comingUp: ComingUp[];
   sections: EditionSection[];
   folios: Record<string, string>;
   clubsFolio?: string;
+  editionDay: string;
   onTurn: (folio: string) => void;
   leadContinue?: string;
   secondContinue?: string;
@@ -1629,8 +1671,8 @@ function FrontPage({
   const rail = (
     <FrontRail
       teams={teams}
-      postseason={postseason}
       tonight={tonight}
+      bracket={bracket}
       comingUp={comingUp}
       sections={sections}
       onTurn={onTurn}
@@ -1660,7 +1702,7 @@ function FrontPage({
       <div className="wsj-front">
         <div className="wsj-front-grid">
           <div className="wsj-front-main">
-            <ClubTicker teams={teams} onTurn={onTurn} />
+            <ClubTicker teams={teams} editionDay={editionDay} onTurn={onTurn} />
             <TurnBar onTurn={onTurn} folio={clubsFolio} label="The clubs desk — every slate, table and leader" />
           </div>
           {rail}
@@ -1709,42 +1751,47 @@ function FrontPage({
             jump={pageLeadContinue}
             onTurn={onTurn}
           />
-          {pageSecond || pageThird ? (
-            <div className={cn("wsj-front-row", stack ? "stack" : pageSecond && pageThird ? "two" : "one")} data-tt-flow="">
-              {pageSecond ? (
-                <Story
-                  card={pageSecond}
-                  team={teamForCard(teams, pageSecond)}
-                  text={copyOf(pageSecond, pageSecondTeaser)}
-                  size="lg"
-                  cols={pageSecond.photo || secondPoster ? 1 : 2}
-                  art={stack ? "side" : "top"}
-                  poster={secondPoster}
-                  jump={pageSecondContinue}
-                  onTurn={onTurn}
-                  trim={14}
-                />
-              ) : null}
-              {pageThird ? (
-                <Story
-                  card={pageThird}
-                  team={teamForCard(teams, pageThird)}
-                  text={copyOf(pageThird, pageThirdTeaser)}
-                  size="md"
-                  cols={stack ? 2 : 1}
-                  art={stack ? "side" : "top"}
-                  poster={thirdPoster}
-                  jump={pageThirdContinue}
-                  onTurn={onTurn}
-                  trim={24}
-                />
-              ) : null}
+          {pageSecond ? (
+            <div className="wsj-front-under" data-tt-keep="">
+              <Story
+                className="under-lead"
+                card={pageSecond}
+                team={teamForCard(teams, pageSecond)}
+                text={
+                  recapDek(pageSecond, 4) ||
+                  wrapBriefCopy(pageSecond, 4) ||
+                  splitStoryCopy(copyOf(pageSecond, pageSecondTeaser), 480).teaser
+                }
+                size="md"
+                cols={1}
+                art={pageSecond.photo || secondPoster ? "top" : "none"}
+                poster={secondPoster}
+                chrome={false}
+                jump={pageSecondContinue}
+                onTurn={onTurn}
+              />
+            </div>
+          ) : null}
+          {pageThird ? (
+            <div className={cn("wsj-front-row", stack ? "stack" : "one")} data-tt-flow="">
+              <Story
+                card={pageThird}
+                team={teamForCard(teams, pageThird)}
+                text={copyOf(pageThird, pageThirdTeaser)}
+                size="md"
+                cols={stack ? 2 : 1}
+                art={stack ? "side" : "top"}
+                poster={thirdPoster}
+                jump={pageThirdContinue}
+                onTurn={onTurn}
+                trim={24}
+              />
             </div>
           ) : null}
         </div>
         {rail}
       </div>
-      <ClubTicker teams={teams} onTurn={onTurn} />
+      <ClubTicker teams={teams} editionDay={editionDay} onTurn={onTurn} />
       {scoutBand ? <div data-tt-flow="">{scoutBand}</div> : null}
       <div data-tt-flow="">
       <BriefGrid
@@ -5986,6 +6033,11 @@ function NewspaperDesk() {
       .slice(0, 6);
   }, [wireQ.data, pressId]);
 
+  const bracket = useMemo(
+    () => postseasonRailGames(wireQ.data?.games ?? [], day),
+    [wireQ.data, day],
+  );
+
   const favPlayersQ = useQuery({
     queryKey: [pressId, "tt-fav-players", user?.id],
     queryFn: () => listFavoritePlayers(user!.id),
@@ -6771,12 +6823,13 @@ function NewspaperDesk() {
                   briefs={page.briefs}
                   news={page.news}
                   teams={teams}
-                  postseason={wireQ.data?.postseasonLeagues ?? []}
                   tonight={tonight}
+                  bracket={bracket}
                   comingUp={comingUp}
                   sections={edition.sections}
                   folios={edition.favoriteFolioByStory}
                   clubsFolio={pages.find((p) => p.kind === "favorites-clubs" && p.weatherPart === "outlook")?.folio ?? "A3"}
+                  editionDay={day}
                   onTurn={goFolio}
                   leadContinue={page.leadContinue}
                   secondContinue={page.secondContinue}
@@ -6901,7 +6954,7 @@ function NewspaperDesk() {
       day,
       teams,
       tonight,
-      wireQ.data?.postseasonLeagues,
+      bracket,
       comingUp,
       edition.sections,
       edition.favoriteFolioByStory,

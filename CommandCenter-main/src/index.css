@@ -2655,6 +2655,16 @@ li.counting .tt-count.card {
   flex-direction: column;
   gap: 18px;
 }
+.wsj-front-under {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--w-hair);
+}
+.wsj-front-under .wsj-story img,
+.newspaper-root .wsj-front-under .wsj-story img {
+  max-height: 160px;
+  object-fit: cover;
+}
 .wsj-front-row {
   display: grid;
   gap: var(--w-gutter);

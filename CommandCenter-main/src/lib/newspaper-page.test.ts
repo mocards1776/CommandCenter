@@ -31,6 +31,8 @@ import {
   A2_CLUB_CARDS,
   FORM_CLUBS_PER_PACKED_PAGE,
   clubFormIsThin,
+  clubOpensLabel,
+  clubTickerRecord,
   formStatColumns,
 } from "./newspaper-page.ts";
 
@@ -214,6 +216,13 @@ assert(
   ),
   "a November opener without an ISO is still a compact preseason row",
 );
+assert(clubTickerRecord("20-13", false, "Opens Nov 3") === "Opens Nov 3", "CBB before tip-off does not print last year");
+assert(clubTickerRecord("4-0", true) === "4-0", "an in-season NFL record stays");
+assert(clubTickerRecord("77-85", true) === "77-85", "a finished MLB season stays on the ticker");
+assert(clubTickerRecord("0-0", true, "Opens Oct 22") === "Opens Oct 22", "a rolled 0-0 table is not a season");
+assert(clubOpensLabel("2026-11-03T18:00:00Z") === "Opens Nov 3", "opener ISO prints the Central calendar day");
+assert(clubOpensLabel(null, "Tue Nov 3") === "Opens Nov 3", "a board chip still yields an opens line");
+
 assert(formStatColumns(6) === 3, "six stats fill two rows of three");
 assert(formStatColumns(5) === 5, "five stats sit in one row, no grey cell");
 assert(formStatColumns(3) === 3, "three stats fill one row");
