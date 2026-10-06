@@ -1,5 +1,7 @@
 import { mergeShortNewspaperParas, splitNewspaperSentences } from "../../../supabase/functions/_shared/newspaper-paras.ts";
 
+export { splitNewspaperSentences };
+
 const NAV_MARKERS = ["my quiz activity", "my favorites", "add sports/teams", "home quizzes"];
 
 /**

@@ -446,7 +446,18 @@ export function KeyStats({ box }: { box: EspnBox }) {
 }
 
 /** Sport box: scoring by period, team stats, and every club's agate. */
-export function EspnAgate({ box, path, condensed }: { box: EspnBox; path: string; condensed?: boolean }) {
+export function EspnAgate({
+  box,
+  path,
+  condensed,
+  hideScoring,
+}: {
+  box: EspnBox;
+  path: string;
+  condensed?: boolean;
+  /** Page leftover sets a fitted scoring table; skip the unfitted one here. */
+  hideScoring?: boolean;
+}) {
   const { game } = box;
   const stat = (rows: EspnBox["teamStats"], title: string): AgateTable => ({
     title,
@@ -480,7 +491,7 @@ export function EspnAgate({ box, path, condensed }: { box: EspnBox; path: string
   return (
     <div className="tt-agate-box">
       <ScoreMast game={game} />
-      <ScoringTable periods={box.scoring} game={game} path={path} />
+      {hideScoring ? null : <ScoringTable periods={box.scoring} game={game} path={path} />}
       {hockey ? (
         <div className="tt-agate-cols">
           <div className="tt-agate-stack">
@@ -519,12 +530,12 @@ function sidePaint(color: string | null, abbrev?: string, path?: string): string
 }
 
 /** The final the way the sports pages set it: both clubs, their marks, the score. */
-export function ScoreMast({ game, shortNames }: { game: BoxGame; shortNames?: boolean }) {
+export function ScoreMast({ game, shortNames, slim }: { game: BoxGame; shortNames?: boolean; slim?: boolean }) {
   return (
-    <div className={cn("tt-score-mast", shortNames && "short")}>
+    <div className={cn("tt-score-mast", shortNames && "short", slim && "slim")}>
       {[game.away, game.home].map((side, i) => (
         <div key={i} className={cn("tt-score-mast-side", side.winner && "won", game.final && !side.winner && "lost")} style={{ background: sidePaint(side.color, side.abbrev, game.path) }}>
-          <Mark src={side.logo} size={shortNames ? "sm" : "lg"} />
+          <Mark src={side.logo} size={shortNames || slim ? "sm" : "lg"} />
           <span>
             <em>{i === 0 ? "Away" : "Home"}</em>
             <strong>{shortNames ? side.abbrev : side.short}</strong>

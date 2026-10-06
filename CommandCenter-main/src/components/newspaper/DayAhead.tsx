@@ -12,7 +12,7 @@ import {
 } from "@/lib/newspaper-day-ahead";
 import "./day-ahead.css";
 
-/** Printed height of one hour on the rail, in CSS px (1032px sheet). */
+/** Printed height of one hour on the rail, in CSS px (1040×1480 sheet). */
 const HOUR_PX = 56;
 
 function longDate(date: string): string {

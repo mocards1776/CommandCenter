@@ -994,6 +994,30 @@ export function boxStoryCard(game: BoxGame): GameWrapCard | null {
   };
 }
 
+/** This week's finals when the board has them; last week only when this week is empty. */
+export function boardFinalsForRecaps(board: SectionBoard, path: string): BoxGame[] {
+  const football = path.startsWith("football/");
+  const current = board.results ?? [];
+  const prior = football && !path.includes("college-football") ? (board.prior ?? []) : [];
+  return (current.length ? current : prior).filter((g) => g.final);
+}
+
+/**
+ * One wrap card per board final so a sport desk that filed only two stories
+ * still prints the rest of the slate on later pages.
+ */
+export function boardRecapCards(boards: Record<string, SectionBoard> | null | undefined): GameWrapCard[] {
+  if (!boards) return [];
+  const out: GameWrapCard[] = [];
+  for (const [path, board] of Object.entries(boards)) {
+    for (const game of boardFinalsForRecaps(board, path)) {
+      const card = boxStoryCard(game);
+      if (card) out.push(card);
+    }
+  }
+  return out;
+}
+
 /* ───────────────────────── standings ───────────────────────── */
 
 export type StandRow = {

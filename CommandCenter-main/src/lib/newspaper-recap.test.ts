@@ -10,16 +10,32 @@ import {
   pickRecapLeaders,
   recapIsFull,
   recapIsScoreOnly,
+  recapIsScoreStub,
   recapPhotoKind,
   recapDropLead,
+  recapCardGraf,
+  recapCardSource,
+  recapKicker,
+  recapTeamNick,
   recapPrintStory,
+  recapPullQuote,
   recapShouldDropCap,
   recapSportFamily,
+  stripRecapScoreStubs,
   splitApDateline,
   type RecapGamePack,
   type RecapLeader,
 } from "./newspaper-recap.ts";
-import { pitchingDecisionCode, printEspnBoxHtml, type EspnBox } from "./newspaper-agate.ts";
+import {
+  compactScoringByPeriod,
+  flattenScoringRows,
+  pitchingDecisionCode,
+  printEspnBoxHtml,
+  printRecapFillHtml,
+  printScoringMode,
+  printTeamStatRows,
+  type EspnBox,
+} from "./newspaper-agate.ts";
 import { periodLabels, type BoxGame, type BoxSide } from "./newspaper-box.ts";
 import { ESPN_BOX_PATHS } from "./newspaper-agate.ts";
 
@@ -228,6 +244,13 @@ assert(/CT/.test(when) && !/GMT/.test(when), `Central clock, got ${when}`);
 assert(/a\.m\.|p\.m\./.test(when), `a.m./p.m., got ${when}`);
 
 assert(recapIsScoreOnly("Jazz 109, Nuggets 97."), "a score line is not a story");
+assert(recapIsScoreStub("Final: LAC 23 · SEA 30."), "the banner score stub is not a graf");
+assert(recapIsScoreOnly("Final: LAC 23 · SEA 30."), "Final: score is score-only");
+assert(
+  stripRecapScoreStubs("Kenneth Walker ran for two scores. Final: LAC 23 · SEA 30.") ===
+    "Kenneth Walker ran for two scores.",
+  "the Final stub drops so the recap sentence stays",
+);
 assert(!recapShouldDropCap("Jazz 109, Nuggets 97."), "no drop cap on a one-line score");
 assert(recapShouldDropCap("Taylor scored twice. Jones added a rushing touchdown. The Colts won."), "two sentences get a drop");
 const mid = recapPrintStory("LONDON -- — Jonathan Taylor ran for two touchdowns. Daniel Jones also ran one in. The Colts won a third-string snap.", 80);
@@ -248,6 +271,38 @@ assert(milwaukeeDrop?.body.startsWith("Jackson Chourio"), `word stays whole, got
 assert(!/MILWAUKEE/.test(milwaukeeDrop?.body ?? ""), "body does not repeat the dateline");
 const noCity = recapDropLead(null, "Jackson Chourio hit a two-run single.");
 assert(noCity?.letter === "J" && noCity.datelineRest === null && noCity.body.startsWith("ackson Chourio"), `no dateline drops the first word, got ${JSON.stringify(noCity)}`);
+
+const twoGrafs = recapCardGraf(
+  "MILWAUKEE -- — Jackson Chourio hit a two-run single in the tenth. The Brewers walked off the Padres.\n\nSan Diego had led since the fourth and left the bases loaded.",
+);
+assert(twoGrafs.dateline === "MILWAUKEE", "card graf keeps the city");
+assert(twoGrafs.body.includes("walked off"), "first paragraph stays");
+assert(twoGrafs.body.includes("San Diego had led"), "a short first paragraph pulls the next");
+assert(twoGrafs.body.endsWith("."), "card graf ends on a sentence");
+const thinLead = recapCardGraf(
+  "LONDON -- — Sip some tea, score some touchdowns.\n\nJonathan Taylor ran for two touchdowns and Daniel Jones added a rushing score as the Colts beat the Commanders on Sunday.",
+);
+assert(thinLead.body.includes("Sip some tea"), "the kicker fragment stays");
+assert(thinLead.body.includes("Jonathan Taylor"), "a one-sentence lead pulls the next graf");
+const longGraf = recapCardGraf(
+  "KANSAS CITY -- — Patrick Mahomes threw for 285 yards and two touchdowns on Sunday night as the Kansas City Chiefs held off the Las Vegas Raiders in a four-quarter scrap at Arrowhead Stadium.\n\nLas Vegas had led since the second quarter and left points on the field.",
+);
+assert(longGraf.body.includes("Patrick Mahomes"), "a full first paragraph stays");
+assert(!/Las Vegas had led/.test(longGraf.body), "a 25-word first paragraph does not pull the next");
+const longFirst = recapCardGraf(
+  "LONDON -- — Jonathan Taylor ran for two touchdowns. Daniel Jones added a rushing score. The Colts won a third-string snap in London. A late field goal sealed it after the Commanders turned the ball over.",
+  120,
+);
+assert(longFirst.body.endsWith("."), `card graf cuts on a sentence, got ${longFirst.body}`);
+assert(!/turned the ball/.test(longFirst.body), "card graf does not run past the cap");
+assert(!/third-strin[^g]/.test(longFirst.body), "card graf does not stop mid-word");
+assert(recapCardGraf("Jazz 109, Nuggets 97.").body === "", "score-only card graf is omitted");
+const stubGraf = recapCardGraf(
+  "Kenneth Walker III ran for 107 yards and two touchdowns as Seattle held off the Chargers. Final: LAC 23 · SEA 30.\n\nJustin Herbert threw for 254 yards but Los Angeles stalled in the red zone twice in the fourth quarter. The Seahawks iced it with a late field goal.",
+);
+assert(!/Final:/.test(stubGraf.body), "card graf drops the Final stub");
+assert(stubGraf.body.includes("Kenneth Walker"), "card graf keeps the recap lead");
+assert(stubGraf.body.includes("red zone") || stubGraf.body.includes("field goal"), "a thin lead pulls the next sentences");
 
 assert(pitchingDecisionCode("W, 1-0") === "W", "winning pitcher note");
 assert(pitchingDecisionCode("L, 0-1, B, 1") === "L", "losing pitcher note");
@@ -299,5 +354,132 @@ const printed = printEspnBoxHtml(box);
 assert(printed.includes("D. Jones") && printed.includes("19/34"), "passing table prints the line");
 assert(printed.includes("J. Taylor 20 yd run"), "scoring lists the play");
 assert(!/plays<\/|lines</i.test(printed) && !/\d+ plays/.test(printed) && !/\d+ \/ \d+ lines/.test(printed), "no count stubs");
+
+assert(
+  recapPullQuote(
+    'LAS VEGAS — The Chiefs won. “I think you have to stay with it, but it’s not always going to be pretty,” Mahomes said. Reid trusted him.',
+  ) === "“I think you have to stay with it, but it’s not always going to be pretty.”",
+  "pull quote takes a spoken line from later in the wrap",
+);
+assert(recapPullQuote("The Chiefs won 30-27.") === null, "a wrap without a quote does not invent one");
+
+const fill = printRecapFillHtml(
+  box,
+  {
+    quote: "“I think you have to stay with it.”",
+    nextUp: "Next: Chargers on Oct. 18",
+    standings: [
+      { team: "Chiefs", record: "4-0", me: true },
+      { team: "Chargers", record: "3-1" },
+    ],
+    related: ["Mahomes on the close one in Las Vegas"],
+  },
+  "card",
+);
+assert(fill.includes("J. Taylor 20 yd run"), "fill leads with the scoring summary");
+assert(fill.includes("Total yards"), "fill sets team stats after scoring");
+assert(fill.indexOf("Scoring") < fill.indexOf("Team stats"), "scoring comes before team stats");
+assert(fill.indexOf("Team stats") < fill.indexOf("I think you have to stay"), "a pull quote follows the tables");
+assert(fill.indexOf("stay with it") < fill.indexOf("Chargers on Oct. 18"), "next game follows the quote");
+assert(fill.includes("Chiefs") && fill.includes("4-0"), "standings snippet is in the fill");
+assert(fill.includes("Mahomes on the close one"), "related headlines close the leftover");
+
+const chiefsScoring = [
+  {
+    label: "First quarter",
+    plays: [
+      { side: "away" as const, team: "BAL", clock: "8:12", tag: "TD", lead: ["H. Henry 2 yd pass"], detail: [], score: "7-0" },
+      { side: "home" as const, team: "KC", clock: "3:04", tag: "TD", lead: ["P. Mahomes 6 yd run"], detail: [], score: "7-7" },
+    ],
+  },
+  {
+    label: "Second quarter",
+    plays: [{ side: "home" as const, team: "KC", clock: "0:18", tag: "FG", lead: ["H. Butker 41 yd FG"], detail: [], score: "7-10" }],
+  },
+  {
+    label: "Third quarter",
+    plays: [{ side: "away" as const, team: "BAL", clock: "9:40", tag: "TD", lead: ["D. Henry 3 yd run"], detail: [], score: "14-10" }],
+  },
+  {
+    label: "Fourth quarter",
+    plays: [
+      { side: "home" as const, team: "KC", clock: "14:50", tag: "TD", lead: ["X. Worthy 8 yd pass"], detail: [], score: "14-17" },
+      { side: "away" as const, team: "BAL", clock: "2:11", tag: "TD", lead: ["L. Jackson 1 yd run"], detail: [], score: "21-17" },
+      { side: "home" as const, team: "KC", clock: "0:22", tag: "TD", lead: ["T. Kelce 7 yd pass"], detail: [], score: "21-24" },
+      { side: "away" as const, team: "BAL", clock: "0:04", tag: "TD", lead: ["Z. Flowers 31 yd pass"], detail: [], score: "27-24" },
+      { side: "home" as const, team: "KC", clock: "0:00", tag: "FG", lead: ["H. Butker 44 yd FG"], detail: [], score: "27-30" },
+    ],
+  },
+];
+const compact = compactScoringByPeriod(chiefsScoring);
+assert(compact.length === 4, "compact scoring is one line per quarter");
+assert(compact[3]?.score === "27-30", "compact scoring ends on the final, not a mid-quarter line");
+assert(flattenScoringRows(chiefsScoring).length === 9, "play-by-play keeps every scoring play");
+assert(printScoringMode(9, 4) === "compact", "a long card uses the by-quarter summary");
+assert(printScoringMode(3, 2) === "full", "a short card can set every play");
+assert(printScoringMode(0, 0) === "link", "no plays is not a table");
+const longFill = printRecapFillHtml({ ...box, scoring: chiefsScoring }, {}, "card");
+assert(longFill.includes("27-30"), "print fill ends on the final score");
+assert(longFill.includes("Full scoring in Full story"), "a truncated table points to the full story");
+assert(!/14:50/.test(longFill), "compact print does not stop on a mid-fourth score");
+
+const nhlStats = [
+  { label: "Shots on goal", away: "28", home: "31" },
+  { label: "Power plays", away: "1-3", home: "0-2" },
+  { label: "Shorthanded goals", away: "0", home: "0", sub: true },
+  { label: "Faceoffs won", away: "32 (54%)", home: "27 (46%)" },
+  { label: "Hits", away: "22", home: "18" },
+  { label: "Blocked shots", away: "14", home: "11" },
+  { label: "Giveaways", away: "8", home: "6" },
+  { label: "Takeaways", away: "5", home: "7" },
+  { label: "Penalty minutes", away: "8", home: "6" },
+];
+const nhlBox = { ...box, game: { ...box.game, path: "hockey/nhl" }, teamStats: nhlStats };
+const pageStats = printTeamStatRows(nhlBox, "page");
+assert(pageStats.truncated && pageStats.rows.length <= 8, "a long page table yields leftover to Full story");
+assert(pageStats.rows.some((r) => r.label === "Shots on goal"), "trimmed stats keep the lead numbers");
+const nhlFill = printRecapFillHtml(nhlBox, {}, "page");
+assert(nhlFill.includes("Full team stats in Full story"), "print points leftover team stats at Full story");
+assert(!nhlFill.includes("Penalty minutes"), "print does not set every NHL team-stat row on the page");
+const cardStats = printTeamStatRows(nhlBox, "card");
+assert(cardStats.rows.length <= 4 && cardStats.truncated, "a card keeps the key hockey numbers");
+
+assert(recapTeamNick("Los Angeles Dodgers") === "Dodgers", "city drops off the kicker");
+assert(recapTeamNick("Milwaukee Brewers") === "Brewers", "Brewers nickname");
+assert(recapTeamNick("Vegas Golden Knights") === "Golden Knights", "Knights keep Golden");
+assert(recapTeamNick("Dodgers") === "Dodgers", "a nickname stays");
+const dodgersWin = {
+  ...rebuilt,
+  league: "MLB",
+  away: { ...rebuilt.away, short: "Dodgers", winner: false, score: "2" },
+  home: { ...rebuilt.home, short: "Braves", winner: true, score: "3" },
+};
+assert(
+  recapKicker({ sportLabel: "MLB", teamName: "Los Angeles Dodgers" }, dodgersWin) === "MLB · Braves",
+  "kicker names the winner, not the losing club the story was filed under",
+);
+assert(
+  recapKicker({ sportLabel: "NHL", teamName: "Vancouver Canucks" }, {
+    ...rebuilt,
+    league: "NHL",
+    away: { ...rebuilt.away, short: "Golden Knights", winner: true },
+    home: { ...rebuilt.home, short: "Canucks", winner: false },
+  }) === "NHL · Golden Knights",
+  "a Vegas win is not labeled Canucks",
+);
+const injuryCard = recapCardSource(
+  {
+    headline: "Bengals WR Tee Higgins day-to-day with adductor injury, coach saying",
+    body: "Higgins is considered day-to-day with an adductor issue he suffered toward the end of Sunday's 22-17 loss.",
+  },
+  {
+    recap: {
+      headline: "Jaguars hold off Bengals 22-17",
+      html: "<p>JACKSONVILLE -- — Trevor Lawrence threw two touchdown passes and the Jaguars held off the Bengals 22-17 on Sunday.</p>",
+    },
+  },
+);
+assert(injuryCard.headline.includes("Jaguars"), "the card hed is the game recap, not the injury note");
+assert(injuryCard.body.includes("Trevor Lawrence"), "the card graf is the AP/ESPN game story");
 
 console.log("newspaper-recap ok");
