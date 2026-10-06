@@ -1958,9 +1958,10 @@ function InsidePage({
     <div className="wsj-inside">
       {stories.map((card, i) => {
         const team = teamForCard(teams, card);
-        const text = cardCopy(card);
-        const { art, cols } = artFor(card, text);
         const game = isSingleGameRecap(card) ? lookup(card) : null;
+        const raw = cardCopy(card);
+        const text = game || isSingleGameRecap(card) ? stripRecapScoreStubs(raw) : raw;
+        const { art, cols } = artFor(card, text);
         // No photograph: the club's poster carries the art, unless its notebook already runs here.
         const poster = !card.photo && Boolean(team) && !noted.has(team!.fav.key);
         return (

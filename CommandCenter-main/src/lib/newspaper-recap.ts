@@ -496,7 +496,7 @@ export function recapShouldDropCap(text: string | null | undefined): boolean {
 export function recapBodyForPage(text: string | null | undefined): string {
   const { body } = splitApDateline(text ?? "");
   if (!body || recapIsScoreOnly(body)) return "";
-  return body;
+  return stripRecapScoreStubs(body);
 }
 
 export type RecapDropLead = {
