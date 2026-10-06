@@ -1831,7 +1831,9 @@ function FrontPage({
         colorFor={(c) => teamColor(teamForCard(teams, c))}
       />
       </div>
-      <TurnBar onTurn={onTurn} folio={clubsFolio} label="The clubs desk — every slate, table and leader" />
+      <div data-tt-flow="">
+        <TurnBar onTurn={onTurn} folio={clubsFolio} label="The clubs desk — every slate, table and leader" />
+      </div>
     </div>
   );
 }

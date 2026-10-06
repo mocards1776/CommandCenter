@@ -2665,6 +2665,16 @@ li.counting .tt-count.card {
   max-height: 160px;
   object-fit: cover;
 }
+.wsj-front .wsj-ticker {
+  gap: 5px;
+}
+.wsj-front .wsj-ticker-cell {
+  padding: 5px 6px 4px;
+  gap: 1px;
+}
+.wsj-front .wsj-ticker-place {
+  display: none;
+}
 .wsj-front-row {
   display: grid;
   gap: var(--w-gutter);
