@@ -1,5 +1,7 @@
+import MlbBaseDiamond from "@/components/sports/MlbBaseDiamond";
 import PossessionFootball from "@/components/sports/PossessionFootball";
 import { appleClockParts, isBreakStatus, timeoutMarks } from "@/lib/apple-score";
+import { isEmptyBasesLabel } from "@/lib/mlb-score-ui";
 import { mlbHeroNest, type MlbHeroDiamond } from "@heat/mlb-hero.ts";
 import { cn } from "@/lib/utils";
 
@@ -154,7 +156,15 @@ export default function AppleScoreCluster({
           >
             {mlbNest.primary}
           </span>
-          {mlbNest.runners ? (
+          {mlb ? (
+            <MlbBaseDiamond
+              onFirst={mlb.onFirst}
+              onSecond={mlb.onSecond}
+              onThird={mlb.onThird}
+              size="sm"
+              className="mt-1.5"
+            />
+          ) : mlbNest.runners && !isEmptyBasesLabel(mlbNest.runners) ? (
             <span
               className={cn(
                 "mt-1 font-semibold uppercase leading-none tracking-[0.14em] text-white/55",

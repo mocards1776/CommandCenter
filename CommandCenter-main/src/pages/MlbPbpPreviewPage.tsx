@@ -1,11 +1,11 @@
 import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import MlbPlayByPlayPanel from "@/components/sports/MlbPlayByPlayPanel";
-import { chicagoToday, fetchMlbBoxscore, fetchMlbScoreboard } from "@/lib/mlb";
+import { MlbGameDetail } from "@/pages/MlbGamePage";
+import { chicagoToday, fetchMlbScoreboard } from "@/lib/mlb";
 
 /**
- * Public 2D PBP preview so screenshots do not need a session.
- * Uses a live or most-recent MLB game from the Stats API — not fixture copy.
+ * Public live-header preview so screenshots do not need a session.
+ * Renders the same game-detail matchup / heat panel.
  * Not linked from nav. Query `?game=gamePk` to pin a game.
  */
 export default function MlbPbpPreviewPage() {
@@ -34,16 +34,6 @@ export default function MlbPbpPreviewPage() {
   });
 
   const gamePk = pick.data || "";
-  const box = useQuery({
-    queryKey: ["mlb-boxscore-v4", gamePk],
-    queryFn: () => fetchMlbBoxscore(gamePk),
-    enabled: Boolean(gamePk),
-    staleTime: 20_000,
-    refetchInterval: (q) =>
-      q.state.data?.status && /progress|live|in progress/i.test(q.state.data.status)
-        ? 20_000
-        : false,
-  });
 
   return (
     <div className="mx-auto min-h-screen max-w-lg bg-[#05070c] px-3 py-6 sm:px-4">
@@ -51,13 +41,16 @@ export default function MlbPbpPreviewPage() {
         <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
           MLB game detail
         </p>
-        <h1 className="text-xl font-semibold text-[#f4f1e9]">2D play-by-play</h1>
+        <h1 className="text-xl font-semibold text-[#f4f1e9]">Live matchup</h1>
         <p className="text-[12px] leading-relaxed text-[#9aa3b8]">
-          Same panel as <code className="text-white/70">/sports/mlb/game/:gamePk</code>.
+          Same header as <code className="text-white/70">/sports/mlb/game/:gamePk</code>
+          — pitcher / large heat / batter, no EMPTY text, no mid-game loser fade.
           {gamePk ? ` Game ${gamePk}.` : " Picking a live or recent game…"}
         </p>
       </header>
-      {gamePk ? <MlbPlayByPlayPanel gamePk={gamePk} box={box.data ?? null} /> : (
+      {gamePk ? (
+        <MlbGameDetail gamePk={gamePk} />
+      ) : (
         <p className="text-[13px] text-white/45">No MLB game on the board.</p>
       )}
     </div>

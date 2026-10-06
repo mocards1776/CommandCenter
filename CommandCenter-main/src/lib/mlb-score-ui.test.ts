@@ -1,0 +1,66 @@
+/**
+ * Run with: node --experimental-strip-types src/lib/mlb-score-ui.test.ts
+ * from CommandCenter-main/.
+ */
+import { isEmptyBasesLabel, mlbFinalWinnerFlags } from "./mlb-score-ui.ts";
+
+const assert = {
+  equal(actual: unknown, expected: unknown, msg?: string) {
+    if (actual !== expected) {
+      throw new Error(`${msg ?? "assert.equal"}: expected ${String(expected)}, got ${String(actual)}`);
+    }
+  },
+};
+
+const liveTrail = mlbFinalWinnerFlags({
+  pregame: false,
+  live: true,
+  awayRuns: 1,
+  homeRuns: 5,
+});
+assert.equal(liveTrail.awayWins, false, "live trailing away is not faded");
+assert.equal(liveTrail.homeWins, false, "live leading home is not a final winner");
+
+const finalHome = mlbFinalWinnerFlags({
+  pregame: false,
+  live: false,
+  awayRuns: 1,
+  homeRuns: 5,
+});
+assert.equal(finalHome.awayWins, false, "final loser is not awayWins");
+assert.equal(finalHome.homeWins, true, "final home win fades the visitor");
+
+const finalAway = mlbFinalWinnerFlags({
+  pregame: false,
+  live: false,
+  awayRuns: 4,
+  homeRuns: 2,
+});
+assert.equal(finalAway.awayWins, true, "final away win");
+assert.equal(finalAway.homeWins, false, "final away win does not mark home");
+
+const preview = mlbFinalWinnerFlags({
+  pregame: true,
+  live: false,
+  awayRuns: 0,
+  homeRuns: 0,
+});
+assert.equal(preview.awayWins, false, "preview does not fade");
+assert.equal(preview.homeWins, false, "preview does not fade home");
+
+const warmup = mlbFinalWinnerFlags({
+  pregame: false,
+  live: true,
+  awayRuns: 0,
+  homeRuns: 1,
+});
+assert.equal(warmup.awayWins, false, "warmup/in-progress is not a final fade");
+assert.equal(warmup.homeWins, false, "warmup/in-progress home lead is not faded");
+
+assert.equal(isEmptyBasesLabel("Empty"), true);
+assert.equal(isEmptyBasesLabel("EMPTY"), true);
+assert.equal(isEmptyBasesLabel("Loaded"), false);
+assert.equal(isEmptyBasesLabel("1st"), false);
+assert.equal(isEmptyBasesLabel(null), false);
+
+console.log("mlb-score-ui: ok");

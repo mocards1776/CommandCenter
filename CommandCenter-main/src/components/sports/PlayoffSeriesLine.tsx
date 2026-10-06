@@ -10,7 +10,7 @@ export default function PlayoffSeriesLine({
 }) {
   if (!line) return null;
   return (
-    <p title={line} className={cn("truncate text-[11px] font-semibold tracking-wide text-cream", className)}>
+    <p title={line} className={cn("text-[11px] font-semibold tracking-wide text-cream", className)}>
       {line}
     </p>
   );

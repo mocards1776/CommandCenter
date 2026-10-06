@@ -1158,7 +1158,7 @@ function RuwtCard({
         <p className="mt-1 text-[13px] text-cream">
           {game.away.abbrev} {game.away.score} · {game.home.score} {game.home.abbrev}
         </p>
-        <PlayoffSeriesLine line={game.seriesLine} className="mt-0.5" />
+        <PlayoffSeriesLine line={game.seriesLine} className="mt-0.5 truncate" />
       </Link>
     );
   }

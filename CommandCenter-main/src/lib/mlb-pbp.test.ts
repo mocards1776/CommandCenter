@@ -17,6 +17,7 @@ import {
   pitchTypeLabel,
   playHeadline,
   resolvePbpView,
+  shouldRenderPbpFieldMap,
   shortPbpName,
   sprayToFeet,
   type MlbHeatZoneCell,
@@ -248,5 +249,6 @@ const betweenPitches: MlbPbpState = {
 };
 assert.equal(resolvePbpView(betweenPitches), "play", "0-pitch new PA still shows last play");
 assert.equal(resolvePbpView(betweenPitches, "batter"), "batter", "explicit prefer wins");
+assert.equal(shouldRenderPbpFieldMap(state!.lastComplete), false, "hide untrusted LAST PLAY map");
 
 console.log("mlb-pbp: ok");
