@@ -134,17 +134,22 @@ export function clubFormIsThin(
     stats: unknown[];
     leaders: unknown[];
     division: unknown[];
-    upcoming?: { startIso?: string | null }[];
+    upcoming?: { startIso?: string | null; when?: string | null }[];
   },
   now = Date.now(),
 ): boolean {
   // A future slate with no current-season numbers — last year's table does
   // not earn a full form card (Missouri basketball before tip-off).
   if (club.stats.length === 0 && club.leaders.length === 0) return true;
-  const iso = club.upcoming?.[0]?.startIso;
-  if (!iso) return false;
-  const start = Date.parse(iso);
-  return Number.isFinite(start) && start - now > PRESEASON_MS;
+  const next = club.upcoming?.[0];
+  if (!next) return false;
+  if (next.startIso) {
+    const start = Date.parse(next.startIso);
+    if (Number.isFinite(start) && start - now > PRESEASON_MS) return true;
+  }
+  // Board chips often have "Tue Nov 3" and no ISO. Before November that
+  // is still preseason, not a form card.
+  return Boolean(next.when && /Nov|Dec/i.test(next.when) && new Date(now).getUTCMonth() <= 9);
 }
 
 /** Stat-grid columns that fill the last row instead of leaving grey cells. */

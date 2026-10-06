@@ -202,6 +202,18 @@ assert(
   ),
   "Missouri basketball waits in a compact row until the season starts",
 );
+assert(
+  clubFormIsThin(
+    {
+      stats: [{ label: "PPG" }],
+      leaders: [],
+      division: [],
+      upcoming: [{ when: "Tue Nov 3" }],
+    },
+    Date.parse("2026-10-05T00:00:00.000Z"),
+  ),
+  "a November opener without an ISO is still a compact preseason row",
+);
 assert(formStatColumns(6) === 3, "six stats fill two rows of three");
 assert(formStatColumns(5) === 5, "five stats sit in one row, no grey cell");
 assert(formStatColumns(3) === 3, "three stats fill one row");

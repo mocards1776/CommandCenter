@@ -8065,6 +8065,7 @@ li.counting .tt-count.card {
 .newspaper-root .wx-strip em { margin-left: 0; }
 .newspaper-root .wx-top { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr) !important; }
 .newspaper-root .wx-bottom { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) !important; }
+.newspaper-root .wx-outlook { grid-template-columns: repeat(var(--n, 7), minmax(0, 1fr)) !important; }
 .newspaper-root .tt-mo-grid { grid-template-columns: minmax(0, 1.75fr) minmax(0, 1fr); }
 .newspaper-root .tt-mo-main {
   padding-right: var(--w-gutter);
