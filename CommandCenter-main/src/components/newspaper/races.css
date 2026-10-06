@@ -5,7 +5,8 @@
   flex-direction: column;
   gap: 14px;
   flex: 1 1 auto;
-  min-height: calc(var(--tt-page-min, var(--tt-page-h, 1480px)) - 88px);
+  /* Compose toward the 1480 sheet; grow with --tt-page-min on a taller stand. */
+  min-height: max(1392px, calc(var(--tt-page-min, var(--tt-page-h, 1480px)) - 88px));
 }
 .tt-races-head {
   text-align: center;
@@ -48,10 +49,11 @@
 .tt-races-block {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  justify-content: space-between;
+  gap: 12px;
   flex: 1 1 0;
   min-height: 0;
-  padding-bottom: 12px;
+  padding-bottom: 14px;
   border-bottom: 2px solid var(--w-rule);
 }
 .tt-races-block:last-of-type { border-bottom: 0; padding-bottom: 0; }
@@ -123,10 +125,10 @@
 .tt-races-new {
   display: inline-block;
   margin-left: 8px;
-  padding: 1px 5px 0;
+  padding: 1px 6px 0;
   border: 1px solid var(--w-red);
   font-family: var(--w-cond);
-  font-size: 10px;
+  font-size: 11px;
   font-style: normal;
   font-weight: 700;
   letter-spacing: 0.12em;
@@ -228,11 +230,11 @@
 
 .tt-races[data-tt-races="continued"] .tt-races-head h2 { font-size: 34px; }
 
-.tt-races-preview {
+.newspaper-root.tt-races-preview {
   --tt-page-h: 1480px;
 }
-.tt-races-preview .wsj-sheet {
-  min-height: var(--tt-page-h);
+.newspaper-root.tt-races-preview .wsj-sheet {
+  min-height: 1480px;
 }
 .tt-races-preview-rail {
   margin: 0 auto 8px;
