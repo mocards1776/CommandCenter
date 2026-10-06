@@ -189,7 +189,7 @@ export function holdoverCovers(iso: string | null | undefined, pressId: string):
 
 /** Wire / recap / club wrap ids — one card per game, not news. */
 export function isGameWrapStory(card: { id: string }): boolean {
-  return /^(?:wire|recap|recent|wrap)-/.test(card.id);
+  return /^(?:wire|recap|recent|wrap|box)-/.test(card.id);
 }
 
 function centralWeekday(day: string): number {

@@ -1496,6 +1496,44 @@ assert(
   "Monday morning NFL boards include Saturday",
 );
 assert(isGameWrapStory({ id: "wire-nfl-1" }), "a wire id is a game wrap");
+assert(isGameWrapStory({ id: "box-football/college-football-401856708" }), "a board recap id is a game wrap");
+{
+  const boardMizzou = card({
+    id: "box-football/college-football-401856708",
+    headline: "No. 25 Missouri trounces No. 8 Florida 45-17 to snap 9-game skid against Top 25 opponents",
+    favoriteKey: "cfb-mizzou",
+    followed: true,
+    teamName: "Missouri",
+    sportLabel: "College Football",
+    leaguePath: "football/college-football",
+    status: "Final",
+    scoreLine: "FLA 17 · MIZ 45",
+    when: "2026-10-04T19:30:00Z",
+    body: "Missouri beat Florida 45-17 in Gainesville and snapped a nine-game losing streak. ".repeat(16),
+    photo: "https://example.com/mizzou.jpg",
+  });
+  const sixers = card({
+    id: "league-sixers-pre",
+    headline: "James, Embiid, Maxey sit out 76ers’ preseason opener vs. Knicks",
+    sportLabel: "Nba",
+    leaguePath: "basketball/nba",
+    when: "2026-10-05T23:00:00Z",
+    body: "The 76ers sat their stars in a preseason opener. ".repeat(20),
+    editorFront: 0,
+  });
+  const boardPaper = buildEdition({
+    stories: [sixers, boardMizzou],
+    clubs: [
+      { key: "cfb-mizzou", shortName: "Mizzou", logo: null, leaguePath: "football/college-football", record: "4-1", standing: "8th in SEC", division: [], stats: [], leaders: [], upcoming: [] },
+    ],
+    edition: "2026-10-05-evening",
+  });
+  const boardA1 = boardPaper.pages.find((p) => p.kind === "favorites-front");
+  assert(
+    boardA1?.kind === "favorites-front" && boardA1.lead?.id === "box-football/college-football-401856708",
+    `A1 leads with the board's Mizzou recap, not a preseason sit-out (got ${boardA1 && boardA1.kind === "favorites-front" ? boardA1.lead?.headline : "no front"})`,
+  );
+}
 
 const satCfb = card({
   id: "wire-cfb-miz",
