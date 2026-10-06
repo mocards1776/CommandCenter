@@ -814,15 +814,13 @@ function RecapCard({
   lead,
   wide,
   desk,
-  fill,
 }: {
   card: GameWrapCard;
   game?: BoxGame | null;
   lead?: boolean;
   wide?: boolean;
-  /** Recaps desk: photo + graf. Skip leftover fill unless `fill` is set. */
+  /** Recaps desk: photo + graf, no leftover fill. */
   desk?: boolean;
-  fill?: boolean;
 }) {
   const path = game?.path ?? card.leaguePath ?? null;
   const eventId = game?.espnEventId ?? (card.gameId && /^\d{6,}$/.test(card.gameId) ? card.gameId : null);
@@ -889,7 +887,7 @@ function RecapCard({
           </StoryLink>
         </p>
       </div>
-      {desk && !fill ? null : <RecapFill card={card} game={live} density={lead || wide ? "page" : "card"} />}
+      {desk ? null : <RecapFill card={card} game={live} density={lead || wide ? "page" : "card"} />}
     </article>
   );
 }
@@ -2883,7 +2881,7 @@ function WrapPlayers({ card }: { card: GameWrapCard }) {
   );
 }
 
-function DeskWraps({ cards, fill }: { cards: GameWrapCard[]; fill?: boolean }) {
+function DeskWraps({ cards }: { cards: GameWrapCard[] }) {
   const lookup = useContext(GameLookup);
   if (!cards.length) return null;
   const cols = cards.length === 1 ? 1 : Math.min(3, cards.length);
@@ -2891,7 +2889,7 @@ function DeskWraps({ cards, fill }: { cards: GameWrapCard[]; fill?: boolean }) {
     <section className={cn("tt-desk-wraps", cols === 1 && "stack")}>
       <div className="tt-desk-wraps-grid" style={{ ["--cols" as string]: String(cols) }}>
         {cards.map((card) => (
-          <RecapCard key={card.id} card={card} game={lookup(card)} wide={cols === 1} desk fill={fill} />
+          <RecapCard key={card.id} card={card} game={lookup(card)} wide={cols === 1} desk />
         ))}
       </div>
     </section>
@@ -3081,7 +3079,7 @@ function ScoresDesk({
   return (
     <div className="tt-scores">
       {recapsWraps && wrapCards.length ? <DeskWraps cards={wrapCards} /> : null}
-      {shortCont && contWraps.length ? <DeskWraps cards={contWraps} fill /> : null}
+      {shortCont && contWraps.length ? <DeskWraps cards={contWraps} /> : null}
       {recapsWraps && !wrapCards.length ? (
       <article
         className={cn("tt-feature", !photo && "graphic")}
@@ -3174,7 +3172,7 @@ function ScoresDesk({
             {restTitle} <em>{printedBoxes} {printedBoxes === 1 ? "game" : "games"}</em>
           </h3>
           <div
-            className={cn("tt-score-grid", isMlb && "agate", sparse && "roomy")}
+            className={cn("tt-score-grid", isMlb && "agate", (sparse || shortCont) && "roomy")}
             style={{ ["--cols" as string]: String(isMlb ? 2 : balancedCols((slicedBoard ? gridGames : rest).length, [3, 2, 4])) }}
           >
             {(slicedBoard ? gridGames : rest).map((g) => (
