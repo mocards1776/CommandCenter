@@ -10,10 +10,12 @@ import {
   SD30_SAMPLE_BUYERS,
   barWidth,
   competitiveCaption,
+  formatJustInLine,
   formatCpp,
   formatGrp,
   formatSpendExact,
   formatSpendShort,
+  SD30_SAMPLE_JUST_IN,
   loadTciLogoDataUri,
   maxGrp,
   maxSpend,
@@ -44,13 +46,14 @@ assert.equal(CARD_WIDTH, 1080);
 assert.equal(CARD_HEIGHT, 1350);
 assert.match(svg, /width="1080"/);
 assert.match(svg, /height="1350"/);
-assert.match(svg, /#F2EEE6|#F4EFE6/i, "cream field, not a dark poster");
+assert.match(svg, /#EFE8DC|#F2EEE6|#F4EFE6/i, "cream field, not a dark poster");
 assert.doesNotMatch(svg, /#07101d|#0b1220|#111827/i);
 
 assert.equal(LOGO_X, (1080 - LOGO_DISPLAY_WIDTH) / 2, "wordmark is centered on the field");
 assert.match(svg, new RegExp(`<image href="data:image/png;base64,aaa" x="${LOGO_X}"`));
-assert.doesNotMatch(svg, /logo-plate|logoHalo|logo-disc|cardShadow|feDropShadow/i);
+assert.doesNotMatch(svg, /logo-plate|logoHalo|logo-disc/i);
 assert.doesNotMatch(svg, /letter grade|Grade [A-F]|rating [A-F]|\bHIGH\b/i);
+assert.match(svg, /glassDepth|rgba\(255,255,255/, "liquid-glass panels");
 
 const fogle = SD30_SAMPLE_BUYERS[0]!;
 const stinnett = SD30_SAMPLE_BUYERS[1]!;
@@ -89,16 +92,16 @@ assert.match(svg, /4,873\.5 GRP/);
 assert.match(svg, /2,766\.6 GRP/);
 assert.match(svg, /980\.9 GRP/);
 assert.match(svg, /642\.6 GRP/);
-assert.match(svg, /\$93 CPP/);
-assert.match(svg, /\$92 CPP/);
-assert.match(svg, /\$166 CPP/);
-assert.match(svg, /\$186 CPP/);
+assert.doesNotMatch(svg, /\$93 CPP|\$92 CPP|\$166 CPP|\$186 CPP/);
 assert.match(svg, /JUST IN|Just in/);
-assert.match(svg, /GRP rebuild/);
-assert.match(svg, /FCC×AD35/);
-assert.match(svg, /KSPR dark/);
-assert.match(svg, /KYTV CPP/);
-assert.match(svg, /CPPs locked/);
+assert.match(svg, /Betsy Fogle/);
+assert.match(svg, /\$70,420/);
+assert.match(svg, /939 GRP/);
+assert.match(svg, /Melanie Stinnett/);
+assert.match(svg, /\$52,745/);
+assert.match(svg, /704 GRP/);
+assert.match(svg, /Springfield TV/);
+assert.doesNotMatch(svg, /GRP rebuild|KSPR dark|CPPs locked|FCC×AD35/);
 assert.match(svg, /Still ahead|STILL AHEAD/);
 assert.match(svg, /Remaining weeks|Verify remaining weeks/);
 assert.match(svg, /FCC copies/);
@@ -120,11 +123,20 @@ assert.equal(barWidth(980.9, 4873.5, track), Math.round((980.9 / 4873.5) * track
 assert.equal(barWidth(642.6, 4873.5, track), Math.round((642.6 / 4873.5) * track));
 
 const caption = competitiveCaption(card);
-assert.match(caption, /\$453,350 \/ 4,873\.5 GRP \/ \$93 CPP/);
-assert.match(caption, /\$253,570 \/ 2,766\.6 GRP \/ \$92 CPP/);
-assert.match(caption, /\$162,745 \/ 980\.9 GRP \/ \$166 CPP/);
-assert.match(caption, /\$119,310 \/ 642\.6 GRP \/ \$186 CPP/);
-assert.ok(caption.includes(SD30_CAPTION_WHATS_NEW));
+assert.match(caption, /\$453,350 \/ 4,873\.5 GRP/);
+assert.match(caption, /\$253,570 \/ 2,766\.6 GRP/);
+assert.match(caption, /\$162,745 \/ 980\.9 GRP/);
+assert.match(caption, /\$119,310 \/ 642\.6 GRP/);
+assert.doesNotMatch(caption, /Just in[\s\S]*?CPP/);
+assert.ok(caption.includes("Betsy Fogle added $70,420 in Springfield TV for 939 GRP"));
+assert.ok(caption.includes("Melanie Stinnett added $52,745 in Springfield TV for 704 GRP"));
+assert.ok(SD30_CAPTION_WHATS_NEW.includes("$70,420"));
+assert.doesNotMatch(SD30_CAPTION_WHATS_NEW, /CPP/);
+assert.equal(
+  formatJustInLine(SD30_SAMPLE_JUST_IN[0]!),
+  "Betsy Fogle added $70,420 in Springfield TV for 939 GRP",
+);
+assert.doesNotMatch(formatJustInLine(SD30_SAMPLE_JUST_IN[0]!), /CPP/);
 
 {
   const logo = await loadTciLogoDataUri();
@@ -132,7 +144,7 @@ assert.ok(caption.includes(SD30_CAPTION_WHATS_NEW));
   assert.ok(logo.length > 200, "real TCI wordmark is embedded");
   const withLogo = renderCompetitiveSvg(sd30SampleCard(logo));
   assert.match(withLogo, /<image href="data:image\/png;base64,/);
-  assert.doesNotMatch(withLogo, /logo-plate|logoHalo|feDropShadow|cardShadow/);
+  assert.doesNotMatch(withLogo, /logo-plate|logoHalo|logo-disc/);
   assert.ok(!/rect[^>]+fill="#FFFFFF"/.test(withLogo), "no opaque white logo plate");
 }
 

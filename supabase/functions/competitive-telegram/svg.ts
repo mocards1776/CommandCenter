@@ -1,7 +1,7 @@
 /**
- * Competitive Telegram card (1080×1350). Centered infographic poster:
- * wordmark on the cream field (no plate), Just in as a 3-column hero,
- * 2×2 race tiles, still-ahead as a balanced row. Not a left-aligned list.
+ * Competitive Telegram card (1080×1350). Centered liquid-glass infographic:
+ * wordmark on the field (no plate), Just in = actual new buys, then race
+ * recap + still ahead on frosted panels.
  *
  * Raster: SVG → resvg PNG → JPEG q≈95 → sendPhoto.
  */
@@ -9,37 +9,35 @@ import {
   CARD_HEIGHT,
   CARD_WIDTH,
   barWidth,
-  formatCpp,
   formatGrp,
+  formatSpendExact,
   formatSpendShort,
   maxGrp,
   maxSpend,
   type AheadItem,
   type BuyerRow,
   type CompetitiveCard,
-  type WhatsNewItem,
+  type JustInBuy,
 } from "./card.ts";
 
 export const COMPETITIVE_ALERT_WIDTH = CARD_WIDTH;
 export const COMPETITIVE_ALERT_HEIGHT = CARD_HEIGHT;
 
 /** Native logo 276×34. Centered on the field — no disc or plate. */
-export const LOGO_DISPLAY_WIDTH = 500;
-export const LOGO_DISPLAY_HEIGHT = 62;
+export const LOGO_DISPLAY_WIDTH = 480;
+export const LOGO_DISPLAY_HEIGHT = 59;
 export const LOGO_X = (CARD_WIDTH - LOGO_DISPLAY_WIDTH) / 2;
-export const LOGO_Y = 30;
+export const LOGO_Y = 28;
 
 const W = CARD_WIDTH;
 const H = CARD_HEIGHT;
 const CX = W / 2;
 
-const CREAM = "#F2EEE6";
-const TILE = "#FBF7F0";
+const CREAM = "#EFE8DC";
 const INK = "#1A1814";
-const MUTED = "#6E6860";
-const FAINT = "#9A948A";
-const TRACK = "#E4DED4";
-const RULE = "#D2C8B8";
+const MUTED = "#5C564E";
+const FAINT = "#8A8378";
+const TRACK = "rgba(255,255,255,0.35)";
 const BRAND = "#8A3046";
 
 function esc(value: string): string {
@@ -69,25 +67,22 @@ function text(
   return `<text x="${x}" y="${y}" fill="${opts.fill}" font-size="${opts.size}" font-weight="${weight}" font-family="Inter" text-anchor="${anchor}"${spacing}>${esc(value)}</text>`;
 }
 
-function rulePair(label: string, y: number): string {
-  const labelW = Math.max(80, label.length * 9);
-  const gap = 18;
-  const x1 = 64;
-  const x2 = CX - labelW / 2 - gap;
-  const x3 = CX + labelW / 2 + gap;
-  const x4 = W - 64;
+function glassPanel(x: number, y: number, w: number, h: number, rx = 26): string {
   return [
-    `<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="${RULE}" stroke-width="1.5"/>`,
-    text(label, CX, y + 5, { size: 13, fill: FAINT, anchor: "middle", weight: 700, spacing: 2.2 }),
-    `<line x1="${x3}" y1="${y}" x2="${x4}" y2="${y}" stroke="${RULE}" stroke-width="1.5"/>`,
+    `<rect filter="url(#glassDepth)" x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" fill="rgba(255,255,255,0.34)" stroke="rgba(255,255,255,0.7)" stroke-width="1.25"/>`,
+    `<rect x="${x + 14}" y="${y + 1}" width="${w - 28}" height="2" rx="1" fill="rgba(255,255,255,0.55)"/>`,
   ].join("");
+}
+
+function sectionLabel(label: string, y: number): string {
+  return text(label, CX, y, { size: 13, fill: FAINT, anchor: "middle", weight: 700, spacing: 2.4 });
 }
 
 function logoMark(card: CompetitiveCard): string {
   if (card.logoData) {
     return `<image href="${esc(card.logoData)}" x="${LOGO_X}" y="${LOGO_Y}" width="${LOGO_DISPLAY_WIDTH}" height="${LOGO_DISPLAY_HEIGHT}" preserveAspectRatio="xMidYMid meet"/>`;
   }
-  return text("THOMPSON COMMUNICATIONS", CX, LOGO_Y + 36, {
+  return text("THOMPSON COMMUNICATIONS", CX, LOGO_Y + 34, {
     size: 16,
     fill: BRAND,
     anchor: "middle",
@@ -96,26 +91,30 @@ function logoMark(card: CompetitiveCard): string {
   });
 }
 
-function justInHero(items: readonly WhatsNewItem[], y: number): string {
-  const n = Math.max(1, items.length);
+function justInHero(buys: readonly JustInBuy[], y: number): string {
+  const n = Math.max(1, buys.length);
   const gap = 18;
-  const colW = (W - 72 - gap * (n - 1)) / n;
-  const colH = 220;
-  const x0 = (W - (colW * n + gap * (n - 1))) / 2;
-  const tileY = y + 56;
-  const parts = [
-    `<line x1="72" y1="${y + 18}" x2="${CX - 86}" y2="${y + 18}" stroke="${RULE}" stroke-width="1.5"/>`,
-    `<line x1="${CX + 86}" y1="${y + 18}" x2="${W - 72}" y2="${y + 18}" stroke="${RULE}" stroke-width="1.5"/>`,
-    text("JUST IN", CX, y + 26, { size: 28, fill: INK, anchor: "middle", weight: 700, spacing: 2.4 }),
-  ];
-  items.forEach((item, i) => {
+  const colW = Math.round((W - 80 - gap * (n - 1)) / n);
+  const colH = 248;
+  const x0 = Math.round((W - (colW * n + gap * (n - 1))) / 2);
+  const tileY = y + 48;
+  const parts = [text("JUST IN", CX, y + 28, { size: 26, fill: INK, anchor: "middle", weight: 700, spacing: 2.6 })];
+  buys.forEach((buy, i) => {
     const x = x0 + i * (colW + gap);
-    const cy = tileY + 52;
-    parts.push(`<rect x="${x}" y="${tileY}" width="${colW}" height="${colH}" rx="22" fill="${TILE}"/>`);
-    parts.push(`<rect x="${x + 22}" y="${tileY}" width="${colW - 44}" height="7" rx="3.5" fill="${item.color}"/>`);
-    parts.push(`<circle cx="${x + colW / 2}" cy="${cy}" r="24" fill="${item.color}"/>`);
-    parts.push(text(item.label, x + colW / 2, tileY + 118, { size: 22, fill: INK, anchor: "middle", weight: 700 }));
-    parts.push(text(item.detail, x + colW / 2, tileY + 148, { size: 15, fill: MUTED, anchor: "middle" }));
+    const cx = x + colW / 2;
+    parts.push(glassPanel(x, tileY, colW, colH, 28));
+    parts.push(`<circle cx="${cx}" cy="${tileY + 36}" r="8" fill="${buy.color}"/>`);
+    parts.push(text(buy.sponsor, cx, tileY + 72, { size: 20, fill: INK, anchor: "middle", weight: 700 }));
+    parts.push(text("added", cx, tileY + 98, { size: 14, fill: MUTED, anchor: "middle" }));
+    parts.push(text(formatSpendExact(buy.amount), cx, tileY + 150, { size: 40, fill: INK, anchor: "middle", weight: 700 }));
+    parts.push(
+      text(`in ${buy.market} ${buy.media} for ${formatGrp(buy.grp)} GRP`, cx, tileY + 186, {
+        size: 15,
+        fill: MUTED,
+        anchor: "middle",
+      }),
+    );
+    parts.push(text(buy.station, cx, tileY + 214, { size: 13, fill: FAINT, anchor: "middle", weight: 700, spacing: 1.2 }));
   });
   return parts.join("");
 }
@@ -125,69 +124,90 @@ function buyerTile(row: BuyerRow, x: number, y: number, w: number, h: number, sp
   const track = w - pad * 2;
   const spendW = barWidth(row.spend, spendMax, track);
   const grpW = barWidth(row.grp, grpMax, track);
-  const barY = y + h - 44;
+  const barY = y + h - 42;
   return [
-    `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="20" fill="${TILE}"/>`,
-    `<rect x="${x}" y="${y}" width="${w}" height="7" rx="3.5" fill="${row.color}"/>`,
-    text(row.name, x + pad, y + 44, { size: 24, fill: INK, weight: 700 }),
-    text(`${formatCpp(row.cpp)} CPP`, x + w - pad, y + 44, { size: 16, fill: MUTED, anchor: "end", weight: 700 }),
-    text(formatSpendShort(row.spend), x + pad, y + 86, { size: 28, fill: INK, weight: 700 }),
-    text(`${formatGrp(row.grp)} GRP`, x + w - pad, y + 84, { size: 16, fill: FAINT, anchor: "end" }),
-    `<rect x="${x + pad}" y="${barY}" width="${track}" height="14" rx="7" fill="${TRACK}"/>`,
-    `<rect x="${x + pad}" y="${barY}" width="${spendW}" height="14" rx="7" fill="${row.color}"/>`,
-    `<rect x="${x + pad}" y="${barY + 20}" width="${track}" height="6" rx="3" fill="${TRACK}"/>`,
-    `<rect x="${x + pad}" y="${barY + 20}" width="${grpW}" height="6" rx="3" fill="${row.color}" opacity="0.5"/>`,
+    glassPanel(x, y, w, h, 22),
+    `<rect x="${x + 18}" y="${y + 10}" width="${w - 36}" height="4" rx="2" fill="${row.color}" opacity="0.85"/>`,
+    text(row.name, x + pad, y + 48, { size: 22, fill: INK, weight: 700 }),
+    text(`${formatGrp(row.grp)} GRP`, x + w - pad, y + 48, { size: 15, fill: MUTED, anchor: "end", weight: 700 }),
+    text(formatSpendShort(row.spend), x + pad, y + 86, { size: 26, fill: INK, weight: 700 }),
+    `<rect x="${x + pad}" y="${barY}" width="${track}" height="12" rx="6" fill="${TRACK}"/>`,
+    `<rect x="${x + pad}" y="${barY}" width="${spendW}" height="12" rx="6" fill="${row.color}"/>`,
+    `<rect x="${x + pad}" y="${barY + 18}" width="${track}" height="5" rx="2.5" fill="${TRACK}"/>`,
+    `<rect x="${x + pad}" y="${barY + 18}" width="${grpW}" height="5" rx="2.5" fill="${row.color}" opacity="0.5"/>`,
   ].join("");
 }
 
 function raceGrid(buyers: readonly BuyerRow[], y: number): string {
-  const gap = 16;
-  const colW = (W - 72 - gap) / 2;
-  const rowH = 168;
-  const x0 = (W - (colW * 2 + gap)) / 2;
+  const gap = 14;
+  const colW = Math.round((W - 80 - gap) / 2);
+  const rowH = 156;
+  const x0 = Math.round((W - (colW * 2 + gap)) / 2);
   const spendMax = maxSpend(buyers);
   const grpMax = maxGrp(buyers);
-  const parts = [rulePair("RACE LANDSCAPE", y + 10)];
+  const parts = [sectionLabel("RACE", y + 8)];
   buyers.forEach((row, i) => {
     const col = i % 2;
     const r = Math.floor(i / 2);
-    parts.push(buyerTile(row, x0 + col * (colW + gap), y + 32 + r * (rowH + gap), colW, rowH, spendMax, grpMax));
+    parts.push(buyerTile(row, x0 + col * (colW + gap), y + 24 + r * (rowH + gap), colW, rowH, spendMax, grpMax));
   });
   return parts.join("");
 }
 
 function stillAheadRow(items: readonly AheadItem[], y: number): string {
   const n = Math.max(1, items.length);
-  const gap = 14;
-  const colW = Math.round((W - 72 - gap * (n - 1)) / n);
-  const colH = 108;
+  const gap = 12;
+  const colW = Math.round((W - 80 - gap * (n - 1)) / n);
+  const colH = 96;
   const x0 = Math.round((W - (colW * n + gap * (n - 1))) / 2);
-  const parts = [rulePair("STILL AHEAD", y + 10)];
+  const parts = [sectionLabel("STILL AHEAD", y + 8)];
   items.forEach((item, i) => {
     const x = x0 + i * (colW + gap);
-    parts.push(`<rect x="${x}" y="${y + 28}" width="${colW}" height="${colH}" rx="18" fill="${TILE}"/>`);
-    parts.push(`<circle cx="${x + colW / 2}" cy="${y + 48}" r="5" fill="${BRAND}"/>`);
-    parts.push(text(item.line, x + colW / 2, y + 76, { size: 15, fill: INK, anchor: "middle", weight: 700 }));
-    parts.push(text(item.sub, x + colW / 2, y + 98, { size: 13, fill: MUTED, anchor: "middle" }));
+    parts.push(glassPanel(x, y + 22, colW, colH, 20));
+    parts.push(text(item.line, x + colW / 2, y + 62, { size: 14, fill: INK, anchor: "middle", weight: 700 }));
+    parts.push(text(item.sub, x + colW / 2, y + 86, { size: 12, fill: MUTED, anchor: "middle" }));
   });
   return parts.join("");
 }
 
+function field(): string {
+  return `
+  <rect width="${W}" height="${H}" fill="${CREAM}"/>
+  <ellipse filter="url(#orb)" cx="220" cy="280" rx="260" ry="180" fill="#7EB6FF" opacity="0.42"/>
+  <ellipse filter="url(#orb)" cx="880" cy="340" rx="240" ry="170" fill="#FF8A80" opacity="0.34"/>
+  <ellipse filter="url(#orb)" cx="540" cy="980" rx="320" ry="200" fill="#C4B5FD" opacity="0.3"/>
+  <ellipse filter="url(#orb)" cx="160" cy="1100" rx="180" ry="140" fill="#FFFFFF" opacity="0.35"/>
+`;
+}
+
+function defs(): string {
+  return `
+  <defs>
+    <filter id="orb" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="42"/>
+    </filter>
+    <filter id="glassDepth" x="-15%" y="-20%" width="130%" height="160%">
+      <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#1A1814" flood-opacity="0.12"/>
+    </filter>
+  </defs>`;
+}
+
 export function renderCompetitiveSvg(card: CompetitiveCard): string {
-  const heroY = 220;
-  const raceY = 520;
-  const aheadY = 920;
+  const heroY = 208;
+  const raceY = 540;
+  const aheadY = 900;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="Inter, sans-serif" role="img" aria-label="${esc(card.title)} just in">
-  <rect width="${W}" height="${H}" fill="${CREAM}"/>
+  ${defs()}
+  ${field()}
   ${logoMark(card)}
-  ${text(card.kicker, CX, 114, { size: 12, fill: BRAND, anchor: "middle", weight: 700, spacing: 2.8 })}
-  ${text(card.title, CX, 168, { size: 52, fill: INK, anchor: "middle", weight: 700 })}
-  ${text(`${card.dateLabel}  ·  ${card.market}`, CX, 202, { size: 17, fill: MUTED, anchor: "middle" })}
-  ${justInHero(card.whatsNew, heroY)}
+  ${text(card.kicker, CX, 108, { size: 12, fill: BRAND, anchor: "middle", weight: 700, spacing: 2.8 })}
+  ${text(card.title, CX, 158, { size: 48, fill: INK, anchor: "middle", weight: 700 })}
+  ${text(`${card.dateLabel}  ·  ${card.market}`, CX, 190, { size: 16, fill: MUTED, anchor: "middle" })}
+  ${justInHero(card.justIn, heroY)}
   ${raceGrid(card.buyers, raceY)}
   ${stillAheadRow(card.stillAhead, aheadY)}
-  ${text(`${card.footer}   ·   ${card.handle}`, CX, 1316, { size: 13, fill: FAINT, anchor: "middle" })}
+  ${text(`${card.footer}   ·   ${card.handle}`, CX, 1318, { size: 13, fill: FAINT, anchor: "middle" })}
 </svg>`;
 }

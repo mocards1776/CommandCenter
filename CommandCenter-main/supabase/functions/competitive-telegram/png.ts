@@ -60,7 +60,7 @@ export async function rasterizeSvg(svg: string): Promise<Uint8Array> {
     },
     textRendering: 1,
     shapeRendering: 2,
-    background: "#F2EEE6",
+    background: "#EFE8DC",
   });
   try {
     return resvg.render().asPng();
