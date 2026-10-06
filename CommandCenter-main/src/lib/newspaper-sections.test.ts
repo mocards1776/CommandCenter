@@ -44,7 +44,6 @@ import {
   stampFavoriteKeys,
   storyRank,
   sameSectionAStory,
-  MIN_SECTION_PAGES,
   paginateEditionDesks,
   orderSportSections,
   SECTION_A_TITLE,
@@ -245,10 +244,10 @@ assert(
   a?.kind === "favorites-front" && a.news.some((story) => story.id === "news-injury"),
   "Tuesday's Chiefs story still runs",
 );
-const formPage = paper.pages.find((page) => page.kind === "favorites-form");
+const outlookForm = paper.pages.find((page) => page.kind === "favorites-clubs" && page.weatherPart === "outlook");
 assert(
-  formPage?.kind === "favorites-form" && formPage.clubs[0]?.key === "mlb-stl",
-  "club-form pages list Cardinals before Chiefs",
+  outlookForm?.kind === "favorites-clubs" && outlookForm.formClubs?.[0]?.key === "mlb-stl",
+  "club form on A3 lists Cardinals before Chiefs",
 );
 assert(a?.kind === "favorites-front" && a.news.every((story) => story.id !== "wire-nfl-weekend"), "weekend score stays off A1 fresh list");
 assert(a?.kind === "favorites-front", "A1 is the favorites front");
@@ -294,14 +293,20 @@ assert(
 const mlbPlayoffs = paper.pages.find((page) => page.kind === "sport-front" && page.section === "MLB" && page.focus === "playoffs");
 assert(mlbPlayoffs?.kind === "sport-front", "MLB still prints the playoff tree");
 assert((paper.sections.find((s) => s.code === "NFL")?.pages ?? 0) >= 4, "NFL keeps a front and the reference desks");
-assert((paper.sections.find((s) => s.code === "A")?.pages ?? 0) >= MIN_SECTION_PAGES, "A always has at least five pages");
+assert(
+  (paper.sections.find((s) => s.code === "A")?.pages ?? 0) >= 4,
+  "A has a front, weather, outlook/form, and the watch page — no empty cream pads",
+);
 assert((paper.sections.find((s) => s.code === "MLB")?.pages ?? 0) >= 4, "MLB keeps a front and the reference desks");
 assert(
   paper.pages.some((page) => page.kind === "sport-inside" && page.section === "NFL" && page.primary.id === "news-injury") ||
     paper.pages.some((page) => page.kind === "sport-front" && page.section === "NFL" && page.articles.some((a) => a.card.id === "news-injury")),
   "the Chiefs note still has an NFL home",
 );
-assert(paper.pages.some((page) => page.kind === "favorites-form"), "Section A pads with club-form pages");
+assert(
+  paper.pages.some((page) => page.kind === "favorites-clubs" && (page.formClubs?.length ?? 0) > 0),
+  "Section A prints club form on the outlook folio instead of short pad pages",
+);
 
 const leagueWire = card({
   id: "league-wire-1",

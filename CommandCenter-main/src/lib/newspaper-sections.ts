@@ -53,7 +53,14 @@ import type { FavoritesBeezPage } from "./newspaper-beez.ts";
 import type { FavoritesRacesPage } from "./newspaper-races.ts";
 import { cleanNationalStories, packNationalPages, type NationalDesk, type NationalStory } from "./newspaper-national.ts";
 import { printsFavoriteCoaches } from "./newspaper-favorite-coaches.ts";
-import { NEWS_STORIES_PER_PAGE, planStandingsPages, STAND_TABLES_PER_PAGE_COLLEGE, STAND_TABLES_PER_PAGE_PRO } from "./newspaper-page.ts";
+import {
+  A2_CLUB_CARDS,
+  NEWS_STORIES_PER_PAGE,
+  planOutlookAndForm,
+  planStandingsPages,
+  STAND_TABLES_PER_PAGE_COLLEGE,
+  STAND_TABLES_PER_PAGE_PRO,
+} from "./newspaper-page.ts";
 
 /** Front-page teaser budgets — rest jumps to a real continuation folio. */
 const LEAD_TEASER = 1050;
@@ -164,11 +171,13 @@ export type FavoritesFrontPage = PageBase & {
 
 export type FavoritesClubsPage = PageBase & {
   kind: "favorites-clubs";
-  /** A2 is today's weather; the next folio is the outlook plus the clubs desk. */
+  /** A2 is today's weather; the next folio is the outlook plus club form. */
   weatherPart?: "today" | "outlook";
   /** Slice of the clubs grid so A2 can fill without reprinting every card. */
   clubOffset?: number;
   clubLimit?: number;
+  /** Club-form cards pulled onto the outlook folio so A3 is not empty cream. */
+  formClubs?: ClubDesk[];
 };
 
 /** Deep club form pages that pad Section A to the minimum page count. */
@@ -788,7 +797,6 @@ function uniqueCodes(ids: SportSectionId[]): SportSectionId[] {
 
 const FRONT_STORIES = 3;
 const FRONT_BRIEFS = 4;
-const FORM_CLUBS_PER_PAGE = 3;
 
 function upcomingFor(clubs: ClubDesk[]): DeskFixture[] {
   return clubs.flatMap((club) =>
@@ -880,13 +888,6 @@ export function sortComingUp<T extends { when: string | null; startIso?: string 
     if (d !== 0) return d;
     return (a.when ?? "").localeCompare(b.when ?? "");
   });
-}
-
-function chunkClubs(clubs: ClubDesk[], size: number): ClubDesk[][] {
-  if (!clubs.length) return [];
-  const out: ClubDesk[][] = [];
-  for (let i = 0; i < clubs.length; i += size) out.push(clubs.slice(i, i + size));
-  return out;
 }
 
 const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
@@ -1490,6 +1491,11 @@ function favoritePages(
     thirdTeaser: thirdJump.teaser,
   };
 
+  const orderedClubs = [...clubs].sort(
+    (a, b) => favoriteDeskWeight(b.key) - favoriteDeskWeight(a.key),
+  );
+  const packed = planOutlookAndForm(orderedClubs.length);
+
   const weatherToday: FavoritesClubsPage = {
     kind: "favorites-clubs",
     folio: "A2",
@@ -1499,7 +1505,7 @@ function favoritePages(
     sectionCount: 0,
     weatherPart: "today",
     clubOffset: 0,
-    clubLimit: 3,
+    clubLimit: A2_CLUB_CARDS,
   };
 
   const weatherOutlook: FavoritesClubsPage = {
@@ -1510,8 +1516,9 @@ function favoritePages(
     sectionPage: 3,
     sectionCount: 0,
     weatherPart: "outlook",
-    clubOffset: 3,
-    clubLimit: 99,
+    clubOffset: packed.leftoverOffset,
+    clubLimit: packed.leftoverCount,
+    formClubs: orderedClubs.slice(0, packed.formOnOutlook),
   };
 
   const pages: (
@@ -1523,16 +1530,10 @@ function favoritePages(
     | FavoritesWatchPage
   )[] = [front, weatherToday, weatherOutlook, ...continues, ...inside];
 
-  // Pad to the minimum with deep club-form pages (standings + slate).
-  const orderedClubs = [...clubs].sort(
-    (a, b) => favoriteDeskWeight(b.key) - favoriteDeskWeight(a.key),
-  );
-  const formChunks = chunkClubs(orderedClubs, FORM_CLUBS_PER_PAGE);
-  let formIdx = 0;
-  while (pages.length < MIN_SECTION_PAGES) {
-    const chunk =
-      formChunks[formIdx % Math.max(1, formChunks.length)] ??
-      orderedClubs.slice(0, FORM_CLUBS_PER_PAGE);
+  // Remaining club form only — never repeat a short page just to pad to 5.
+  for (const slice of packed.formContinue) {
+    const chunk = orderedClubs.slice(slice.offset, slice.offset + slice.count);
+    if (!chunk.length) continue;
     const pageN = pages.length + 1;
     pages.push({
       kind: "favorites-form",
@@ -1541,10 +1542,8 @@ function favoritePages(
       sectionTitle: SECTION_A_TITLE,
       sectionPage: pageN,
       sectionCount: 0,
-      clubs: chunk.length ? chunk : orderedClubs,
+      clubs: chunk,
     });
-    formIdx += 1;
-    if (!orderedClubs.length && formIdx > MIN_SECTION_PAGES) break;
   }
 
   // The viewing guide closes Section A, after the club pages and before Missouri.

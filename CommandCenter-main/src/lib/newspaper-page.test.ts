@@ -25,8 +25,11 @@ import {
   pageExceedsSoftCap,
   pageHasBlankBand,
   planNewsPages,
+  planOutlookAndForm,
   planSchedulePages,
   planStandingsPages,
+  A2_CLUB_CARDS,
+  FORM_CLUBS_PER_PACKED_PAGE,
 } from "./newspaper-page.ts";
 
 function assert(cond: unknown, msg: string) {
@@ -157,5 +160,21 @@ try {
 } catch (err) {
   assert(err instanceof Error && /NFL7/.test(err.message), "blank-space guard names the sparse folio");
 }
+
+assert(A2_CLUB_CARDS === 3, "A2 still prints three club cards under today's weather");
+assert(FORM_CLUBS_PER_PACKED_PAGE === 6, "club form packs six cards, two columns, three rows");
+const sixClubs = planOutlookAndForm(6);
+assert(sixClubs.leftoverCount === 0, "leftover club cards merge into A3 form — no sparse cards row");
+assert(sixClubs.formOnOutlook === 6, "six clubs fill the outlook folio");
+assert(sixClubs.formContinue.length === 0, "six clubs do not open a short A4/A5 form page");
+const twoClubs = planOutlookAndForm(2);
+assert(twoClubs.formOnOutlook === 2 && twoClubs.formContinue.length === 0, "two clubs stay on A3");
+const twelve = planOutlookAndForm(12);
+assert(twelve.formOnOutlook === 6, "A3 takes the first six form cards");
+assert(
+  twelve.formContinue.length === 1 && twelve.formContinue[0]!.count === 6,
+  "the next six clubs continue once, not as two three-card pages",
+);
+assert(planOutlookAndForm(0).formOnOutlook === 0, "no clubs means no form cards");
 
 console.log("newspaper-page ok");

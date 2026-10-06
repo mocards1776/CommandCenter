@@ -126,6 +126,38 @@ export function planNewsPages(storyCount: number, perPage = NEWS_STORIES_PER_PAG
   return pages;
 }
 
+/** A2 keeps this many club cards under today's weather. */
+export const A2_CLUB_CARDS = 3;
+/**
+ * Club-form cards in a 2-column grid: six cards are three rows and fill a
+ * folio with the outlook chart. Three cards were one short row of cream.
+ */
+export const FORM_CLUBS_PER_PACKED_PAGE = 6;
+
+export type OutlookFormPlan = {
+  leftoverOffset: number;
+  leftoverCount: number;
+  formOnOutlook: number;
+  formContinue: { offset: number; count: number }[];
+};
+
+/**
+ * Pack leftover clubs and club form onto the outlook folio, then continue
+ * in six-club slices. Never emit a one-row form page just to pad Section A.
+ */
+export function planOutlookAndForm(clubCount: number): OutlookFormPlan {
+  const n = Math.max(clubCount, 0);
+  const leftoverOffset = A2_CLUB_CARDS;
+  // Leftover club cards reprint as form on A3 — a 1–4 card row is empty cream.
+  const leftoverCount = 0;
+  const formOnOutlook = Math.min(n, FORM_CLUBS_PER_PACKED_PAGE);
+  const formContinue: { offset: number; count: number }[] = [];
+  for (let offset = formOnOutlook; offset < n; offset += FORM_CLUBS_PER_PACKED_PAGE) {
+    formContinue.push({ offset, count: Math.min(FORM_CLUBS_PER_PACKED_PAGE, n - offset) });
+  }
+  return { leftoverOffset, leftoverCount, formOnOutlook, formContinue };
+}
+
 export function pageExceedsCanvas(heightPx: number): boolean {
   return heightPx > PAGE_CANVAS.height;
 }

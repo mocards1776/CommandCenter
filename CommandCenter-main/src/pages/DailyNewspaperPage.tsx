@@ -4135,15 +4135,24 @@ function PlayoffDesk({ tree }: { tree: MlbPlayoffTree | null }) {
   return <PlayoffBracket tree={fillMlbPlayoffPlaceholders(tree)} />;
 }
 
-function ClubFormGrid({ clubs, sheets = {} }: { clubs: ClubDesk[]; sheets?: Record<string, ClubSheet> }) {
+function ClubFormGrid({
+  clubs,
+  sheets = {},
+  columns,
+}: {
+  clubs: ClubDesk[];
+  sheets?: Record<string, ClubSheet>;
+  columns?: number;
+}) {
   if (!clubs.length) return <p className="wsj-empty">No clubs filed in this section yet.</p>;
-  const wide = clubs.length <= 2;
+  const wide = clubs.length <= 2 && columns == null;
+  const cols = columns ?? (wide ? 1 : balancedCols(clubs.length, [3, 2, 4]));
   return (
     <div
       className={cn("wsj-form-grid", wide && "wide")}
-      style={{ ["--cols" as string]: String(wide ? 1 : balancedCols(clubs.length, [3, 2, 4])) }}
+      style={{ ["--cols" as string]: String(cols) }}
     >
-      {clubs.map((club) => {
+      {clubs.map((club, i) => {
         const sheet = sheets[club.key];
         const stats = sheet?.stats.length ? sheet.stats : club.stats;
         const leaders = sheet?.leaders.length
@@ -4164,7 +4173,7 @@ function ClubFormGrid({ clubs, sheets = {} }: { clubs: ClubDesk[]; sheets?: Reco
               href: l.href && l.href.startsWith("/") ? l.href : null,
             }));
         return (
-          <article key={club.key} className="wsj-form-card" style={tint(club.color)}>
+          <article key={club.key} className="wsj-form-card" style={tint(club.color)} {...(i > 1 ? { "data-tt-flow": "" } : {})}>
             <header className="wsj-club-card-head">
               <span className="wsj-disc">
                 <TeamLogo src={club.logo} size="md" />
@@ -6555,11 +6564,22 @@ function NewspaperDesk() {
                     weather={weatherQ.data}
                     part={page.weatherPart === "outlook" ? "outlook" : page.weatherPart === "today" ? "today" : "all"}
                   />
-                  <ClubsDesk
-                    teams={teams}
-                    offset={page.clubOffset ?? (page.weatherPart === "today" ? 0 : 3)}
-                    limit={page.clubLimit ?? (page.weatherPart === "today" ? 3 : 99)}
-                  />
+                  {(page.clubLimit ?? (page.weatherPart === "today" ? 3 : 0)) > 0 ? (
+                    <ClubsDesk
+                      teams={teams}
+                      offset={page.clubOffset ?? (page.weatherPart === "today" ? 0 : 3)}
+                      limit={page.clubLimit ?? (page.weatherPart === "today" ? 3 : 0)}
+                    />
+                  ) : null}
+                  {page.formClubs?.length ? (
+                    <div className="wsj-clubs-desk">
+                      <header className="wsj-desk-head">
+                        <h2>Club Form</h2>
+                        <p>{page.formClubs.length} clubs · standings, numbers, leaders and what’s next</p>
+                      </header>
+                      <ClubFormGrid clubs={page.formClubs} sheets={sheetsQ.data ?? {}} columns={2} />
+                    </div>
+                  ) : null}
                 </>
               ) : page.kind === "favorites-form" ? (
                 <div className="wsj-clubs-desk">
@@ -6567,7 +6587,7 @@ function NewspaperDesk() {
                     <h2>Club Form</h2>
                     <p>{page.clubs.length} clubs · standings, numbers, leaders and what’s next</p>
                   </header>
-                  <ClubFormGrid clubs={page.clubs} sheets={sheetsQ.data ?? {}} />
+                  <ClubFormGrid clubs={page.clubs} sheets={sheetsQ.data ?? {}} columns={2} />
                 </div>
               ) : page.kind === "favorites-watch" ? (
                 <WatchGuide games={watchQ.data ?? []} editionLabel={press.label} />
