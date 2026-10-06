@@ -440,4 +440,43 @@ assert(
   "fixture promo is a full word, not a drop-cap split",
 );
 
+const filedHasan = asNationalDesk({
+  issue_id: "2026-10-06-morning",
+  day: "2026-10-06",
+  edition: "morning",
+  stories: [
+    {
+      id: "hasan",
+      headline: "Trump Approves Army Firing Squad for Fort Hood Shooter Nidal Hasan",
+      url: "https://www.washingtonexaminer.com/hasan",
+      source: "Washington Examiner",
+      summary: "President Trump has approved executing Nidal Malik Hasan by Army firing squad.",
+      paragraphs: ["President Trump has approved executing Nidal Malik Hasan by Army firing squad."],
+      body: "President Donald Trump authorized the execution following War Secretary Pete Hegseth ‘s request, Pentagon spokesman Sean Parnell said Monday. Join Washington Examiner for unlimited access to the news, analysis, and commentary that matter most. Subscribe for full access to Washington Examiner coverage, expert political analysis, and subscriber-only journalism.",
+    },
+    {
+      id: "wyoming",
+      headline: "Trump Endorses Wyoming Secretary of State for U.S. House",
+      url: "https://www.foxnews.com/wyoming",
+      source: "Fox News",
+      summary: "President Trump endorsed Wyoming Secretary of State Chuck Gray.",
+      paragraphs: ["President Trump endorsed Wyoming Secretary of State Chuck Gray."],
+      body: "Laura Ingraham, Jesse Watters and Greg Gutfeld bring Fox News viewers their fresh takes on the top news of the day. President Donald Trump endorsed Wyoming Secretary of State Chuck Gray.",
+    },
+  ],
+  sources: [],
+  editor: { fallback: false, model: "grok-4.6" },
+  printed_at: "2026-10-06T11:20:00Z",
+});
+assert(filedHasan, "the Oct 6 national row still sets");
+assert(
+  !JSON.stringify(filedHasan).includes("Join Washington Examiner"),
+  "filed Examiner subscribe rail is stripped",
+);
+assert(!JSON.stringify(filedHasan).includes("Laura Ingraham"), "filed Fox show promo is stripped");
+assert(
+  (filedHasan?.stories[0]?.body ?? "").includes("Hegseth’s"),
+  "filed Hegseth apostrophe is glued",
+);
+
 console.log("newspaper-national ok");

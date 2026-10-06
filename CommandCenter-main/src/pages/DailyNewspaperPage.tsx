@@ -128,6 +128,7 @@ import { fileExtracts, gatherStories, sportPathsOf, urlsToExtract } from "@/lib/
 import {
   ISSUE_VERSION,
   listLocalIssues,
+  peekProofIssue,
   readCacheUserId,
   readLocalIssue,
   writeLocalIssue,
@@ -5315,12 +5316,14 @@ function NewspaperDesk() {
         beez?: BeezDesk | null;
       }) => {
         const date = scheduleDateFor(pressId);
+        const plantedNat = asStoredNational(peekProofIssue(pressId)?.companions?.national);
         return Promise.all([
           cached?.dayAhead ??
             (date
               ? withDeadline(fetchDaySchedule(date).catch(() => null), COMPANION_WAIT_MS, null)
               : Promise.resolve(null)),
           cached?.national ??
+            plantedNat ??
             withDeadline(readTimesNationalNews(pressId).catch(() => null), COMPANION_WAIT_MS, null),
           cached?.beez ?? withDeadline(readTimesBeez().catch(() => null), COMPANION_WAIT_MS, null),
         ] as const);

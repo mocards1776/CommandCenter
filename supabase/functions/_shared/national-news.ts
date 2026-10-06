@@ -296,6 +296,11 @@ export function stripNationalPromos(text: string): string {
     .trim();
 }
 
+/** Glue a stray space before a tick (`Hegseth ‘s` → `Hegseth’s`). */
+function tidyNationalTicks(text: string): string {
+  return text.replace(/(\w)\s+([’‘'`])/g, "$1$2").replace(/(\w)['‘]/g, "$1’");
+}
+
 const PAYWALL_MARK =
   /\b(?:subscribe to (?:continue|read)|subscribers? only|for subscribers|this article is (?:exclusive|available) to|piano-paywall|wsj-e2e-paywall|paywall|remaining \d+ (?:free )?article)\b/i;
 
@@ -309,13 +314,12 @@ export function cleanExtractedCopy(text: string): string {
   raw = stripNationalPromos(raw);
   const cut = raw.search(EXTRACT_BOILER);
   if (cut >= 40) raw = raw.slice(0, cut).trim();
-  raw = raw
-    .replace(/^(?:Advertisement|Sponsored|Skip (?:to )?content)\s+/i, "")
-    // "Hegseth ‘s" — a space before a tick, including a left quote used as an apostrophe.
-    .replace(/(\w)\s+([’‘'`])/g, "$1$2")
-    .replace(/(\w)['‘]/g, "$1’")
-    .replace(/\s{2,}/g, " ")
-    .trim();
+  raw = tidyNationalTicks(
+    raw
+      .replace(/^(?:Advertisement|Sponsored|Skip (?:to )?content)\s+/i, "")
+      .replace(/\s{2,}/g, " ")
+      .trim(),
+  );
   return raw;
 }
 
@@ -1125,9 +1129,11 @@ export function storiesFromEditor(
 export function cleanNationalStories(stories: NationalStory[]): NationalStory[] {
   const out: NationalStory[] = [];
   for (const raw of stories) {
-    const summary = stripLeadCaption(stripNationalPromos(raw.summary ?? ""));
-    const paragraphs = (raw.paragraphs ?? []).map((p) => stripLeadCaption(stripNationalPromos(p))).filter(Boolean);
-    const body = raw.body ? stripLeadCaption(stripNationalPromos(raw.body)) : null;
+    const summary = stripLeadCaption(tidyNationalTicks(stripNationalPromos(raw.summary ?? "")));
+    const paragraphs = (raw.paragraphs ?? [])
+      .map((p) => stripLeadCaption(tidyNationalTicks(stripNationalPromos(p))))
+      .filter(Boolean);
+    const body = raw.body ? stripLeadCaption(tidyNationalTicks(stripNationalPromos(raw.body))) : null;
     const paywalled = isPaywallStubNote(raw.bodyNote) || /full text was paywalled/i.test(`${summary} ${body ?? ""}`);
     if (paywalled && !(body && body.length >= BODY_MIN)) {
       if (!summary || /full text was paywalled/i.test(summary)) continue;

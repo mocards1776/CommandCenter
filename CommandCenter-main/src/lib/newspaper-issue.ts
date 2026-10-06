@@ -85,6 +85,7 @@ export function asProofIssue(raw: unknown, id: string): PrintedIssue | null {
     queries?: unknown;
     printedAt?: unknown;
     printed_at?: unknown;
+    companions?: unknown;
   };
   const issueId = typeof row.id === "string" ? row.id : id;
   if (issueId !== id) return null;
@@ -95,7 +96,10 @@ export function asProofIssue(raw: unknown, id: string): PrintedIssue | null {
       : typeof row.printed_at === "string"
         ? row.printed_at
         : undefined;
-  return asPrintedIssue(id, row.version ?? ISSUE_VERSION, row.stories, row.queries ?? [], { printedAt });
+  return asPrintedIssue(id, row.version ?? ISSUE_VERSION, row.stories, row.queries ?? [], {
+    printedAt,
+    companions: row.companions && typeof row.companions === "object" ? row.companions : undefined,
+  });
 }
 
 export function peekProofIssue(id: string): PrintedIssue | null {

@@ -286,8 +286,9 @@ export function clubSideAbbrev(card: RecapCardBits, pack: RecapGamePack): string
 export function preferClubRecapLeaders(leaders: RecapLeader[], clubAbbrev: string | null | undefined): RecapLeader[] {
   if (!clubAbbrev) return leaders;
   const club = clubAbbrev.toLowerCase();
-  const mine = leaders.filter((l) => !l.team || l.team.toLowerCase() === club);
-  return mine.length ? mine : leaders;
+  const mine = leaders.filter((l) => l.team && l.team.toLowerCase() === club);
+  if (mine.length) return mine;
+  return leaders.filter((l) => !l.team || l.team.toLowerCase() === club);
 }
 
 function paintSide(side: RecapSide, path: string): RecapSide {

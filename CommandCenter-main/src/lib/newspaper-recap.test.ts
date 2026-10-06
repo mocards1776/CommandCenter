@@ -312,5 +312,15 @@ assert(
   ).every((l) => l.team !== "LV"),
   "a Chiefs recap drops the Raiders passer",
 );
+assert(
+  !preferClubRecapLeaders(
+    [
+      { label: "Pass", name: "K. Cousins", line: "365 YDS", headshot: null, team: null, id: "14880", href: null },
+      { label: "Rush", name: "K. Walker III", line: "177 YDS", headshot: null, team: "KC", id: "4567048", href: null },
+    ],
+    "KC",
+  ).some((l) => /cousins/i.test(l.name)),
+  "a tagged Chiefs chip drops an untagged Raiders passer",
+);
 
 console.log("newspaper-recap ok");

@@ -1,8 +1,16 @@
 import { supabase } from "./supabase";
+import { peekProofIssue } from "./newspaper-issue";
 import { asNationalDesk, type NationalDesk } from "./newspaper-national";
 
 /** The filed National News page for this edition, or null (section stays off). */
 export async function readTimesNationalNews(issueId: string): Promise<NationalDesk | null> {
+  const planted = peekProofIssue(issueId)?.companions?.national;
+  if (planted && typeof planted === "object") {
+    const desk = asNationalDesk(planted as Parameters<typeof asNationalDesk>[0]);
+    if (desk) return desk;
+    const row = planted as NationalDesk;
+    if (typeof row.issueId === "string" && Array.isArray(row.stories) && row.stories.length) return row;
+  }
   const { data, error } = await supabase
     .from("times_national_news")
     .select("issue_id, day, edition, stories, sources, editor, printed_at")
