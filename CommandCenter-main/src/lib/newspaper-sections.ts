@@ -2,15 +2,16 @@
  * Thompson Times sections.
  *
  * Section A is the essentials — the stuff that matters most to the reader:
- * favorite clubs, MoScout and Missouri politics, the Day Ahead, the Beez,
- * and — almost never — a historic national story. Other teams reach A only
+ * favorite clubs, MoScout and Missouri politics, races we're tracking,
+ * the Day Ahead, the Beez, and — almost never — a historic national story.
+ * Other teams reach A only
  * when the story is major (`isMajorStory`). National news stays in Section B
  * unless it is major-major (assassination attempt, war starting, major terror
  * attack, landmark Court ruling, market crash, huge disaster, a president
  * leaving office), near-universal across outlets, and the national editor
  * confirmed the slate. Most days, zero national stories make A; at most 1–2
  * on a historic day. A front, a clubs desk, inside story / club-form pages,
- * the Day Ahead, the Beez, and the RUWT watch page stay in A. National News
+ * the races desk, the Day Ahead, the Beez, and the RUWT watch page stay in A. National News
  * is its own section immediately after A (B when the edition has a filed
  * row). Missouri follows as C, or stays B when National is off.
  * Every sport section opens on a real section front (flag, lead wrap or
@@ -49,6 +50,7 @@ import {
 import { isPromoMissouriItem, type MissouriDesk, type MoItem } from "./newspaper-missouri.ts";
 import type { FavoritesDayPage } from "./newspaper-day-ahead.ts";
 import type { FavoritesBeezPage } from "./newspaper-beez.ts";
+import type { FavoritesRacesPage } from "./newspaper-races.ts";
 import { packNationalPages, type NationalDesk, type NationalStory } from "./newspaper-national.ts";
 import { printsFavoriteCoaches } from "./newspaper-favorite-coaches.ts";
 
@@ -298,6 +300,8 @@ export type EditionPage =
   | FavoritesDayPage
   /** Set client-side by insertBeez (newspaper-beez.ts); buildEdition never makes one. */
   | FavoritesBeezPage
+  /** Set client-side by insertRaceBriefs (newspaper-races.ts); buildEdition never makes one. */
+  | FavoritesRacesPage
   | SportFrontPage
   | SportInsidePage;
 
