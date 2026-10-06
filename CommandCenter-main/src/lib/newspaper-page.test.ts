@@ -121,8 +121,13 @@ const nfl3Printed = recapsDeskPrinted({ articles: 22, wraps: false, offset: 6, b
 assert(nfl3Printed.wraps === 0 && nfl3Printed.boxes === 8, "NFL3 drops the two games that already ran as wraps");
 assert(recapsDeskBlurb(nfl3Printed) === "8 boxes", recapsDeskBlurb(nfl3Printed));
 assert(recapsBoxPoolCount(16, 2) === 14, "wrap games do not also take a box");
+assert(recapsBoxPoolCount(16, 2, 3) === 11, "favorite-team games do not take a box");
 assert(scoreGridLastSpan(8, 3).leftover === 2 && scoreGridLastSpan(8, 3).lastSpan === 3, "8 boxes fill a 3-3-2 last row");
+assert(scoreGridLastSpan(5, 3).leftover === 2 && scoreGridLastSpan(5, 3).lastSpan === 3, "5 boxes fill a 3-2 last row");
 assert(scoreGridLastSpan(10, 3).leftover === 1 && scoreGridLastSpan(10, 3).lastSpan === 6, "a lone last card spans the row");
+const nfl3Fav = recapsDeskPrinted({ articles: 13, wraps: false, offset: 6, boardGames: 16, favoriteGames: 3 });
+assert(nfl3Fav.wraps === 0 && nfl3Fav.boxes === 5, "NFL3 is leftover after wraps and favorite-team recaps");
+assert(recapsDeskBlurb(nfl3Fav) === "5 boxes", recapsDeskBlurb(nfl3Fav));
 const mlb3Printed = recapsDeskPrinted({ articles: 8, wraps: false, offset: 2, boardGames: 4, mlb: true });
 assert(mlb3Printed.wraps === 2 && mlb3Printed.boxes === 2, "MLB3 header matches the two leftover boxes");
 assert(recapsDeskBlurb(mlb3Printed) === "2 wraps · 2 boxes", recapsDeskBlurb(mlb3Printed));

@@ -27,7 +27,7 @@ import {
 } from "@/lib/newspaper-agate";
 import { mlbTeamColor, recapIsTeaserLead, recapScoreCardGraf } from "@/lib/newspaper-recap";
 import { fetchEspnRecapStory } from "@/lib/newspaper-box";
-import { writeBoxWrapFromBoxGame } from "@/lib/newspaper-box-wrap";
+import { writeBoxCardSentenceFromBoxGame } from "@/lib/newspaper-box-wrap";
 import { cn } from "@/lib/utils";
 import { PersonName } from "./PlayerPop";
 import "./box-agate.css";
@@ -580,7 +580,7 @@ export function ScoreCard({
     staleTime: 30 * 60_000,
   });
   const graf = game.recap
-    ? recapScoreCardGraf(dek, haveHtml ? game.recap.html : espn.data?.html, writeBoxWrapFromBoxGame(game))
+    ? recapScoreCardGraf(dek, haveHtml ? game.recap.html : espn.data?.html, writeBoxCardSentenceFromBoxGame(game))
     : "";
   return (
     <article className={cn("tt-scorecard", game.live && "live", className)}>

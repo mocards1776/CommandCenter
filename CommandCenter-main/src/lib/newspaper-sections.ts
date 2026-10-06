@@ -2090,7 +2090,8 @@ export function insertMissingRecaps<E extends { pages: EditionPage[]; sections: 
     const printed = printedSportRecaps(pages, path);
     const all = uniqueRecapGames([...printed, ...cards]);
     const aRecaps = sectionARecapCards(pages);
-    const leftover = all.slice(2).filter((card) => !isSectionARecap(card, aRecaps));
+    const deskAll = all.filter((card) => !isSectionARecap(card, aRecaps));
+    const leftover = deskAll.slice(2);
     const recapsDesk = pages.find((p) => p.kind === "sport-front" && sportPathOf(p) === path && p.focus === "recaps");
     const sample = recapsDesk ?? pages.find((p) => sportPathOf(p) === path);
     if (!sample || (sample.kind !== "sport-front" && sample.kind !== "sport-inside")) continue;
@@ -2100,9 +2101,9 @@ export function insertMissingRecaps<E extends { pages: EditionPage[]; sections: 
     const existingIds = existingInsides.flatMap((p) => sportInsideCards(p).map((c) => c.id)).join("|");
     const packed = packSportInsideCards(leftover, sportInsidePackSize(path));
     const packedIds = packed.flat().map((c) => c.id).join("|");
-    const scoreSlices = planRecapsScorePages(all.length, { mlb: path === "baseball/mlb" });
-    const wrapTake = all.length === 3 ? 3 : Math.min(2, all.length);
-    const recapsWrapIds = all
+    const scoreSlices = planRecapsScorePages(deskAll.length, { mlb: path === "baseball/mlb" });
+    const wrapTake = deskAll.length === 3 ? 3 : Math.min(2, deskAll.length);
+    const recapsWrapIds = deskAll
       .slice(0, wrapTake)
       .map((c) => storyGameId(c) || c.gameId || c.id)
       .filter((id): id is string => Boolean(id));
@@ -2116,11 +2117,11 @@ export function insertMissingRecaps<E extends { pages: EditionPage[]; sections: 
       .map((s) => `${s.offset}:${s.count}:${s.wraps}:${recapsWrapIds.join(",")}`)
       .join("|");
     const articlesChanged =
-      recapsDesk && recapsDesk.kind === "sport-front" && recapsDesk.articles.length !== all.length;
+      recapsDesk && recapsDesk.kind === "sport-front" && recapsDesk.articles.length !== deskAll.length;
     if (!articlesChanged && existingIds === packedIds && existingSlices === wantedSlices) continue;
     if (recapsDesk && recapsDesk.kind === "sport-front") {
       const lead = scoreSlices[0]!;
-      recapsDesk.articles = all.map((card) => ({ card, folio: recapsDesk.folio }));
+      recapsDesk.articles = deskAll.map((card) => ({ card, folio: recapsDesk.folio }));
       recapsDesk.recapsOffset = lead.offset;
       recapsDesk.recapsCount = lead.count;
       recapsDesk.recapsWraps = true;
@@ -2150,7 +2151,7 @@ export function insertMissingRecaps<E extends { pages: EditionPage[]; sections: 
             recapsCount: slice.count,
             recapsWraps: false,
             recapsWrapIds,
-            articles: all.slice(slice.offset, slice.offset + slice.count).map((card) => ({
+            articles: deskAll.slice(slice.offset, slice.offset + slice.count).map((card) => ({
               card,
               folio: "",
             })),

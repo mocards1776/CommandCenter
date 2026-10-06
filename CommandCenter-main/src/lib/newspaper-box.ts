@@ -994,6 +994,53 @@ export function boxStoryCard(game: BoxGame): GameWrapCard | null {
   };
 }
 
+const CLUB_ALIASES: Record<string, string[]> = {
+  "nfl-dal": ["cowboys", "dallas", "dal"],
+  "nfl-kc": ["chiefs", "kansascity", "kc"],
+  "nfl-det": ["lions", "detroit", "det"],
+  "mlb-stl": ["cardinals", "stlouiscardinals", "stl", "cards"],
+  "cfb-mizzou": ["missouri", "mizzou", "mizzoufb"],
+  "cbb-mizzou": ["missouri", "mizzou"],
+  "nhl-stl": ["blues", "stlouisblues"],
+};
+
+function clubNeedle(text: string | null | undefined): string {
+  return (text ?? "").replace(/[^a-z0-9]+/gi, "").toLowerCase();
+}
+
+/** Favorite clubs print the full recap in Section A — keep them off sport-desk boxes. */
+export function boxGameInvolvesClubs(
+  game: { away: { short: string; name: string; abbrev: string }; home: { short: string; name: string; abbrev: string } },
+  clubs: { key?: string; shortName?: string }[],
+): boolean {
+  const needles = new Set<string>();
+  for (const club of clubs) {
+    const short = clubNeedle(club.shortName);
+    if (short) needles.add(short);
+    for (const alias of CLUB_ALIASES[club.key ?? ""] ?? []) needles.add(clubNeedle(alias));
+  }
+  if (!needles.size) return false;
+  return [game.away, game.home].some((side) => {
+    const hay = [clubNeedle(side.short), clubNeedle(side.abbrev), clubNeedle(side.name)].filter(Boolean);
+    return [...needles].some((n) => n && hay.some((h) => h === n || h.includes(n) || n.includes(h)));
+  });
+}
+
+/** Folio in Section A for this favorite-team final, when the story id carries the ESPN game. */
+export function favoriteRecapFolio(
+  game: { id: string; espnEventId?: string | null; gamePk?: number | null },
+  folios: Record<string, string> | null | undefined,
+): string | null {
+  if (!folios) return null;
+  const keys = [game.id, game.espnEventId, game.gamePk != null ? String(game.gamePk) : null].filter(
+    (k): k is string => Boolean(k),
+  );
+  for (const [id, folio] of Object.entries(folios)) {
+    if (keys.some((k) => id === k || id.endsWith(k) || id.includes(k))) return folio;
+  }
+  return null;
+}
+
 /** This week's finals when the board has them; last week only when this week is empty. */
 export function boardFinalsForRecaps(board: SectionBoard, path: string): BoxGame[] {
   const football = path.startsWith("football/");

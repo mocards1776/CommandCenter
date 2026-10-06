@@ -42,7 +42,9 @@ import { groupByDay, planRecapsScorePages, planSchedulePages, recapsDeskBlurb, r
 import {
   applyTableStandings,
   boardRecapCards,
+  boxGameInvolvesClubs,
   boxStoryCard,
+  favoriteRecapFolio,
   fetchCfbApPoll,
   fetchEspnRecapStory,
   fetchLeagueLeaders,
@@ -2393,11 +2395,7 @@ function SportHero({
 }
 
 function involvesClub(game: BoxGame, clubs: ClubDesk[]): boolean {
-  const names = clubs.map((c) => squash(c.shortName)).filter(Boolean);
-  return [game.away, game.home].some((side) => {
-    const s = squash(side.short);
-    return names.some((n) => s === n || s.includes(n) || n.includes(s));
-  });
+  return boxGameInvolvesClubs(game, clubs);
 }
 
 /**
@@ -3000,11 +2998,15 @@ function ScoresDesk({
   board,
   active,
   edition,
+  onTurn,
+  favoriteFolios,
 }: {
   page: SportFrontPage;
   board: SectionBoard | null;
   active: boolean;
   edition: string;
+  onTurn?: (folio: string) => void;
+  favoriteFolios?: Record<string, string>;
 }) {
   const open = useReader();
   const filed = page.articles.map((a) => a.card).filter((c) => isGameWrap(c) || isRecapStory(c) || Boolean(c.scoreLine));
@@ -3040,7 +3042,8 @@ function ScoresDesk({
   }
   const recapsOffset = page.recapsOffset ?? 0;
   const recapsWraps = page.recapsWraps !== false && recapsOffset === 0;
-  const plannedLead = planRecapsScorePages(Math.max(games.length, wrapCards.length), {
+  const deskN = games.filter((g) => !involvesClub(g, page.clubs)).length;
+  const plannedLead = planRecapsScorePages(deskN || Math.max(games.length, wrapCards.length), {
     mlb: page.path === "baseball/mlb",
   })[0];
   const recapsCount = page.recapsCount ?? plannedLead?.count;
@@ -3063,24 +3066,19 @@ function ScoresDesk({
     featuredPool.find((g) => g.recap?.photo && !involvesClub(g, page.clubs)) ??
     featuredPool.find((g) => g.recap) ??
     featuredPool[0]!;
-  const rest = collegeSplit ? [] : wrapCards.length ? games : games.filter((g) => g !== featured);
-  const yesterdayRest = collegeSplit?.yesterday.filter((g) => g !== featured) ?? [];
-  const weekRest = collegeSplit?.rest.filter((g) => g.final && g !== featured) ?? [];
-  const gridSource = collegeSplit ? [...yesterdayRest, ...weekRest] : rest;
-  const sliced = sliceGames(gridSource);
   const leadWrapIds = page.recapsWrapIds ?? [];
-  const gridGames =
-    recapsOffset > 0 && (leadWrapIds.length || wrapCards.length)
-      ? sliced.filter((g) => {
-          if (leadWrapIds.some((id) => recapWrapIdCoversGame(id, g))) return false;
-          // Continuation articles are the leftover slate — do not treat their
-          // first two as the lead wraps. Only the stamped ids (or same-game
-          // match against those wrap cards) drop a rematch.
-          return leadWrapIds.length
-            ? true
-            : !wrapCards.some((c) => recapWrapCoversGame(c, g));
-        })
-      : sliced;
+  const deskGame = (g: BoxGame) => {
+    if (involvesClub(g, page.clubs)) return false;
+    if (leadWrapIds.some((id) => recapWrapIdCoversGame(id, g))) return false;
+    if (!leadWrapIds.length && wrapCards.some((c) => recapWrapCoversGame(c, g))) return false;
+    return true;
+  };
+  const rest = collegeSplit ? [] : (wrapCards.length ? games : games.filter((g) => g !== featured)).filter(deskGame);
+  const yesterdayRest = (collegeSplit?.yesterday.filter((g) => g !== featured) ?? []).filter(deskGame);
+  const weekRest = (collegeSplit?.rest.filter((g) => g.final && g !== featured) ?? []).filter(deskGame);
+  const gridSource = collegeSplit ? [...yesterdayRest, ...weekRest] : rest;
+  const gridGames = sliceGames(gridSource);
+  const favFinals = recapsWraps ? games.filter((g) => g.final && involvesClub(g, page.clubs)) : [];
   const slicedBoard = recapsCount != null || recapsOffset > 0;
   const card = boxStoryCard(featured);
   const isMlb = page.path === "baseball/mlb";
@@ -3112,6 +3110,26 @@ function ScoresDesk({
   return (
     <div className="tt-scores">
       {recapsWraps && wrapCards.length ? <DeskWraps cards={wrapCards} /> : null}
+      {favFinals.length ? (
+        <ul className="tt-fav-jumps">
+          {favFinals.map((g) => {
+            const folio = favoriteRecapFolio(g, favoriteFolios) ?? "A";
+            return (
+              <li key={g.id}>
+                <button
+                  type="button"
+                  onClick={() => (onTurn && folio !== "A" ? onTurn(folio) : undefined)}
+                >
+                  <strong>
+                    {g.away.abbrev} {g.away.score ?? ""} · {g.home.abbrev} {g.home.score ?? ""}
+                  </strong>
+                  <em>Full recap, page {folio}</em>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
       {shortCont && contWraps.length ? <DeskWraps cards={contWraps} /> : null}
       {recapsWraps && !wrapCards.length ? (
       <article
@@ -3541,6 +3559,7 @@ function SportFront({
   leaders,
   heisman,
   onTurn,
+  favoriteFolios,
 }: {
   page: SportFrontPage;
   leagueClubs: LeagueClub[];
@@ -3557,8 +3576,11 @@ function SportFront({
   leaders: LeagueLeaderGroup[];
   heisman?: HeismanBoard | null;
   onTurn: (folio: string) => void;
+  favoriteFolios?: Record<string, string>;
 }) {
-  const results = (board?.results.length || board?.prior?.length) ?? 0;
+  const boardFinals = (board?.results.length ? board.results : board?.prior) ?? [];
+  const results = boardFinals.length;
+  const favoriteGames = boardFinals.filter((g) => g.final && involvesClub(g, page.clubs)).length;
   const upcoming = board?.slate.length ?? slate.length;
   const newsDay = editionNewsDay(edition);
   const played = nights.filter((n) => n.day === newsDay).length;
@@ -3585,6 +3607,7 @@ function SportFront({
         offset: page.recapsOffset ?? 0,
         count: page.recapsCount,
         boardGames: results,
+        favoriteGames,
         mlb: page.path === "baseball/mlb",
       }),
     ),
@@ -3628,7 +3651,14 @@ function SportFront({
         ) : page.focus === "opener" ? (
           <OpenerDesk page={page} onTurn={onTurn} />
         ) : page.focus === "recaps" ? (
-          <ScoresDesk page={page} board={board} active={active} edition={edition} />
+          <ScoresDesk
+            page={page}
+            board={board}
+            active={active}
+            edition={edition}
+            onTurn={onTurn}
+            favoriteFolios={favoriteFolios}
+          />
         ) : page.focus === "teams" ? (
           <StandingsDesk
             page={page}
@@ -6269,6 +6299,7 @@ function NewspaperDesk() {
                   leaders={leadersQ.data?.[page.path] ?? []}
                   heisman={page.path.includes("college-football") ? heismanQ.data ?? null : null}
                   onTurn={goFolio}
+                  favoriteFolios={edition.favoriteFolioByStory}
                 />
               ) : page.kind === "national" ? (
                 <NationalNewsDesk page={page} onTurn={goFolio} />

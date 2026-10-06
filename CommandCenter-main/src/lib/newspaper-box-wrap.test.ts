@@ -2,7 +2,7 @@
  * Run with: node --experimental-strip-types src/lib/newspaper-box-wrap.test.ts
  * from CommandCenter-main/.
  */
-import { hasEspnRecap, lineHighlight, periodPhrase, wrapBriefSentences, writeBoxWrap, writeBoxWrapFromBoxGame, type BoxWrapGame } from "./newspaper-box-wrap.ts";
+import { hasEspnRecap, lineHighlight, periodPhrase, wrapBriefSentences, writeBoxCardSentence, writeBoxWrap, writeBoxWrapFromBoxGame, type BoxWrapGame } from "./newspaper-box-wrap.ts";
 
 function assert(cond: unknown, msg: string) {
   if (!cond) throw new Error(`FAIL: ${msg}`);
@@ -79,5 +79,29 @@ const fromBox = writeBoxWrapFromBoxGame({
 });
 assert((fromBox.match(/[.!?]/g) ?? []).length >= 2, `box wrap is at least two sentences, got ${fromBox}`);
 assert(!/Sip some tea/i.test(fromBox), "box wrap is not the one-line dek");
+
+const dal: BoxWrapGame = {
+  league: "NFL",
+  path: "football/nfl",
+  statusDetail: "Final",
+  away: { name: "Dallas Cowboys", short: "Cowboys", abbrev: "DAL", score: "34", winner: true, record: "2-2" },
+  home: { name: "Houston Texans", short: "Texans", abbrev: "HOU", score: "30", winner: false, record: "0-4" },
+  leaders: [
+    { name: "C.J. Stroud", line: "21/31, 347 YDS, 2 TD", team: "HOU" },
+    { name: "CeeDee Lamb", line: "17 REC, 189 YDS, 1 TD", team: "DAL" },
+  ],
+  lines: [
+    { period: "1", away: 3, home: 10 },
+    { period: "2", away: 3, home: 6 },
+    { period: "3", away: 14, home: 7 },
+    { period: "4", away: 14, home: 7 },
+  ],
+};
+const dalCard = writeBoxCardSentence(dal);
+assert((dalCard.match(/[.!?]/g) ?? []).length === 1, `card fallback is one sentence, got ${dalCard}`);
+assert(/CeeDee Lamb and the Cowboys held off the Texans 34-30/.test(dalCard), dalCard);
+assert(!/Dallas Cowboys beat Houston Texans/.test(dalCard), "card fallback does not repeat full club names");
+assert(!/21\/31/.test(dalCard) && !/outscored/.test(dalCard), "card fallback is not a stat dump");
+assert(/P\. Mahomes and the Chiefs/.test(writeBoxCardSentence(nfl)), writeBoxCardSentence(nfl));
 
 console.log("newspaper-box-wrap ok");

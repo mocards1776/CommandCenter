@@ -2397,8 +2397,8 @@ assert(
 );
 const favDesk = favPaper.pages.find((p) => p.kind === "sport-front" && p.section === "NFL" && p.focus === "recaps");
 assert(
-  favDesk?.kind === "sport-front" && favDesk.articles.some((a) => sameRecapGame(a.card, chiefsBoard)),
-  "the recaps desk still lists the favorite-team final in the slate",
+  favDesk?.kind === "sport-front" && favDesk.articles.every((a) => !sameRecapGame(a.card, chiefsBoard)),
+  "a favorite-team game does not reprint on the recaps desk slate",
 );
 
 console.log("newspaper-sections ok");

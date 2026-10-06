@@ -714,5 +714,10 @@ export function recapScoreCardGraf(
   story?: string | null,
   fallback?: string,
 ): string {
-  return recapDeskGraf(story || blurb || "", fallback, RECAP_CARD_GRAF).body;
+  const lead = recapDeskGraf(story || blurb || "", undefined, RECAP_CARD_GRAF).body;
+  if (lead && !recapIsTeaserLead(lead) && splitNewspaperSentences(lead).length >= RECAP_GRAF_MIN_SENTENCES) {
+    return lead;
+  }
+  if (fallback && !recapIsTeaserLead(fallback)) return fallback;
+  return lead && !recapIsTeaserLead(lead) ? lead : (fallback ?? "");
 }

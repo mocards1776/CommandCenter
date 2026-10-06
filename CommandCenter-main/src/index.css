@@ -5012,6 +5012,35 @@ li.counting .tt-count.card {
   min-height: 0;
   overflow: hidden;
 }
+.tt-fav-jumps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.tt-fav-jumps button {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  margin: 0;
+  padding: 4px 0;
+  border: 0;
+  border-bottom: 1px solid var(--w-hair);
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+  color: inherit;
+}
+.tt-fav-jumps button strong {
+  font-weight: 650;
+}
+.tt-fav-jumps button em {
+  font-style: italic;
+  color: var(--w-muted);
+}
 .tt-wrap-flow {
   columns: 2;
   column-gap: 22px;

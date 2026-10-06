@@ -317,6 +317,13 @@ const cardUgly = recapScoreCardGraf(
 );
 assert(!/ugly win/i.test(cardUgly), "a score card drops the mood dek");
 assert(cardUgly.includes("Jordan Love"), "a score card uses the story body for a mood dek");
+const cardMachine = recapScoreCardGraf(
+  "Sip some tea, score some touchdowns.",
+  "",
+  "CeeDee Lamb and the Cowboys held off the Texans 34-30.",
+);
+assert(cardMachine === "CeeDee Lamb and the Cowboys held off the Texans 34-30.", cardMachine);
+assert(!/Dallas Cowboys beat/.test(cardMachine), "a score card does not print the machine wrap");
 const longGraf = recapCardGraf(
   "KANSAS CITY -- — Patrick Mahomes threw for 285 yards and two touchdowns on Sunday night as the Kansas City Chiefs held off the Las Vegas Raiders in a four-quarter scrap at Arrowhead Stadium.\n\nLas Vegas had led since the second quarter and left points on the field.",
 );

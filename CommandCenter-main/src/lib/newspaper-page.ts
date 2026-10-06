@@ -124,9 +124,12 @@ export function planRecapsScorePages(
   return pages;
 }
 
-/** Games that still need a box after the lead wraps have used their one treatment. */
-export function recapsBoxPoolCount(boardGames: number, wrapCards: number): number {
-  return Math.max(0, boardGames - Math.min(Math.max(0, wrapCards), boardGames));
+/** Games that still need a box after lead wraps and favorite-team Section A recaps. */
+export function recapsBoxPoolCount(boardGames: number, wrapCards: number, favoriteGames = 0): number {
+  const board = Math.max(0, boardGames);
+  const fav = Math.min(Math.max(0, favoriteGames), board);
+  const wraps = Math.min(Math.max(0, wrapCards), Math.max(0, board - fav));
+  return Math.max(0, board - fav - wraps);
 }
 
 /** Last-row leftover in a `cols` grid, and the span that fills those tracks. */
@@ -144,16 +147,19 @@ export function recapsDeskPrinted(opts: {
   offset?: number;
   count?: number | null;
   boardGames?: number;
+  favoriteGames?: number;
   mlb?: boolean;
 }): { wraps: number; boxes: number } {
   const offset = opts.offset ?? 0;
   const board = Math.max(0, opts.boardGames ?? 0);
+  const fav = Math.min(Math.max(0, opts.favoriteGames ?? 0), board);
+  const desk = Math.max(0, board - fav);
   const wrapTake = opts.articles === 3 ? 3 : Math.min(2, Math.max(0, opts.articles));
-  const boxed = board ? recapsBoxPoolCount(board, wrapTake) : 0;
-  // Folio offsets come from insertMissingRecaps, which pages the full board.
-  const planned = planRecapsScorePages(board || Math.max(0, opts.count ?? 0), { mlb: opts.mlb });
+  const boxed = board ? recapsBoxPoolCount(board, wrapTake, fav) : 0;
+  // Folio offsets page the non-favorite slate (favorites already ran in Section A).
+  const planned = planRecapsScorePages(desk || Math.max(0, opts.count ?? 0), { mlb: opts.mlb });
   const slice = planned.find((s) => s.offset === offset) ?? planned[0];
-  const remain = board ? Math.max(0, board - offset) : Math.max(0, opts.count ?? 0);
+  const remain = desk ? Math.max(0, desk - offset) : Math.max(0, opts.count ?? 0);
   let boxes = Math.min(slice?.count ?? remain, remain || Math.max(0, opts.count ?? 0));
   const firstBoxes = planned[0]?.count ?? 0;
   // When wrap games sit in the leftover slice, drop them — one treatment per edition.

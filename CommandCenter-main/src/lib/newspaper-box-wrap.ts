@@ -192,6 +192,53 @@ function club(side: BoxWrapSide): string {
   return side.name || side.short || side.abbrev;
 }
 
+function clubShort(side: BoxWrapSide): string {
+  return side.short || side.name || side.abbrev;
+}
+
+function winnerLeader(game: BoxWrapGame): BoxWrapLeader | null {
+  const pair = winnerLoser(game);
+  const marked = pair
+    ? game.leaders.find((l) => l.team && l.team.toUpperCase() === pair.winner.abbrev.toUpperCase())
+    : null;
+  if (marked?.name) return marked;
+  if (game.leaders.length === 1 && game.leaders[0]?.name) return game.leaders[0]!;
+  return null;
+}
+
+function resultVerb(game: BoxWrapGame): string {
+  const pair = winnerLoser(game);
+  const w = pair ? num(pair.winner.score) : null;
+  const l = pair ? num(pair.loser.score) : null;
+  if (w == null || l == null) return "beat";
+  const margin = Math.abs(w - l);
+  if (/football/i.test(game.path) && margin <= 8) return "held off";
+  if (/(baseball|hockey)/i.test(game.path) && margin <= 3) return "held off";
+  if (/basketball/i.test(game.path) && margin <= 7) return "held off";
+  return "beat";
+}
+
+/**
+ * One card sentence when ESPN has no recap: the final plus the winner's
+ * key performer. No stat dump, no repeated full club names.
+ */
+export function writeBoxCardSentence(game: BoxWrapGame): string {
+  const pair = winnerLoser(game);
+  const extra = overtimeOf(game) ? " in overtime" : game.preseason ? " in preseason play" : "";
+  if (!pair || pair.winner.score == null || pair.loser.score == null) {
+    return `${game.away.short} ${game.away.score ?? "—"}, ${game.home.short} ${game.home.score ?? "—"}${extra}.`;
+  }
+  const winner = clubShort(pair.winner);
+  const loser = clubShort(pair.loser);
+  const score = scorePair(pair.winner, pair.loser);
+  const star = winnerLeader(game);
+  const verb = resultVerb(game);
+  if (star?.name) {
+    return `${star.name} and the ${winner} ${verb} the ${loser} ${score}${extra}.`;
+  }
+  return `The ${winner} ${verb} the ${loser} ${score}${extra}.`;
+}
+
 function winnerLoser(game: BoxWrapGame): { winner: BoxWrapSide; loser: BoxWrapSide } | null {
   if (game.away.winner === game.home.winner) {
     const a = num(game.away.score);
@@ -414,7 +461,25 @@ export function writeBoxWrapFromBoxGame(game: {
     away: game.away.lines[i] ?? null,
     home: game.home.lines[i] ?? null,
   }));
-  return writeBoxWrap({
+  return writeBoxWrap(boxWrapGameFromBox(game, lines)).body;
+}
+
+/** One clean card sentence from a printed BoxGame. */
+export function writeBoxCardSentenceFromBoxGame(game: Parameters<typeof writeBoxWrapFromBoxGame>[0]): string {
+  const n = Math.max(game.away.lines.length, game.home.lines.length, game.periods.length);
+  const lines = Array.from({ length: n }, (_, i) => ({
+    period: game.periods[i] ?? String(i + 1),
+    away: game.away.lines[i] ?? null,
+    home: game.home.lines[i] ?? null,
+  }));
+  return writeBoxCardSentence(boxWrapGameFromBox(game, lines));
+}
+
+function boxWrapGameFromBox(
+  game: Parameters<typeof writeBoxWrapFromBoxGame>[0],
+  lines: BoxWrapLine[],
+): BoxWrapGame {
+  return {
     league: game.league,
     path: game.path,
     postseason: Boolean(game.round),
@@ -439,7 +504,7 @@ export function writeBoxWrapFromBoxGame(game: {
       .filter((l) => l.name && l.line)
       .map((l) => ({ name: l.name, line: l.line!, label: l.label, team: l.team })),
     lines,
-  }).body;
+  };
 }
 
 export function linesFromSummary(
