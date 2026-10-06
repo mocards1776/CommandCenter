@@ -13,6 +13,7 @@ import {
   estimateRaceHeight,
   flightLabel,
   grpLabel,
+  estimatePackedHeight,
   insertRaceBriefs,
   money,
   packRacePages,
@@ -28,7 +29,9 @@ import {
   sortRaceBriefs,
   spendTotals,
   stationMarket,
+  type RaceBrief,
 } from "./newspaper-races.ts";
+import { oct6LiveRaceBriefs } from "./newspaper-races-oct6-live.ts";
 import { buildEdition } from "./newspaper-sections.ts";
 
 function assert(cond: unknown, msg: string) {
@@ -119,9 +122,45 @@ assert(
   packed[0]!.reduce((n, r) => n + estimateRaceHeight(r), 118) < RACES_SHEET_CAP - 160,
   "packed height stays under the soft cap",
 );
+assert(estimatePackedHeight(sample.races) <= RACES_SHEET_CAP, "sample pair stays under ~1650");
 const overflow = packRacePages(sampleRaceBriefsOverflow("2026-10-06").races);
 assert(overflow.length >= 2, "a third race continues on a second folio");
 assert(overflow.every((page) => page.length >= 1), "no empty continued page");
+
+const live = oct6LiveRaceBriefs("2026-10-06");
+assert(live.races[0]!.race === "SD8" && live.races[0]!.spend.length === 11 && live.races[0]!.bullets.length === 3, "Oct 6 SD8 is 11 spends / 3 bullets");
+assert(live.races[1]!.race === "SD30" && live.races[1]!.spend.length === 17 && live.races[1]!.bullets.length === 3, "Oct 6 SD30 is 17 spends / 3 bullets");
+assert(estimatePackedHeight(live.races) > RACES_SHEET_CAP, "both Oct 6 races together exceed the 1650 soft cap");
+const livePacked = packRacePages(live.races);
+assert(livePacked.length === 2 && livePacked[0]!.length === 1 && livePacked[1]!.length === 1, "Oct 6 book splits to one race per folio");
+assert(livePacked[0]![0]!.race === "SD8" && livePacked[1]![0]!.race === "SD30", "SD 8 then SD 30");
+assert(estimatePackedHeight(livePacked[0]!) <= RACES_SHEET_CAP, "SD 8 folio hugs under the cap");
+assert(estimatePackedHeight(livePacked[1]!, true) <= RACES_SHEET_CAP, "SD 30 folio hugs under the cap");
+
+function briefWithSpend(race: string, n: number): RaceBrief {
+  return {
+    race,
+    headline: `${race} air war with a long headline that wraps past seventy characters easily`,
+    bullets: ["One", "Two", "Three"],
+    spend: Array.from({ length: n }, (_, i) => ({
+      sponsor: `PAC ${i + 1}`,
+      side: i % 2 ? "Oppose" : "Support",
+      station: "KYTV",
+      market: "Springfield",
+      amount: 1000 * (n - i),
+      grps: 10,
+      cpp: 75,
+      flight_start: "2026-10-01",
+      flight_end: "2026-10-10",
+      is_new: false,
+    })),
+    links: [{ label: "MEC", url: "https://mec.mo.gov/" }],
+    notes: [{ source: "Note", text: "A note.", url: null }],
+    source: null,
+    updated_at: null,
+  };
+}
+assert(packRacePages([briefWithSpend("SD8", 4), briefWithSpend("SD30", 4)]).length === 1, "two short races share a page under 1650");
 
 assert(countdownLine("2026-10-06")?.startsWith(`${daysUntilElection("2026-10-06")} days`), "countdown uses edition dateline");
 assert(countdownLine("2026-11-03")?.includes("Election Day"), "Election Day copy");

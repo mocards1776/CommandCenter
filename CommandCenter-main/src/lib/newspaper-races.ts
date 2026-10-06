@@ -315,14 +315,20 @@ export function asRaceBriefsDesk(raw: unknown, editionDate: string): RaceBriefsD
   };
 }
 
-/** Rough printed height of one race block on the 1032px sheet. */
+/** Rough printed height of one race block on the 1032px sheet. Content-only — no min-height pad. */
 export function estimateRaceHeight(race: RaceBrief): number {
   const hed = race.headline.length > 70 ? 78 : 58;
-  const bullets = race.bullets.length ? 18 + race.bullets.length * 28 : 0;
+  const bullets = race.bullets.length ? 40 + race.bullets.length * 28 : 0;
   const spend = race.spend.length ? 78 + race.spend.length * 30 + (spendTotals(race.spend).length ? 34 : 0) : 0;
   const notes = race.notes.length ? 16 + race.notes.length * 28 : 0;
   const links = race.links.length ? 10 + race.links.length * 20 : 0;
   return 36 + hed + bullets + spend + notes + links;
+}
+
+/** Estimated sheet height for a packed folio: chrome + page head + each race. */
+export function estimatePackedHeight(races: RaceBrief[], continued = false): number {
+  const head = continued ? PAGE_HEAD_CONTINUED : PAGE_HEAD;
+  return SHEET_CHROME + head + races.reduce((n, race) => n + estimateRaceHeight(race), 0);
 }
 
 export function packRacePages(races: RaceBrief[]): RaceBrief[][] {
