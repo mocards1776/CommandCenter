@@ -4986,16 +4986,28 @@ function FolioSlot({
   render: () => ReactNode;
 }) {
   const current = useContext(PagerIndexContext);
-  // Section A/B/C stay painted so races, jumps, and the essentials aren't
-  // mistaken for empty lazy slots. Sport desks still mount when nearby.
-  const essential = /^[ABC]\d+$/.test(folio);
-  const near = essential || index < 3 || Math.abs(index - current) <= 2;
+  // Section A/B/C and each sport front stay painted so races, jumps, and
+  // section landings aren't empty lazy shells. Remaining desks fill in idle.
+  const essential = /^[ABC]\d+$/.test(folio) || /^(MLB|NFL|CFB|NHL|EPL|EFL|NBA|CBB)1$/.test(folio);
+  const near = essential || index < 3 || Math.abs(index - current) <= NEAR_PAGES;
   const [shown, setShown] = useState(essential || index < 3);
   useEffect(() => {
-    if (near) setShown(true);
-  }, [near]);
+    if (near) {
+      setShown(true);
+      return;
+    }
+    if (shown) return;
+    const hasIdle = typeof window.requestIdleCallback === "function";
+    const id = hasIdle
+      ? window.requestIdleCallback(() => setShown(true), { timeout: 2_500 + index * 40 })
+      : window.setTimeout(() => setShown(true), 160 + index * 40);
+    return () => {
+      if (hasIdle) window.cancelIdleCallback(id);
+      else window.clearTimeout(id);
+    };
+  }, [near, shown, index]);
   return (
-    <section className="wsj-page" aria-label={`Page ${folio}`} {...(near ? { "data-near": "" } : {})}>
+    <section className="wsj-page" aria-label={`Page ${folio}`} {...(near || shown ? { "data-near": "" } : {})}>
       <div className="wsj-fit">
         <FittedSheet>{shown ? <FolioBody render={render} /> : null}</FittedSheet>
       </div>
@@ -5495,6 +5507,11 @@ function NewspaperDesk() {
   const pageIndexRef = useRef(0);
   pageIndexRef.current = pageIndex;
   const restoringRef = useRef(false);
+
+  const setFolio = useCallback((idx: number) => {
+    pageIndexRef.current = idx;
+    setPageIndex(idx);
+  }, []);
 
   useLayoutEffect(() => {
     const el = pagerRef.current;
@@ -6639,15 +6656,15 @@ function NewspaperDesk() {
       const el = pagerRef.current;
       if (!el) return;
       const next = Math.max(0, Math.min(pages.length - 1, idx));
-      const from = Math.round(el.scrollLeft / (el.clientWidth || 1));
+      const from = pageIndexRef.current;
       const sheet = el.children[next] as HTMLElement | undefined;
       if (sheet && next !== from) sheet.scrollTop = 0;
       // Gliding across a whole section paints every folio in between; long jumps cut straight there.
       el.scrollTo({ left: next * el.clientWidth, behavior: Math.abs(next - from) > NEAR_PAGES ? "instant" : "smooth" });
-      setPageIndex(next);
+      setFolio(next);
       markFolio(next);
     },
-    [pages.length, markFolio],
+    [pages.length, markFolio, setFolio],
   );
 
   const goFolio = useCallback(
@@ -6672,13 +6689,13 @@ function NewspaperDesk() {
       if (idx >= 0) {
         const el = pagerRef.current;
         if (el) el.scrollTo({ left: idx * el.clientWidth, behavior: "instant" });
-        setPageIndex(idx);
+        setFolio(idx);
       }
     };
     goHash();
     window.addEventListener("hashchange", goHash);
     return () => window.removeEventListener("hashchange", goHash);
-  }, [pages]);
+  }, [pages, setFolio]);
 
   // Settle the folio once the swipe or glide comes to rest — not on every scroll frame.
   useEffect(() => {
@@ -6690,7 +6707,7 @@ function NewspaperDesk() {
       if (restoringRef.current || document.documentElement.classList.contains("tt-reader-open")) return;
       const idx = Math.round(el.scrollLeft / (el.clientWidth || 1));
       const next = Math.max(0, Math.min(pages.length - 1, idx));
-      startTransition(() => setPageIndex(next));
+      startTransition(() => setFolio(next));
       markFolio(next);
     };
     const onScroll = () => {
@@ -6704,7 +6721,7 @@ function NewspaperDesk() {
       el.removeEventListener("scroll", onScroll);
       el.removeEventListener("scrollend", settle);
     };
-  }, [pages.length, markFolio]);
+  }, [pages.length, markFolio, setFolio]);
 
   // Closing the full story reflows the pager to scrollLeft 0. Put the reader back.
   useEffect(() => {
@@ -6736,7 +6753,7 @@ function NewspaperDesk() {
           const byFolio = saved.folio ? list.findIndex((p) => p.folio === saved.folio) : -1;
           const idx = byFolio >= 0 ? byFolio : saved.idx;
           el.scrollTo({ left: idx * el.clientWidth, behavior: "instant" });
-          setPageIndex(idx);
+          setFolio(idx);
           markFolio(idx);
         };
         restore();
@@ -6751,13 +6768,13 @@ function NewspaperDesk() {
     });
     obs.observe(root, { attributes: true, attributeFilter: ["class"] });
     return () => obs.disconnect();
-  }, [markFolio]);
+  }, [markFolio, setFolio]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (document.documentElement.classList.contains("tt-reader-open")) return;
-      if (e.key === "ArrowRight") goPage(pageIndex + 1);
-      if (e.key === "ArrowLeft") goPage(pageIndex - 1);
+      if (e.key === "ArrowRight") goPage(pageIndexRef.current + 1);
+      if (e.key === "ArrowLeft") goPage(pageIndexRef.current - 1);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -7173,7 +7190,7 @@ function NewspaperDesk() {
             className="wsj-pager-btn"
             aria-label="Previous page"
             disabled={pageIndex <= 0}
-            onClick={() => goPage(pageIndex - 1)}
+            onClick={() => goPage(pageIndexRef.current - 1)}
           >
             <ChevronLeft size={16} />
           </button>
@@ -7186,7 +7203,7 @@ function NewspaperDesk() {
             className="wsj-pager-btn"
             aria-label="Next page"
             disabled={pageIndex >= pages.length - 1}
-            onClick={() => goPage(pageIndex + 1)}
+            onClick={() => goPage(pageIndexRef.current + 1)}
           >
             <ChevronRight size={16} />
           </button>
