@@ -32,6 +32,7 @@ import {
   isGameWrapStory,
   isNewsMuted,
   isResultCopy,
+  previousSaturday,
   splitStoryCopy,
   withinEditionHours,
   withoutEditorStamps,
@@ -401,10 +402,11 @@ export function isNbaCard(card: Pick<GameWrapCard, "leaguePath" | "sportLabel">)
   return path === "basketball/nba" || /^nba$/i.test(card.sportLabel ?? "");
 }
 
-/** 76ers, NBA preseason / exhibition, and other non-favorite NBA fluff. */
+/** 76ers, NBA preseason / exhibition, stale prior-day results, and other non-favorite NBA fluff. */
 export function isA1Muted(card: GameWrapCard, edition = ""): boolean {
   if (isA1MutedFavoriteKey(card.favoriteKey)) return true;
   if (isFrontPreseasonNote(card)) return true;
+  if (isStaleA1Result(card, edition)) return true;
   if (!isNbaCard(card)) return false;
   if (edition && !sportInSeason("basketball/nba", edition)) return true;
   return !isFavoriteStory(card);
@@ -749,6 +751,58 @@ function isFrontPreseasonNote(card: Pick<GameWrapCard, "preseason" | "headline" 
   return /\bpreseason\b/i.test(`${card.headline} ${card.dek ?? ""} ${card.status ?? ""}`);
 }
 
+function editionDateline(edition: string): string | null {
+  const day = edition.slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null;
+}
+
+function weekdayCt(day: string): number {
+  return new Date(`${day}T12:00:00Z`).getUTCDay();
+}
+
+export function isCfbCard(card: Pick<GameWrapCard, "leaguePath" | "sportLabel">): boolean {
+  const path = cardLeaguePath(card);
+  return path === "football/college-football" || /^(cfb|college football)$/i.test(card.sportLabel ?? "");
+}
+
+/** Wire / box / scored final — not MoScout, a preview, or a notes piece. */
+export function isA1GameResultCopy(card: GameWrapCard): boolean {
+  if (isMoScoutCard(card) || isHistoricNationalCard(card) || card.sportLabel === "Missouri") return false;
+  if (isPreviewStory(card) || isBettingPreview(card) || isInjuryNote(card)) return false;
+  if (isGameWrap(card) || isRecapStory(card)) return true;
+  return Boolean(card.status && /final/i.test(card.status) && card.scoreLine && /\d/.test(card.scoreLine));
+}
+
+const PRIOR_WEEKEND_COPY =
+  /\bon saturday\b|\blast saturday\b|\bsaturday(?:'s)?(?: night)?\b|\bon sunday\b|\blast sunday\b|\blast weekend\b/i;
+
+/**
+ * Front-page sports must be current. Last night (the edition news day) and
+ * today may occupy A1; older dated results may not. College football from
+ * this past weekend may still lead through Monday; after Monday it is
+ * leftover weekend copy. Coming Up schedule items are not game results
+ * and are not filtered here.
+ */
+export function isStaleA1Result(card: GameWrapCard, edition: string): boolean {
+  const today = editionDateline(edition);
+  if (!today || !isA1GameResultCopy(card)) return false;
+
+  const gameDay = card.when ? instantDay(card.when) : null;
+  if (gameDay) {
+    if (gameDay >= today) return false;
+    if (gameDay >= editionNewsDay(today)) return false;
+    const wd = weekdayCt(today);
+    // Saturday / Sunday CFB stays current through Monday's papers.
+    if (isCfbCard(card) && (wd === 0 || wd === 1) && gameDay >= previousSaturday(today)) return false;
+    return true;
+  }
+
+  if (!isCfbCard(card)) return false;
+  const wd = weekdayCt(today);
+  if (wd < 2 || wd > 5) return false;
+  return PRIOR_WEEKEND_COPY.test(`${card.headline} ${card.dek ?? ""} ${card.body ?? ""}`);
+}
+
 /** A followed club's own game wrap — not commentary that inherited a score. */
 function isClubGameResult(card: GameWrapCard): boolean {
   if (!isFavoriteGameResult(card) || !favoriteKeyFitsCard(card.favoriteKey, card)) return false;
@@ -779,8 +833,8 @@ export function latestClubResultDay(pool: GameWrapCard[]): string | null {
  * national wrap that only shares a name with a home club. A result from an
  * earlier club game day never beats one from the latest game day on the slate.
  */
-export function pickFrontUnderLead(pool: GameWrapCard[], lead: GameWrapCard | null): GameWrapCard | null {
-  const playable = pool.filter((c) => c !== lead && c.id !== lead?.id && !isA1Muted(c) && !isFrontPreseasonNote(c));
+export function pickFrontUnderLead(pool: GameWrapCard[], lead: GameWrapCard | null, edition = ""): GameWrapCard | null {
+  const playable = pool.filter((c) => c !== lead && c.id !== lead?.id && !isA1Muted(c, edition) && !isFrontPreseasonNote(c));
   if (!playable.length) return null;
   const latestDay = latestClubResultDay(playable);
   const freshEnough = (card: GameWrapCard) => {
@@ -802,30 +856,32 @@ export function pickFrontUnderLead(pool: GameWrapCard[], lead: GameWrapCard | nu
 }
 
 /** Never open A1 or the edition alert on these. */
-export function cannotLeadFront(card: GameWrapCard, pool: GameWrapCard[] = []): boolean {
-  if (isA1MutedFavoriteKey(card.favoriteKey) || isFrontPreseasonNote(card)) return true;
-  if (isNbaCard(card) && !isFavoriteStory(card)) return true;
+export function cannotLeadFront(card: GameWrapCard, pool: GameWrapCard[] = [], edition = ""): boolean {
+  if (isA1Muted(card, edition)) return true;
   if (isHoldoverGame(card)) return true;
   if (isBettingPreview(card)) return true;
   if (pool.length && isStaleGamePreview(card, pool)) return true;
   if (isPreviewStory(card)) return true;
   // A minor injury note may run inside Section A; it never opens the paper
-  // when a favorite-team result is on the slate (Mizzou first).
-  if (isInjuryNote(card) && pool.some((other) => other.id !== card.id && isFavoriteGameResult(other))) {
+  // when a current favorite-team result is on the slate (Mizzou first).
+  const liveFavoriteResult = (other: GameWrapCard) =>
+    other.id !== card.id && isFavoriteGameResult(other) && !isStaleA1Result(other, edition);
+  if (isInjuryNote(card) && pool.some(liveFavoriteResult)) {
     return true;
   }
-  if (card.sportLabel === "Missouri" && pool.some((other) => other.id !== card.id && isFavoriteGameResult(other))) {
+  if (card.sportLabel === "Missouri" && pool.some(liveFavoriteResult)) {
     return true;
   }
   return false;
 }
 
 /** When a banned lead is the editor's pick, swap in the matchup's recap if we have one. */
-function leadReplacement(bad: GameWrapCard, pool: GameWrapCard[], taken: Set<string>): GameWrapCard | null {
+function leadReplacement(bad: GameWrapCard, pool: GameWrapCard[], taken: Set<string>, edition = ""): GameWrapCard | null {
   const recap = pool.find(
     (c) =>
       !taken.has(c.id) &&
       c.id !== bad.id &&
+      !isA1Muted(c, edition) &&
       shareMatchup(c, bad) &&
       (isRecapStory(c) || isGameRecapCopy(c) || isGameWrap(c)) &&
       hasStoryCopy(c),
@@ -833,7 +889,14 @@ function leadReplacement(bad: GameWrapCard, pool: GameWrapCard[], taken: Set<str
   if (recap) return recap;
   if (!isInjuryNote(bad) && bad.sportLabel !== "Missouri") return null;
   const results = pool
-    .filter((c) => !taken.has(c.id) && c.id !== bad.id && isFavoriteGameResult(c) && hasStoryCopy(c))
+    .filter(
+      (c) =>
+        !taken.has(c.id) &&
+        c.id !== bad.id &&
+        isFavoriteGameResult(c) &&
+        !isStaleA1Result(c, edition) &&
+        hasStoryCopy(c),
+    )
     .sort((a, b) => favoriteDeskWeight(b.favoriteKey ?? "") - favoriteDeskWeight(a.favoriteKey ?? ""));
   return results[0] ?? null;
 }
@@ -1511,8 +1574,8 @@ export function editorFront(fresh: GameWrapCard[], edition = ""): GameWrapCard[]
     .sort((a, b) => a.editorFront! - b.editorFront!);
   for (const card of ordered) {
     let choice: GameWrapCard | null = card;
-    if (cannotLeadFront(card, fresh)) {
-      choice = leadReplacement(card, fresh, taken);
+    if (cannotLeadFront(card, fresh, edition)) {
+      choice = leadReplacement(card, fresh, taken, edition);
       if (!choice) continue;
     }
     if (taken.has(choice.id)) continue;
@@ -1561,8 +1624,8 @@ function favoritePages(
   for (const card of frontPicks) {
     if (picks.length >= FRONT_STORIES) break;
     let choice: GameWrapCard | null = card;
-    if (cannotLeadFront(card, frontPool) || !slotOk(card)) choice = leadReplacement(card, frontPool, taken);
-    if (!choice || taken.has(choice.id) || cannotLeadFront(choice, frontPool) || !slotOk(choice)) continue;
+    if (cannotLeadFront(card, frontPool, edition) || !slotOk(card)) choice = leadReplacement(card, frontPool, taken, edition);
+    if (!choice || taken.has(choice.id) || cannotLeadFront(choice, frontPool, edition) || !slotOk(choice)) continue;
     picks.push(choice);
     taken.add(choice.id);
   }
@@ -1570,7 +1633,7 @@ function favoritePages(
   const written = frontPool.filter(
     (c) =>
       slotOk(c) &&
-      !cannotLeadFront(c, frontPool) &&
+      !cannotLeadFront(c, frontPool, edition) &&
       !taken.has(c.id) &&
       !isTodaysMoScout(c, edition),
   );
@@ -1583,7 +1646,7 @@ function favoritePages(
   }
   for (const card of [...written, ...frontPool]) {
     if (picks.length >= 3) break;
-    if (!slotOk(card) || cannotLeadFront(card, frontPool) || taken.has(card.id)) continue;
+    if (!slotOk(card) || cannotLeadFront(card, frontPool, edition) || taken.has(card.id)) continue;
     picks.push(card);
     taken.add(card.id);
   }

@@ -41,6 +41,7 @@ import {
   a1ComingUp,
   cannotLeadFront,
   isA1Muted,
+  isStaleA1Result,
   isFavoriteGameResult,
   isFavoriteStory,
   isMoScoutCard,
@@ -2710,6 +2711,123 @@ assert(
     { id: "cowboys", favoriteKey: "nfl-dal" },
   ]).map((g) => g.id).join(",") === "cowboys",
   "A1 Coming Up drops the 76ers",
+);
+
+const mizzouSatBox = card({
+  id: "box-football/college-football-401856708",
+  headline: "No. 25 Missouri trounces No. 8 Florida 45-17 to snap 9-game skid against Top 25 opponents",
+  favoriteKey: "cfb-mizzou",
+  followed: true,
+  teamName: "Missouri",
+  sportLabel: "College Football",
+  leaguePath: "football/college-football",
+  status: "Final",
+  scoreLine: "MIZ 45 · FLA 17",
+  wrapKind: "box",
+  caption: "Times box wrap",
+  when: "2026-10-03T19:50:00Z",
+  body: copy("Austin Simmons threw for 340 yards and two touchdowns as Missouri trounced Florida 45-17 on Saturday. "),
+});
+const mizzouSatUndated = { ...mizzouSatBox, id: "wire-college-football-401856708", when: null };
+const lionsSunBox = card({
+  id: "box-football/nfl-401872978",
+  headline: "Young, McMillan connect for 2 TDs to lead Panthers past Lions 32-26",
+  favoriteKey: "nfl-det",
+  followed: true,
+  teamName: "Lions",
+  sportLabel: "NFL",
+  leaguePath: "football/nfl",
+  status: "Final",
+  scoreLine: "DET 26 · CAR 32",
+  wrapKind: "box",
+  when: "2026-10-05T00:20:00Z",
+  body: copy("Carolina held off Detroit on Sunday night. "),
+});
+const tuesdayMizzouFinal = card({
+  id: "box-cfb-mizzou-today",
+  headline: "Missouri holds off Vanderbilt 27-24",
+  favoriteKey: "cfb-mizzou",
+  followed: true,
+  teamName: "Missouri",
+  sportLabel: "College Football",
+  leaguePath: "football/college-football",
+  status: "Final",
+  scoreLine: "MIZ 27 · VAN 24",
+  when: "2026-10-06T16:00:00Z",
+  body: copy("Missouri won in Columbia on Tuesday. "),
+});
+assert(isStaleA1Result(mizzouSatBox, "2026-10-06-midday"), "Saturday CFB is stale on Tuesday midday");
+assert(isStaleA1Result(mizzouSatBox, "2026-10-06-morning"), "Saturday CFB is stale on Tuesday morning");
+assert(!isStaleA1Result(mizzouSatBox, "2026-10-05-evening"), "Saturday CFB may still front Monday evening");
+assert(!isStaleA1Result(mizzouSatBox, "2026-10-05-morning"), "Saturday CFB may still front Monday morning");
+assert(isStaleA1Result(mizzouSatUndated, "2026-10-06-midday"), "undated CFB that reads as Saturday is stale after Monday");
+assert(!isStaleA1Result(mizzouSatUndated, "2026-10-05-evening"), "undated Saturday CFB may still front Monday");
+assert(isStaleA1Result(lionsSunBox, "2026-10-06-midday"), "Sunday NFL is stale on Tuesday A1");
+assert(
+  !isStaleA1Result(
+    card({
+      id: "wire-nfl-mnf-tue",
+      headline: "Chiefs beat the Raiders on Monday night",
+      favoriteKey: "nfl-kc",
+      followed: true,
+      teamName: "Chiefs",
+      status: "Final",
+      scoreLine: "KC 30 · LV 27",
+      when: "2026-10-06T03:30:00Z",
+      body: copy("Kansas City closed it in the fourth quarter. "),
+    }),
+    "2026-10-06-midday",
+  ),
+  "Monday night may still front Tuesday",
+);
+assert(!isStaleA1Result(tuesdayMizzouFinal, "2026-10-06-midday"), "a current-day favorite wrap may still front");
+assert(!isStaleA1Result(moScoutToday, "2026-10-06-midday"), "today's MoScout is not a stale game result");
+assert(!isStaleA1Result(cowboysNote, "2026-10-06-midday"), "current-day club news is not a stale game result");
+assert(isA1Muted(mizzouSatBox, "2026-10-06-midday"), "Saturday Mizzou wrap is muted for Tuesday A1");
+assert(!mayFrontA1(mizzouSatBox, "2026-10-06-midday"), "Saturday Mizzou may not occupy Tuesday A1");
+assert(mayFrontA1(mizzouSatBox, "2026-10-05-evening"), "Saturday Mizzou may occupy Monday A1");
+assert(mayFrontA1(tuesdayMizzouFinal, "2026-10-06-midday"), "Tuesday's Mizzou result may occupy A1");
+assert(
+  !cannotLeadFront(moScoutToday, [mizzouSatBox, lionsSunBox, moScoutToday, cowboysNote], "2026-10-06-midday"),
+  "stale leftovers do not block today's MoScout from the front",
+);
+const tuesdayStale = buildEdition({
+  stories: [mizzouSatBox, lionsSunBox, cowboysNote, moScoutToday],
+  clubs: [
+    { key: "cfb-mizzou", shortName: "Mizzou", logo: null, leaguePath: "football/college-football", record: "4-1", standing: "8th in SEC", division: [], stats: [], leaders: [], upcoming: [] },
+    { key: "nfl-det", shortName: "Lions", logo: null, leaguePath: "football/nfl", record: "3-2", standing: null, division: [], stats: [], leaders: [], upcoming: [] },
+    { key: "nfl-dal", shortName: "Cowboys", logo: null, leaguePath: "football/nfl", record: "3-2", standing: null, division: [], stats: [], leaders: [], upcoming: [] },
+  ],
+  edition: "2026-10-06-midday",
+});
+const tuesdayStaleA1 = tuesdayStale.pages.find((p) => p.kind === "favorites-front");
+const tuesdayStaleIds =
+  tuesdayStaleA1?.kind === "favorites-front"
+    ? [tuesdayStaleA1.lead, tuesdayStaleA1.second, tuesdayStaleA1.third].map((c) => c?.id)
+    : [];
+assert(
+  tuesdayStaleA1?.kind === "favorites-front" && tuesdayStaleA1.lead?.id !== "box-football/college-football-401856708",
+  `Tuesday midday does not lead with Saturday CFB (got ${tuesdayStaleA1 && tuesdayStaleA1.kind === "favorites-front" ? tuesdayStaleA1.lead?.id : "none"})`,
+);
+assert(!tuesdayStaleIds.includes("box-football/college-football-401856708"), "Saturday Mizzou never occupies a Tuesday A1 slot");
+assert(!tuesdayStaleIds.includes("box-football/nfl-401872978"), "Sunday Lions never occupy a Tuesday A1 slot");
+assert(
+  tuesdayStaleA1?.kind === "favorites-front" &&
+    !tuesdayStaleA1.briefs.some((c) => c.id === "box-football/college-football-401856708" || c.id === "box-football/nfl-401872978") &&
+    !tuesdayStaleA1.news.some((c) => c.id === "box-football/college-football-401856708" || c.id === "box-football/nfl-401872978"),
+  "stale prior-day results are not A1 briefs or under-stories",
+);
+assert(
+  tuesdayStaleIds.includes("news-cowboys-midday") || tuesdayStaleIds.includes("mo-1x9ok2o"),
+  `current-day Cowboys news or MoScout take the Tuesday front (got ${tuesdayStaleIds.join(",")})`,
+);
+assert(
+  a1ComingUp([
+    { id: "blues", favoriteKey: "nhl-stl", when: "Tue, Oct 6, 7:00 PM" },
+    { id: "cowboys", favoriteKey: "nfl-dal", when: "Thu, Oct 8, 7:15 PM" },
+    { id: "mizzou-sat", favoriteKey: "cfb-mizzou" },
+  ]).map((g) => g.id).join(",") === "blues,cowboys,mizzou-sat",
+  "A1 Coming Up keeps tonight's Blues and Thursday's Cowboys",
 );
 
 console.log("newspaper-sections ok");
