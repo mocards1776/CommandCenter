@@ -121,12 +121,12 @@ export function PhoneWatchCard({ games, editionLabel }: { games: WatchGame[]; ed
 
   return (
     <article
-      ref={ref}
       className="tt-phone-card tt-phone-watch"
       aria-label="Best Games to Watch Today"
       data-watch-source={games.length}
       data-watch-kept={1 + rest.length}
     >
+      <div className="tt-phone-fit-body" ref={ref}>
       <header className="tt-phone-mast">
         <p className="tt-phone-kicker">The Viewing Guide · {editionLabel}</p>
         <h1>Today&apos;s Games</h1>
@@ -167,6 +167,7 @@ export function PhoneWatchCard({ games, editionLabel }: { games: WatchGame[]; ed
       ) : null}
 
       <p className="tt-phone-legend">Times in Central. Networks: national TV and streaming.</p>
+      </div>
     </article>
   );
 }

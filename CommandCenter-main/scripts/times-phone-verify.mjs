@@ -83,7 +83,7 @@ async function main() {
   let child = null;
   let base = givenBase;
   if (!base) {
-    child = spawn("npm", ["run", "dev", "--", "--host", "127.0.0.1", "--port", "5173"], {
+    child = spawn("npm", ["run", "dev", "--", "--host", "127.0.0.1", "--port", "5173", "--strictPort"], {
       cwd: appRoot,
       env: { ...process.env, VITE_DEV_BYPASS_AUTH: "1" },
       stdio: "inherit",
@@ -105,8 +105,16 @@ async function main() {
     });
     for (const card of CARDS) {
       const page = await context.newPage();
-      const sample = card === "weather" ? "" : "1";
-      const { png, kept, source } = await shoot(page, card, sample);
+      const sample = card === "day" ? "1" : "";
+      let shot;
+      try {
+        shot = await shoot(page, card, sample);
+      } catch (err) {
+        if (card !== "front" && card !== "day") throw err;
+        console.log(`${card} live/sample miss (${err.message}); retrying with fixtures`);
+        shot = await shoot(page, card, "1");
+      }
+      const { png, kept, source } = shot;
       const size = pngSize(png);
       const dest = path.join(outDir, `${ISSUE}-${card}.png`);
       await writeFile(dest, png);

@@ -100,7 +100,8 @@ export function PhoneWeatherCard({ weather }: { weather: MarshfieldWeather }) {
   );
   const outlook = week.slice(0, value.days);
   return (
-    <article ref={ref} className="tt-phone-card tt-phone-wx" aria-label={`Weather for ${MARSHFIELD.place}`}>
+    <article className="tt-phone-card tt-phone-wx" aria-label={`Weather for ${MARSHFIELD.place}`}>
+      <div className="tt-phone-fit-body" ref={ref}>
       <header className="tt-phone-mast">
         <p className="tt-phone-kicker">Thompson Times</p>
         <h1>
@@ -216,6 +217,7 @@ export function PhoneWeatherCard({ weather }: { weather: MarshfieldWeather }) {
         </section>
       ) : null}
       <p className="tt-phone-credit">Forecast data: Open-Meteo</p>
+      </div>
     </article>
   );
 }

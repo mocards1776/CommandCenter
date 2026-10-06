@@ -102,7 +102,8 @@ export function PhoneDayAheadCard({
   const coming = upcoming.slice(0, value.comingDays);
 
   return (
-    <article ref={ref} className="tt-phone-card tt-phone-day" aria-label="The Day Ahead">
+    <article className="tt-phone-card tt-phone-day" aria-label="The Day Ahead">
+      <div className="tt-phone-fit-body" ref={ref}>
       <header className="tt-phone-mast">
         <p className="tt-phone-kicker">The Daily Planner · {editionLabel}</p>
         <h1>The Day Ahead</h1>
@@ -190,6 +191,7 @@ export function PhoneDayAheadCard({
       )}
 
       <ComingUp days={coming} />
+      </div>
     </article>
   );
 }

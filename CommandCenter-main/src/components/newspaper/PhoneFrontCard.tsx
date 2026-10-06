@@ -31,7 +31,8 @@ export function PhoneFrontCard({
   const shown = stories.slice(0, value.stories);
 
   return (
-    <article ref={ref} className="tt-phone-card tt-phone-front" aria-label="Page A1">
+    <article className="tt-phone-card tt-phone-front" aria-label="Page A1">
+      <div className="tt-phone-fit-body" ref={ref}>
       <header className="tt-phone-front-mast">
         <div className="tt-phone-front-top">
           <p className="tt-phone-kicker">{editionLabel}</p>
@@ -56,6 +57,7 @@ export function PhoneFrontCard({
           ))}
         </ol>
       ) : null}
+      </div>
     </article>
   );
 }

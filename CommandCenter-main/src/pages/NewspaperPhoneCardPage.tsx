@@ -85,9 +85,9 @@ export default function NewspaperPhoneCardPage() {
     queryKey: ["tt-phone-watch", date, sample],
     queryFn: async () => {
       if (sample === "heavy") return sampleHeavyWatchGames(date);
+      if (sample === "1") return sampleWatchGames();
       const live = await fetchWatchList(date);
-      if (live.length) return live;
-      return useSample ? sampleWatchGames() : [];
+      return live;
     },
     enabled: card === "watch",
     staleTime: 5 * 60_000,

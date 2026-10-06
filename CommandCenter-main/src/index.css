@@ -9217,6 +9217,12 @@ body:has(.tt-phone-shot) {
   overflow: hidden;
   background: var(--w-paper);
 }
+.tt-phone-fit-body {
+  box-sizing: border-box;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
 .tt-phone-mast {
   text-align: center;
   padding-bottom: 10px;
@@ -9455,7 +9461,7 @@ body:has(.tt-phone-shot) {
   border-top: 2px solid var(--w-rule);
 }
 .tt-phone-wx .tt-phone-facts {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   width: 100%;
 }
 .tt-phone-facts div {
@@ -9503,7 +9509,7 @@ body:has(.tt-phone-shot) {
 .tt-phone-hourly svg {
   display: block;
   width: 100%;
-  height: auto;
+  height: 156px;
 }
 .tt-phone-hourly .wx-t {
   font-size: 13px;
