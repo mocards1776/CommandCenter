@@ -74,6 +74,7 @@ export function fitSheetToCanvas(sheet: HTMLElement, canvasH = PAGE_CANVAS_H): {
 } {
   let cut = 0;
   let guard = 80;
+  if (sheet.scrollHeight > canvasH + 0.5) sheet.setAttribute("data-tt-tight", "");
   while (sheet.scrollHeight > canvasH + 0.5 && guard--) {
     const next = [...sheet.querySelectorAll<HTMLElement>("[data-tt-trim]:not([data-tt-trimmed])")]
       .filter((el) => el.offsetHeight > 0)
