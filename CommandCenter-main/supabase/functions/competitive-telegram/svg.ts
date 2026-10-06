@@ -1,8 +1,8 @@
 /**
- * Competitive Telegram card (1080×1350). Sports-finals hierarchy on cream:
- * left-aligned type, no postcard plates, Just in as the hero, recap second.
+ * Competitive Telegram card (1080×1350). Centered infographic poster:
+ * wordmark on the cream field (no plate), Just in as a 3-column hero,
+ * 2×2 race tiles, still-ahead as a balanced row. Not a left-aligned list.
  *
- * Logo is the wordmark on the field — no disc, plate, or drop shadow.
  * Raster: SVG → resvg PNG → JPEG q≈95 → sendPhoto.
  */
 import {
@@ -12,33 +12,35 @@ import {
   formatCpp,
   formatGrp,
   formatSpendShort,
+  maxGrp,
   maxSpend,
+  type AheadItem,
+  type BuyerRow,
   type CompetitiveCard,
+  type WhatsNewItem,
 } from "./card.ts";
 
 export const COMPETITIVE_ALERT_WIDTH = CARD_WIDTH;
 export const COMPETITIVE_ALERT_HEIGHT = CARD_HEIGHT;
 
-/** Native logo 276×34. Small header mark, left — not a letterhead plate. */
-export const LOGO_DISPLAY_WIDTH = 368;
-export const LOGO_DISPLAY_HEIGHT = 45;
-export const LOGO_X = 40;
-export const LOGO_Y = 26;
+/** Native logo 276×34. Centered on the field — no disc or plate. */
+export const LOGO_DISPLAY_WIDTH = 500;
+export const LOGO_DISPLAY_HEIGHT = 62;
+export const LOGO_X = (CARD_WIDTH - LOGO_DISPLAY_WIDTH) / 2;
+export const LOGO_Y = 30;
 
 const W = CARD_WIDTH;
 const H = CARD_HEIGHT;
-const M = 40;
+const CX = W / 2;
 
 const CREAM = "#F2EEE6";
+const TILE = "#FBF7F0";
 const INK = "#1A1814";
 const MUTED = "#6E6860";
 const FAINT = "#9A948A";
-const LINE = "#DDD6CB";
 const TRACK = "#E4DED4";
-const BLUE = "#0A84FF";
+const RULE = "#D2C8B8";
 const BRAND = "#8A3046";
-
-const TRACK_W = W - M * 2;
 
 function esc(value: string): string {
   return value
@@ -67,99 +69,125 @@ function text(
   return `<text x="${x}" y="${y}" fill="${opts.fill}" font-size="${opts.size}" font-weight="${weight}" font-family="Inter" text-anchor="${anchor}"${spacing}>${esc(value)}</text>`;
 }
 
-function hairline(y: number): string {
-  return `<rect x="${M}" y="${y}" width="${TRACK_W}" height="1" fill="${LINE}"/>`;
+function rulePair(label: string, y: number): string {
+  const labelW = Math.max(80, label.length * 9);
+  const gap = 18;
+  const x1 = 64;
+  const x2 = CX - labelW / 2 - gap;
+  const x3 = CX + labelW / 2 + gap;
+  const x4 = W - 64;
+  return [
+    `<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="${RULE}" stroke-width="1.5"/>`,
+    text(label, CX, y + 5, { size: 13, fill: FAINT, anchor: "middle", weight: 700, spacing: 2.2 }),
+    `<line x1="${x3}" y1="${y}" x2="${x4}" y2="${y}" stroke="${RULE}" stroke-width="1.5"/>`,
+  ].join("");
 }
 
 function logoMark(card: CompetitiveCard): string {
   if (card.logoData) {
-    return `<image href="${esc(card.logoData)}" x="${LOGO_X}" y="${LOGO_Y}" width="${LOGO_DISPLAY_WIDTH}" height="${LOGO_DISPLAY_HEIGHT}" preserveAspectRatio="xMinYMid meet"/>`;
+    return `<image href="${esc(card.logoData)}" x="${LOGO_X}" y="${LOGO_Y}" width="${LOGO_DISPLAY_WIDTH}" height="${LOGO_DISPLAY_HEIGHT}" preserveAspectRatio="xMidYMid meet"/>`;
   }
-  return text("THOMPSON COMMUNICATIONS", LOGO_X, LOGO_Y + 30, {
-    size: 15,
+  return text("THOMPSON COMMUNICATIONS", CX, LOGO_Y + 36, {
+    size: 16,
     fill: BRAND,
+    anchor: "middle",
     weight: 700,
-    spacing: 1.6,
+    spacing: 2,
   });
 }
 
-function newMark(x: number, y: number): string {
-  const w = 52;
-  const h = 22;
-  return [
-    `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="6" fill="${BLUE}"/>`,
-    text("NEW", x + w / 2, y + 16, { size: 11, fill: "#FFFFFF", anchor: "middle", weight: 700, spacing: 1.1 }),
-  ].join("");
-}
-
-function justInHero(card: CompetitiveCard, y: number): string {
+function justInHero(items: readonly WhatsNewItem[], y: number): string {
+  const n = Math.max(1, items.length);
+  const gap = 18;
+  const colW = (W - 72 - gap * (n - 1)) / n;
+  const colH = 220;
+  const x0 = (W - (colW * n + gap * (n - 1))) / 2;
+  const tileY = y + 56;
   const parts = [
-    text(card.justInTitle, M, y + 40, { size: 48, fill: INK, weight: 700 }),
+    `<line x1="72" y1="${y + 18}" x2="${CX - 86}" y2="${y + 18}" stroke="${RULE}" stroke-width="1.5"/>`,
+    `<line x1="${CX + 86}" y1="${y + 18}" x2="${W - 72}" y2="${y + 18}" stroke="${RULE}" stroke-width="1.5"/>`,
+    text("JUST IN", CX, y + 26, { size: 28, fill: INK, anchor: "middle", weight: 700, spacing: 2.4 }),
   ];
-  let rowY = y + 72;
-  for (const item of card.whatsNew) {
-    parts.push(`<rect x="${M}" y="${rowY + 6}" width="4" height="76" rx="2" fill="${item.color}"/>`);
-    parts.push(newMark(M + 20, rowY + 10));
-    parts.push(text(item.label, M + 84, rowY + 28, { size: 32, fill: INK, weight: 700 }));
-    parts.push(text(item.detail, M + 84, rowY + 58, { size: 20, fill: MUTED }));
-    rowY += 104;
-  }
+  items.forEach((item, i) => {
+    const x = x0 + i * (colW + gap);
+    const cy = tileY + 52;
+    parts.push(`<rect x="${x}" y="${tileY}" width="${colW}" height="${colH}" rx="22" fill="${TILE}"/>`);
+    parts.push(`<rect x="${x + 22}" y="${tileY}" width="${colW - 44}" height="7" rx="3.5" fill="${item.color}"/>`);
+    parts.push(`<circle cx="${x + colW / 2}" cy="${cy}" r="24" fill="${item.color}"/>`);
+    parts.push(text(item.label, x + colW / 2, tileY + 118, { size: 22, fill: INK, anchor: "middle", weight: 700 }));
+    parts.push(text(item.detail, x + colW / 2, tileY + 148, { size: 15, fill: MUTED, anchor: "middle" }));
+  });
   return parts.join("");
 }
 
-function raceRow(card: CompetitiveCard, index: number, y: number): string {
-  const row = card.buyers[index];
-  if (!row) return "";
-  const spendMax = maxSpend(card.buyers);
-  const barH = 6;
-  const barW = barWidth(row.spend, spendMax, TRACK_W);
-  const barY = y + 52;
+function buyerTile(row: BuyerRow, x: number, y: number, w: number, h: number, spendMax: number, grpMax: number): string {
+  const pad = 22;
+  const track = w - pad * 2;
+  const spendW = barWidth(row.spend, spendMax, track);
+  const grpW = barWidth(row.grp, grpMax, track);
+  const barY = y + h - 44;
   return [
-    text(row.name, M, y + 22, { size: 22, fill: INK, weight: 700 }),
-    text(`${formatCpp(row.cpp)} CPP`, W - M, y + 22, { size: 18, fill: MUTED, anchor: "end", weight: 700 }),
-    text(`${formatSpendShort(row.spend)}  ·  ${formatGrp(row.grp)} GRP`, M, y + 44, {
-      size: 16,
-      fill: FAINT,
-    }),
-    `<rect x="${M}" y="${barY}" width="${TRACK_W}" height="${barH}" rx="3" fill="${TRACK}"/>`,
-    `<rect x="${M}" y="${barY}" width="${barW}" height="${barH}" rx="3" fill="${row.color}"/>`,
+    `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="20" fill="${TILE}"/>`,
+    `<rect x="${x}" y="${y}" width="${w}" height="7" rx="3.5" fill="${row.color}"/>`,
+    text(row.name, x + pad, y + 44, { size: 24, fill: INK, weight: 700 }),
+    text(`${formatCpp(row.cpp)} CPP`, x + w - pad, y + 44, { size: 16, fill: MUTED, anchor: "end", weight: 700 }),
+    text(formatSpendShort(row.spend), x + pad, y + 86, { size: 28, fill: INK, weight: 700 }),
+    text(`${formatGrp(row.grp)} GRP`, x + w - pad, y + 84, { size: 16, fill: FAINT, anchor: "end" }),
+    `<rect x="${x + pad}" y="${barY}" width="${track}" height="14" rx="7" fill="${TRACK}"/>`,
+    `<rect x="${x + pad}" y="${barY}" width="${spendW}" height="14" rx="7" fill="${row.color}"/>`,
+    `<rect x="${x + pad}" y="${barY + 20}" width="${track}" height="6" rx="3" fill="${TRACK}"/>`,
+    `<rect x="${x + pad}" y="${barY + 20}" width="${grpW}" height="6" rx="3" fill="${row.color}" opacity="0.5"/>`,
   ].join("");
 }
 
-function stillAhead(card: CompetitiveCard, y: number): string {
-  const parts = [text("STILL AHEAD", M, y, { size: 13, fill: FAINT, weight: 700, spacing: 1.6 })];
-  card.stillAhead.forEach((item, i) => {
-    const iy = y + 36 + i * 36;
-    parts.push(`<circle cx="${M + 6}" cy="${iy - 5}" r="3.5" fill="${FAINT}"/>`);
-    parts.push(text(item.text, M + 24, iy, { size: 18, fill: INK }));
+function raceGrid(buyers: readonly BuyerRow[], y: number): string {
+  const gap = 16;
+  const colW = (W - 72 - gap) / 2;
+  const rowH = 168;
+  const x0 = (W - (colW * 2 + gap)) / 2;
+  const spendMax = maxSpend(buyers);
+  const grpMax = maxGrp(buyers);
+  const parts = [rulePair("RACE LANDSCAPE", y + 10)];
+  buyers.forEach((row, i) => {
+    const col = i % 2;
+    const r = Math.floor(i / 2);
+    parts.push(buyerTile(row, x0 + col * (colW + gap), y + 32 + r * (rowH + gap), colW, rowH, spendMax, grpMax));
+  });
+  return parts.join("");
+}
+
+function stillAheadRow(items: readonly AheadItem[], y: number): string {
+  const n = Math.max(1, items.length);
+  const gap = 14;
+  const colW = Math.round((W - 72 - gap * (n - 1)) / n);
+  const colH = 108;
+  const x0 = Math.round((W - (colW * n + gap * (n - 1))) / 2);
+  const parts = [rulePair("STILL AHEAD", y + 10)];
+  items.forEach((item, i) => {
+    const x = x0 + i * (colW + gap);
+    parts.push(`<rect x="${x}" y="${y + 28}" width="${colW}" height="${colH}" rx="18" fill="${TILE}"/>`);
+    parts.push(`<circle cx="${x + colW / 2}" cy="${y + 48}" r="5" fill="${BRAND}"/>`);
+    parts.push(text(item.line, x + colW / 2, y + 76, { size: 15, fill: INK, anchor: "middle", weight: 700 }));
+    parts.push(text(item.sub, x + colW / 2, y + 98, { size: 13, fill: MUTED, anchor: "middle" }));
   });
   return parts.join("");
 }
 
 export function renderCompetitiveSvg(card: CompetitiveCard): string {
-  const heroY = 156;
-  const heroH = 72 + card.whatsNew.length * 104;
-  const recapY = heroY + heroH + 24;
-  const recapRowH = 80;
-  const recapH = 36 + card.buyers.length * recapRowH;
-  const aheadY = recapY + recapH + 24;
-
-  const recap = card.buyers.map((_, i) => raceRow(card, i, recapY + 28 + i * recapRowH)).join("");
+  const heroY = 220;
+  const raceY = 520;
+  const aheadY = 920;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="Inter, sans-serif" role="img" aria-label="${esc(card.title)} just in">
   <rect width="${W}" height="${H}" fill="${CREAM}"/>
   ${logoMark(card)}
-  ${text(card.dateLabel, W - M, 54, { size: 15, fill: MUTED, anchor: "end" })}
-  ${text(card.race, M, 102, { size: 34, fill: INK, weight: 700 })}
-  ${text(`${card.office}  ·  ${card.market}`, M, 128, { size: 16, fill: MUTED })}
-  ${justInHero(card, heroY)}
-  ${hairline(recapY - 16)}
-  ${text("RACE", M, recapY + 8, { size: 13, fill: FAINT, weight: 700, spacing: 1.6 })}
-  ${recap}
-  ${hairline(aheadY - 16)}
-  ${stillAhead(card, aheadY)}
-  ${text(card.footer, M, 1298, { size: 14, fill: MUTED })}
-  ${text(card.handle, W - M, 1298, { size: 13, fill: FAINT, anchor: "end" })}
+  ${text(card.kicker, CX, 114, { size: 12, fill: BRAND, anchor: "middle", weight: 700, spacing: 2.8 })}
+  ${text(card.title, CX, 168, { size: 52, fill: INK, anchor: "middle", weight: 700 })}
+  ${text(`${card.dateLabel}  ·  ${card.market}`, CX, 202, { size: 17, fill: MUTED, anchor: "middle" })}
+  ${justInHero(card.whatsNew, heroY)}
+  ${raceGrid(card.buyers, raceY)}
+  ${stillAheadRow(card.stillAhead, aheadY)}
+  ${text(`${card.footer}   ·   ${card.handle}`, CX, 1316, { size: 13, fill: FAINT, anchor: "middle" })}
 </svg>`;
 }

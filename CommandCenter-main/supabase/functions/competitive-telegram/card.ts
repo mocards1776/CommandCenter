@@ -24,6 +24,8 @@ export type WhatsNewItem = {
 
 export type AheadItem = {
   text: string;
+  line: string;
+  sub: string;
 };
 
 export type CompetitiveCard = {
@@ -58,9 +60,9 @@ export const SD30_SAMPLE_WHATS_NEW: readonly WhatsNewItem[] = [
 ];
 
 export const SD30_SAMPLE_AHEAD: readonly AheadItem[] = [
-  { text: "Verify remaining weeks on air" },
-  { text: "FCC copies still lag" },
-  { text: "Radio / cable — no GRP in this book" },
+  { text: "Verify remaining weeks on air", line: "Remaining weeks", sub: "still to verify" },
+  { text: "FCC copies still lag", line: "FCC copies", sub: "still lag" },
+  { text: "Radio / cable — no GRP in this book", line: "Radio / cable", sub: "no GRP in this book" },
 ];
 
 export const SD30_CAPTION_WHATS_NEW =
