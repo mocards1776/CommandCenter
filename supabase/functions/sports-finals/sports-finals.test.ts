@@ -35,6 +35,13 @@ import {
   MLB_BOX_HEAD_SIZE,
   MLB_BOX_NAME_SIZE,
   MLB_BOX_STAT_SIZE,
+  MLB_DECISION_LINE_SIZE,
+  MLB_DECISION_META_SIZE,
+  MLB_DECISION_NAME_SIZE,
+  MLB_HEADER_INSET,
+  MLB_KICKOFF_SIZE,
+  MLB_SERIES_RESULT_SIZE,
+  MLB_SERIES_STRIP_H,
   STANDINGS_GROUP_DY,
   STANDINGS_TITLE_DY,
   distinctTeamPaints,
@@ -1007,8 +1014,21 @@ assert.match(soxSvg, /E\. Sabrowski/);
 assert.match(soxSvg, /G\. Taylor/);
 assert.match(soxSvg, /5\.1 IP · 1 H · 1 ER · 6 K · 1 BB/);
 assert.match(soxSvg, /Tue, Oct 6, 1:20 AM CT  ·  Game 1 of 2/);
-assert.match(soxSvg, /Progressive Field  ·  Mon, Oct 5, 4:00 PM CT/);
 assert.match(soxSvg, /Monday, Oct 5 at 4:00 PM/);
+assert.doesNotMatch(soxSvg, /MLB\s*·/);
+assert.doesNotMatch(soxSvg, /Progressive Field  ·  Mon, Oct 5, 4:00 PM CT/);
+assert.match(soxSvg, new RegExp(`font-size="${MLB_KICKOFF_SIZE}"[^>]*>Mon, Oct 5, 4:00 PM CT<`));
+assert.match(soxSvg, new RegExp(`font-size="${MLB_DECISION_NAME_SIZE}"[^>]*>S\\. Burke`));
+assert.match(soxSvg, new RegExp(`font-size="${MLB_DECISION_LINE_SIZE}"[^>]*>5\\.1 IP`));
+assert.match(soxSvg, new RegExp(`font-size="${MLB_DECISION_META_SIZE}"[^>]*>Progressive Field`));
+assert.match(soxSvg, new RegExp(`font-size="${MLB_SERIES_RESULT_SIZE}"`));
+assert.ok(MLB_HEADER_INSET < 36, "game time inset must sit tighter to the corner than body margin");
+assert.ok(MLB_KICKOFF_SIZE >= 20 && MLB_DECISION_NAME_SIZE >= 20 && MLB_DECISION_LINE_SIZE >= 16);
+assert.ok(MLB_SERIES_RESULT_SIZE >= 18 && MLB_SERIES_STRIP_H >= 130);
+{
+  const kickoffX = Number(/x="(\d+(?:\.\d+)?)"[^>]*>Mon, Oct 5, 4:00 PM CT</.exec(soxSvg)?.[1] ?? 999);
+  assert.ok(kickoffX <= MLB_HEADER_INSET, `game time should sit in the upper-left corner, got x=${kickoffX}`);
+}
 {
   const wpX = Number(/x="(\d+(?:\.\d+)?)"[^>]*>Win probability</.exec(soxSvg)?.[1] ?? 0);
   const winX = Number(/x="(\d+(?:\.\d+)?)"[^>]*>WIN</.exec(soxSvg)?.[1] ?? 0);

@@ -10,6 +10,9 @@
  * driven and targets ~1080×1350 so Telegram fills the photo slot. Win
  * probability shares a row with MLB W/L/S decisions (or standings) when
  * those exist; missing companions leave the chart full width.
+ *
+ * MLB phone readability: W/L/S + venue and the series strip stay large;
+ * first-pitch time sits in the upper-left corner (no "MLB ·" prefix).
  */
 import {
   formatFinalsTimestamp,
@@ -49,6 +52,23 @@ export const MLB_BOX_STAT_SIZE = 20;
 export const MLB_BOX_HEAD_SIZE = 14;
 export const MLB_BOX_TITLE_SIZE = 16;
 export const MLB_BOX_ROW_H = 30;
+/** First-pitch / kickoff stamp — tighter to the corner than body margin M. */
+export const MLB_HEADER_INSET = 16;
+export const MLB_KICKOFF_SIZE = 20;
+export const MLB_DECISION_LABEL_SIZE = 14;
+export const MLB_DECISION_NAME_SIZE = 20;
+export const MLB_DECISION_LINE_SIZE = 16;
+export const MLB_DECISION_META_SIZE = 16;
+export const MLB_DECISION_RECORD_SIZE = 16;
+export const MLB_DECISION_PHOTO = 52;
+export const MLB_DECISION_ROW_H = 74;
+export const MLB_DECISION_LABEL_W = 68;
+export const MLB_SERIES_TITLE_SIZE = 20;
+export const MLB_SERIES_LABEL_SIZE = 14;
+export const MLB_SERIES_RESULT_SIZE = 18;
+export const MLB_SERIES_SITE_SIZE = 14;
+export const MLB_SERIES_BOX_H = 72;
+export const MLB_SERIES_STRIP_H = 136;
 const W = FINALS_ALERT_WIDTH;
 const M = 36;
 const GAP = 16;
@@ -927,7 +947,7 @@ function seriesGameLine(game: SeriesGame): { result: string; site: string } {
 
 function seriesScheduleHeight(games: SeriesGame[]): number {
   if (!games.length) return 0;
-  return 90;
+  return MLB_SERIES_STRIP_H;
 }
 
 function seriesWinsNeeded(bestOf: string | null | undefined): number | null {
@@ -1036,7 +1056,15 @@ function seriesScheduleBlock(
   const inner = w - CARD_IN * 2;
   const colW = inner / Math.max(games.length, 1);
   const title = bestOf ? `Series · ${bestOf}` : "Series";
-  const parts = [sectionTitle(title, x + CARD_IN, y + 24)];
+  const boxY = y + 42;
+  const parts = [
+    text(title, x + CARD_IN, y + 28, {
+      size: MLB_SERIES_TITLE_SIZE,
+      fill: "#e8e4d9",
+      weight: 700,
+      spacing: 1.2,
+    }),
+  ];
   games.forEach((game, i) => {
     const cx = x + CARD_IN + colW * i + colW / 2;
     const boxX = x + CARD_IN + colW * i + 3;
@@ -1048,23 +1076,37 @@ function seriesScheduleBlock(
       : "#8b93a7";
     const { result, site } = seriesGameLine(game);
     parts.push(
-      `<rect x="${boxX}" y="${y + 36}" width="${boxW}" height="48" rx="10" fill="${game.current ? "rgba(247,244,238,0.08)" : "rgba(255,255,255,0.03)"}" stroke="${game.current ? "#f7f4ee" : "rgba(255,255,255,0.08)"}" stroke-opacity="${game.current ? 0.38 : 1}"/>`,
+      `<rect x="${boxX}" y="${boxY}" width="${boxW}" height="${MLB_SERIES_BOX_H}" rx="12" fill="${game.current ? "rgba(247,244,238,0.08)" : "rgba(255,255,255,0.03)"}" stroke="${game.current ? "#f7f4ee" : "rgba(255,255,255,0.08)"}" stroke-opacity="${game.current ? 0.38 : 1}"/>`,
     );
     if (game.winnerAbbrev) {
-      parts.push(`<rect x="${boxX + 8}" y="${y + 36}" width="${boxW - 16}" height="3" rx="1.5" fill="${paint}"/>`);
+      parts.push(`<rect x="${boxX + 8}" y="${boxY}" width="${boxW - 16}" height="4" rx="2" fill="${paint}"/>`);
     }
     parts.push(
-      text(`G${game.gameNumber}`, cx, y + 52, {
-        size: 11,
+      text(`G${game.gameNumber}`, cx, boxY + 22, {
+        size: MLB_SERIES_LABEL_SIZE,
         fill: game.current ? "#f7f4ee" : "#8b93a7",
         anchor: "middle",
         weight: 700,
         spacing: 0.8,
       }),
     );
-    parts.push(text(result, cx, y + 68, { size: 14, fill: paint, anchor: "middle", weight: 700 }));
+    parts.push(
+      text(result, cx, boxY + 44, {
+        size: MLB_SERIES_RESULT_SIZE,
+        fill: paint,
+        anchor: "middle",
+        weight: 700,
+      }),
+    );
     const third = game.final ? `${site} · ${seriesWhen(game.date, true)}` : site;
-    parts.push(text(third, cx, y + 82, { size: 11, fill: "#c5cce0", anchor: "middle", weight: 500 }));
+    parts.push(
+      text(third, cx, boxY + 64, {
+        size: MLB_SERIES_SITE_SIZE,
+        fill: "#c5cce0",
+        anchor: "middle",
+        weight: 500,
+      }),
+    );
   });
   return parts.join("");
 }
@@ -1134,7 +1176,7 @@ function mlbSideTable(side: MlbBoxSide, x: number, y: number, w: number, paint: 
 
 function decisionsHeight(rows: MlbDecision[]): number {
   if (!rows.length) return 0;
-  return 16 + rows.length * 58 + 86;
+  return 20 + rows.length * MLB_DECISION_ROW_H + 118;
 }
 
 function decisionsBlock(
@@ -1147,29 +1189,29 @@ function decisionsBlock(
   homePaint: string,
 ): string {
   const labels: Record<MlbDecision["role"], string> = { W: "WIN", L: "LOSS", S: "SAVE" };
-  const photo = 42;
-  const rowH = 58;
-  const labelW = 52;
+  const photo = MLB_DECISION_PHOTO;
+  const rowH = MLB_DECISION_ROW_H;
+  const labelW = MLB_DECISION_LABEL_W;
   const parts: string[] = [];
   rows.forEach((row, i) => {
-    const ry = y + 12 + i * rowH;
+    const ry = y + 14 + i * rowH;
     const paint = row.teamAbbrev === card.away.abbrev ? awayPaint : homePaint;
     const photoX = x + CARD_IN + labelW;
-    const textX = photoX + photo + 10;
+    const textX = photoX + photo + 12;
     parts.push(
-      text(labels[row.role], x + CARD_IN, ry + 26, {
-        size: 11,
+      text(labels[row.role], x + CARD_IN, ry + 32, {
+        size: MLB_DECISION_LABEL_SIZE,
         fill: "#8b93a7",
         weight: 700,
-        spacing: 1.6,
+        spacing: 1.4,
       }),
     );
-    parts.push(playerPhoto(row.photoData, photoX, ry + 4, photo, row.name));
-    parts.push(text(row.name, textX, ry + 22, { size: 16, fill: paint, weight: 700 }));
+    parts.push(playerPhoto(row.photoData, photoX, ry + 6, photo, row.name));
+    parts.push(text(row.name, textX, ry + 28, { size: MLB_DECISION_NAME_SIZE, fill: paint, weight: 700 }));
     if (row.record) {
       parts.push(
-        text(row.record, x + w - CARD_IN, ry + 22, {
-          size: 14,
+        text(row.record, x + w - CARD_IN, ry + 28, {
+          size: MLB_DECISION_RECORD_SIZE,
           fill: "#f7f4ee",
           anchor: "end",
           weight: 600,
@@ -1177,10 +1219,10 @@ function decisionsBlock(
       );
     }
     if (row.line) {
-      parts.push(text(row.line, textX, ry + 42, { size: 12, fill: "#c5cce0", weight: 500 }));
+      parts.push(text(row.line, textX, ry + 52, { size: MLB_DECISION_LINE_SIZE, fill: "#c5cce0", weight: 500 }));
     }
   });
-  const infoY = y + 12 + rows.length * rowH + 6;
+  const infoY = y + 14 + rows.length * rowH + 8;
   parts.push(
     `<line x1="${x + CARD_IN}" y1="${infoY}" x2="${x + w - CARD_IN}" y2="${infoY}" stroke="rgba(255,255,255,0.10)"/>`,
   );
@@ -1192,13 +1234,34 @@ function decisionsBlock(
     .filter(Boolean)
     .join("  ·  ");
   if (line1) {
-    parts.push(text(line1, x + w / 2, infoY + 20, { size: 12, fill: "#c5cce0", anchor: "middle", weight: 500 }));
+    parts.push(
+      text(line1, x + w / 2, infoY + 26, {
+        size: MLB_DECISION_META_SIZE,
+        fill: "#c5cce0",
+        anchor: "middle",
+        weight: 600,
+      }),
+    );
   }
   if (line2) {
-    parts.push(text(line2, x + w / 2, infoY + 38, { size: 12, fill: "#c5cce0", anchor: "middle", weight: 500 }));
+    parts.push(
+      text(line2, x + w / 2, infoY + 50, {
+        size: MLB_DECISION_META_SIZE,
+        fill: "#c5cce0",
+        anchor: "middle",
+        weight: 600,
+      }),
+    );
   }
   if (card.weather) {
-    parts.push(text(card.weather, x + w / 2, infoY + 56, { size: 12, fill: "#a8b0c2", anchor: "middle", weight: 500 }));
+    parts.push(
+      text(card.weather, x + w / 2, infoY + 74, {
+        size: MLB_DECISION_META_SIZE,
+        fill: "#a8b0c2",
+        anchor: "middle",
+        weight: 500,
+      }),
+    );
   }
   return parts.join("");
 }
@@ -1244,19 +1307,43 @@ export function renderFinalSvg(card: FinalCard): string {
   const stamp = formatFinalsTimestamp(card.sentAt);
 
   const playoffMlb = card.sport === "mlb" && card.playoff;
+  const mlbCard = card.sport === "mlb";
   const sectionGap = playoffMlb ? 12 : GAP;
-  let y = playoffMlb ? 22 : 28;
-  parts.push(
-    text(centerStatus(card.statusLabel).toUpperCase(), M, y + 22, {
-      size: 24,
-      fill: "#e8e4d9",
-      weight: 700,
-      spacing: 3,
-    }),
-  );
-  const meta = [card.sportLabel, card.venue, formatGameStart(card.date)].filter(Boolean).join("  ·  ");
-  parts.push(text(meta, W - M, y + 22, { size: 18, fill: "#8b93a7", anchor: "end", weight: 500 }));
-  y += playoffMlb ? 34 : 40;
+  let y = mlbCard ? 12 : playoffMlb ? 22 : 28;
+  const kickoff = formatGameStart(card.date);
+  if (mlbCard) {
+    const inset = MLB_HEADER_INSET;
+    if (kickoff) {
+      parts.push(
+        text(kickoff, inset, y + 16, {
+          size: MLB_KICKOFF_SIZE,
+          fill: "#e8e4d9",
+          weight: 700,
+        }),
+      );
+    }
+    parts.push(
+      text(centerStatus(card.statusLabel).toUpperCase(), inset, y + (kickoff ? 42 : 22), {
+        size: 22,
+        fill: "#e8e4d9",
+        weight: 700,
+        spacing: 3,
+      }),
+    );
+    y += kickoff ? 52 : 34;
+  } else {
+    parts.push(
+      text(centerStatus(card.statusLabel).toUpperCase(), M, y + 22, {
+        size: 24,
+        fill: "#e8e4d9",
+        weight: 700,
+        spacing: 3,
+      }),
+    );
+    const meta = [card.sportLabel, card.venue, formatGameStart(card.date)].filter(Boolean).join("  ·  ");
+    parts.push(text(meta, W - M, y + 22, { size: 18, fill: "#8b93a7", anchor: "end", weight: 500 }));
+    y += 40;
+  }
 
   const logoSize = playoffMlb ? 96 : 124;
   const logoY = y;
@@ -1374,7 +1461,7 @@ export function renderFinalSvg(card: FinalCard): string {
     const standH = hasStandings && !hasDecisions ? standingsHeight(standings, splitWp, card.sport === "nhl") : 0;
     const decisionH = hasDecisions ? decisionsHeight(decisions) : 0;
     const slimWp = card.sport === "mlb" && !splitWp;
-    const chartH = splitWp ? (splitWithDecisions ? 186 : 214) : slimWp ? 88 : 220;
+    const chartH = splitWp ? (splitWithDecisions ? 270 : 214) : slimWp ? 88 : 220;
     const wpH = hasWp ? (slimWp ? 34 : 56) + chartH + (slimWp ? 16 : 34) : 0;
     const blockH = Math.max(wpH, standH, decisionH, splitWp ? 276 : 0);
     const decisionW = hasDecisions ? (hasWp ? halfW : fullW) : 0;
