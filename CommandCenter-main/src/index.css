@@ -8720,14 +8720,11 @@ li.counting .tt-count.card {
   flex-direction: column;
   flex: 1 1 auto;
   gap: 16px;
-  min-height: 0;
 }
 .tt-front-fill {
   display: flex;
   flex-direction: column;
-  flex: 1 1 0;
-  min-height: 0;
-  overflow: hidden;
+  flex: 1 0 auto;
   gap: 14px;
 }
 .tt-front-bracket {
@@ -8764,9 +8761,8 @@ li.counting .tt-count.card {
 .tt-front-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  flex: 1 0 auto;
+  flex: 0 0 auto;
   gap: 18px;
-  min-height: 0;
   align-items: stretch;
 }
 .tt-front-lead,
