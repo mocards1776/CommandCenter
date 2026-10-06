@@ -1727,11 +1727,12 @@ function FrontPage({
   };
   const leadPoster = wantsPoster(pageLead);
   const underCandidates = [pageSecond, pageThird, ...pageBriefs].filter((c): c is GameWrapCard => Boolean(c));
+  const playable = underCandidates.filter((c) => !isPhonePreseasonNote(c));
   const underLead =
-    underCandidates.find((c) => isFavoriteGameResult(c) && Boolean(c.photo)) ??
-    underCandidates.find((c) => isFavoriteGameResult(c)) ??
-    underCandidates.find((c) => !isPhonePreseasonNote(c) && Boolean(c.photo)) ??
-    underCandidates.find((c) => !isPhonePreseasonNote(c)) ??
+    playable.find((c) => isFavoriteGameResult(c) && Boolean(c.photo)) ??
+    playable.find((c) => isFavoriteGameResult(c)) ??
+    playable.find((c) => Boolean(c.photo)) ??
+    playable[0] ??
     pageSecond;
   const underContinue =
     underLead && underLead.id === second?.id
