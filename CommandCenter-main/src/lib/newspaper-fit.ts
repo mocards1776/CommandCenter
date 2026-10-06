@@ -18,9 +18,10 @@ function clipBottom(el: HTMLElement): number {
 }
 
 function overflowsClip(el: HTMLElement): boolean {
+  const box = el.getBoundingClientRect();
   const limit = clipBottom(el);
-  if (Number.isFinite(limit)) return el.getBoundingClientRect().bottom > limit + 1;
-  return el.scrollHeight > el.clientHeight + 1;
+  if (Number.isFinite(limit)) return box.bottom > limit + 6;
+  return el.scrollHeight > el.clientHeight + 6;
 }
 
 /**
