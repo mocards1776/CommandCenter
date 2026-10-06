@@ -2556,9 +2556,8 @@ li.counting .tt-count.card {
 .wsj-front {
   display: flex;
   flex-direction: column;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   gap: 18px;
-  flex: 1;
   min-height: 0;
 }
 .wsj-ticker {
@@ -8725,7 +8724,7 @@ li.counting .tt-count.card {
 .tt-section-front {
   display: flex;
   flex-direction: column;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   gap: 16px;
 }
 .tt-front-fill {
