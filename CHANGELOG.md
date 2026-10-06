@@ -2,6 +2,15 @@
 
 ---
 
+## Reading: last-12-months chart sits above Tags — October 6, 2026
+
+- The rolling 12-month books + pages chart on `/reading` (and
+  `/reading?solo=1`) now renders immediately above the Tags section on
+  the main library view — after the shelf, not under Today / Recent.
+- Same chart, metrics, and tap-to-breakdown. One copy only.
+
+---
+
 ## Reading: rolling 12-month books + pages chart — October 6, 2026
 
 - `/reading` stats now include a last-12-calendar-month combo chart: accent

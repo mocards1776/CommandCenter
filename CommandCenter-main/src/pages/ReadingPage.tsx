@@ -5741,28 +5741,6 @@ export default function ReadingPage() {
               sessions={sessions ?? []}
               onBreakdown={openBreakdown}
             />
-            <ReadingYearChart
-              books={books ?? []}
-              sessions={sessions ?? []}
-              onBreakdown={(focus) =>
-                openBreakdown(
-                  focus.kind === "finished"
-                    ? {
-                        kind: "finished",
-                        label: focus.label,
-                        from: focus.from,
-                        to: focus.to,
-                        contentType: "book",
-                      }
-                    : {
-                        kind: "pages",
-                        label: focus.label,
-                        from: focus.from,
-                        to: focus.to,
-                      },
-                )
-              }
-            />
             <PagesCalendar sessions={sessions ?? []} />
             <GoalCard
               books={books ?? []}
@@ -5911,6 +5889,29 @@ export default function ReadingPage() {
             highlights={highlightCounts ?? {}}
             onOpen={openBookDrawer}
             onFilter={setFilter}
+          />
+
+          <ReadingYearChart
+            books={books ?? []}
+            sessions={sessions ?? []}
+            onBreakdown={(focus) =>
+              openBreakdown(
+                focus.kind === "finished"
+                  ? {
+                      kind: "finished",
+                      label: focus.label,
+                      from: focus.from,
+                      to: focus.to,
+                      contentType: "book",
+                    }
+                  : {
+                      kind: "pages",
+                      label: focus.label,
+                      from: focus.from,
+                      to: focus.to,
+                    },
+              )
+            }
           />
 
           <HomeTags
