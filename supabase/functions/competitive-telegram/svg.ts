@@ -1,20 +1,22 @@
 /**
  * Competitive Telegram card (1080×1350). Centered liquid-glass infographic:
  * wordmark on the field (no plate), Just in = actual new buys, then race
- * recap + still ahead on frosted panels.
+ * recap + DMA affiliation pies and a spend totals strip.
  *
  * Raster: SVG → resvg PNG → JPEG q≈95 → sendPhoto.
  */
 import {
   CARD_HEIGHT,
   CARD_WIDTH,
+  affiliationTotals,
   barWidth,
   formatGrp,
   formatSpendExact,
   formatSpendShort,
   maxGrp,
   maxSpend,
-  type AheadItem,
+  raceSpendTotal,
+  type AffiliationSlice,
   type BuyerRow,
   type CompetitiveCard,
   type JustInBuy,
@@ -154,20 +156,77 @@ function raceGrid(buyers: readonly BuyerRow[], y: number): string {
   return parts.join("");
 }
 
-function stillAheadRow(items: readonly AheadItem[], y: number): string {
-  const n = Math.max(1, items.length);
-  const gap = 12;
-  const colW = Math.round((W - 80 - gap * (n - 1)) / n);
-  const colH = 96;
-  const x0 = Math.round((W - (colW * n + gap * (n - 1))) / 2);
-  const parts = [sectionLabel("STILL AHEAD", y + 8)];
-  items.forEach((item, i) => {
+function polar(cx: number, cy: number, r: number, a: number): [number, number] {
+  return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
+}
+
+/** Donut slice. Angles in radians, 0 = 3 o'clock, sweep clockwise from 12 o'clock. */
+export function donutSlice(cx: number, cy: number, outer: number, inner: number, a0: number, a1: number): string {
+  const large = a1 - a0 > Math.PI ? 1 : 0;
+  const [x0, y0] = polar(cx, cy, outer, a0);
+  const [x1, y1] = polar(cx, cy, outer, a1);
+  const [ix1, iy1] = polar(cx, cy, inner, a1);
+  const [ix0, iy0] = polar(cx, cy, inner, a0);
+  return `M${x0.toFixed(2)} ${y0.toFixed(2)} A${outer} ${outer} 0 ${large} 1 ${x1.toFixed(2)} ${y1.toFixed(2)} L${ix1.toFixed(2)} ${iy1.toFixed(2)} A${inner} ${inner} 0 ${large} 0 ${ix0.toFixed(2)} ${iy0.toFixed(2)} Z`;
+}
+
+function affiliationPies(slices: readonly AffiliationSlice[], y: number): string {
+  const gap = 16;
+  const colW = Math.round((W - 80 - gap) / 2);
+  const colH = 248;
+  const x0 = Math.round((W - (colW * 2 + gap)) / 2);
+  const charts: { title: string; key: "spend" | "grp"; format: (n: number) => string }[] = [
+    { title: "SPEND", key: "spend", format: formatSpendShort },
+    { title: "GRP", key: "grp", format: formatGrp },
+  ];
+  const parts = [sectionLabel("DMA", y + 6)];
+  charts.forEach((chart, i) => {
     const x = x0 + i * (colW + gap);
-    parts.push(glassPanel(x, y + 22, colW, colH, 20));
-    parts.push(text(item.line, x + colW / 2, y + 62, { size: 14, fill: INK, anchor: "middle", weight: 700 }));
-    parts.push(text(item.sub, x + colW / 2, y + 86, { size: 12, fill: MUTED, anchor: "middle" }));
+    const cx = x + colW / 2;
+    const cy = y + 118;
+    const total = slices.reduce((sum, s) => sum + s[chart.key], 0);
+    parts.push(glassPanel(x, y + 20, colW, colH, 24));
+    parts.push(text(chart.title, cx, y + 48, { size: 13, fill: FAINT, anchor: "middle", weight: 700, spacing: 1.8 }));
+    let angle = -Math.PI / 2;
+    const gapA = 0.06;
+    const usable = Math.PI * 2 - gapA * slices.length;
+    for (const slice of slices) {
+      const share = total > 0 ? slice[chart.key] / total : 0;
+      const sweep = Math.max(0.02, share * usable);
+      parts.push(
+        `<path d="${donutSlice(cx, cy, 70, 40, angle, angle + sweep)}" fill="${slice.color}"/>`,
+      );
+      angle += sweep + gapA;
+    }
+    parts.push(text(chart.format(total), cx, cy + 6, { size: 16, fill: INK, anchor: "middle", weight: 700 }));
+    let lx = x + 24;
+    slices.forEach((slice) => {
+      parts.push(`<circle cx="${lx}" cy="${y + 226}" r="5" fill="${slice.color}"/>`);
+      parts.push(text(`${slice.label}  ${chart.format(slice[chart.key])}`, lx + 12, y + 230, { size: 13, fill: INK, weight: 700 }));
+      lx += colW / 2 - 8;
+    });
   });
   return parts.join("");
+}
+
+function spendTotalsStrip(slices: readonly AffiliationSlice[], race: number, y: number): string {
+  const x = 40;
+  const w = W - 80;
+  const h = 92;
+  const [dem, gop] = slices;
+  const third = w / 3;
+  return [
+    glassPanel(x, y, w, h, 22),
+    text("DEM", x + third * 0.5, y + 26, { size: 11, fill: FAINT, anchor: "middle", weight: 700, spacing: 1.4 }),
+    text(dem?.parties ?? "", x + third * 0.5, y + 44, { size: 12, fill: MUTED, anchor: "middle" }),
+    text(formatSpendExact(dem?.spend ?? 0), x + third * 0.5, y + 72, { size: 20, fill: "#0A84FF", anchor: "middle", weight: 700 }),
+    text("GOP", x + third * 1.5, y + 26, { size: 11, fill: FAINT, anchor: "middle", weight: 700, spacing: 1.4 }),
+    text(gop?.parties ?? "", x + third * 1.5, y + 44, { size: 12, fill: MUTED, anchor: "middle" }),
+    text(formatSpendExact(gop?.spend ?? 0), x + third * 1.5, y + 72, { size: 20, fill: "#FF3B30", anchor: "middle", weight: 700 }),
+    text("RACE", x + third * 2.5, y + 26, { size: 11, fill: FAINT, anchor: "middle", weight: 700, spacing: 1.4 }),
+    text("both sides", x + third * 2.5, y + 44, { size: 12, fill: MUTED, anchor: "middle" }),
+    text(formatSpendExact(race), x + third * 2.5, y + 72, { size: 20, fill: INK, anchor: "middle", weight: 700 }),
+  ].join("");
 }
 
 function field(): string {
@@ -195,7 +254,9 @@ function defs(): string {
 export function renderCompetitiveSvg(card: CompetitiveCard): string {
   const heroY = 208;
   const raceY = 540;
-  const aheadY = 900;
+  const dmaY = 892;
+  const stripY = 1176;
+  const sides = affiliationTotals(card.buyers);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="Inter, sans-serif" role="img" aria-label="${esc(card.title)} just in">
@@ -207,7 +268,8 @@ export function renderCompetitiveSvg(card: CompetitiveCard): string {
   ${text(`${card.dateLabel}  ·  ${card.market}`, CX, 190, { size: 16, fill: MUTED, anchor: "middle" })}
   ${justInHero(card.justIn, heroY)}
   ${raceGrid(card.buyers, raceY)}
-  ${stillAheadRow(card.stillAhead, aheadY)}
+  ${affiliationPies(sides, dmaY)}
+  ${spendTotalsStrip(sides, raceSpendTotal(card.buyers), stripY)}
   ${text(`${card.footer}   ·   ${card.handle}`, CX, 1318, { size: 13, fill: FAINT, anchor: "middle" })}
 </svg>`;
 }

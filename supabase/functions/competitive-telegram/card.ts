@@ -7,12 +7,24 @@
 export const CARD_WIDTH = 1080;
 export const CARD_HEIGHT = 1350;
 
+export type Affiliation = "dem" | "gop";
+
 export type BuyerRow = {
   id: string;
   name: string;
   spend: number;
   grp: number;
   cpp: number;
+  color: string;
+  side: Affiliation;
+};
+
+export type AffiliationSlice = {
+  id: Affiliation;
+  label: string;
+  parties: string;
+  spend: number;
+  grp: number;
   color: string;
 };
 
@@ -52,10 +64,10 @@ export type CompetitiveCard = {
 
 /** Springfield SD-30 snapshot Josh reviewed (Oct 6, 2026). */
 export const SD30_SAMPLE_BUYERS: readonly BuyerRow[] = [
-  { id: "fogle", name: "Fogle", spend: 453350, grp: 4873.5, cpp: 93, color: "#0A84FF" },
-  { id: "stinnett", name: "Stinnett", spend: 253570, grp: 2766.6, cpp: 92, color: "#FF3B30" },
-  { id: "forward", name: "Forward", spend: 162745, grp: 980.9, cpp: 166, color: "#64D2FF" },
-  { id: "mscc", name: "MSCC", spend: 119310, grp: 642.6, cpp: 186, color: "#5E5CE6" },
+  { id: "fogle", name: "Fogle", spend: 453350, grp: 4873.5, cpp: 93, color: "#0A84FF", side: "dem" },
+  { id: "stinnett", name: "Stinnett", spend: 253570, grp: 2766.6, cpp: 92, color: "#FF3B30", side: "gop" },
+  { id: "forward", name: "Forward", spend: 162745, grp: 980.9, cpp: 166, color: "#64D2FF", side: "dem" },
+  { id: "mscc", name: "MSCC", spend: 119310, grp: 642.6, cpp: 186, color: "#5E5CE6", side: "gop" },
 ];
 
 /**
@@ -140,6 +152,24 @@ export function sd30SampleCard(logoData: string | null = null): CompetitiveCard 
   };
 }
 
+export function raceSpendTotal(buyers: readonly BuyerRow[]): number {
+  return buyers.reduce((sum, row) => sum + row.spend, 0);
+}
+
+export function affiliationTotals(buyers: readonly BuyerRow[]): AffiliationSlice[] {
+  const dem = { spend: 0, grp: 0 };
+  const gop = { spend: 0, grp: 0 };
+  for (const row of buyers) {
+    const bucket = row.side === "gop" ? gop : dem;
+    bucket.spend += row.spend;
+    bucket.grp += row.grp;
+  }
+  return [
+    { id: "dem", label: "Dem", parties: "Fogle + Forward", spend: dem.spend, grp: dem.grp, color: "#0A84FF" },
+    { id: "gop", label: "GOP", parties: "Stinnett + MSCC", spend: gop.spend, grp: gop.grp, color: "#FF3B30" },
+  ];
+}
+
 export function maxSpend(buyers: readonly BuyerRow[]): number {
   return buyers.reduce((max, row) => Math.max(max, row.spend), 0);
 }
@@ -164,7 +194,11 @@ export function competitiveCaption(card: CompetitiveCard): string {
         `${row.name} ${formatSpendExact(row.spend)} / ${formatGrp(row.grp)} GRP`,
     ),
     "",
-    `Still ahead: ${card.stillAhead.map((item) => item.text).join("; ")}`,
+    (() => {
+      const [dem, gop] = affiliationTotals(card.buyers);
+      const race = raceSpendTotal(card.buyers);
+      return `DMA spend: Dem ${formatSpendExact(dem!.spend)} / GOP ${formatSpendExact(gop!.spend)}; race ${formatSpendExact(race)}; DMA GRP: Dem ${formatGrp(dem!.grp)} / GOP ${formatGrp(gop!.grp)}`;
+    })(),
   ];
   return lines.join("\n");
 }

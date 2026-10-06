@@ -17,8 +17,10 @@ import {
   formatSpendShort,
   SD30_SAMPLE_JUST_IN,
   loadTciLogoDataUri,
+  affiliationTotals,
   maxGrp,
   maxSpend,
+  raceSpendTotal,
   sd30SampleCard,
 } from "./card.ts";
 import {
@@ -102,15 +104,34 @@ assert.match(svg, /\$52,745/);
 assert.match(svg, /704 GRP/);
 assert.match(svg, /Springfield TV/);
 assert.doesNotMatch(svg, /GRP rebuild|KSPR dark|CPPs locked|FCC×AD35/);
-assert.match(svg, /Still ahead|STILL AHEAD/);
-assert.match(svg, /Remaining weeks|Verify remaining weeks/);
-assert.match(svg, /FCC copies/);
-assert.match(svg, /Radio \/ cable/);
+assert.doesNotMatch(svg, /Still ahead|STILL AHEAD|Remaining weeks/);
+assert.match(svg, /SPEND/);
+assert.match(svg, />GRP</);
+assert.match(svg, /Dem/);
+assert.match(svg, /GOP/);
+assert.match(svg, /Fogle \+ Forward/);
+assert.match(svg, /Stinnett \+ MSCC/);
+assert.match(svg, /\$616k/);
+assert.match(svg, /\$373k/);
+assert.match(svg, /\$616,095/);
+assert.match(svg, /\$372,880/);
+assert.match(svg, /\$988,975/);
+assert.match(svg, /5,854\.4/);
+assert.match(svg, /3,409\.2/);
+assert.match(svg, /<path d="M/);
 assert.match(svg, /SD-30/);
 assert.match(svg, /October 6, 2026/);
 assert.match(svg, /Springfield/);
 
 const track = 948;
+{
+  const [dem, gop] = affiliationTotals(SD30_SAMPLE_BUYERS);
+  assert.equal(dem!.spend, 453350 + 162745);
+  assert.equal(gop!.spend, 253570 + 119310);
+  assert.equal(dem!.grp, 4873.5 + 980.9);
+  assert.equal(gop!.grp, 2766.6 + 642.6);
+  assert.equal(raceSpendTotal(SD30_SAMPLE_BUYERS), 453350 + 162745 + 253570 + 119310);
+}
 assert.equal(maxSpend(SD30_SAMPLE_BUYERS), 453350);
 assert.equal(maxGrp(SD30_SAMPLE_BUYERS), 4873.5);
 assert.equal(barWidth(453350, 453350, track), track);
@@ -137,6 +158,8 @@ assert.equal(
   "Betsy Fogle added $70,420 in Springfield TV for 939 GRP",
 );
 assert.doesNotMatch(formatJustInLine(SD30_SAMPLE_JUST_IN[0]!), /CPP/);
+assert.match(caption, /DMA spend: Dem \$616,095 \/ GOP \$372,880; race \$988,975/);
+assert.match(caption, /DMA GRP: Dem 5,854\.4 \/ GOP 3,409\.2/);
 
 {
   const logo = await loadTciLogoDataUri();
