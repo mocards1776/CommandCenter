@@ -3717,7 +3717,11 @@ function SportFront({
       : results
         ? `${results} ${results === 1 ? "final" : "finals"} · lines, decisions and the agate`
         : "Box scores",
-    teams: standings.length ? `${standings.length} ${standings.length === 1 ? "table" : "tables"} · your clubs marked` : "League tables",
+    teams: (page.standSlice?.count ?? standings.length)
+      ? `${page.standSlice?.count ?? standings.length} ${
+          (page.standSlice?.count ?? standings.length) === 1 ? "table" : "tables"
+        }${standings.length > (page.standSlice?.count ?? standings.length) ? ` · ${standings.length} in all` : ""} · your clubs marked`
+      : "League tables",
     leaders: leaders.length
       ? `${leaders.length} categories · the top ${Math.max(...leaders.map((g) => g.rows.length), 5)} in each${postLeaders ? " · postseason" : ""}`
       : postLeaders
