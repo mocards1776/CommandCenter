@@ -41,6 +41,7 @@ import NhlCoachPage from "@/pages/NhlCoachPage";
 import SoccerGamePage from "@/pages/SoccerGamePage";
 import HeatAlertPreviewPage from "@/pages/HeatAlertPreviewPage";
 import FieldDrivePreviewPage from "@/pages/FieldDrivePreviewPage";
+import MlbPbpPreviewPage from "@/pages/MlbPbpPreviewPage";
 import NewspaperWatchPreviewPage from "@/pages/NewspaperWatchPreviewPage";
 import NewspaperA1PreviewPage from "@/pages/NewspaperA1PreviewPage";
 import NewspaperSportPreviewPage from "@/pages/NewspaperSportPreviewPage";
@@ -140,6 +141,7 @@ export default function App() {
             {/* Token-gated client presentations — public, no app chrome */}
             <Route path="/story/:token" element={<PublicStoryPage />} />
             <Route path="/sports/field-drive-preview" element={<FieldDrivePreviewPage />} />
+            <Route path="/sports/mlb-pbp-preview" element={<MlbPbpPreviewPage />} />
             <Route path="/newspaper/watch-preview" element={<NewspaperWatchPreviewPage />} />
             <Route path="/newspaper/a1-preview" element={<NewspaperA1PreviewPage />} />
             <Route path="/newspaper/sport-preview" element={<NewspaperSportPreviewPage />} />
