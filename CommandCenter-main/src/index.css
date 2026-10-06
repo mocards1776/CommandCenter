@@ -4517,6 +4517,10 @@ li.counting .tt-count.card {
   flex: 1;
   min-height: 0;
 }
+/* News-only stories keep their type. Leftover canvas goes to the recap. */
+.wsj-inside-story:not(:has(.tt-recap-fill, .tt-recap-slot, .tt-recap-card)) {
+  flex: 0 1 auto;
+}
 
 /* ── Box score parts ────────────────────────────────────────────────── */
 .tt-mark {
