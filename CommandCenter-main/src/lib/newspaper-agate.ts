@@ -59,6 +59,8 @@ export type StarPick = { rank: number; person: BoxPerson; team: string | null };
 
 export type PeriodShots = { periods: string[]; away: (number | null)[]; home: (number | null)[]; awayTotal: string; homeTotal: string };
 
+export type EspnBoxPhoto = { url: string; caption: string | null };
+
 export type EspnBox = {
   /** The game as the summary's header tells it, for stories the page couldn't match to a board game. */
   game: BoxGame;
@@ -68,6 +70,10 @@ export type EspnBox = {
   shots: PeriodShots | null;
   stars: StarPick[];
   info: { label: string; value: string }[];
+  /** Article cuts from the summary, lead first — leftover fill may use a second. */
+  photos?: EspnBoxPhoto[];
+  /** ESPN "Next: …" note when the summary filed one. */
+  nextUp?: string | null;
 };
 
 /* ───────────────────────── column widths ───────────────────────── */
@@ -220,6 +226,10 @@ type SummaryRaw = {
   };
   scoringPlays?: SumPlay[];
   plays?: SumPlay[];
+  article?: {
+    story?: string;
+    images?: { url?: string; caption?: string; width?: number }[];
+  };
   leaders?: {
     team?: SumTeam;
     leaders?: { name?: string; displayName?: string; leaders?: { displayValue?: string; athlete?: SumAthlete }[] }[];
@@ -955,7 +965,31 @@ export async function fetchEspnBox(path: string, eventId: string): Promise<EspnB
     shots: hockey ? nhlShots(data, game, { away: statOf("away", "shotsTotal"), home: statOf("home", "shotsTotal") }) : null,
     stars,
     info: boxInfo(data),
+    photos: boxPhotos(data),
+    nextUp: nextUpFromSummary(data),
   };
+}
+
+function boxPhotos(data: SummaryRaw): EspnBoxPhoto[] {
+  const out: EspnBoxPhoto[] = [];
+  const seen = new Set<string>();
+  for (const img of data.article?.images ?? []) {
+    if (!img.url || seen.has(img.url)) continue;
+    seen.add(img.url);
+    out.push({ url: img.url, caption: img.caption?.trim() || null });
+    if (out.length >= 2) break;
+  }
+  return out;
+}
+
+function nextUpFromSummary(data: SummaryRaw): string | null {
+  for (const note of data.header?.competitions?.[0]?.notes ?? []) {
+    const h = note.headline?.trim() ?? "";
+    if (/^next\b/i.test(h) || /\bplays?\b.+\b(on|at|friday|saturday|sunday|monday|tuesday|wednesday|thursday)\b/i.test(h)) {
+      return h;
+    }
+  }
+  return null;
 }
 
 export const ESPN_BOX_PATHS = new Set([
@@ -1065,6 +1099,187 @@ export function printEspnBoxHtml(box: EspnBox): string {
   if (box.info.length) {
     parts.push(
       `<p class="tt-print-notes">${box.info.map((n) => `<i>${escPrint(n.label)}</i> ${escPrint(n.value)}.`).join(" ")}</p>`,
+    );
+  }
+  return parts.join("");
+}
+
+export type RecapFillMatter = {
+  quote?: string | null;
+  photo2?: EspnBoxPhoto | null;
+  nextUp?: string | null;
+  standings?: { team: string; record: string; me?: boolean }[];
+  related?: string[];
+};
+
+export type FlatScoringRow = {
+  period: string;
+  clock: string;
+  team: string;
+  play: string;
+  score: string;
+};
+
+export type CompactScoringLine = {
+  label: string;
+  plays: string;
+  score: string;
+};
+
+export type ScoringFitKind = "full" | "compact" | "tail" | "link";
+
+/** Period label the way a card scoring table sets it: 1st Q, 2nd P, OT. */
+export function shortPeriodLabel(label: string): string {
+  return label
+    .replace(/quarter/i, "Q")
+    .replace(/inning/i, "")
+    .replace(/period/i, "P")
+    .replace(/overtime/i, "OT")
+    .replace(/half/i, "H")
+    .trim();
+}
+
+export function flattenScoringRows(periods: ScoringPeriod[]): FlatScoringRow[] {
+  return periods.flatMap((period) =>
+    period.plays.map((play) => ({
+      period: shortPeriodLabel(period.label),
+      clock: play.clock,
+      team: play.team,
+      play: pieceText(play.lead),
+      score: play.score,
+    })),
+  );
+}
+
+/** One complete line per period, ending on that frame's last score. */
+export function compactScoringByPeriod(periods: ScoringPeriod[]): CompactScoringLine[] {
+  return periods
+    .filter((period) => period.plays.length)
+    .map((period) => ({
+      label: shortPeriodLabel(period.label),
+      plays: period.plays.map((play) => pieceText(play.lead)).filter(Boolean).join("; "),
+      score: period.plays[period.plays.length - 1]?.score ?? "",
+    }));
+}
+
+/** Last N complete plays so a short leftover still ends on the final. */
+export function scoringTail(rows: FlatScoringRow[], n: number): FlatScoringRow[] {
+  if (n <= 0) return [];
+  return rows.slice(-n);
+}
+
+const PRINT_FULL_PLAYS = 6;
+/** Print cannot measure leftover; a long team-stat table yields to Full story. */
+export const PRINT_TEAM_STAT_ROWS = 8;
+
+/** Card density keeps the key numbers; page density caps a long box at a handful of rows. */
+export function printTeamStatRows(box: EspnBox, density: "card" | "page" = "card"): { rows: StatLine[]; truncated: boolean } {
+  const all = box.teamStats;
+  if (!all.length) return { rows: [], truncated: false };
+  if (density === "card") {
+    const keys = keyStats(box);
+    const rows = keys.length ? keys : all.slice(0, PRINT_TEAM_STAT_ROWS);
+    return { rows, truncated: all.length > rows.length };
+  }
+  if (all.length <= PRINT_TEAM_STAT_ROWS) return { rows: all, truncated: false };
+  const keys = keyStats(box);
+  if (keys.length && keys.length <= PRINT_TEAM_STAT_ROWS) return { rows: keys, truncated: true };
+  return { rows: all.slice(0, PRINT_TEAM_STAT_ROWS), truncated: true };
+}
+
+/** Print cannot measure leftover; compact when the play-by-play will not fit a card. */
+export function printScoringMode(playCount: number, periodCount: number): ScoringFitKind {
+  if (playCount <= 0) return "link";
+  if (playCount <= PRINT_FULL_PLAYS) return "full";
+  if (periodCount > 0) return "compact";
+  return "tail";
+}
+
+function printScoringMore(): string {
+  return `<p class="tt-recap-scoring-more">Full scoring in Full story ›</p>`;
+}
+
+function printScoringRowsHtml(rows: FlatScoringRow[]): string {
+  return rows
+    .map(
+      (row) =>
+        `<tr><td class="per">${escPrint(row.period)}</td><td>${escPrint(row.clock)}</td><td class="n">${escPrint(row.team)}</td><td class="n play">${escPrint(row.play)}</td><td>${escPrint(row.score)}</td></tr>`,
+    )
+    .join("");
+}
+
+function printScoringFillHtml(box: EspnBox): string {
+  const periods = box.scoring;
+  if (!periods.length) return "";
+  const flat = flattenScoringRows(periods);
+  const compact = compactScoringByPeriod(periods);
+  const mode = printScoringMode(flat.length, compact.length);
+  const scoreHead = `${escPrint(box.game.away.abbrev)}-${escPrint(box.game.home.abbrev)}`;
+  if (mode === "compact") {
+    const rows = compact
+      .map(
+        (line) =>
+          `<tr><td class="per">${escPrint(line.label)}</td><td class="n play" colspan="3">${escPrint(line.plays)}</td><td>${escPrint(line.score)}</td></tr>`,
+      )
+      .join("");
+    return `<div class="tt-recap-fill-block tt-recap-scoring"><h4>Scoring</h4><table class="tt-recap-fill-score compact"><thead><tr><th></th><th class="n" colspan="3">Plays</th><th>${scoreHead}</th></tr></thead><tbody>${rows}</tbody></table>${printScoringMore()}</div>`;
+  }
+  const rows = mode === "tail" ? scoringTail(flat, PRINT_FULL_PLAYS) : flat;
+  const more = mode !== "full";
+  return `<div class="tt-recap-fill-block tt-recap-scoring"><h4>Scoring</h4><table class="tt-recap-fill-score"><thead><tr><th></th><th>Time</th><th class="n">Team</th><th class="n">Play</th><th>${scoreHead}</th></tr></thead><tbody>${printScoringRowsHtml(rows)}</tbody></table>${more ? printScoringMore() : ""}</div>`;
+}
+
+/**
+ * Leftover matter for a recap page or card, in Josh's order: scoring / team
+ * stats / shots first, then a second photo, a pull quote, next-up, standings,
+ * related headlines. Card density keeps key team numbers; page density sets
+ * the full team-stat table.
+ */
+export function printRecapFillHtml(box: EspnBox, matter: RecapFillMatter = {}, density: "card" | "page" = "card"): string {
+  const parts: string[] = [];
+  const scoringHtml = printScoringFillHtml(box);
+  if (scoringHtml) parts.push(scoringHtml);
+  const { rows: stats, truncated: statsTrimmed } = printTeamStatRows(box, density);
+  if (stats.length) {
+    const rows = stats
+      .map((s) => `<tr class="${s.sub ? "sub" : ""}"><td class="n">${escPrint(s.label)}</td><td>${escPrint(s.away)}</td><td>${escPrint(s.home)}</td></tr>`)
+      .join("");
+    parts.push(
+      `<div class="tt-recap-fill-block"><h4>Team stats</h4><table class="tt-recap-fill-stats"><thead><tr><th class="n"></th><th>${escPrint(box.game.away.abbrev)}</th><th>${escPrint(box.game.home.abbrev)}</th></tr></thead><tbody>${rows}</tbody></table>${
+        statsTrimmed ? `<p class="tt-recap-scoring-more">Full team stats in Full story ›</p>` : ""
+      }</div>`,
+    );
+  }
+  if (box.shots) {
+    const head = [...box.shots.periods, "T"].map((p) => `<th>${escPrint(p)}</th>`).join("");
+    const away = [...box.shots.away.map((v) => (v == null ? "–" : String(v))), box.shots.awayTotal].map((c) => `<td>${escPrint(c)}</td>`).join("");
+    const home = [...box.shots.home.map((v) => (v == null ? "–" : String(v))), box.shots.homeTotal].map((c) => `<td>${escPrint(c)}</td>`).join("");
+    parts.push(
+      `<div class="tt-recap-fill-block"><h4>Shots on goal</h4><table class="tt-recap-fill-stats"><thead><tr><th class="n"></th>${head}</tr></thead><tbody><tr><td class="n">${escPrint(box.game.away.short)}</td>${away}</tr><tr><td class="n">${escPrint(box.game.home.short)}</td>${home}</tr></tbody></table></div>`,
+    );
+  }
+  if (matter.photo2?.url) {
+    parts.push(
+      `<figure class="tt-recap-fill-photo"><img src="${escPrint(matter.photo2.url)}" alt="" />${
+        matter.photo2.caption ? `<figcaption>${escPrint(matter.photo2.caption)}</figcaption>` : ""
+      }</figure>`,
+    );
+  }
+  if (matter.quote) {
+    parts.push(`<blockquote class="tt-recap-fill-quote">${escPrint(matter.quote)}</blockquote>`);
+  }
+  if (matter.nextUp) {
+    parts.push(`<aside class="tt-recap-fill-next"><h4>Next</h4><p>${escPrint(matter.nextUp)}</p></aside>`);
+  }
+  if (matter.standings?.length) {
+    const rows = matter.standings
+      .map((r) => `<tr class="${r.me ? "me" : ""}"><td class="n">${escPrint(r.team)}</td><td>${escPrint(r.record)}</td></tr>`)
+      .join("");
+    parts.push(`<div class="tt-recap-fill-block"><h4>Standings</h4><table class="tt-recap-fill-stats"><tbody>${rows}</tbody></table></div>`);
+  }
+  if (matter.related?.length) {
+    parts.push(
+      `<ul class="tt-recap-fill-related">${matter.related.map((h) => `<li>${escPrint(h)}</li>`).join("")}</ul>`,
     );
   }
   return parts.join("");

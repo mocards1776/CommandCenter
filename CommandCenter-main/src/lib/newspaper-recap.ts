@@ -6,7 +6,7 @@
  * Sport adapters pick the line labels and the three leader chips.
  */
 
-import { tidy, truncateAtSentence } from "./newspaper-copy.ts";
+import { splitNewspaperSentences, tidy, truncateAtSentence } from "./newspaper-copy.ts";
 import type { BoxGame, BoxLeader, BoxPerson, BoxSide } from "./newspaper-box.ts";
 
 export const RECAP_WIDE_MIN = 800;
@@ -470,7 +470,21 @@ export function recapIsScoreOnly(text: string | null | undefined): boolean {
   const t = (text ?? "").replace(/\s+/g, " ").trim();
   if (!t) return true;
   if (recapSentences(t).length > 1) return false;
-  return /^.+?\s\d{1,3},\s+.+?\s\d{1,3}\.?$/.test(t);
+  return recapIsScoreStub(t) || /^.+?\s\d{1,3},\s+.+?\s\d{1,3}\.?$/.test(t);
+}
+
+/** Banner already shows the score — `Final: LAC 23 · SEA 30.` is not a graf. */
+export function recapIsScoreStub(text: string | null | undefined): boolean {
+  const t = (text ?? "").replace(/\s+/g, " ").trim();
+  if (!t) return true;
+  return /^(?:final|end|f\/ot|f\/so)\s*:\s*.+\s\d{1,3}\s*[·•|,–-]\s*.+\s\d{1,3}\.?$/i.test(t);
+}
+
+/** Drop score-only sentences so the card can set the recap body. */
+export function stripRecapScoreStubs(text: string | null | undefined): string {
+  return recapSentences(text ?? "")
+    .filter((s) => !recapIsScoreStub(s) && !recapIsScoreOnly(s))
+    .join(" ");
 }
 
 export function recapShouldDropCap(text: string | null | undefined): boolean {
@@ -482,7 +496,7 @@ export function recapShouldDropCap(text: string | null | undefined): boolean {
 export function recapBodyForPage(text: string | null | undefined): string {
   const { body } = splitApDateline(text ?? "");
   if (!body || recapIsScoreOnly(body)) return "";
-  return body;
+  return stripRecapScoreStubs(body);
 }
 
 export type RecapDropLead = {
@@ -516,21 +530,141 @@ export function recapDropLead(
   return { letter: clean.slice(0, 1), city: null, datelineRest: null, body: clean.slice(1) };
 }
 
-/** Full story when it fits; otherwise the last complete sentence before `max`. */
-export function recapPrintStory(
-  htmlOrText: string,
-  maxChars: number | null,
-): { dateline: string | null; body: string; dropCap: boolean } {
-  const stripped = (htmlOrText ?? "")
+function stripRecapCopy(htmlOrText: string): string {
+  return (htmlOrText ?? "")
     .replace(/<[^>]+>/g, " ")
     .replace(/\s*-{3,}\s*See AP['’]?s[\s\S]*$/i, "")
     .replace(/\s*_{3,}\s*AP [\s\S]*$/i, "")
     .replace(/\s*-{3,}\s*$/g, "")
     .replace(/\s+/g, " ")
     .trim();
-  const { dateline, body: raw } = splitApDateline(stripped);
+}
+
+/**
+ * A quotation from later in the wrap, used to fill leftover space after the
+ * lead graf. Prefers a spoken quote; returns null when the copy has none.
+ */
+export function recapPullQuote(htmlOrText: string): string | null {
+  const stripped = stripRecapCopy(htmlOrText);
+  const { body } = splitApDateline(stripped);
+  if (!body) return null;
+  const paras = body
+    .split(/\n{2,}/)
+    .map((p) => p.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  const rest = paras.slice(1).join(" ") || body;
+  const quotes = [...rest.matchAll(/[“"]([^”"]{50,180})[”"]/g)].map((m) => m[1]!.trim());
+  if (!quotes.length) return null;
+  const pick = quotes.sort((a, b) => b.length - a.length)[0]!;
+  return `“${pick.replace(/[,.]$/, "")}.”`;
+}
+
+/** Full story when it fits; otherwise the last complete sentence before `max`. */
+export function recapPrintStory(
+  htmlOrText: string,
+  maxChars: number | null,
+): { dateline: string | null; body: string; dropCap: boolean } {
+  const { dateline, body: raw } = splitApDateline(stripRecapCopy(htmlOrText));
   if (!raw || recapIsScoreOnly(raw)) return { dateline, body: "", dropCap: false };
   const body = maxChars != null ? truncateAtSentence(raw, maxChars) : raw;
   if (!body || recapIsScoreOnly(body)) return { dateline, body: "", dropCap: false };
   return { dateline, body, dropCap: recapShouldDropCap(body) };
+}
+
+/** A card graf is 2–4 sentences of the lead; lead cards can run a little longer. */
+export const RECAP_CARD_GRAF = 560;
+export const RECAP_LEAD_GRAF = 640;
+const RECAP_GRAF_MIN_SENTENCES = 2;
+const RECAP_GRAF_MAX_SENTENCES = 4;
+const RECAP_GRAF_SHORT_WORDS = 25;
+
+function recapWordCount(text: string): number {
+  return text.split(/\s+/).filter(Boolean).length;
+}
+
+/**
+ * Paper card copy: a real first paragraph of 2–4 sentences. Uses the first
+ * full paragraph of the recap, or the first two when that lead is under
+ * ~25 words (a kicker fragment, not a graf). Cut on a sentence. A one-line
+ * score is omitted.
+ */
+/** Injury notes may mention last night's score; they are not the game story. */
+export function isInjuryRecapHeadline(text: string): boolean {
+  return /\binjur|dislocat|surgery|day-to-day|questionable|doubtful|adductor|ruled out|week-to-week|out for (?:the )?(?:season|year)\b/i.test(
+    text,
+  );
+}
+
+/** City + club ("Los Angeles Dodgers") becomes the nickname so a kicker fits. */
+export function recapTeamNick(name: string | null | undefined): string {
+  const raw = (name ?? "").replace(/\s+/g, " ").trim();
+  if (!raw) return "";
+  const parts = raw.split(" ");
+  if (parts.length === 1) return raw;
+  if (/^golden$/i.test(parts[0]) || (/^vegas$/i.test(parts[0]) && /^golden$/i.test(parts[1] ?? ""))) {
+    const nick = parts.slice(-2).join(" ");
+    return nick.length <= 16 ? nick : parts[parts.length - 1]!;
+  }
+  return parts[parts.length - 1]!;
+}
+
+/**
+ * Compact kicker: league + winning (or featured) nickname. Never the full
+ * city+club string, which letter-spaces off the card.
+ */
+export function recapKicker(
+  card: RecapCardBits & { teamName?: string | null; sportLabel?: string | null; round?: string | null },
+  game?: BoxGame | null,
+): string {
+  const league = (card.sportLabel || game?.league || "").trim();
+  const winner = game ? (game.away.winner ? game.away : game.home.winner ? game.home : null) : null;
+  const nick = recapTeamNick(winner?.short || card.teamName);
+  const bits = [league || null, card.round || (card.postseason ? "Postseason" : null), nick && nick.length <= 16 ? nick : null].filter(
+    Boolean,
+  ) as string[];
+  if (bits.length) return bits.join(" · ");
+  return league || nick || "";
+}
+
+/** AP/ESPN game story when the board filed one; otherwise the card body. */
+export function recapCardSource(
+  card: { headline: string; body?: string | null; dek?: string | null },
+  game?: { recap?: { html?: string | null; headline?: string | null } | null } | null,
+): { headline: string; body: string } {
+  const recapHtml = game?.recap?.html ?? "";
+  const recapText = stripRecapScoreStubs(recapHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim());
+  const cardBody = stripRecapScoreStubs((card.body ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim());
+  const injury = isInjuryRecapHeadline(`${card.headline} ${card.dek ?? ""}`);
+  if (recapText.length >= 40 && (injury || recapText.length >= Math.min(80, cardBody.length))) {
+    return { headline: game?.recap?.headline || card.headline, body: recapText };
+  }
+  return { headline: card.headline, body: cardBody || stripRecapScoreStubs(card.dek ?? "") };
+}
+
+export function recapCardGraf(
+  htmlOrText: string,
+  maxChars: number = RECAP_CARD_GRAF,
+): { dateline: string | null; body: string; dropCap: boolean } {
+  const stripped = (htmlOrText ?? "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s*-{3,}\s*See AP['’]?s[\s\S]*$/i, "")
+    .replace(/\s*_{3,}\s*AP [\s\S]*$/i, "")
+    .replace(/\s*-{3,}\s*$/g, "")
+    .trim();
+  const blocks = stripped
+    .split(/\n{2,}/)
+    .map((p) => p.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  const first = blocks[0] ?? "";
+  const { dateline, body: leadRaw } = splitApDateline(first);
+  const lead = stripRecapScoreStubs(leadRaw);
+  if (!lead || recapIsScoreOnly(lead)) return { dateline, body: "", dropCap: false };
+  const second = stripRecapScoreStubs(blocks[1]?.replace(/\s+/g, " ").trim() ?? "");
+  const raw = recapWordCount(lead) < RECAP_GRAF_SHORT_WORDS && second ? `${lead} ${second}` : lead;
+  const sentences = splitNewspaperSentences(raw);
+  const take = Math.min(RECAP_GRAF_MAX_SENTENCES, Math.max(RECAP_GRAF_MIN_SENTENCES, sentences.length));
+  const picked = sentences.slice(0, take).join(" ");
+  const body = truncateAtSentence(picked, maxChars);
+  if (!body || recapIsScoreOnly(body)) return { dateline, body: "", dropCap: false };
+  return { dateline, body, dropCap: Boolean(dateline) || recapShouldDropCap(body) };
 }

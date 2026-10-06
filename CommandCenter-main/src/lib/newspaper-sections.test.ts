@@ -28,9 +28,11 @@ import {
   essentialsFromDesks,
   HISTORIC_NATIONAL_STATUS,
   insertCoachesFocus,
+  insertMissingRecaps,
   isColumnStory,
   isDeskStory,
   isGameRecapCopy,
+  isMultiGameRoundup,
   isSingleGameRecap,
   isHistoricNationalEvent,
   isHistoricNationalStory,
@@ -43,6 +45,12 @@ import {
   sameSectionAStory,
   MIN_SECTION_PAGES,
   orderSportSections,
+  packSportInsideCards,
+  dedupeSportRecaps,
+  sameRecapGame,
+  sportInsideCards,
+  sportInsideIsRecaps,
+  sportInsidePackSize,
   SECTION_A_TITLE,
   sortComingUp,
   sourceStoryId,
@@ -1471,12 +1479,60 @@ const sundayNflPaper = buildEdition({
   clubs: [chiefs],
   edition: "2026-10-05-morning",
 });
+assert(sportInsidePackSize("football/nfl") === 2, "NFL packs two recap cards so leftover can take scoring");
+assert(sportInsidePackSize("baseball/mlb") === 2, "MLB packs two recap cards");
+assert(sportInsidePackSize("hockey/nhl") === 2, "NHL packs two recap cards");
+assert(sportInsidePackSize("football/college-football") === 2, "CFB packs two recap cards");
+assert(sportInsidePackSize("basketball/nba") === 3, "NBA packs three compact wraps");
+assert(
+  packSportInsideCards(["a", "b", "c", "d", "e", "f"], 2)
+    .map((p) => p.join(""))
+    .join("|") === "ab|cd|ef",
+  "six recaps become three two-card pages",
+);
+assert(
+  packSportInsideCards(["a", "b", "c", "d"], 3)
+    .map((p) => p.join(""))
+    .join("|") === "ab|cd",
+  "a leftover singleton is pulled back so two pages stay full",
+);
+assert(
+  packSportInsideCards(["a", "b", "c", "d", "e"], 2)
+    .map((p) => p.join(""))
+    .join("|") === "ab|cde",
+  "five recaps park the leftover on the last page instead of a singleton",
+);
+assert(
+  packSportInsideCards(["a", "b", "c", "d", "e"], 3)
+    .map((p) => p.join(""))
+    .join("|") === "abc|de",
+  "five at three still finish 3+2",
+);
+assert(packSportInsideCards(["a"], 2).length === 0, "a lone leftover does not get its own page");
+assert(
+  packSportInsideCards(["a", "b", "c"], 2)
+    .map((p) => p.join(""))
+    .join("|") === "abc",
+  "three leftover recaps stay 3-up instead of 2+1",
+);
+
 const sundayNflInside = sundayNflPaper.pages.filter((p) => p.kind === "sport-inside" && p.section === "NFL");
 assert(sundayNflInside.length > 3, "NFL inside pages grow with Sunday's slate instead of stopping at six wraps");
+assert(
+  sundayNflInside.every((p) => p.kind === "sport-inside" && sportInsideCards(p).length >= 2 && sportInsideCards(p).length <= 3),
+  "Sunday NFL recap pages hold 2–3 cards, never a half-empty singleton",
+);
+assert(sundayNflInside.every((p) => p.kind === "sport-inside" && sportInsideIsRecaps(p)), "Sunday NFL inside pages are recap cards");
 const sundayNflRecaps = sundayNflPaper.pages.find((p) => p.kind === "sport-front" && p.section === "NFL" && p.focus === "recaps");
 assert(
   sundayNflRecaps?.kind === "sport-front" && sundayNflRecaps.articles.length >= 14,
   "the recaps desk lists every in-window NFL final",
+);
+assert(
+  sundayNflRecaps?.kind === "sport-front" &&
+    sundayNflRecaps.articles.length ===
+      sundayNflInside.reduce((n, p) => n + (p.kind === "sport-inside" ? sportInsideCards(p).length : 0), 0) + 2,
+  "NFL2 holds two cards; the rest of the slate prints on later pages",
 );
 
 const favoriteWrap = card({
@@ -1559,6 +1615,31 @@ assert(
 assert(
   firstNfl?.kind === "sport-front" && firstNfl.articles[0]?.card.id === "wire-nfl-ind-lead",
   "a league wrap leads the NFL front once the favorite recap is in A",
+);
+assert(
+  recapsFirst.pages.some((p) => {
+    if (p.kind === "favorites-front") return [p.lead, p.second, p.third].some((c) => c?.id === "wire-nfl-kc-lead");
+    if (p.kind === "favorites-inside") return p.primary.id === "wire-nfl-kc-lead" || p.secondary?.id === "wire-nfl-kc-lead";
+    if (p.kind === "favorites-continue") return p.jumps.some((j) => j.card.id === "wire-nfl-kc-lead");
+    return false;
+  }),
+  "the Chiefs wrap still runs as a full Section A story",
+);
+assert(
+  recapsFirst.pages.every((p) => {
+    if (p.kind === "sport-inside" && p.section === "NFL") {
+      return sportInsideCards(p).every((c) => c.id !== "wire-nfl-kc-lead");
+    }
+    if (p.kind === "sport-front" && p.section === "NFL") {
+      return p.articles.every((a) => a.card.id !== "wire-nfl-kc-lead");
+    }
+    return true;
+  }),
+  "the favorite-team recap does not reprint on the NFL section after it files in Section A",
+);
+assert(
+  recapsFirst.pages.filter((p) => p.kind === "favorites-inside").every((p) => !("more" in p)),
+  "Section A inside pages stay two-up full stories, not packed recap cards",
 );
 assert(
   recapsPage?.kind === "sport-front" && recapsPage.articles.some((a) => a.card.id === "wire-nfl-ind-lead"),
@@ -2030,5 +2111,198 @@ const eveningFiled = fileEditionStories({
 });
 assert(eveningFiled.some((c) => c.id === "wire-nfl-kc-vegas"), "Monday evening still files Sunday's Chiefs final");
 assert(eveningFiled.some((c) => c.id === "wire-nfl-dal-hou"), "Monday evening still files Sunday's Cowboys final");
+
+const bravesA = card({
+  id: "news-braves-kerr",
+  headline: "Braves lean on Kerr, Fuentes in lieu of Sale, win NLDS Game 2",
+  sportLabel: "MLB",
+  leaguePath: "baseball/mlb",
+  teamName: "Los Angeles Dodgers",
+  status: "Final",
+  scoreLine: "ATL 3 · LAD 2",
+  gameId: "401809111",
+  body: "LOS ANGELES -- — When spring training reconvened, Ray Kerr was a minor league journeyman. ".repeat(6),
+});
+const bravesB = card({
+  id: "news-braves-harris",
+  headline: "Michael Harris II leads Braves to 3-2 win over Dodgers in Game 2 to tie NLDS",
+  sportLabel: "MLB",
+  leaguePath: "baseball/mlb",
+  teamName: "Atlanta Braves",
+  status: "Final",
+  scoreLine: "ATL 3 · LAD 2",
+  body: "Michael Harris II doubled and homered as Atlanta evened the series. ".repeat(6),
+});
+const brewers = card({
+  id: "news-brewers-walk",
+  headline: "Chourio's 2-run single with 2 outs in 9th lifts Brewers over Padres",
+  sportLabel: "MLB",
+  leaguePath: "baseball/mlb",
+  teamName: "Milwaukee Brewers",
+  status: "Final",
+  scoreLine: "SD 3 · MIL 4",
+  gameId: "401809222",
+  body: "MILWAUKEE -- — Jackson Chourio hit a two-run single in the tenth. ".repeat(6),
+});
+assert(sameRecapGame(bravesA, bravesB), "two write-ups of Braves-Dodgers are the same game");
+assert(!sameRecapGame(bravesA, brewers), "Brewers-Padres is a different game");
+const mlbDeduped = dedupeSportRecaps([bravesA, bravesB, brewers]);
+assert(mlbDeduped.length === 2, "one card per game");
+assert(
+  mlbDeduped.filter((c) => sameRecapGame(c, bravesA)).length === 1,
+  "Braves 3, Dodgers 2 prints once",
+);
+
+const jagsRecap = card({
+  id: "wire-nfl-jax",
+  headline: "Jaguars hold off Bengals 22-17",
+  sportLabel: "NFL",
+  leaguePath: "football/nfl",
+  status: "Final",
+  scoreLine: "JAX 22 · CIN 17",
+  gameId: "401547801",
+  wrapKind: "espn",
+  body: "JACKSONVILLE -- — Trevor Lawrence threw two touchdown passes. ".repeat(8),
+});
+const higginsNote = card({
+  id: "news-higgins",
+  headline: "Bengals WR Tee Higgins day-to-day with adductor injury, coach saying",
+  sportLabel: "NFL",
+  leaguePath: "football/nfl",
+  teamName: "Cincinnati Bengals",
+  status: "Final",
+  scoreLine: "JAX 22 · CIN 17",
+  gameId: "401547801",
+  body: "Higgins is considered day-to-day with an adductor issue. ".repeat(4),
+});
+const recapWins = dedupeSportRecaps([higginsNote, jagsRecap]);
+assert(recapWins.length === 1 && recapWins[0]!.id === "wire-nfl-jax", "the game recap beats the injury note");
+
+const knightsWrap = card({
+  id: "news-knights",
+  headline: "Golden Knights beat the Canucks 3-2 on Gatcomb's go-ahead goal",
+  dek: "Marc Gatcomb scored late and the Vegas Golden Knights downed Vancouver.",
+  sportLabel: "NHL",
+  leaguePath: "hockey/nhl",
+  teamName: "Vancouver Canucks",
+  body: "Marc Gatcomb scored the go-ahead goal. ".repeat(6),
+});
+assert(isSingleGameRecap(knightsWrap), "Vegas Golden Knights is one final, not a three-team roundup");
+assert(!isMultiGameRoundup(knightsWrap), "Vegas in Golden Knights is not the Raiders");
+
+const oneFinalPaper = buildEdition({
+  stories: [otherWrap],
+  clubs: [chiefs],
+  edition: "2026-10-05-morning",
+});
+assert(
+  !oneFinalPaper.pages.some((p) => p.kind === "sport-inside" && p.section === "NFL"),
+  "a sport with one compact card does not get its own mostly-empty inside page",
+);
+const secondNfl = card({
+  id: "wire-nfl-buf-lead",
+  headline: "Bills beat the Saints",
+  sportLabel: "NFL",
+  leaguePath: "football/nfl",
+  status: "Final",
+  scoreLine: "BUF 24 · NO 17",
+  gameId: "oth-buf",
+  when: "2026-10-04T17:00:00Z",
+  body: "Buffalo won at home. ".repeat(8),
+});
+const twoFinalPaper = buildEdition({
+  stories: [otherWrap, secondNfl],
+  clubs: [chiefs],
+  edition: "2026-10-05-morning",
+});
+assert(
+  !twoFinalPaper.pages.some((p) => p.kind === "sport-inside" && p.section === "NFL"),
+  "two compact cards stay on the recaps desk",
+);
+
+assert(isGameWrapStory({ id: "box-football/nfl-401772001" }), "a board wrap is a game wrap");
+const boardNfl = Array.from({ length: 15 }, (_, i) =>
+  card({
+    id: `box-nfl-${401770000 + i}`,
+    headline: `Sunday final ${i}`,
+    sportLabel: "NFL",
+    leaguePath: "football/nfl",
+    status: "Final",
+    scoreLine: `AA ${10 + i} · BB ${7 + i}`,
+    gameId: `${401770000 + i}`,
+    when: "2026-10-04T20:00:00Z",
+    dek: `The visiting club won game ${i} on Sunday afternoon.`,
+  }),
+);
+const eveningBoardPaper = buildEdition({
+  stories: [],
+  boardCards: boardNfl,
+  clubs: [chiefs],
+  edition: "2026-10-05-evening",
+});
+const eveningRecaps = eveningBoardPaper.pages.find(
+  (p) => p.kind === "sport-front" && p.section === "NFL" && p.focus === "recaps",
+);
+const eveningInside = eveningBoardPaper.pages.filter((p) => p.kind === "sport-inside" && p.section === "NFL");
+const eveningPrinted = eveningInside.reduce(
+  (n, p) => n + (p.kind === "sport-inside" ? sportInsideCards(p).length : 0),
+  0,
+);
+assert(
+  eveningRecaps?.kind === "sport-front" && eveningRecaps.articles.length === 15,
+  "evening board finals all list on the recaps desk",
+);
+assert(eveningPrinted === 13, "evening desk holds two; the other 13 print on later pages");
+assert(
+  eveningRecaps?.kind === "sport-front" && eveningRecaps.articles.length === eveningPrinted + 2,
+  "the rest-of-the-slate count matches what prints across NFL2+",
+);
+const filedSeven = boardNfl.slice(0, 7).map((c, i) =>
+  card({
+    ...c,
+    id: `wire-nfl-filed-${i}`,
+    gameId: c.gameId,
+    body: `The filed wrap for game ${i} ran in the evening press. `.repeat(8),
+  }),
+);
+const filedPlusBoard = buildEdition({
+  stories: filedSeven,
+  boardCards: boardNfl,
+  clubs: [chiefs],
+  edition: "2026-10-05-evening",
+});
+const filedPlusRecaps = filedPlusBoard.pages.find(
+  (p) => p.kind === "sport-front" && p.section === "NFL" && p.focus === "recaps",
+);
+assert(
+  filedPlusRecaps?.kind === "sport-front" && filedPlusRecaps.articles.length === 15,
+  "filed wraps plus the board still print every final, not just the seven that filed",
+);
+const shortFiled = buildEdition({
+  stories: filedSeven,
+  clubs: [chiefs],
+  edition: "2026-10-05-evening",
+});
+const patched = insertMissingRecaps(shortFiled, boardNfl);
+const patchedRecaps = patched.pages.find(
+  (p) => p.kind === "sport-front" && p.section === "NFL" && p.focus === "recaps",
+);
+const patchedInside = patched.pages.filter((p) => p.kind === "sport-inside" && p.section === "NFL");
+const patchedPrinted = patchedInside.reduce(
+  (n, p) => n + (p.kind === "sport-inside" ? sportInsideCards(p).length : 0),
+  0,
+);
+assert(
+  patchedRecaps?.kind === "sport-front" && patchedRecaps.articles.length === 15,
+  "insertMissingRecaps lists every board final on the recaps desk",
+);
+assert(
+  patchedRecaps?.kind === "sport-front" && patchedPrinted === 13 && patchedRecaps.articles.length === 15,
+  "leftover board finals continue after the desk's two cards",
+);
+assert(
+  patchedInside.every((p) => p.kind === "sport-inside" && sportInsideCards(p).length >= 2),
+  "insertMissingRecaps never opens a one-card leftover folio",
+);
 
 console.log("newspaper-sections ok");

@@ -36,6 +36,7 @@ import {
   withoutEditorStamps,
 } from "./newspaper.ts";
 import { cleanStoryCopy, isPeripheralClubStory, killedSource } from "./newspaper-copy.ts";
+import { isInjuryRecapHeadline } from "./newspaper-recap.ts";
 import { storySource } from "./newspaper-source.ts";
 import type { GameWrapCard } from "./newspaper-sports";
 import {
@@ -265,7 +266,48 @@ export type SportInsidePage = PageBase & {
   path: string;
   primary: GameWrapCard;
   secondary?: GameWrapCard;
+  /** Third (and fourth, for NBA) recap on a packed card page. */
+  more?: GameWrapCard[];
 };
+
+/** 2 cards on a sport page so leftover can take scoring; NBA holds 3. */
+export function sportInsidePackSize(path: string): number {
+  return path.startsWith("basketball/") ? 3 : 2;
+}
+
+/**
+ * Pack recaps so a leftover singleton never gets its own page: pull it onto
+ * the previous folio (3-up / 2+1). A lone leftover with no previous page is
+ * dropped here so the recaps desk can print it as a 3-up instead.
+ */
+export function packSportInsideCards<T>(cards: T[], size: number): T[][] {
+  if (!cards.length) return [];
+  const pages: T[][] = [];
+  let i = 0;
+  while (i < cards.length) {
+    const left = cards.length - i;
+    if (left === 1) {
+      if (pages.length) {
+        const prev = pages[pages.length - 1]!;
+        if (prev.length > 2) {
+          const stolen = prev.pop()!;
+          pages.push([stolen, cards[i]!]);
+        } else {
+          prev.push(cards[i]!);
+        }
+      }
+      break;
+    }
+    const take = Math.min(size, left);
+    pages.push(cards.slice(i, i + take));
+    i += take;
+  }
+  return pages;
+}
+
+export function sportInsideCards(page: SportInsidePage): GameWrapCard[] {
+  return [page.primary, page.secondary, ...(page.more ?? [])].filter((c): c is GameWrapCard => Boolean(c));
+}
 
 /** The Missouri desk: statehouse and political headlines, deduped across outlets. */
 export type MissouriPage = PageBase & {
@@ -644,6 +686,11 @@ export function isGameWrap(card: GameWrapCard): boolean {
   return isGameWrapStory(card);
 }
 
+export function sportInsideIsRecaps(page: SportInsidePage): boolean {
+  const card = page.primary;
+  return isGameWrap(card) || isRecapStory(card) || Boolean(card.scoreLine && /\d/.test(card.scoreLine));
+}
+
 /** Carried unread game copy. It may run inside; it is not last night and must not open A1. */
 export function isHoldoverGame(card: GameWrapCard): boolean {
   return Boolean(card.holdover && isGameWrap(card));
@@ -914,6 +961,9 @@ export function sectionFitScore(card: GameWrapCard, path: string): number {
 }
 
 function preferStory(next: GameWrapCard, prev: GameWrapCard): boolean {
+  const nextInj = isInjuryRecapHeadline(`${next.headline} ${next.dek ?? ""}`);
+  const prevInj = isInjuryRecapHeadline(`${prev.headline} ${prev.dek ?? ""}`);
+  if (nextInj !== prevInj) return !nextInj;
   const nextId = sourceStoryId(next);
   const prevId = sourceStoryId(prev);
   if (nextId && nextId === prevId && next.leaguePath !== prev.leaguePath) {
@@ -955,7 +1005,7 @@ function storyUrlKey(card: GameWrapCard): string | null {
   }
 }
 
-function storyGameId(card: GameWrapCard): string | null {
+export function storyGameId(card: GameWrapCard): string | null {
   const raw = card.gameId ?? "";
   const fromField = raw.match(/(\d{6,})/)?.[1] ?? (raw.length >= 4 ? raw : null);
   if (fromField) return fromField;
@@ -967,17 +1017,93 @@ function storyGameId(card: GameWrapCard): string | null {
   return /^(?:wire|recap|recent|wrap)[^\d]*(\d{6,})/.exec(card.id)?.[1] ?? null;
 }
 
+/** Same final: ESPN game id, line-score abbrevs, or both clubs named. */
+export function sameRecapGame(a: GameWrapCard, b: GameWrapCard): boolean {
+  const idA = storyGameId(a);
+  const idB = storyGameId(b);
+  if (idA && idB) return idA === idB;
+  const scA = scoreAbbrevs(a.scoreLine) ?? packAbbrevs(a);
+  const scB = scoreAbbrevs(b.scoreLine) ?? packAbbrevs(b);
+  if (scA && scB && scA === scB) return true;
+  return namedTeams(a).size >= 2 && namedTeams(b).size >= 2 && shareMatchup(a, b);
+}
+
+/**
+ * One compact card per game. The AP/ESPN wrap wins; an injury note only
+ * stays when that game has no recap.
+ */
+export function dedupeSportRecaps(
+  cards: GameWrapCard[],
+  liveGameId?: (card: GameWrapCard) => string | null,
+): GameWrapCard[] {
+  const groups: GameWrapCard[][] = [];
+  const same = (a: GameWrapCard, b: GameWrapCard) => {
+    const liveA = liveGameId?.(a);
+    const liveB = liveGameId?.(b);
+    if (liveA && liveB && liveA === liveB) return true;
+    return sameRecapGame(a, b);
+  };
+  for (const card of cards) {
+    const hits: number[] = [];
+    for (let i = 0; i < groups.length; i += 1) {
+      if (groups[i]!.some((prev) => same(card, prev))) hits.push(i);
+    }
+    if (!hits.length) {
+      groups.push([card]);
+      continue;
+    }
+    const [first, ...rest] = hits;
+    groups[first!]!.push(card);
+    for (const i of rest.sort((a, b) => b - a)) {
+      groups[first!]!.push(...groups[i]!);
+      groups.splice(i, 1);
+    }
+  }
+  return groups.map(pickBetterStory);
+}
+
+function scoreAbbrevs(scoreLine: string | null | undefined): string | null {
+  if (!scoreLine) return null;
+  const parts = [...scoreLine.matchAll(/\b([A-Z]{2,4})\s+\d+/g)].map((m) => m[1]!.toLowerCase());
+  if (parts.length < 2) return null;
+  return [parts[0]!, parts[1]!].sort().join("-");
+}
+
+function packAbbrevs(card: GameWrapCard): string | null {
+  const pack = card.recapGame;
+  if (!pack?.away.abbrev || !pack.home.abbrev) return null;
+  return [pack.away.abbrev, pack.home.abbrev].map((a) => a.toLowerCase()).sort().join("-");
+}
+
+const RECAP_NICKS = [
+  "braves", "dodgers", "brewers", "padres", "phillies", "mets", "yankees", "red sox",
+  "cubs", "cardinals", "guardians", "tigers", "royals", "twins", "white sox", "astros",
+  "rangers", "mariners", "angels", "athletics", "orioles", "rays", "blue jays", "nationals",
+  "marlins", "pirates", "reds", "rockies", "diamondbacks", "giants",
+  "chiefs", "raiders", "lions", "panthers", "jaguars", "bengals", "colts", "texans",
+  "cowboys", "eagles", "giants", "commanders", "packers", "bears", "vikings", "saints",
+  "falcons", "buccaneers", "rams", "49ers", "seahawks", "cardinals", "chargers", "broncos",
+  "ravens", "steelers", "browns", "bills", "dolphins", "jets", "patriots", "titans",
+  "canucks", "blues", "avalanche", "wild", "jets", "blackhawks", "predators",
+  "stars", "oilers", "flames", "kraken", "sharks", "kings", "ducks", "golden knights",
+  "maple leafs", "canadiens", "senators", "bruins", "rangers", "islanders", "devils",
+  "flyers", "capitals", "penguins", "hurricanes", "lightning", "panthers",
+];
+
 const TEAM_ALIASES: [string, string[]][] = [
   ["cowboys", ["cowboys", "dallas"]],
   ["texans", ["texans", "houston"]],
   ["lions", ["lions", "detroit"]],
   ["panthers", ["panthers", "carolina"]],
   ["chiefs", ["chiefs"]],
-  ["raiders", ["raiders", "vegas"]],
+  ["raiders", ["raiders"]],
   ["blues", ["blues"]],
   ["avalanche", ["avalanche", "colorado"]],
   ["mizzou", ["mizzou", "missouri", "tigers"]],
   ["florida", ["florida", "gators"]],
+  ...RECAP_NICKS.filter((n) => !["cowboys", "texans", "lions", "panthers", "chiefs", "raiders", "blues", "avalanche"].includes(n)).map(
+    (n): [string, string[]] => [n, [n]],
+  ),
 ];
 
 const FAVORITE_TEAM: Record<string, string> = {
@@ -1040,6 +1166,7 @@ export function isMultiGameRoundup(card: GameWrapCard): boolean {
   if (/\bweek \d+\b/i.test(head) && /\b(takeaways|comebacks?|roundup|results|scores)\b/i.test(head) && !/\bvs\.?\b/i.test(head)) {
     return true;
   }
+  if (scoreAbbrevs(card.scoreLine) || packAbbrevs(card)) return false;
   return namedTeams(card).size >= 3;
 }
 
@@ -1110,7 +1237,7 @@ export function sameSectionAStory(a: GameWrapCard, b: GameWrapCard): boolean {
   }
   const gameA = storyGameId(a);
   const gameB = storyGameId(b);
-  if (gameA && gameB && gameA === gameB) return true;
+  if (gameA && gameB) return gameA === gameB;
   if (isGameRecapCopy(a) && isGameRecapCopy(b) && shareMatchup(a, b)) return true;
   if (isMainGameStory(a) && isMainGameStory(b) && sameStory(headlineTokens(a), headlineTokens(b))) {
     return true;
@@ -1526,24 +1653,22 @@ function sportPages(
   const isStoryFocus = (f: SportFocus): boolean => f === "front" || f === "recaps" || f === "news" || f === "opener";
   const storyFocuses = focuses.filter(isStoryFocus);
   const refFocuses = focuses.filter((f) => !isStoryFocus(f));
-  const recapPool = orderSportRecaps(
-    unique.filter((card) => isGameWrap(card) || isRecapStory(card)),
-    id.path,
+  const recapPool = dedupeSportRecaps(
+    orderSportRecaps(
+      unique.filter((card) => isGameWrap(card) || isRecapStory(card)),
+      id.path,
+    ),
   );
   const newsPool = unique
     .filter((card) => !isGameWrap(card) && !isSportFiller(card, recapPool))
     .slice(0, SPORT_NEWS_CAP);
   const frontPool = orderSportSectionFront([...recapPool, ...newsPool], id.path, edition);
   const inside: SportInsidePage[] = [];
-  const full = desk
-    ? []
-    : [
-        ...recapPool.filter(hasStoryCopy),
-        ...newsPool.filter(hasStoryCopy).slice(0, NEWS_INSIDE_CAP),
-      ];
-  for (let i = 0; i < full.length; i += 2) {
-    const primary = full[i]!;
-    const secondary = full[i + 1];
+  // Desk prints the first two as a 2-up; leftover cards continue on later pages.
+  // Evening/midday still paginate — dropping them left "15 finals" with a slate of 2.
+  const recapCards = recapPool.slice(2);
+  const newsFull = desk ? [] : newsPool.filter(hasStoryCopy).slice(0, NEWS_INSIDE_CAP);
+  for (const slice of packSportInsideCards(recapCards, sportInsidePackSize(id.path))) {
     inside.push({
       kind: "sport-inside",
       folio: "",
@@ -1552,8 +1677,22 @@ function sportPages(
       sectionPage: 0,
       sectionCount: 0,
       path: id.path,
-      primary,
-      secondary,
+      primary: slice[0]!,
+      secondary: slice[1],
+      more: slice.slice(2),
+    });
+  }
+  for (let i = 0; i < newsFull.length; i += 2) {
+    inside.push({
+      kind: "sport-inside",
+      folio: "",
+      section: id.code,
+      sectionTitle: id.title,
+      sectionPage: 0,
+      sectionCount: 0,
+      path: id.path,
+      primary: newsFull[i]!,
+      secondary: newsFull[i + 1],
     });
   }
 
@@ -1599,8 +1738,9 @@ function sportPages(
   const sportFolioByStory: Record<string, string> = {};
   for (const page of numbered) {
     if (page.kind !== "sport-inside") continue;
-    sportFolioByStory[page.primary.id] = page.folio;
-    if (page.secondary) sportFolioByStory[page.secondary.id] = page.folio;
+    for (const card of sportInsideCards(page)) {
+      sportFolioByStory[card.id] = page.folio;
+    }
   }
   const sectionDesks = numbered.flatMap((page) =>
     page.kind === "sport-front" ? [{ focus: page.focus, folio: page.folio }] : [],
@@ -1728,6 +1868,11 @@ export function buildEdition(opts: {
   postseasonPaths?: string[];
   /** League paths with favorite coaches on file — each may get the weekly coaches desk. */
   coachPaths?: string[];
+  /**
+   * Live board finals that never filed as wire wraps. Merged after deskCopy so
+   * Sunday's slate still prints in the Monday evening paper.
+   */
+  boardCards?: GameWrapCard[];
 }): Edition {
   const fresh = rankStories(
     deskCopy(opts.stories, opts.edition).filter((card) => !card.editorSpiked),
@@ -1738,6 +1883,7 @@ export function buildEdition(opts: {
   const paths = new Set<string>();
   for (const club of opts.clubs) if (club.leaguePath) paths.add(club.leaguePath);
   for (const story of fresh) if (story.leaguePath) paths.add(story.leaguePath);
+  for (const card of opts.boardCards ?? []) if (card.leaguePath) paths.add(card.leaguePath);
 
   const ids = uniqueCodes(orderSportSections([...paths].map(sportSectionId), opts.edition));
 
@@ -1748,9 +1894,10 @@ export function buildEdition(opts: {
     list.push(club);
     clubsBy.set(club.leaguePath, list);
   }
-  // Favorite-club news stays on Section A. A story that already ran in A —
-  // including the favorite-team recap — does not reprint on a later sport
-  // front. League copy that never made A still leads its section.
+  // Favorite-club news stays on Section A as the full #306 recap. A story
+  // that already ran in A — including the favorite-team recap — does not
+  // reprint on a later sport front. League copy that never made A still
+  // leads its section as compact cards.
   const storiesBy = new Map<string, GameWrapCard[]>();
   for (const story of fresh) {
     if (!story.leaguePath) continue;
@@ -1758,6 +1905,14 @@ export function buildEdition(opts: {
     const list = storiesBy.get(story.leaguePath) ?? [];
     list.push(story);
     storiesBy.set(story.leaguePath, list);
+  }
+  for (const card of opts.boardCards ?? []) {
+    if (!card.leaguePath) continue;
+    if (favoriteFresh.some((a) => a.id === card.id || sameRecapGame(a, card))) continue;
+    const list = storiesBy.get(card.leaguePath) ?? [];
+    if (list.some((s) => s.id === card.id || sameRecapGame(s, card))) continue;
+    list.push(card);
+    storiesBy.set(card.leaguePath, list);
   }
 
   const sportPagesBuilt = ids.map((id) => ({
@@ -1840,4 +1995,115 @@ export function buildEdition(opts: {
     sportFolioByStory,
     favoriteFolioByStory: favorites.favoriteFolioByStory,
   };
+}
+
+function sportPathOf(page: { kind: string; path?: string }): string | null {
+  if ((page.kind === "sport-front" || page.kind === "sport-inside") && page.path) return page.path;
+  return null;
+}
+
+function uniqueRecapGames(cards: GameWrapCard[]): GameWrapCard[] {
+  const out: GameWrapCard[] = [];
+  for (const card of cards) {
+    if (!out.some((prev) => sameRecapGame(prev, card))) out.push(card);
+  }
+  return out;
+}
+
+function printedSportRecaps(pages: { kind: string; path?: string; focus?: string; articles?: { card: GameWrapCard }[] }[], path: string): GameWrapCard[] {
+  const out: GameWrapCard[] = [];
+  for (const page of pages) {
+    if (sportPathOf(page) !== path) continue;
+    if (page.kind === "sport-front" && (page.focus === "recaps" || page.focus === "front") && page.articles) {
+      out.push(...page.articles.map((a) => a.card));
+    }
+    if (page.kind === "sport-inside") out.push(...sportInsideCards(page as SportInsidePage));
+  }
+  return uniqueRecapGames(out);
+}
+
+function renumberSection<T extends { section: string; folio: string; sectionPage: number; sectionCount: number }>(
+  pages: T[],
+  code: string,
+): T[] {
+  const n = pages.filter((p) => p.section === code).length;
+  let i = 0;
+  return pages.map((page) => {
+    if (page.section !== code) return page;
+    i += 1;
+    return { ...page, folio: `${code}${i}`, sectionPage: i, sectionCount: n };
+  });
+}
+
+/**
+ * Board finals that never made the filed recap pool still get pages, so the
+ * rest-of-the-slate count matches what prints across the sport section.
+ * The recaps desk holds the first two; leftover cards continue after news.
+ */
+export function insertMissingRecaps<E extends { pages: EditionPage[]; sections: EditionSection[] }>(
+  edition: E,
+  boardCards: GameWrapCard[],
+): E {
+  if (!boardCards.length) return edition;
+  const byPath = new Map<string, GameWrapCard[]>();
+  for (const card of boardCards) {
+    if (!card.leaguePath) continue;
+    const list = byPath.get(card.leaguePath) ?? [];
+    list.push(card);
+    byPath.set(card.leaguePath, list);
+  }
+  let pages = [...edition.pages];
+  let changed = false;
+  for (const [path, cards] of byPath) {
+    const printed = printedSportRecaps(pages, path);
+    const all = uniqueRecapGames([...printed, ...cards]);
+    const leftover = all.slice(2);
+    const recapsDesk = pages.find((p) => p.kind === "sport-front" && sportPathOf(p) === path && p.focus === "recaps");
+    const sample = recapsDesk ?? pages.find((p) => sportPathOf(p) === path);
+    if (!sample || (sample.kind !== "sport-front" && sample.kind !== "sport-inside")) continue;
+    const existingInsides = pages.filter(
+      (p) => p.kind === "sport-inside" && p.path === path && sportInsideIsRecaps(p),
+    ) as SportInsidePage[];
+    const existingIds = existingInsides.flatMap((p) => sportInsideCards(p).map((c) => c.id)).join("|");
+    const packed = packSportInsideCards(leftover, sportInsidePackSize(path));
+    const packedIds = packed.flat().map((c) => c.id).join("|");
+    const articlesChanged =
+      recapsDesk && recapsDesk.kind === "sport-front" && recapsDesk.articles.length !== all.length;
+    if (!articlesChanged && existingIds === packedIds) continue;
+    if (recapsDesk && recapsDesk.kind === "sport-front") {
+      recapsDesk.articles = all.map((card) => ({ card, folio: recapsDesk.folio }));
+    }
+    const extras: SportInsidePage[] = packed.map((slice) => ({
+      kind: "sport-inside",
+      folio: "",
+      section: sample.section,
+      sectionTitle: sample.sectionTitle,
+      sectionPage: 0,
+      sectionCount: 0,
+      path,
+      primary: slice[0]!,
+      secondary: slice[1],
+      more: slice.length > 2 ? slice.slice(2) : undefined,
+    }));
+    const firstInside = pages.findIndex(
+      (p) => p.kind === "sport-inside" && p.path === path && sportInsideIsRecaps(p),
+    );
+    const newsDesk = pages.find((p) => p.kind === "sport-front" && p.path === path && p.focus === "news");
+    let at = firstInside >= 0 ? firstInside : pages.findIndex((p) => p === (newsDesk ?? recapsDesk ?? sample)) + 1;
+    if (at < 1) continue;
+    const withoutOld = pages.filter(
+      (p) => !(p.kind === "sport-inside" && p.path === path && sportInsideIsRecaps(p)),
+    );
+    if (firstInside >= 0) at = withoutOld.findIndex((p) => p === (newsDesk ?? recapsDesk ?? sample)) + 1;
+    pages = [...withoutOld.slice(0, at), ...extras, ...withoutOld.slice(at)];
+    pages = renumberSection(pages, sample.section);
+    changed = true;
+  }
+  if (!changed) return edition;
+  const sections = edition.sections.map((s) => {
+    const n = pages.filter((p) => p.section === s.code).length;
+    const index = pages.findIndex((p) => p.section === s.code);
+    return { ...s, pages: n, index: index >= 0 ? index : s.index, folio: `${s.code}1` };
+  });
+  return { ...edition, pages, sections };
 }
