@@ -311,6 +311,14 @@ export default function AppShell() {
       </main>
     );
   }
+  // Telegram phone cards: a bare 430×932 canvas. Not the printed paper.
+  if (pathname.startsWith("/newspaper/phone-card")) {
+    return (
+      <main className="tt-phone-shot">
+        <Outlet />
+      </main>
+    );
+  }
 
   return (
     <div className={cn("flex flex-col", onNewspaper ? "fixed inset-0 overflow-hidden" : "min-h-screen")}>

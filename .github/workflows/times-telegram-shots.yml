@@ -1,8 +1,8 @@
 name: Times Telegram image alert
 
-# Screenshots each new Thompson Times edition's front page (A1) at 13-inch iPad
-# width, then phone cards for weather, The Day Ahead, and Best Games to Watch,
-# and sends them on @ThompsonTimes_bot through times-telegram-shots. No repo
+# Screenshots each new Thompson Times edition as four iPhone cards (front,
+# weather, The Day Ahead, Best Games to Watch) at 430×932 CSS / 3x, and sends
+# them on @ThompsonTimes_bot through times-telegram-shots. No repo
 # secrets: the function trusts this workflow's GitHub OIDC token (repo + main
 # branch + this file). The paper is opened read-only with a short-lived session
 # the function mints and revokes. Day Ahead / watch photos are skipped when

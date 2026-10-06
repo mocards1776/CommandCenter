@@ -18,4 +18,14 @@ assert.doesNotMatch(
   /if \(!asked\) \{\s*const peek = await call\(\{ action: "peek" \}\);\s*if \(flag\("peek"\)\)/,
   "old peek-inside-!asked path would skip --peek --issue and claim instead",
 );
+assert.match(src, /const PHONE = \{ width: 430, height: 932 \}/, "phone canvas is 430×932");
+assert.match(
+  src,
+  /clip: \{ x: 0, y: 0, width: PHONE\.width, height: PHONE\.height \}/,
+  "every phone shot is hard-clipped to the set size",
+);
+assert.doesNotMatch(src, /Math\.max\(PHONE\.height/, "viewport must not grow with card height");
+assert.match(src, /\["front", "weather", "day", "watch"\]/, "four phone cards including front");
+assert.doesNotMatch(src, /newspaper\?solo=1#A1/, "alert runner does not screenshot the iPad paper");
+assert.doesNotMatch(src, /sample=/, "production runner never passes the Day Ahead / front fixtures");
 console.log("times-shots.peek ok");

@@ -5,11 +5,15 @@ import { PhoneFrontCard } from "@/components/newspaper/PhoneFrontCard";
 import { PhoneWatchCard } from "@/components/newspaper/PhoneWatchCard";
 import { PhoneWeatherCard } from "@/components/newspaper/PhoneWeatherCard";
 import { fetchDaySchedule } from "@/lib/newspaper-day-ahead-fetch";
+import { readRemoteStories } from "@/lib/newspaper-issue-remote";
 import {
   isPhoneCardKind,
   phoneCardDate,
   phoneCardEditionLabel,
+  phoneFrontStories,
   sampleDaySchedule,
+  sampleFrontStories,
+  sampleHeavyWatchGames,
   sampleWatchGames,
   type PhoneCardKind,
 } from "@/lib/newspaper-phone-cards";
@@ -22,14 +26,34 @@ import { fetchWatchList } from "@/lib/newspaper-watch";
  *
  *   /newspaper/phone-card?card=front|weather|day|watch&issue=2026-10-05-evening&solo=1
  *   &sample=1  — verification fixtures (not used by the production runner)
+ *   &sample=heavy — a full watch slate, to prove games drop instead of growing
  */
 export default function NewspaperPhoneCardPage() {
   const [params] = useSearchParams();
   const card = isPhoneCardKind(params.get("card")) ? (params.get("card") as PhoneCardKind) : "weather";
   const issue = params.get("issue");
-  const sample = params.get("sample") === "1";
+  const sample = params.get("sample");
+  const useSample = sample === "1" || sample === "heavy";
   const date = phoneCardDate(issue);
   const editionLabel = phoneCardEditionLabel(issue);
+
+  const frontQ = useQuery({
+    queryKey: ["tt-phone-front", issue, useSample],
+    queryFn: async () => {
+      if (useSample) return sampleFrontStories();
+      if (!issue) return [];
+      try {
+        const stories = await readRemoteStories(issue);
+        if (!stories) return [];
+        return phoneFrontStories(stories, issue);
+      } catch {
+        return [];
+      }
+    },
+    enabled: card === "front",
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
 
   const weatherQ = useQuery({
     queryKey: ["tt-phone-weather"],
@@ -40,9 +64,9 @@ export default function NewspaperPhoneCardPage() {
   });
 
   const dayQ = useQuery({
-    queryKey: ["tt-phone-day", date, sample],
+    queryKey: ["tt-phone-day", date, useSample],
     queryFn: async () => {
-      if (sample) return sampleDaySchedule(date);
+      if (useSample) return sampleDaySchedule(date);
       try {
         // Same fetch as DailyNewspaperPage: one row per America/Chicago date.
         return await fetchDaySchedule(date);
@@ -59,9 +83,10 @@ export default function NewspaperPhoneCardPage() {
   const watchQ = useQuery({
     queryKey: ["tt-phone-watch", date, sample],
     queryFn: async () => {
+      if (sample === "heavy") return sampleHeavyWatchGames(date);
+      if (sample === "1") return sampleWatchGames();
       const live = await fetchWatchList(date);
-      if (live.length) return live;
-      return sample ? sampleWatchGames() : [];
+      return live;
     },
     enabled: card === "watch",
     staleTime: 5 * 60_000,
@@ -70,7 +95,11 @@ export default function NewspaperPhoneCardPage() {
 
   const ready =
     card === "front"
-      ? "1"
+      ? frontQ.data?.length
+        ? "1"
+        : frontQ.isFetched
+          ? "empty"
+          : "loading"
       : card === "weather"
         ? weatherQ.isError
           ? "error"
@@ -97,7 +126,9 @@ export default function NewspaperPhoneCardPage() {
 
   return (
     <div className="tt-phone-page" data-phone-card={card} data-ready={ready}>
-      {card === "front" ? <PhoneFrontCard date={date} editionLabel={editionLabel} /> : null}
+      {card === "front" && frontQ.data?.length ? (
+        <PhoneFrontCard date={date} editionLabel={editionLabel} stories={frontQ.data} />
+      ) : null}
       {card === "weather" && weatherQ.data?.days.length ? <PhoneWeatherCard weather={weatherQ.data} /> : null}
       {card === "day" && dayQ.data ? (
         <PhoneDayAheadCard

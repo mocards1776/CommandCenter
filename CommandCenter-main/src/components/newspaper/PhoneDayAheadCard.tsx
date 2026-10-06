@@ -1,3 +1,4 @@
+import { usePhoneCardFit } from "@/hooks/usePhoneCardFit";
 import {
   clockLabel,
   countLine,
@@ -8,6 +9,7 @@ import {
   type DayEvent,
   type DayUpcoming,
 } from "@/lib/newspaper-day-ahead";
+import { trimPhoneDayFit, type PhoneDayFit } from "@/lib/newspaper-phone-cards";
 
 function longDate(date: string): string {
   const d = new Date(`${date}T12:00:00Z`);
@@ -90,9 +92,18 @@ export function PhoneDayAheadCard({
   const first = day.firstUp;
   const next = first ? (byClock.find((p) => p !== first && p.start >= first.start) ?? null) : null;
   const openMinutes = day.open.reduce((n, o) => n + (o.end - o.start), 0);
+  const { ref, value } = usePhoneCardFit<PhoneDayFit>(
+    { comingDays: upcoming.length, rundown: byClock.length, allDay: day.allDay.length },
+    trimPhoneDayFit,
+    `${date}:${events.length}:${upcoming.length}`,
+  );
+  const allDay = day.allDay.slice(0, value.allDay);
+  const rundown = byClock.slice(0, value.rundown);
+  const coming = upcoming.slice(0, value.comingDays);
 
   return (
     <article className="tt-phone-card tt-phone-day" aria-label="The Day Ahead">
+      <div className="tt-phone-fit-body" ref={ref}>
       <header className="tt-phone-mast">
         <p className="tt-phone-kicker">The Daily Planner · {editionLabel}</p>
         <h1>The Day Ahead</h1>
@@ -100,11 +111,11 @@ export function PhoneDayAheadCard({
         <p className="tt-phone-count">{countLine(day.counts)}</p>
       </header>
 
-      {day.allDay.length ? (
+      {allDay.length ? (
         <section className="tt-phone-allday" aria-label="All day">
           <h2>All day</h2>
           <ul>
-            {day.allDay.map((e, i) => (
+            {allDay.map((e, i) => (
               <li key={`${e.title}-${i}`} className={e.kind}>
                 <strong>{e.title}</strong>
                 {e.location ? <em>{e.location}</em> : null}
@@ -144,11 +155,11 @@ export function PhoneDayAheadCard({
             )}
           </section>
 
-          {byClock.length ? (
+          {rundown.length ? (
             <section className="tt-phone-rundown" aria-label="The rundown">
               <h2>The Rundown</h2>
               <ol>
-                {byClock.map((p, i) => (
+                {rundown.map((p, i) => (
                   <li key={`${p.event.title}-${p.start}-${i}`} className={p.event.kind}>
                     <b>{clockLabel(p.start, { short: true })}</b>
                     <span>
@@ -179,7 +190,8 @@ export function PhoneDayAheadCard({
         </>
       )}
 
-      <ComingUp days={upcoming} />
+      <ComingUp days={coming} />
+      </div>
     </article>
   );
 }
