@@ -8,6 +8,7 @@ import { scoresInHeadline } from "./newspaper-box.ts";
 import { isNewspaperSecGame } from "./newspaper-espn.ts";
 import { wrapBriefSentences } from "./newspaper-box-wrap.ts";
 import { storySource } from "./newspaper-source.ts";
+import { favoriteKeyFitsPath, storyMatchesFavorite } from "./newspaper-favorite-match.ts";
 import type { GameWrapCard } from "./newspaper-sports.ts";
 
 function isPreviewCard(card: GameWrapCard): boolean {
@@ -102,7 +103,7 @@ export function isEflChampionshipStory(card: GameWrapCard): boolean {
 const CFB_OFF_DESK =
   /\b(colts|commanders|jordan walker|nfl\b|world series|nlcs|alcs)\b/i;
 const CFB_OTHER_SPORT =
-  /\b(soccer|usmnt|world cup|\bmls\b|premier league|nba\b|nhl\b)\b/i;
+  /\b(soccer|usmnt|world cup|\bmls\b|premier league|nba\b|nhl\b|wizards|anthony davis|timberwolves|lakers)\b/i;
 const CFB_SIGNAL = /\b(college|ncaa|sec\b|acc\b|big ten|big 12|mizzou|missouri tigers)\b/i;
 
 function cfbDeskCopy(text: string): boolean {
@@ -139,18 +140,25 @@ function eventIdOf(card: GameWrapCard): string | null {
   return href.match(/(?:gameId|event)[=/](\d{6,})/i)?.[1] ?? null;
 }
 
+const GAME_TOKEN_STOP = new Set([
+  "beat", "over", "from", "with", "that", "will", "this", "have", "been", "were",
+  "they", "into", "after", "week", "more", "than", "then", "when", "game", "win",
+  "wins", "lead", "seals", "throws", "passes", "start", "best", "fuel",
+]);
+
 function teamTokens(card: GameWrapCard): string[] {
   return `${card.headline} ${card.scoreLine ?? ""} ${card.teamName}`
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
-    .filter((w) => w.length >= 4);
+    .filter((w) => w.length >= 4 && !GAME_TOKEN_STOP.has(w));
 }
 
 export function sameGameStory(a: GameWrapCard, b: GameWrapCard): boolean {
   const idA = eventIdOf(a);
   const idB = eventIdOf(b);
   if (idA && idB && idA === idB) return true;
+  if (a.leaguePath && b.leaguePath && a.leaguePath !== b.leaguePath) return false;
   if (a.scoreLine && b.scoreLine && a.scoreLine === b.scoreLine && a.leaguePath === b.leaguePath) {
     return true;
   }
@@ -261,24 +269,66 @@ export function isWrapLead(card: GameWrapCard): boolean {
 }
 
 const CLUB_ALIASES: Record<string, RegExp> = {
-  "cfb-mizzou": /mizzou|missouri/,
+  "cfb-mizzou": /mizzou|missouri tigers|\bmissouri\b(?!\s+state)/,
+  "cbb-mizzou": /mizzou|missouri tigers|\bmissouri\b(?!\s+state)/,
   "eng-wrexham": /wrexham/,
-  "eng-wolves": /wolves|wolverhampton/,
+  "eng-wolves": /wolverhampton|(?<!timber)wolves\b/,
 };
 
+const AMBIGUOUS_GAME_NICK = /^(cardinals|lions|bears|blues|wolves|arsenal)$/i;
+
 export function favoriteKeyForGame(
-  game: { away: { short?: string | null; name?: string | null }; home: { short?: string | null; name?: string | null } },
-  clubs: { key: string; shortName: string }[],
+  game: {
+    away: { short?: string | null; name?: string | null; id?: string | null; abbrev?: string | null };
+    home: { short?: string | null; name?: string | null; id?: string | null; abbrev?: string | null };
+    path?: string | null;
+  },
+  clubs: { key: string; shortName: string; leaguePath?: string | null }[],
 ): string {
-  const sides = [game.away.short, game.away.name, game.home.short, game.home.name]
-    .map((s) => (s ?? "").toLowerCase().replace(/[^a-z0-9]/g, ""))
+  const path = (game.path ?? "").toLowerCase();
+  const names = [game.away.short, game.away.name, game.home.short, game.home.name]
+    .map((s) => (s ?? "").toLowerCase())
     .filter(Boolean);
+  const ids = [game.away.id, game.home.id].map((s) => (s ?? "").toLowerCase()).filter(Boolean);
+  const abbrevs = [game.away.abbrev, game.home.abbrev].map((s) => (s ?? "").toLowerCase()).filter(Boolean);
+  const squash = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const sides = names.map(squash).filter(Boolean);
+
   for (const club of clubs) {
+    if (path && club.leaguePath && club.leaguePath !== path) continue;
+    if (path && !favoriteKeyFitsPath(club.key, path)) continue;
+    const fav = {
+      key: club.key,
+      name: club.shortName,
+      shortName: club.shortName,
+      sport: "",
+      league: "",
+      espnPath: club.leaguePath ? `${club.leaguePath}/teams/0` : "",
+      kind: "team" as const,
+    };
+    if (
+      storyMatchesFavorite(
+        {
+          headline: `${game.away.name ?? game.away.short ?? ""} ${game.home.name ?? game.home.short ?? ""}`,
+          teamName: `${game.away.short ?? ""} ${game.home.short ?? ""}`,
+          leaguePath: game.path ?? club.leaguePath ?? null,
+          recapGame: { away: game.away, home: game.home },
+        },
+        fav,
+      )
+    ) {
+      return club.key;
+    }
     const alias = CLUB_ALIASES[club.key];
-    if (alias && sides.some((s) => alias.test(s))) return club.key;
-    const n = club.shortName.toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (alias && names.some((s) => alias.test(s))) return club.key;
+    const nick = club.shortName.toLowerCase();
+    const n = squash(club.shortName);
     if (!n || n.length < 3) continue;
-    if (sides.some((s) => s === n || s.includes(n) || n.includes(s))) return club.key;
+    // ESPN id / official abbreviation still stamp the desk when names are short.
+    if (abbrevs.includes(n) || ids.includes(n)) return club.key;
+    if (sides.some((s) => s === n)) return club.key;
+    if (AMBIGUOUS_GAME_NICK.test(nick)) continue;
+    if (names.some((s) => s === nick || s.endsWith(` ${nick}`))) return club.key;
   }
   return "";
 }

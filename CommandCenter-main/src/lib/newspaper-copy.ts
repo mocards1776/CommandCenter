@@ -277,7 +277,7 @@ export function htmlToNewspaperText(html: string): string {
 export function restorePossessiveSpace(text: string): string {
   return text
     // Playfair's straight tick sits off the letter; print a curly possessive.
-    .replace(/(\w)'/g, "$1’")
+    .replace(/(\w)['‘]/g, "$1’")
     .replace(/(\p{L}|\d)(['’])(?!(?:s|t|ll|re|ve|d|m)\b)(\p{L})/gu, "$1$2 $3")
     .replace(/(\p{L})(['’])(\d)/gu, "$1$2 $3");
 }
@@ -294,7 +294,7 @@ export function tidy(text: string): string {
       decodeNewspaperEntities(stripGettyCredit(text))
         .replace(/\s+([,;:!?])/g, "$1")
         .replace(/\s+\.(?!\d)/g, ".")
-        .replace(/(\w)\s+([’'])/g, "$1$2")
+        .replace(/(\w)\s+([’‘'`])/g, "$1$2")
         // Opening quote, not a possessive: "' Hello" → "'Hello". A letter
         // before the mark (`76ers' preseason`) must keep the following space.
         .replace(/(?<!\w)([‘'])\s+(\w)/g, "$1$2")

@@ -39,6 +39,7 @@ import {
 import { cleanedBodyLength, cleanStoryCopy, isPeripheralClubStory, killedSource, printHeadline } from "./newspaper-copy.ts";
 import { storySource } from "./newspaper-source.ts";
 import type { GameWrapCard } from "./newspaper-sports";
+import { favoriteKeyFitsPath, storyMatchesFavorite } from "./newspaper-favorite-match.ts";
 import {
   isInjuryNote,
   isSportFiller,
@@ -366,38 +367,34 @@ export function favoriteKeyFitsCard(
   key: string | null | undefined,
   card: Pick<GameWrapCard, "leaguePath" | "sportLabel">,
 ): boolean {
-  if (!key) return false;
-  const path = (card.leaguePath || leaguePathFromSportLabel(card.sportLabel) || "").toLowerCase();
-  if (!path) return true;
-  const prefix = key.split("-")[0];
-  switch (prefix) {
-    case "mlb":
-      return path === "baseball/mlb";
-    case "nfl":
-      return path === "football/nfl";
-    case "nhl":
-      return path === "hockey/nhl";
-    case "nba":
-      return path === "basketball/nba";
-    case "cfb":
-      return path === "football/college-football";
-    case "cbb":
-      return path === "basketball/mens-college-basketball";
-    case "eng":
-      return path.startsWith("soccer/");
-    default:
-      return true;
-  }
+  return favoriteKeyFitsPath(key, card.leaguePath || leaguePathFromSportLabel(card.sportLabel), card.sportLabel);
 }
 
 export function isFavoriteStory(card: GameWrapCard): boolean {
-  return Boolean(card.favoriteKey || card.followed);
+  if (card.favoriteKey) return favoriteKeyFitsCard(card.favoriteKey, card);
+  return false;
 }
 
-const CLUB_ALIASES: Record<string, string[]> = {
-  "cfb-mizzou": ["mizzou", "missouri tigers", "missouri"],
-  "cbb-mizzou": ["mizzou", "missouri tigers", "missouri"],
-};
+/** Today's Missouri Scout brief — always an A1 slot when the edition has one. */
+export function isMoScoutCard(card: Pick<GameWrapCard, "sportLabel" | "teamName" | "caption" | "wrapHref">): boolean {
+  if (card.sportLabel !== "Missouri") return false;
+  return /missouri scout|moscout/i.test(`${card.teamName ?? ""} ${card.caption ?? ""} ${card.wrapHref ?? ""}`);
+}
+
+export function isTodaysMoScout(card: GameWrapCard, edition: string): boolean {
+  if (!isMoScoutCard(card)) return false;
+  if (!card.when) return true;
+  const day = instantDay(card.when);
+  const newsDay = editionNewsDay(edition);
+  return !day || day === newsDay || day === edition.slice(0, 10);
+}
+
+/** A1 lead / second / third: a followed club, today's MoScout, or historic national. */
+export function mayFrontA1(card: GameWrapCard, edition: string): boolean {
+  if (isTodaysMoScout(card, edition)) return true;
+  if (isHistoricNationalCard(card)) return true;
+  return isFavoriteStory(card);
+}
 
 function cardLeaguePath(card: Pick<GameWrapCard, "leaguePath" | "sportLabel">): string | null {
   return card.leaguePath || leaguePathFromSportLabel(card.sportLabel);
@@ -405,28 +402,36 @@ function cardLeaguePath(card: Pick<GameWrapCard, "leaguePath" | "sportLabel">): 
 
 /** Filed rows sometimes drop favoriteKey; put the home desk back on the card. */
 export function stampFavoriteKeys(stories: GameWrapCard[], clubs: ClubDesk[]): GameWrapCard[] {
-  if (!clubs.length) return stories;
   return stories.map((card) => {
     const kept = card.favoriteKey && favoriteKeyFitsCard(card.favoriteKey, card) ? card.favoriteKey : "";
     if (kept) return card.followed ? card : { ...card, favoriteKey: kept, followed: true };
 
+    // Cross-league stamps (NFL "Cardinals" → mlb-stl, NFL "Bears" → MOST) drop
+    // even when the clubs desk has not loaded yet.
+    if (card.favoriteKey && !kept) {
+      card = { ...card, favoriteKey: "", followed: false };
+    }
+    if (!clubs.length) return card;
+
     const path = cardLeaguePath(card);
-    const hay = `${card.teamName ?? ""} ${card.headline ?? ""} ${card.dek ?? ""}`.toLowerCase();
     let hit: ClubDesk | undefined;
     for (const club of clubs) {
       if (club.leaguePath && path && club.leaguePath !== path) continue;
-      const tokens = [
-        club.shortName.toLowerCase(),
-        club.key.replace(/^[a-z]+-/, "").replace(/-/g, " "),
-        ...(CLUB_ALIASES[club.key] ?? []),
-      ].filter((t) => t.length >= 4);
-      if (tokens.some((t) => hay.includes(t))) {
+      const fav = {
+        key: club.key,
+        name: club.shortName,
+        shortName: club.shortName,
+        sport: "",
+        league: "",
+        espnPath: club.leaguePath ? `${club.leaguePath}/teams/0` : "",
+        kind: "team" as const,
+      };
+      if (storyMatchesFavorite(card, fav)) {
         hit = club;
         break;
       }
     }
     if (hit) return { ...card, favoriteKey: hit.key, followed: true };
-    if (card.favoriteKey && !kept) return { ...card, favoriteKey: "", followed: false };
     return card;
   });
 }
@@ -914,15 +919,18 @@ const FRONT_STORIES = 3;
 const FRONT_BRIEFS = 4;
 
 function upcomingFor(clubs: ClubDesk[]): DeskFixture[] {
-  return clubs.flatMap((club) =>
-    club.upcoming.map((game) => ({
-      id: game.id,
-      team: club.shortName,
-      label: game.label,
-      when: game.when,
-      startIso: game.startIso ?? null,
-      detail: game.detail,
-    })),
+  return sortComingUp(
+    clubs.flatMap((club) =>
+      club.upcoming.map((game) => ({
+        id: game.id,
+        team: club.shortName,
+        label: game.label,
+        when: game.when,
+        startIso: game.startIso ?? null,
+        detail: game.detail,
+        favoriteKey: club.key,
+      })),
+    ),
   );
 }
 
@@ -955,6 +963,7 @@ function parseComingUpWhen(when: string, now: number): number | null {
   const cleaned = when
     .replace(/^@\s*[A-Za-z0-9.&']+\s+/i, "")
     .replace(/^(vs\.?|at)\s+[A-Za-z0-9.&']+\s+/i, "")
+    .replace(/\bCT\b/g, "")
     .replace(/,/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -976,31 +985,32 @@ function parseComingUpWhen(when: string, now: number): number | null {
   return null;
 }
 
-/** Sort key: kickoff ms, or the end of that Chicago day when the listing has a date but no clock. */
+/** Sort key: kickoff ms in real time. Date-only listings (no ISO, no clock) close their Chicago day. */
 export function comingUpSortMs(
   game: { when: string | null; startIso?: string | null },
   now = Date.now(),
 ): number {
-  const when = game.when?.trim() || "";
-  const timed = comingUpHasClock(when);
   if (game.startIso) {
     const t = Date.parse(game.startIso);
-    if (!Number.isNaN(t)) return timed || !when ? t : endOfChicagoDay(t);
+    if (!Number.isNaN(t)) return t;
   }
+  const when = game.when?.trim() || "";
   if (!when) return Number.POSITIVE_INFINITY;
   const parsed = parseComingUpWhen(when, now);
   if (parsed == null) return Number.POSITIVE_INFINITY;
-  return timed ? parsed : endOfChicagoDay(parsed);
+  return comingUpHasClock(when) ? parsed : endOfChicagoDay(parsed);
 }
 
-/** Favorite-team next games, soonest first. Date-only listings close their day. */
-export function sortComingUp<T extends { when: string | null; startIso?: string | null }>(
+/** Favorite-team next games, soonest first. Same kickoff: higher desk weight first. */
+export function sortComingUp<T extends { when: string | null; startIso?: string | null; favoriteKey?: string | null }>(
   games: T[],
   now = Date.now(),
 ): T[] {
   return [...games].sort((a, b) => {
     const d = comingUpSortMs(a, now) - comingUpSortMs(b, now);
     if (d !== 0) return d;
+    const byDesk = favoriteDeskWeight(b.favoriteKey ?? "") - favoriteDeskWeight(a.favoriteKey ?? "");
+    if (byDesk) return byDesk;
     return (a.when ?? "").localeCompare(b.when ?? "");
   });
 }
@@ -1293,6 +1303,44 @@ function headlineTokens(card: GameWrapCard): string[] {
   return significantWords(card.headline).map((word) => aliases[word] ?? word);
 }
 
+/** Club / city / generic sports words — not enough to collapse two packages. */
+const SUBJECT_STOP = new Set([
+  "cardinals", "chiefs", "lions", "cowboys", "blues", "tigers", "bears", "packers",
+  "giants", "yankees", "rays", "brewers", "padres", "dodgers", "braves", "guardians",
+  "kansas", "city", "louis", "detroit", "dallas", "missouri", "mizzou", "chicago",
+  "arizona", "england", "patriots", "raiders", "vegas", "panthers", "falcons", "saints",
+  "eagles", "steelers", "ravens", "bengals", "browns", "texans", "colts", "jaguars",
+  "titans", "broncos", "chargers", "seahawks", "rams", "49ers", "niners", "commanders",
+  "bills", "dolphins", "jets", "vikings", "buccaneers", "white", "sox", "cubs",
+  "reds", "phillies", "mets", "orioles", "twins", "mariners", "astros", "rangers",
+  "royals", "athletics", "nationals", "marlins", "rockies", "angels", "pirates",
+  "division", "series", "playoff", "playoffs", "postseason", "walk", "single", "lifts",
+  "beats", "beat", "win", "wins", "lead", "leads", "game", "final", "week", "monday",
+  "sunday", "saturday", "night", "analysis", "tips", "prop", "plays", "preview",
+]);
+
+function distinctiveSubjects(card: GameWrapCard): string[] {
+  return headlineTokens(card).filter((word) => word.length >= 6 && !SUBJECT_STOP.has(word));
+}
+
+function seriesGameKey(headline: string): string | null {
+  const m = headline.match(/\b((?:al|nl)ds)\s+game\s+(\d)\b/i);
+  return m ? `${m[1]!.toLowerCase()}-${m[2]}` : null;
+}
+
+/** Same person / same package: Tyreek Hill twice, Chourio twice, ALDS Game 3 twice. */
+function sameNamedPackage(a: GameWrapCard, b: GameWrapCard): boolean {
+  if (a.leaguePath && b.leaguePath && a.leaguePath !== b.leaguePath) return false;
+  const seriesA = seriesGameKey(a.headline);
+  const seriesB = seriesGameKey(b.headline);
+  if (seriesA && seriesB && seriesA === seriesB) return true;
+  const left = distinctiveSubjects(a);
+  const right = distinctiveSubjects(b);
+  if (!left.length || !right.length) return false;
+  const shared = left.filter((w) => right.includes(w));
+  return shared.length >= 1;
+}
+
 export function sameSectionAStory(a: GameWrapCard, b: GameWrapCard): boolean {
   if (a.id && a.id === b.id) return true;
   const urlA = storyUrlKey(a);
@@ -1311,6 +1359,7 @@ export function sameSectionAStory(a: GameWrapCard, b: GameWrapCard): boolean {
   if (isMainGameStory(a) && isMainGameStory(b) && sameStory(headlineTokens(a), headlineTokens(b))) {
     return true;
   }
+  if (sameNamedPackage(a, b)) return true;
   return sameStory(headlineTokens(a), headlineTokens(b));
 }
 
@@ -1419,16 +1468,12 @@ export function isMajorStory(card: GameWrapCard): boolean {
 }
 
 /** League stories the editor may front in Section A in one edition. */
-const LEAGUE_FRONT_MAX = FRONT_STORIES;
-
 /**
  * Stories the editor put on A1, in its order, held to the desk's beat: a
- * favorite-club, Missouri, or historic-national story always may; other
- * teams only when the copy is major news. Ordinary National News may not,
- * even if the editor named it. A front story still needs copy.
+ * favorite-club, today's MoScout, or historic-national story always may.
+ * Other teams never occupy an A1 slot, even when the copy is major.
  */
 export function editorFront(fresh: GameWrapCard[]): GameWrapCard[] {
-  let league = 0;
   const picked: GameWrapCard[] = [];
   const taken = new Set<string>();
   const ordered = fresh
@@ -1442,10 +1487,11 @@ export function editorFront(fresh: GameWrapCard[]): GameWrapCard[] {
       if (!choice) continue;
     }
     if (taken.has(choice.id)) continue;
-    if (!(isFavoriteStory(choice) || choice.sportLabel === "Missouri" || isHistoricNationalCard(choice))) {
+    if (!(isFavoriteStory(choice) || isMoScoutCard(choice) || isHistoricNationalCard(choice))) {
       if (choice.sportLabel === "National") continue;
-      if (league >= LEAGUE_FRONT_MAX || !isMajorStory(choice)) continue;
-      league += 1;
+      // Other-team copy may still run inside Section A when it is major.
+      // It never occupies an A1 slot.
+      continue;
     }
     picked.push(choice);
     taken.add(choice.id);
@@ -1459,6 +1505,7 @@ function favoritePages(
   sectionStories: GameWrapCard[],
   clubs: ClubDesk[],
   frontPicks: GameWrapCard[] = [],
+  edition = "",
 ): {
   pages: (
     | FavoritesFrontPage
@@ -1476,19 +1523,24 @@ function favoritePages(
   const clubOf = (c: GameWrapCard) => c.favoriteKey ?? c.teamName ?? c.id;
   const picks: GameWrapCard[] = [];
   const taken = new Set<string>();
+  const slotOk = (card: GameWrapCard) => mayFrontA1(card, edition);
   // Editor picks first, but betting sheets / stale previews never open A1 —
   // swap in that matchup's recap when we have one.
   for (const card of frontPicks) {
     if (picks.length >= FRONT_STORIES) break;
     let choice: GameWrapCard | null = card;
-    if (cannotLeadFront(card, frontPool)) choice = leadReplacement(card, frontPool, taken);
-    if (!choice || taken.has(choice.id) || cannotLeadFront(choice, frontPool)) continue;
+    if (cannotLeadFront(card, frontPool) || !slotOk(card)) choice = leadReplacement(card, frontPool, taken);
+    if (!choice || taken.has(choice.id) || cannotLeadFront(choice, frontPool) || !slotOk(choice)) continue;
     picks.push(choice);
     taken.add(choice.id);
   }
   // A video stub or one-line note leaves a column of bare photo on the front.
   const written = frontPool.filter(
-    (c) => hasStoryCopy(c) && !cannotLeadFront(c, frontPool) && !taken.has(c.id),
+    (c) =>
+      slotOk(c) &&
+      !cannotLeadFront(c, frontPool) &&
+      !taken.has(c.id) &&
+      !isTodaysMoScout(c, edition),
   );
   for (const card of written) {
     if (picks.length >= 3) break;
@@ -1499,9 +1551,22 @@ function favoritePages(
   }
   for (const card of [...written, ...frontPool]) {
     if (picks.length >= 3) break;
-    if (cannotLeadFront(card, frontPool) || taken.has(card.id)) continue;
+    if (!slotOk(card) || cannotLeadFront(card, frontPool) || taken.has(card.id)) continue;
     picks.push(card);
     taken.add(card.id);
+  }
+  const scout = frontPool.find((c) => isTodaysMoScout(c, edition));
+  if (scout && !taken.has(scout.id)) {
+    if (picks.length < FRONT_STORIES) {
+      picks.push(scout);
+      taken.add(scout.id);
+    } else {
+      const replaceAt = picks.length - 1;
+      const dropped = picks[replaceAt]!;
+      taken.delete(dropped.id);
+      picks[replaceAt] = scout;
+      taken.add(scout.id);
+    }
   }
   const [lead = null, second = null, third = null] = picks;
   for (const card of [lead, second, third]) {
@@ -2037,7 +2102,7 @@ export function buildEdition(opts: {
   // editorFront() is only stamped picks — favoritePages may still put a
   // club wrap on A1 with no editorFront, so read the composed A1 lead.
   const a1Picks = editorFront(fresh);
-  const favorites = favoritePages(favoriteFresh, favoriteFresh, opts.clubs, a1Picks);
+  const favorites = favoritePages(favoriteFresh, favoriteFresh, opts.clubs, a1Picks, opts.edition);
   const a1Front = favorites.pages.find((p) => p.kind === "favorites-front");
   const a1Ran =
     a1Front?.kind === "favorites-front"
@@ -2126,12 +2191,12 @@ export function buildEdition(opts: {
     pages.push(...part.built.pages);
   }
 
-  return {
+  return dropEmptyFolios({
     pages,
     sections,
     sportFolioByStory,
     favoriteFolioByStory: favorites.favoriteFolioByStory,
-  };
+  });
 }
 
 function restampEditionPages(pages: EditionPage[]): EditionPage[] {
@@ -2160,6 +2225,78 @@ function restampEditionPages(pages: EditionPage[]): EditionPage[] {
       turn: nextFront && nextFront.kind === "sport-front" ? { folio: nextFront.folio, focus: nextFront.focus } : null,
     };
   });
+}
+
+/** True when a folio has something to print. Blank covers are never filed. */
+export function editionPageHasInk(page: EditionPage): boolean {
+  switch (page.kind) {
+    case "favorites-front":
+      return true;
+    case "favorites-clubs":
+      return true;
+    case "favorites-form":
+      return page.clubs.length > 0;
+    case "favorites-inside":
+      return Boolean(page.primary);
+    case "favorites-continue":
+      return page.jumps.length > 0;
+    case "favorites-watch":
+      return true;
+    case "favorites-day":
+      return page.events.length > 0 || (page.upcoming?.length ?? 0) > 0;
+    case "favorites-beez":
+      return true;
+    case "favorites-races":
+      return page.races.length > 0;
+    case "sport-front":
+      if (page.focus === "front" || page.focus === "recaps" || page.focus === "news" || page.focus === "opener") {
+        return page.articles.length > 0 || page.clubs.length > 0;
+      }
+      return true;
+    case "sport-inside":
+      return Boolean(page.primary);
+    case "national":
+      return page.stories.length > 0;
+    case "missouri":
+      return page.items.length > 0;
+    default:
+      return true;
+  }
+}
+
+export function dropEmptyFolios(edition: Edition): Edition {
+  const pages = edition.pages.filter(editionPageHasInk);
+  if (pages.length === edition.pages.length) return edition;
+  const restamped = restampEditionPages(pages);
+  const sportFolioByStory = { ...edition.sportFolioByStory };
+  const favoriteFolioByStory = { ...edition.favoriteFolioByStory };
+  for (const page of restamped) {
+    if (page.kind === "sport-inside") {
+      sportFolioByStory[page.primary.id] = page.folio;
+      if (page.secondary) sportFolioByStory[page.secondary.id] = page.folio;
+    }
+    if (page.kind === "favorites-inside") {
+      favoriteFolioByStory[page.primary.id] = page.folio;
+      if (page.secondary) favoriteFolioByStory[page.secondary.id] = page.folio;
+    }
+    if (page.kind === "favorites-front") {
+      for (const card of [page.lead, page.second, page.third]) {
+        if (card) favoriteFolioByStory[card.id] = page.folio;
+      }
+    }
+  }
+  const sections = edition.sections
+    .map((section) => {
+      const index = restamped.findIndex((page) => page.section === section.code);
+      return {
+        ...section,
+        pages: restamped.filter((page) => page.section === section.code).length,
+        index: index < 0 ? section.index : index,
+        folio: restamped.find((page) => page.section === section.code)?.folio ?? section.folio,
+      };
+    })
+    .filter((section) => section.pages > 0);
+  return { ...edition, pages: restamped, sections, sportFolioByStory, favoriteFolioByStory };
 }
 
 /**
@@ -2198,5 +2335,5 @@ export function paginateEditionDesks(
       index: index < 0 ? section.index : index,
     };
   });
-  return { ...edition, pages: restamped, sections, sportFolioByStory };
+  return dropEmptyFolios({ ...edition, pages: restamped, sections, sportFolioByStory });
 }

@@ -7,6 +7,7 @@ import {
   assignWatchTiers,
   composeWatchPage,
   pickWatchGames,
+  preparePrintedWatch,
   printClock,
   printNetworks,
   printReason,
@@ -192,7 +193,13 @@ assert(page.slots.length <= 16, `dense page groups kickoffs (${page.slots.length
 
 const keptFinals = pickWatchGames(
   [
-    game({ id: "done", heat: 99, final: true }),
+    game({
+      id: "done",
+      heat: 99,
+      final: true,
+      away: { name: "Away", abbrev: "FIN", logo: null, record: "1-0" },
+      home: { name: "Home", abbrev: "HOM", logo: null, record: "1-0" },
+    }),
     game({ id: "on", heat: 10 }),
   ],
   40,
@@ -314,5 +321,14 @@ assert(
 
 assert(!page.slots.some((s) => s.listings.some((g) => String(g.clock) === String(g.heat))), "heat number is not printed as the clock");
 assert(!/now/i.test(page.slots.map((s) => s.clock).join()), "no live Now block");
+
+const printed = preparePrintedWatch([
+  game({ id: "nba-pre", heat: 90, league: "NBA", preseason: true, away: { name: "Nets", abbrev: "BKN", logo: null, record: null, score: 0 }, home: { name: "Hornets", abbrev: "CHA", logo: null, record: null, score: 0 } }),
+  game({ id: "nhl-1", heat: 40, league: "NHL", when: "2026-10-06T23:00:00Z", status: "10/6 - 7:00 PM EDT", away: { name: "Hurricanes", abbrev: "CAR", logo: null, record: null, score: 0 }, home: { name: "Canadiens", abbrev: "MTL", logo: null, record: null, score: 0 } }),
+  game({ id: "nhl-1-dup", heat: 39, league: "NHL", when: "2026-10-06T23:00:00Z", status: "10/6 - 7:00 PM EDT", away: { name: "Hurricanes", abbrev: "CAR", logo: null, record: null, score: 0 }, home: { name: "Canadiens", abbrev: "MTL", logo: null, record: null, score: 0 } }),
+]);
+assert(!printed.some((g) => g.preseason), "printed guide drops NBA preseason");
+assert(printed.filter((g) => g.away.abbrev === "CAR" && g.home.abbrev === "MTL").length === 1, "identical 6 PM row prints once");
+assert(printed.every((g) => g.away.score == null && g.home.score == null), "scheduled games do not print 0-0");
 
 console.log("newspaper-watch ok");

@@ -284,6 +284,18 @@ export function packNationalPages(stories: NationalStory[]): { stories: National
 const EXTRACT_BOILER =
   /\b(?:subscribe to continue|subscribers? only|sign up for|create an account|advertisement|you may also like|recommended for you|related stories|more from|read more|all rights reserved|cookie (?:policy|settings)|enable javascript|continue reading)\b/i;
 
+/** Outlet chrome that lands in the middle of a graf — strip the sentence, keep the story. */
+const NATIONAL_PROMO_SENTENCE =
+  /(?:See more of our coverage in your search results\.?|Join Washington Examiner\b[^.!?]{0,220}[.!?]|Subscribe for full access to Washington Examiner\b[^.!?]{0,220}[.!?]|Laura Ingraham,\s+Jesse Watters and Greg Gutfeld bring Fox News viewers[^.!?]{0,180}[.!?])\s*/gi;
+
+export function stripNationalPromos(text: string): string {
+  return text
+    .replace(NATIONAL_PROMO_SENTENCE, " ")
+    .replace(/\bJoin Washington Examiner\b[\s\S]{0,280}?(?:subscriber-only journalism\.?)/gi, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 const PAYWALL_MARK =
   /\b(?:subscribe to (?:continue|read)|subscribers? only|for subscribers|this article is (?:exclusive|available) to|piano-paywall|wsj-e2e-paywall|paywall|remaining \d+ (?:free )?article)\b/i;
 
@@ -294,10 +306,14 @@ export function cleanExtractedCopy(text: string): string {
     .replace(/\s+/g, " ")
     .trim();
   if (!raw) return "";
+  raw = stripNationalPromos(raw);
   const cut = raw.search(EXTRACT_BOILER);
   if (cut >= 40) raw = raw.slice(0, cut).trim();
   raw = raw
     .replace(/^(?:Advertisement|Sponsored|Skip (?:to )?content)\s+/i, "")
+    // "Hegseth ‘s" — a space before a tick, including a left quote used as an apostrophe.
+    .replace(/(\w)\s+([’‘'`])/g, "$1$2")
+    .replace(/(\w)['‘]/g, "$1’")
     .replace(/\s{2,}/g, " ")
     .trim();
   return raw;
@@ -1109,9 +1125,9 @@ export function storiesFromEditor(
 export function cleanNationalStories(stories: NationalStory[]): NationalStory[] {
   const out: NationalStory[] = [];
   for (const raw of stories) {
-    const summary = stripLeadCaption(raw.summary ?? "");
-    const paragraphs = (raw.paragraphs ?? []).map(stripLeadCaption).filter(Boolean);
-    const body = raw.body ? stripLeadCaption(raw.body) : null;
+    const summary = stripLeadCaption(stripNationalPromos(raw.summary ?? ""));
+    const paragraphs = (raw.paragraphs ?? []).map((p) => stripLeadCaption(stripNationalPromos(p))).filter(Boolean);
+    const body = raw.body ? stripLeadCaption(stripNationalPromos(raw.body)) : null;
     const paywalled = isPaywallStubNote(raw.bodyNote) || /full text was paywalled/i.test(`${summary} ${body ?? ""}`);
     if (paywalled && !(body && body.length >= BODY_MIN)) {
       if (!summary || /full text was paywalled/i.test(summary)) continue;

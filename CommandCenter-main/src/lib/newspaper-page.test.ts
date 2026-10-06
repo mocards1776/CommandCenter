@@ -34,6 +34,7 @@ import {
   clubOpensLabel,
   clubTickerRecord,
   formStatColumns,
+  printableFormStat,
 } from "./newspaper-page.ts";
 
 function assert(cond: unknown, msg: string) {
@@ -228,5 +229,8 @@ assert(formStatColumns(6) === 3, "six stats fill two rows of three");
 assert(formStatColumns(5) === 5, "five stats sit in one row, no grey cell");
 assert(formStatColumns(3) === 3, "three stats fill one row");
 assert(formStatColumns(4) === 2, "four stats fill two even rows");
+assert(!printableFormStat({ label: "RZ TD %", value: "0.00" }), "filed 0.00 RZ TD % does not print");
+assert(printableFormStat({ label: "RZ TD %", value: "63.16" }), "a real RZ TD % still prints");
+assert(printableFormStat({ label: "Sacks", value: "0" }), "a real zero sack total still prints");
 
 console.log("newspaper-page ok");

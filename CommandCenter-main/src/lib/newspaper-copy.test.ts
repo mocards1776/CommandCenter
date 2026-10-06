@@ -31,6 +31,7 @@ function assertEqual(got: unknown, want: unknown, msg: string) {
 }
 
 assertEqual(tidy("Tyreek Hill 's catch"), "Tyreek Hill’s catch", "space before apostrophe");
+assertEqual(tidy("Pete Hegseth ‘s request"), "Pete Hegseth’s request", "left quote used as an apostrophe");
 assertEqual(tidy("Blake Craig 's kick"), "Blake Craig’s kick", "another possessive");
 assertEqual(tidy("76ers' preseason opener"), "76ers’ preseason opener", "possessive keeps the space after the mark");
 assertEqual(tidy("the Bears' starting quarterback"), "the Bears’ starting quarterback", "Bears' starting keeps its space");

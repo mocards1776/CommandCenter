@@ -8,6 +8,25 @@ import { isPrintableStoryBody, sanitizeArticleBody } from "./newspaper-copy.ts";
 import type { RecapGamePack, RecapLeader } from "./newspaper-recap";
 import type { WireGame } from "./newspaper-wire";
 import type { YesterdayRecapGame } from "./yesterday-recap";
+import {
+  clubMentionNames,
+  cardLeaguePathOf,
+  favoriteKeyFitsPath,
+  hayHasName,
+  storyMatchesFavorite,
+  strongNames,
+  type FavoriteMatchCard,
+} from "./newspaper-favorite-match.ts";
+
+export {
+  clubMentionNames,
+  cardLeaguePathOf,
+  favoriteKeyFitsPath,
+  hayHasName,
+  storyMatchesFavorite,
+  strongNames,
+};
+export type { FavoriteMatchCard };
 
 export { favoriteDeskWeight };
 
@@ -143,39 +162,6 @@ export type MatchedWrap = {
   gameId: string | null;
 };
 
-const WEAK_TOKENS = new Set([
-  "the", "and", "st.", "st", "fc", "afc", "club", "city", "united", "state",
-  "states", "football", "basketball", "baseball", "hockey", "soccer", "tour",
-  "louis", "kansas", "detroit", "missouri",
-]);
-
-/** Names a headline must use before it counts as a story about this club. */
-export function clubMentionNames(fav: SportsFavorite): string[] {
-  return strongNames(fav).filter((name) => name.length >= 4);
-}
-
-function strongNames(fav: SportsFavorite): string[] {
-  const names = [fav.shortName, fav.name]
-    .map((n) => n.trim().toLowerCase())
-    .filter(Boolean);
-  if (fav.key === "mlb-stl") names.push("cardinals", "st. louis cardinals", "stl");
-  if (fav.key === "nfl-kc") names.push("chiefs", "kansas city chiefs", "kc");
-  if (fav.key === "nfl-det") names.push("lions", "detroit lions");
-  if (fav.key === "cfb-mizzou" || fav.key === "cbb-mizzou") {
-    names.push("mizzou", "missouri tigers");
-  }
-  if (fav.key === "cfb-missouri-state" || fav.key === "cbb-missouri-state") {
-    names.push("missouri state", "bears");
-  }
-  if (fav.key === "eng-wolves") names.push("wolves", "wolverhampton", "wolverhampton wanderers");
-  if (fav.key === "eng-wrexham") names.push("wrexham");
-  if (fav.key === "eng-arsenal") names.push("arsenal");
-  if (fav.key === "nhl-stl") names.push("blues", "st. louis blues");
-  if (fav.key === "nfl-dal") names.push("cowboys", "dallas cowboys");
-  if (fav.key === "nba-phi") names.push("76ers", "sixers", "philadelphia 76ers");
-  return [...new Set(names)].filter((n) => n.length >= 3 && !WEAK_TOKENS.has(n));
-}
-
 /** A wrap feed only names clubs in that feed's sport. */
 function feedAllowsFavorite(feedUrl: string, fav: SportsFavorite): boolean {
   const path = fav.espnPath;
@@ -198,14 +184,6 @@ function feedAllowsFavorite(feedUrl: string, fav: SportsFavorite): boolean {
   if (feedUrl.includes("epl")) return /soccer\/eng\.1\//.test(path);
   if (feedUrl.includes("soccer")) return path.startsWith("soccer/");
   return true;
-}
-
-function hayHasName(hay: string, name: string): boolean {
-  if (name.length <= 3) {
-    const re = new RegExp(`(?:^|[^a-z0-9])${name.replace(/\./g, "\\.")}(?:[^a-z0-9]|$)`, "i");
-    return re.test(hay);
-  }
-  return hay.includes(name);
 }
 
 function extractGameId(link: string): string | null {
@@ -233,7 +211,13 @@ export function matchWrapToFavorites(
       const espnId = fav.espnPath.split("/").pop();
       if (espnId && item.logoSoccerIds.includes(espnId)) hit = true;
     }
-    if (!hit) hit = strongNames(fav).some((n) => hayHasName(hay, n));
+    if (!hit) {
+      const leaguePath = sportPathsForWrap(feedUrl, fav)[0] ?? null;
+      hit = storyMatchesFavorite(
+        { headline: item.title, dek: item.snippet, leaguePath, teamName: "" },
+        fav,
+      );
+    }
     if (!hit && feedUrl.includes("cardinals-wraps") && fav.key === "mlb-stl") hit = true;
     // Single-club desks: every story in the feed is about the club, named or not.
     if (!hit && (feedUrl === PD_BLUES_FEED || feedUrl === PD_MIZZOU_FEED || feedUrl === PD_CARDINALS_FEED)) hit = true;
@@ -940,9 +924,10 @@ export async function enrichWrapBodies(
 
 /** Tag league copy that is clearly about a followed club. */
 export function favoriteKeyFromCopy(card: GameWrapCard, favs: SportsFavorite[]): string {
-  if (card.favoriteKey) return card.favoriteKey;
-  const hay = `${card.headline} ${card.dek ?? ""} ${card.teamName ?? ""}`.toLowerCase();
-  const hits = favs.filter((f) => f.kind === "team" && strongNames(f).some((n) => hayHasName(hay, n)));
+  if (card.favoriteKey && favoriteKeyFitsPath(card.favoriteKey, card.leaguePath, card.sportLabel)) {
+    if (favs.some((f) => f.key === card.favoriteKey)) return card.favoriteKey;
+  }
+  const hits = favs.filter((f) => f.kind === "team" && storyMatchesFavorite(card, f));
   if (!hits.length) return "";
   hits.sort((a, b) => favoriteDeskWeight(b.key) - favoriteDeskWeight(a.key));
   return hits[0]!.key;
@@ -951,7 +936,12 @@ export function favoriteKeyFromCopy(card: GameWrapCard, favs: SportsFavorite[]):
 export function tagFavoriteStories(cards: GameWrapCard[], favs: SportsFavorite[]): GameWrapCard[] {
   return cards.map((card) => {
     const key = favoriteKeyFromCopy(card, favs);
-    if (!key) return card;
+    if (!key) {
+      if (card.favoriteKey && !favoriteKeyFitsPath(card.favoriteKey, card.leaguePath, card.sportLabel)) {
+        return { ...card, favoriteKey: "", followed: false };
+      }
+      return card;
+    }
     if (card.favoriteKey === key && card.followed) return card;
     const fav = favs.find((f) => f.key === key);
     return {

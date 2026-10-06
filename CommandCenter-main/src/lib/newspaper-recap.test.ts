@@ -8,6 +8,7 @@ import {
   mlbTeamColor,
   packFromBoxGame,
   pickRecapLeaders,
+  preferClubRecapLeaders,
   recapIsFull,
   recapIsScoreOnly,
   recapPhotoKind,
@@ -300,5 +301,16 @@ const printed = printEspnBoxHtml(box);
 assert(printed.includes("D. Jones") && printed.includes("19/34"), "passing table prints the line");
 assert(printed.includes("J. Taylor 20 yd run"), "scoring lists the play");
 assert(!/plays<\/|lines</i.test(printed) && !/\d+ plays/.test(printed) && !/\d+ \/ \d+ lines/.test(printed), "no count stubs");
+
+assert(
+  preferClubRecapLeaders(
+    [
+      { label: "Pass", name: "K. Cousins", line: "365 YDS", headshot: null, team: "LV", id: "14880", href: null },
+      { label: "Rush", name: "K. Walker III", line: "177 YDS", headshot: null, team: "KC", id: "4567048", href: null },
+    ],
+    "KC",
+  ).every((l) => l.team !== "LV"),
+  "a Chiefs recap drops the Raiders passer",
+);
 
 console.log("newspaper-recap ok");

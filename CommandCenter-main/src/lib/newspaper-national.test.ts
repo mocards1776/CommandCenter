@@ -16,6 +16,8 @@ import {
   mechanicalStories,
   nationalDropParts,
   extractArticleFromHtml,
+  cleanExtractedCopy,
+  stripNationalPromos,
   looksPaywalled,
   nationalLeadColumns,
   nationalPageCopy,
@@ -402,5 +404,40 @@ const leadCols = nationalLeadColumns([
 assert(leadCols.left[0]!.startsWith("Negotiators"), "the opener stays in the left column");
 assert(leadCols.right.length >= 1 && !leadCols.right[0]!.startsWith("Negotiators"), "later grafs fill the right column");
 assert(nationalLeadColumns(["One sentence only."]).right.length === 0, "a single short graf does not invent a second column");
+
+assert(
+  !stripNationalPromos(
+    "See more of our coverage in your search results. The threat of a possible Iranian drone attack triggered the US to remove bombers.",
+  ).includes("See more of our coverage"),
+  "Reuters search promo is stripped",
+);
+assert(
+  stripNationalPromos(
+    "See more of our coverage in your search results. The threat of a possible Iranian drone attack triggered the US to remove bombers.",
+  ).includes("Iranian drone"),
+  "the story after the Reuters promo stays",
+);
+assert(
+  !cleanExtractedCopy(
+    "President Trump authorized the execution following War Secretary Pete Hegseth ‘s request. Join Washington Examiner for unlimited access. Subscribe for full access to Washington Examiner coverage.",
+  ).includes("Join Washington Examiner"),
+  "Examiner subscribe rail is stripped",
+);
+assert(
+  cleanExtractedCopy("following War Secretary Pete Hegseth ‘s request, Pentagon spokesman Sean Parnell said.").includes(
+    "Hegseth’s",
+  ),
+  "Hegseth apostrophe is glued",
+);
+assert(
+  !stripNationalPromos(
+    "Laura Ingraham, Jesse Watters and Greg Gutfeld bring Fox News viewers their fresh takes on the top news of the day. President Donald Trump endorsed Wyoming.",
+  ).includes("Ingraham"),
+  "Fox show promo is stripped",
+);
+assert(
+  !/\bS ee\b|\bO il\b|\bC LEVELAND\b/.test("See more of our coverage. Oil prices fall."),
+  "fixture promo is a full word, not a drop-cap split",
+);
 
 console.log("newspaper-national ok");
