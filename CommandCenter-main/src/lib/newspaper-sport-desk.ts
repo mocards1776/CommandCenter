@@ -3,7 +3,7 @@
  * per game, order the night, and attach a feature as a related item.
  */
 
-import { favoriteDeskWeight, gameWrapCovers, isGameWrapStory } from "./newspaper.ts";
+import { favoriteDeskWeight, gameWrapCovers, isGameWrapStory, isResultCopy } from "./newspaper.ts";
 import { isNewspaperSecGame } from "./newspaper-espn.ts";
 import { wrapBriefSentences } from "./newspaper-box-wrap.ts";
 import { storySource } from "./newspaper-source.ts";
@@ -215,13 +215,23 @@ export function isSecCard(card: GameWrapCard): boolean {
 }
 
 function isWrapLead(card: GameWrapCard): boolean {
-  return isGameWrapCard(card) || Boolean(card.scoreLine && /\d/.test(card.scoreLine));
+  if (isGameWrapCard(card) || Boolean(card.scoreLine && /\d/.test(card.scoreLine))) return true;
+  return isResultCopy({
+    headline: card.headline,
+    dek: card.dek,
+    status: card.status,
+    scoreLine: card.scoreLine,
+    type: card.id.startsWith("news-") || card.id.startsWith("league-") ? card.status : null,
+  });
 }
 
 function isFreshSectionLead(card: GameWrapCard, path: string, edition: string): boolean {
   if (isWrapLead(card)) {
     if (!card.when) return true;
-    return gameWrapCovers(card.when, edition, path) || Boolean(card.holdover);
+    if (gameWrapCovers(card.when, edition, path) || card.holdover) return true;
+    if (card.postseason) return true;
+    if (card.status && /\brecap\b/i.test(card.status)) return true;
+    return false;
   }
   if (card.holdover) return false;
   return true;

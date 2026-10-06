@@ -61,6 +61,7 @@ export function hideOrphanTrimBlocks(root: HTMLElement) {
 }
 
 export function resetSheetTrim(sheet: HTMLElement) {
+  sheet.removeAttribute("data-tt-tight");
   for (const el of sheet.querySelectorAll<HTMLElement>("[data-tt-trimmed]")) {
     el.removeAttribute("data-tt-trimmed");
   }
@@ -80,6 +81,17 @@ export function fitSheetToCanvas(sheet: HTMLElement, canvasH = PAGE_CANVAS_H): {
     if (!next) break;
     mark(next, true);
     hideOrphanTrimBlocks(sheet);
+    cut++;
+  }
+  if (sheet.scrollHeight > canvasH + 0.5) sheet.setAttribute("data-tt-tight", "");
+  else sheet.removeAttribute("data-tt-tight");
+  while (sheet.scrollHeight > canvasH + 0.5 && guard--) {
+    const extras = [...sheet.querySelectorAll<HTMLElement>(".wsj-prose p, .wsj-dek, .tt-nat-copy p, .tt-mo-dek, .tt-wrap-copy")].filter(
+      (el) => !el.hasAttribute("data-tt-trimmed") && el.offsetHeight > 0,
+    );
+    const last = extras[extras.length - 1];
+    if (!last) break;
+    mark(last, true);
     cut++;
   }
   return { cut, overflow: measureSheetOverflow(sheet.scrollHeight, canvasH) };

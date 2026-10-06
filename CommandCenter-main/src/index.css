@@ -1528,6 +1528,12 @@ mark.rss-hl {
 [data-tt-trimmed] {
   display: none !important;
 }
+.wsj-sheet[data-tt-tight] .wsj-cut img,
+.wsj-sheet[data-tt-tight] .tt-nat-cut img,
+.wsj-sheet[data-tt-tight] .tt-mo-photo img,
+.wsj-sheet[data-tt-tight] .tt-feature-photo img {
+  max-height: 240px;
+}
 
 .wsj-logo {
   display: block;

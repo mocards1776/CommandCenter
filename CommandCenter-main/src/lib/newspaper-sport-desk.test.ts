@@ -305,4 +305,30 @@ const holdoverFront = orderSportSectionFront(
 );
 assert(holdoverFront[0]?.id === "wire-cfb-ala-hold", "a holdover ranked wrap still leads when the press marked every final holdover");
 
+const marinersNews = card({
+  id: "athletic-sea-surgery",
+  headline: "Mariners' Cal Raleigh, Josh Naylor undergo surgeries",
+  leaguePath: "baseball/mlb",
+  sportLabel: "MLB",
+  editorFront: 0,
+  photo: "https://example.com/sea.jpg",
+  when: "2026-10-05T18:00:00Z",
+});
+const chourioRecap = card({
+  id: "league-50108019",
+  headline: "Chourio's 2-run single with 2 outs in 9th lifts Brewers over Padres",
+  leaguePath: "baseball/mlb",
+  sportLabel: "MLB",
+  status: "Recap",
+  postseason: true,
+  when: "2026-10-05T02:31:00Z",
+  photo: "https://example.com/mil.jpg",
+});
+const mlbFront = orderSportSectionFront(
+  [marinersNews, chourioRecap],
+  "baseball/mlb",
+  "2026-10-05-evening",
+);
+assert(mlbFront[0]?.id === "league-50108019", "an NLDS recap leads MLB over an offseason surgery feature");
+
 console.log("newspaper-sport-desk ok");
