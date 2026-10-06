@@ -64,6 +64,7 @@ import {
   recapBodyForPage,
   recapCardGraf,
   recapCardSource,
+  recapDeskGraf,
   recapDropLead,
   recapIsScoreOnly,
   recapKicker,
@@ -850,16 +851,13 @@ function RecapCard({
   );
   const shown = source.headline !== card.headline ? { ...card, headline: source.headline } : card;
   const photo = live?.recap?.photo || card.photo || espnStory.data?.photo;
-  const fromStory = recapCardGraf(source.body, lead || wide || desk ? RECAP_LEAD_GRAF : undefined);
-  const boxGraf =
-    desk && live && recapCardGraf(fromStory.body).body.split(/(?<=[.!?])\s+/).filter(Boolean).length < 2
-      ? recapCardGraf(writeBoxWrapFromBoxGame(live), RECAP_LEAD_GRAF)
-      : null;
-  const graf = boxGraf?.body ? boxGraf : fromStory;
+  const graf = desk
+    ? recapDeskGraf(source.body, live ? writeBoxWrapFromBoxGame(live) : undefined, RECAP_LEAD_GRAF)
+    : recapCardGraf(source.body, lead || wide ? RECAP_LEAD_GRAF : undefined);
   const drop = graf.body ? recapDropLead(graf.dateline ?? card.dateline, graf.body) : null;
   return (
     <article
-      className={cn("tt-recap-card", lead && "lead", (wide || desk) && "wide", desk && "desk")}
+      className={cn("tt-recap-card", lead && "lead", wide && "wide", desk && "desk")}
       data-tt-keys={storyReadKeys(card).join("|")}
       data-tt-title={shown.headline}
     >
@@ -2883,6 +2881,21 @@ function WrapPlayers({ card }: { card: GameWrapCard }) {
   );
 }
 
+function DeskWraps({ cards, stack }: { cards: GameWrapCard[]; stack?: boolean }) {
+  const lookup = useContext(GameLookup);
+  if (!cards.length) return null;
+  const cols = stack || cards.length === 1 ? 1 : Math.min(3, cards.length);
+  return (
+    <section className={cn("tt-desk-wraps", cols === 1 && "stack")}>
+      <div className="tt-desk-wraps-grid" style={{ ["--cols" as string]: String(cols) }}>
+        {cards.map((card) => (
+          <RecapCard key={card.id} card={card} game={lookup(card)} wide={cols === 1} desk />
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function WrapBrief({ card, wide, desk }: { card: GameWrapCard; wide?: boolean; desk?: boolean }) {
   const lookup = useContext(GameLookup);
   const game = lookup(card);
@@ -3023,7 +3036,7 @@ function ScoresDesk({
   if (!games.length) {
     return (
       <div className="tt-scores">
-        {recapsWraps ? <WrapFlow cards={allWraps} shown={wrapCards} path={page.path} desk /> : null}
+        {recapsWraps ? <DeskWraps cards={wrapCards} /> : null}
       </div>
     );
   }
@@ -3065,8 +3078,8 @@ function ScoresDesk({
     : [];
   return (
     <div className="tt-scores">
-      {recapsWraps && wrapCards.length ? <WrapFlow cards={wrapCards} shown={wrapCards} path={page.path} desk /> : null}
-      {shortCont && contWraps.length ? <WrapFlow cards={contWraps} shown={contWraps} path={page.path} desk /> : null}
+      {recapsWraps && wrapCards.length ? <DeskWraps cards={wrapCards} /> : null}
+      {shortCont && contWraps.length ? <DeskWraps cards={contWraps} stack /> : null}
       {recapsWraps && !wrapCards.length ? (
       <article
         className={cn("tt-feature", !photo && "graphic")}
@@ -3179,7 +3192,7 @@ function ScoresDesk({
       ) : null}
       {recapsWraps && sparse ? <StarsBand games={games} /> : null}
       {shortCont ? <StarsBand games={gridGames} /> : null}
-      {recapsWraps && behind.length ? (
+      {recapsWraps && behind.length && !slicedBoard ? (
         <section className="tt-strip-wrap">
           <h3 className="wsj-band-title">{board?.priorLabel ?? "Last week"} finals</h3>
           <ScoreStrip
@@ -3528,7 +3541,9 @@ function SportFront({
         articles: page.articles.length,
         wraps: page.recapsWraps !== false,
         offset: page.recapsOffset ?? 0,
-        count: page.recapsCount ?? (page.recapsWraps === false ? results : null),
+        count: page.recapsCount,
+        boardGames: results,
+        mlb: page.path === "baseball/mlb",
       }),
     ),
     teams: standings.length ? `${standings.length} ${standings.length === 1 ? "table" : "tables"} · your clubs marked` : "League tables",

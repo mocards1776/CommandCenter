@@ -15,6 +15,8 @@ import {
   recapDropLead,
   recapCardGraf,
   recapCardSource,
+  recapDeskGraf,
+  recapIsTeaserLead,
   recapKicker,
   recapTeamNick,
   recapPrintStory,
@@ -284,6 +286,22 @@ const thinLead = recapCardGraf(
 );
 assert(thinLead.body.includes("Sip some tea"), "the kicker fragment stays");
 assert(thinLead.body.includes("Jonathan Taylor"), "a one-sentence lead pulls the next graf");
+assert(recapIsTeaserLead("Sip some tea, score some touchdowns."), "a one-line kicker is a teaser");
+assert(recapIsTeaserLead("An ugly win left the Green Bay Packers dissatisfied."), "a mood dek is a teaser");
+assert(!recapIsTeaserLead("Jonathan Taylor ran for two touchdowns and Daniel Jones added a rushing score as the Colts beat the Commanders on Sunday."), "a recap sentence is not a teaser");
+const deskTea = recapDeskGraf(
+  "LONDON -- — Sip some tea, score some touchdowns.\n\nJonathan Taylor ran for two touchdowns and Daniel Jones added a rushing score as the Colts beat the Commanders on Sunday. Indianapolis scored on its first three drives.",
+);
+assert(!/Sip some tea/i.test(deskTea.body), "desk graf drops the kicker");
+assert(deskTea.body.includes("Jonathan Taylor"), "desk graf keeps the recap");
+assert(deskTea.body.includes("first three drives"), "desk graf runs 2–4 sentences");
+const deskUgly = recapDeskGraf(
+  "An ugly win left the Green Bay Packers dissatisfied.",
+  "Jordan Love threw for 245 yards and two scores as Green Bay held off the Cowboys. The Packers scored on their first two second-half drives. Dallas turned it over at midfield late.",
+);
+assert(!/ugly win/i.test(deskUgly.body), "desk graf does not print the one-line dek");
+assert(deskUgly.body.includes("Jordan Love"), "a teaser-only story uses the box wrap");
+assert((deskUgly.body.match(/[.!?]/g) ?? []).length >= 2, "desk fallback is at least two sentences");
 const longGraf = recapCardGraf(
   "KANSAS CITY -- — Patrick Mahomes threw for 285 yards and two touchdowns on Sunday night as the Kansas City Chiefs held off the Las Vegas Raiders in a four-quarter scrap at Arrowhead Stadium.\n\nLas Vegas had led since the second quarter and left points on the field.",
 );

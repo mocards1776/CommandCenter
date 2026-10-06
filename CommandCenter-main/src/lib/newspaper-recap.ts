@@ -668,3 +668,41 @@ export function recapCardGraf(
   if (!body || recapIsScoreOnly(body)) return { dateline, body: "", dropCap: false };
   return { dateline, body, dropCap: Boolean(dateline) || recapShouldDropCap(body) };
 }
+
+/** One-line kicker with no score — "Sip some tea, score some touchdowns." */
+export function recapIsTeaserLead(text: string): boolean {
+  const t = (text ?? "").replace(/\s+/g, " ").trim();
+  if (!t) return true;
+  const first = splitNewspaperSentences(t)[0] ?? t;
+  const words = recapWordCount(first);
+  if (words >= 20) return false;
+  if (/\d/.test(first)) return false;
+  return words <= 14;
+}
+
+/**
+ * Desk card graf: 2–4 real recap sentences. Drops a teaser kicker, then
+ * uses `fallback` (a Times box wrap) when the story still cannot fill a graf.
+ */
+export function recapDeskGraf(
+  htmlOrText: string,
+  fallback?: string,
+  maxChars: number = RECAP_LEAD_GRAF,
+): { dateline: string | null; body: string; dropCap: boolean } {
+  const lead = recapCardGraf(htmlOrText, maxChars);
+  const sentences = splitNewspaperSentences(lead.body);
+  const start = sentences[0] && recapIsTeaserLead(sentences[0]) ? 1 : 0;
+  const meat = sentences.slice(start);
+  if (meat.length >= RECAP_GRAF_MIN_SENTENCES) {
+    const take = Math.min(RECAP_GRAF_MAX_SENTENCES, meat.length);
+    return { dateline: lead.dateline, body: meat.slice(0, take).join(" "), dropCap: lead.dropCap };
+  }
+  if (fallback && fallback !== htmlOrText) {
+    const fb = recapCardGraf(fallback, maxChars);
+    if (fb.body && splitNewspaperSentences(fb.body).length >= RECAP_GRAF_MIN_SENTENCES && !recapIsTeaserLead(fb.body)) {
+      return fb;
+    }
+  }
+  if (meat.length) return { dateline: lead.dateline, body: meat.join(" "), dropCap: lead.dropCap };
+  return lead;
+}

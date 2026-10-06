@@ -130,10 +130,18 @@ export function recapsDeskPrinted(opts: {
   wraps: boolean;
   offset?: number;
   count?: number | null;
+  boardGames?: number;
+  mlb?: boolean;
 }): { wraps: number; boxes: number } {
-  const wraps = opts.wraps && !opts.offset ? (opts.articles === 3 ? 3 : Math.min(2, Math.max(0, opts.articles))) : 0;
-  const boxes = Math.max(0, opts.count ?? 0);
-  return { wraps, boxes };
+  const offset = opts.offset ?? 0;
+  const board = Math.max(0, opts.boardGames ?? 0);
+  const planned = planRecapsScorePages(board || Math.max(0, opts.count ?? 0), { mlb: opts.mlb });
+  const slice = planned.find((s) => s.offset === offset) ?? planned[0];
+  const remain = board ? Math.max(0, board - offset) : Math.max(0, opts.count ?? 0);
+  const boxes = Math.min(slice?.count ?? remain, remain || Math.max(0, opts.count ?? 0));
+  const leadWraps = opts.wraps && !offset ? (opts.articles === 3 ? 3 : Math.min(2, Math.max(0, opts.articles))) : 0;
+  const contWraps = !opts.wraps && boxes > 0 && boxes <= 4 ? boxes : 0;
+  return { wraps: leadWraps || contWraps, boxes };
 }
 
 export function recapsDeskBlurb(printed: { wraps: number; boxes: number }): string {
