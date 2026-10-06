@@ -3,6 +3,8 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@resvg/resvg-wasm": "2.6.2"
+    "@resvg/resvg-wasm": "2.6.2",
+    "fast-png": "6.2.0",
+    "jpeg-js": "0.4.4"
   }
 }
