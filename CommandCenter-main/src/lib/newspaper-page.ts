@@ -126,6 +126,33 @@ export function planNewsPages(storyCount: number, perPage = NEWS_STORIES_PER_PAG
   return pages;
 }
 
+/** A club card with only a future slate — drop the empty form grid until it has numbers. */
+export function clubFormIsThin(club: {
+  stats: unknown[];
+  leaders: unknown[];
+  division: unknown[];
+}): boolean {
+  return club.stats.length === 0 && club.leaders.length === 0 && club.division.length === 0;
+}
+
+/** Stat-grid columns that fill the last row instead of leaving grey cells. */
+export function formStatColumns(count: number): number {
+  const n = Math.max(count, 0);
+  if (n <= 1) return Math.max(n, 1);
+  const options = [3, 2, 4, 5, 6];
+  let best = n;
+  let bestEmpty = Infinity;
+  for (const cols of options) {
+    if (cols > n) continue;
+    const empty = (cols - (n % cols)) % cols;
+    if (empty < bestEmpty) {
+      best = cols;
+      bestEmpty = empty;
+    }
+  }
+  return bestEmpty === 0 ? best : n;
+}
+
 /** A2 keeps this many club cards under today's weather. */
 export const A2_CLUB_CARDS = 3;
 /**

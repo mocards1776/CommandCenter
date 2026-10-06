@@ -30,6 +30,8 @@ import {
   planStandingsPages,
   A2_CLUB_CARDS,
   FORM_CLUBS_PER_PACKED_PAGE,
+  clubFormIsThin,
+  formStatColumns,
 } from "./newspaper-page.ts";
 
 function assert(cond: unknown, msg: string) {
@@ -176,5 +178,17 @@ assert(
   "the next six clubs continue once, not as two three-card pages",
 );
 assert(planOutlookAndForm(0).formOnOutlook === 0, "no clubs means no form cards");
+assert(
+  clubFormIsThin({ stats: [], leaders: [], division: [] }),
+  "a card with only a future slate is thin",
+);
+assert(
+  !clubFormIsThin({ stats: [{ label: "ERA" }], leaders: [], division: [] }),
+  "a card with numbers is not thin",
+);
+assert(formStatColumns(6) === 3, "six stats fill two rows of three");
+assert(formStatColumns(5) === 5, "five stats sit in one row, no grey cell");
+assert(formStatColumns(3) === 3, "three stats fill one row");
+assert(formStatColumns(4) === 2, "four stats fill two even rows");
 
 console.log("newspaper-page ok");

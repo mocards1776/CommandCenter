@@ -1,4 +1,4 @@
-import { dropLastSentence } from "./newspaper-copy";
+import { dropLastSentence } from "./newspaper-copy.ts";
 
 const COPY_SEL = ".wsj-prose p, .wsj-dek, .wsj-brief-dek, .tt-under-story p";
 
@@ -11,40 +11,29 @@ export const SOFT_PAGE_H = 1480;
 export const HARD_PAGE_H = 1650;
 const FLOW_SEL = "[data-tt-flow]";
 
-function isVerticalClip(overflow: string, overflowY: string): boolean {
-  return overflow === "hidden" || overflowY === "hidden" || overflowY === "clip";
+export function sheetZoom(sheet: Element): number {
+  const z = Number.parseFloat(getComputedStyle(sheet).zoom || "1");
+  return Number.isFinite(z) && z > 0 ? z : 1;
 }
 
-function clipBottom(el: HTMLElement): number {
-  let limit = Infinity;
-  let node: HTMLElement | null = el.parentElement;
-  while (node) {
-    const s = getComputedStyle(node);
-    // Dynamic sheets use overflow-x: clip and may grow; never treat the sheet as a vertical cap.
-    if (!node.classList.contains("wsj-sheet") && isVerticalClip(s.overflow, s.overflowY)) {
-      limit = Math.min(limit, node.getBoundingClientRect().bottom);
-    }
-    node = node.parentElement;
-  }
-  const folio = el.closest(".wsj-sheet")?.querySelector(".wsj-folio");
-  if (folio) limit = Math.min(limit, folio.getBoundingClientRect().top);
-  return limit;
+/** Convert a zoomed viewport distance into unzoomed sheet CSS pixels. */
+export function unzoomedPx(zoomedPx: number, zoom: number): number {
+  const z = zoom > 0 ? zoom : 1;
+  return zoomedPx / z;
 }
 
-function softTargetBottom(el: HTMLElement): number | null {
-  const sheet = el.closest(".wsj-sheet");
-  if (!sheet) return null;
-  const zoom = Number.parseFloat(getComputedStyle(sheet).zoom || "1") || 1;
-  return sheet.getBoundingClientRect().top + SOFT_PAGE_H * zoom;
+/** Element bottom in unzoomed sheet coordinates (0 at the sheet top). */
+export function sheetLocalBottom(el: HTMLElement, sheet: Element): number {
+  const zoom = sheetZoom(sheet);
+  return unzoomedPx(el.getBoundingClientRect().bottom - sheet.getBoundingClientRect().top, zoom);
 }
 
 function overflowsClip(el: HTMLElement): boolean {
-  const box = el.getBoundingClientRect();
-  const hard = clipBottom(el);
-  if (Number.isFinite(hard) && box.bottom > hard + 6) return true;
-  const soft = softTargetBottom(el);
-  if (soft != null && box.bottom > soft + 6) return true;
-  if (!Number.isFinite(hard) && soft == null) return el.scrollHeight > el.clientHeight + 6;
+  const sheet = el.closest(".wsj-sheet");
+  if (!sheet) return el.scrollHeight > el.clientHeight + 6;
+  const bottom = sheetLocalBottom(el, sheet);
+  if (bottom > HARD_PAGE_H + 6) return true;
+  if (bottom > SOFT_PAGE_H + 6) return true;
   return false;
 }
 
@@ -88,9 +77,10 @@ function hideOverflowBlocks(root: HTMLElement): void {
 
 /**
  * Restore full copy, then drop the last sentence that does not fit the
- * clipping column, the folio, or the soft 1480 pack target. Whole extra
- * blocks marked [data-tt-flow] hide past HARD_PAGE_H so they can run on
- * the next section folio instead of stretching this sheet.
+ * soft 1480 pack target. Whole extra blocks marked [data-tt-flow] hide past
+ * HARD_PAGE_H so they can run on the next section folio instead of stretching
+ * this sheet. Packing uses unzoomed sheet coordinates so 768 and 1280 compose
+ * the same folio when the sheet is 1032 CSS px wide.
  */
 let fitting = false;
 export function fitSentencesIn(root: HTMLElement): void {

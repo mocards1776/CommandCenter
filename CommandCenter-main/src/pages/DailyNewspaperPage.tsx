@@ -77,7 +77,7 @@ import {
   DeskSnap,
 } from "@/components/newspaper/BoxScore";
 import { RecapBox, RecapChrome, RecapPhoto } from "@/components/newspaper/GameRecap";
-import { frontPageLeftover, groupByDay, planSchedulePages } from "@/lib/newspaper-page";
+import { clubFormIsThin, formStatColumns, frontPageLeftover, groupByDay, planSchedulePages } from "@/lib/newspaper-page";
 import { ReaderProvider } from "@/components/newspaper/PaperReader";
 import { useReader } from "@/components/newspaper/reader-context";
 import { CfbFill, CfbScheduleDesk } from "@/components/newspaper/CfbScheduleDesk";
@@ -170,8 +170,8 @@ import {
 import {
   COMPANION_WAIT_MS,
   ISSUE_POLL_MS,
-  ISSUE_WAIT_MS,
   queryNamed,
+  SHELL_WAIT_MS,
   waitForPrintedReveal,
   withDeadline,
 } from "@/lib/newspaper-document";
@@ -1141,6 +1141,7 @@ function Story({
       style={tint(teamColor(team))}
       data-tt-keys={storyReadKeys(card).join("|")}
       data-tt-title={card.headline}
+      {...(className?.includes("lead") ? { "data-tt-lead": "" } : {})}
       {...(trim != null ? { "data-tt-trim": trim } : {})}
     >
       {artNode ? <div className="wsj-story-art">{artNode}</div> : null}
@@ -1346,7 +1347,6 @@ function ClubTicker({ teams, onTurn }: { teams: TeamInfobox[]; onTurn?: (folio: 
           </ExternalOrLink>
         </li>
       ))}
-      <DeskFiller count={teams.length} cols={cols} onTurn={onTurn} />
     </ul>
   );
 }
@@ -1378,7 +1378,6 @@ function DeskBoard({
             </ExternalOrLink>
           </li>
         ))}
-        <DeskFiller count={teams.length} cols={cols} onTurn={onTurn} />
       </ul>
     </section>
   );
@@ -1648,10 +1647,9 @@ function FrontPage({
   if (!pageLead) {
     return (
       <div className="wsj-front">
-        <ClubTicker teams={teams} onTurn={onTurn} />
         <div className="wsj-front-grid">
           <div className="wsj-front-main">
-            <DeskBoard teams={teams} title="Your clubs this edition" onTurn={onTurn} />
+            <ClubTicker teams={teams} onTurn={onTurn} />
             <TurnBar onTurn={onTurn} folio={clubsFolio} label="The clubs desk — every slate, table and leader" />
           </div>
           {rail}
@@ -1684,7 +1682,6 @@ function FrontPage({
 
   return (
     <div className="wsj-front">
-      <ClubTicker teams={teams} onTurn={onTurn} />
       <div className="wsj-front-grid" data-tt-keep="">
         <div className="wsj-front-main">
           <Story
@@ -1736,6 +1733,7 @@ function FrontPage({
         </div>
         {rail}
       </div>
+      <ClubTicker teams={teams} onTurn={onTurn} />
       {scoutBand ? <div data-tt-flow="">{scoutBand}</div> : null}
       <div data-tt-flow="">
       <BriefGrid
@@ -2540,6 +2538,7 @@ function SportSectionFront({
   leagueClubs,
   standings,
   edition,
+  playoffs,
   leaders,
   leftover,
   snaps,
@@ -2588,8 +2587,11 @@ function SportSectionFront({
   const railGames = frontStrips.flatMap((s) => s.games);
   const favIds = new Set(leagueClubs.filter((c) => c.favorite).map((c) => c.id));
   const mine = (row: { id: string; name: string }) => favIds.has(row.id);
-  const tables = rankStandings(standings).slice(0, 2);
-  const otherScores = recent.filter((g) => g.id !== leadGame?.id);
+  const mlbPost =
+    mlb && Boolean(playoffs?.active || playoffs?.rounds.some((round) => round.series.length));
+  const tables = mlbPost ? [] : rankStandings(standings).slice(0, 2);
+  const stripIds = new Set(frontStrips.flatMap((strip) => strip.games.map((g) => g.id)));
+  const otherScores = recent.filter((g) => g.id !== leadGame?.id && !stripIds.has(g.id));
   const fixtures = (board?.slate ?? []).filter((g) => !g.final && !g.live);
   const printableLeaders = leaders.filter(leaderGroupHasValidData).slice(0, 4);
   const gameOf = (card: GameWrapCard) => gameForCard(card, recent, page.clubs);
@@ -2692,7 +2694,9 @@ function SportSectionFront({
       ) : (
         <div className={cn("tt-front-grid", (railGames.length || tables.length) && "with-side")} data-tt-keep="">
           <div className="tt-front-lead">
-            {tables[0] ? (
+            {mlbPost ? (
+              <PlayoffDesk tree={playoffs} />
+            ) : tables[0] ? (
               <StandingsTable group={tables[0]} mine={mine} />
             ) : (
               <p className="wsj-empty">The league wire is quiet. Scores, tables and the slate follow.</p>
@@ -2729,6 +2733,11 @@ function SportSectionFront({
           ) : null}
         </div>
       )}
+      {mlbPost && lead ? (
+        <div className="tt-front-fill">
+          <PlayoffDesk tree={playoffs} />
+        </div>
+      ) : null}
       {more.length ? (
         <div data-tt-flow="">
           <BriefGrid
@@ -4145,14 +4154,33 @@ function ClubFormGrid({
   columns?: number;
 }) {
   if (!clubs.length) return <p className="wsj-empty">No clubs filed in this section yet.</p>;
-  const wide = clubs.length <= 2 && columns == null;
-  const cols = columns ?? (wide ? 1 : balancedCols(clubs.length, [3, 2, 4]));
+  const thin = clubs.filter((club) => clubFormIsThin(club));
+  const full = clubs.filter((club) => !clubFormIsThin(club));
+  const wide = full.length <= 2 && columns == null;
+  const cols = columns ?? (wide ? 1 : balancedCols(full.length, [3, 2, 4]));
   return (
+    <>
+    {thin.length ? (
+      <ul className="wsj-form-soon">
+        {thin.map((club) => (
+          <li key={club.key} style={tint(club.color)}>
+            <TeamLogo src={club.logo} size="sm" />
+            <strong>{club.shortName}</strong>
+            <em>
+              {club.upcoming[0]
+                ? `${club.upcoming[0].label}${club.upcoming[0].when ? ` · ${club.upcoming[0].when}` : ""}`
+                : "Season opens soon"}
+            </em>
+          </li>
+        ))}
+      </ul>
+    ) : null}
+    {full.length ? (
     <div
       className={cn("wsj-form-grid", wide && "wide")}
       style={{ ["--cols" as string]: String(cols) }}
     >
-      {clubs.map((club, i) => {
+      {full.map((club, i) => {
         const sheet = sheets[club.key];
         const stats = sheet?.stats.length ? sheet.stats : club.stats;
         const leaders = sheet?.leaders.length
@@ -4189,7 +4217,7 @@ function ClubFormGrid({
               {stats.length ? (
                 <section className="wsj-form-sec stats">
                   <h4>{sheet?.season ? `${sheet.season} by the numbers` : "By the numbers"}</h4>
-                  <dl className="wsj-form-stats">
+                  <dl className="wsj-form-stats" style={{ ["--stat-cols" as string]: String(formStatColumns(Math.min(stats.length, 6))) }}>
                     {stats.slice(0, 6).map((s) => (
                       <div key={`${s.label}-${s.value}`}>
                         <dd>{s.value}</dd>
@@ -4253,6 +4281,8 @@ function ClubFormGrid({
         );
       })}
     </div>
+    ) : null}
+    </>
   );
 }
 
@@ -4738,12 +4768,17 @@ function FittedSheet({ children }: { children: ReactNode }) {
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const run = () => fitSentencesIn(el);
+    let cancel = false;
+    const run = () => {
+      if (!cancel) fitSentencesIn(el);
+    };
     run();
+    void document.fonts?.ready.then(run);
     const ro = new ResizeObserver(run);
     ro.observe(el);
     for (const img of el.querySelectorAll("img")) img.addEventListener("load", run);
     return () => {
+      cancel = true;
       ro.disconnect();
       for (const img of el.querySelectorAll("img")) img.removeEventListener("load", run);
     };
@@ -5050,7 +5085,7 @@ function NewspaperDesk() {
       setDocPhase("press");
       loadedRef.current = pressId;
     };
-    const bootEscape = window.setTimeout(fallToPress, ISSUE_WAIT_MS + COMPANION_WAIT_MS);
+    const bootEscape = window.setTimeout(fallToPress, SHELL_WAIT_MS + COMPANION_WAIT_MS);
     void (async () => {
       const apply = (
         issue: PrintedIssue,
@@ -5174,7 +5209,9 @@ function NewspaperDesk() {
       }
 
       const queriesP = readRemoteQueries(pressId).catch(() => null);
-      const shell = await withDeadline(readRemoteIssueShell(pressId).catch(() => null), ISSUE_WAIT_MS, null);
+      const shellP = readRemoteIssueShell(pressId).catch(() => null);
+      let shell = await withDeadline(shellP, SHELL_WAIT_MS, null);
+      if (!shell) shell = await shellP;
       if (stale) return;
       if (shell?.id === pressId && isIssueWithinLookback(shell)) {
         const [dayAhead, national, beez] = await loadCompanions();
@@ -5267,7 +5304,8 @@ function NewspaperDesk() {
       const pageW = parseFloat(cs.getPropertyValue("--tt-page-w")) || 1032;
       const fit = Math.min(1, w / pageW);
       el.style.setProperty("--tt-fit", String(fit));
-      el.style.setProperty("--tt-page-min", `${Math.ceil(h / fit)}px`);
+      // Height is content + the CSS default. Do not grow the sheet to the viewport.
+      el.style.removeProperty("--tt-page-min");
       el.dataset.fit = "1";
     };
     apply();
@@ -5651,7 +5689,7 @@ function NewspaperDesk() {
   const mlbPlayoffsQ = useQuery({
     queryKey: [pressId, "tt-mlb-playoffs", day],
     queryFn: () => fetchMlbPlayoffTree(),
-    enabled: pressing && sportPaths.includes("baseball/mlb"),
+    enabled: sportPaths.includes("baseball/mlb"),
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -5672,7 +5710,7 @@ function NewspaperDesk() {
       );
       return Object.fromEntries(entries) as Record<string, SectionBoard>;
     },
-    enabled: pressing && sportPaths.length > 0,
+    enabled: sportPaths.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -6129,22 +6167,42 @@ function NewspaperDesk() {
     }
     return out;
   }, [subjects, filesQ.data]);
+  const boardRecaps = useMemo(() => {
+    const boards = boardQ.data ?? {};
+    const seen = new Set<string>();
+    const out: GameWrapCard[] = [];
+    for (const club of clubs) {
+      if (!club.leaguePath) continue;
+      const board = boards[club.leaguePath];
+      if (!board) continue;
+      for (const g of [...(board.results ?? []), ...(board.prior ?? [])]) {
+        const card = stampBoardCard(g, [club]);
+        if (!card?.favoriteKey || seen.has(card.id) || seen.has(card.wrapHref || "")) continue;
+        seen.add(card.id);
+        if (card.wrapHref) seen.add(card.wrapHref);
+        out.push(card);
+      }
+    }
+    return out;
+  }, [boardQ.data, clubs]);
   const stories = useMemo(() => {
-    const seen = new Set(printedStories.map((card) => card.wrapHref || card.id));
-    const extra = (athleticCards ?? []).filter((card) => {
+    const seen = new Set<string>();
+    const merged: GameWrapCard[] = [];
+    for (const card of [...boardRecaps, ...printedStories, ...(athleticCards ?? [])]) {
       const key = card.wrapHref || card.id;
-      if (!key || seen.has(key)) return false;
+      if (!key || seen.has(key) || seen.has(card.id)) continue;
       seen.add(key);
-      return true;
-    });
-    return [...printedStories, ...extra].map((card) => {
+      seen.add(card.id);
+      merged.push(card);
+    }
+    return merged.map((card) => {
       if (card.photo) return card;
       const lead = storyFiles[card.id]?.[0];
       if (lead?.action) return { ...card, photo: lead.action, caption: lead.name };
       if (lead?.headshot) return { ...card, photo: lead.headshot, caption: lead.name, photoStyle: "cutout" as const };
       return card;
     });
-  }, [printedStories, storyFiles, athleticCards]);
+  }, [boardRecaps, printedStories, storyFiles, athleticCards]);
 
   const filedRef = useRef<string | null>(null);
   useEffect(() => {
@@ -6707,16 +6765,26 @@ function NewspaperDesk() {
   }, [pageIndex, sheets]);
 
   useLayoutEffect(() => {
-    // Reveal once any folio is painted. Waiting on companions/recent left
-    // the pager visibility:hidden (navy chrome, no cream) on a cold iPad.
-    const packReady = docPhase !== "boot" && Boolean(sheets);
-    if (!packReady || revealFor.current === pressId) return;
+    // Hold the navy chrome until A1 has its lead and the favorite boards have
+    // settled, so a cold iPad does not print the empty clubs fallback.
+    if (docPhase === "boot" || !sheets || revealFor.current === pressId) return;
+    const front = pages.find((p) => p.kind === "favorites-front");
+    const haveLead = front?.kind === "favorites-front" && Boolean(front.lead);
+    const boardsReady = sportPaths.length === 0 || boardQ.isFetched;
+    const playoffsReady = !sportPaths.includes("baseball/mlb") || mlbPlayoffsQ.isFetched;
+    const copyReady = haveLead && boardsReady && playoffsReady;
     let cancel = false;
     const cap = window.setTimeout(() => {
       if (cancel) return;
       revealFor.current = pressId;
       setRevealed(true);
-    }, 7_000);
+    }, copyReady ? 7_000 : 22_000);
+    if (!copyReady) {
+      return () => {
+        cancel = true;
+        window.clearTimeout(cap);
+      };
+    }
     void (async () => {
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       await waitForPrintedReveal(pagerRef.current);
@@ -6728,7 +6796,19 @@ function NewspaperDesk() {
       cancel = true;
       window.clearTimeout(cap);
     };
-  }, [docPhase, pressReady, pressId, lockedCopy?.id, companions?.id, sheets, recent]);
+  }, [
+    docPhase,
+    pressReady,
+    pressId,
+    lockedCopy?.id,
+    companions?.id,
+    sheets,
+    recent,
+    pages,
+    sportPaths,
+    boardQ.isFetched,
+    mlbPlayoffsQ.isFetched,
+  ]);
 
   // A story that sat on the sheet counts as read. The next press leaves it out.
   useEffect(() => {

@@ -298,7 +298,7 @@ export function WeatherReport({
   const moon = moonPhase(today.date);
   const outlook = days.slice(1, 8);
   const showToday = part === "all" || part === "today";
-  const showOutlook = part === "all" || part === "today";
+  const showOutlook = part === "all" || part === "outlook";
   return (
     <section className="wx" aria-label={`Weather for ${MARSHFIELD.place}`}>
       <header className="wx-head">
