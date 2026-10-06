@@ -4173,7 +4173,7 @@ function ClubFormGrid({
               href: l.href && l.href.startsWith("/") ? l.href : null,
             }));
         return (
-          <article key={club.key} className="wsj-form-card" style={tint(club.color)} {...(i > 1 ? { "data-tt-flow": "" } : {})}>
+          <article key={club.key} className="wsj-form-card" style={tint(club.color)} {...(i > 3 ? { "data-tt-flow": "" } : {})}>
             <header className="wsj-club-card-head">
               <span className="wsj-disc">
                 <TeamLogo src={club.logo} size="md" />
@@ -4190,7 +4190,7 @@ function ClubFormGrid({
                 <section className="wsj-form-sec stats">
                   <h4>{sheet?.season ? `${sheet.season} by the numbers` : "By the numbers"}</h4>
                   <dl className="wsj-form-stats">
-                    {stats.slice(0, 8).map((s) => (
+                    {stats.slice(0, 6).map((s) => (
                       <div key={`${s.label}-${s.value}`}>
                         <dd>{s.value}</dd>
                         <dt>
@@ -4206,7 +4206,7 @@ function ClubFormGrid({
                 <section className="wsj-form-sec leaders">
                   <h4>Team leaders</h4>
                   <ul className="wsj-form-leaders">
-                    {leaders.slice(0, 6).map((l) => (
+                    {leaders.slice(0, 4).map((l) => (
                       <li key={l.key}>
                         {l.headshot ? <img src={l.headshot} alt="" loading="lazy" className="tt-face md" /> : null}
                         <span>
@@ -6707,14 +6707,9 @@ function NewspaperDesk() {
   }, [pageIndex, sheets]);
 
   useLayoutEffect(() => {
-    // Reveal once the sheets are painted. Waiting on companions left the
-    // pager visibility:hidden (navy chrome, no cream) if that fetch lagged.
-    const packReady =
-      docPhase !== "boot" &&
-      Boolean(sheets) &&
-      (docPhase === "press"
-        ? pressReady
-        : lockedCopy?.id === pressId || recent != null);
+    // Reveal once any folio is painted. Waiting on companions/recent left
+    // the pager visibility:hidden (navy chrome, no cream) on a cold iPad.
+    const packReady = docPhase !== "boot" && Boolean(sheets);
     if (!packReady || revealFor.current === pressId) return;
     let cancel = false;
     const cap = window.setTimeout(() => {
