@@ -256,3 +256,16 @@
 .tt-races-preview-rail[data-races-proof="live"] {
   color: #f4e6c4;
 }
+.tt-races-proof-stamp {
+  margin: 0 auto 10px;
+  max-width: var(--tt-page-w, 1032px);
+  padding: 6px 10px;
+  border: 1px solid #c9a227;
+  font-family: var(--w-cond);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #f4e6c4;
+  background: #1c2434;
+}

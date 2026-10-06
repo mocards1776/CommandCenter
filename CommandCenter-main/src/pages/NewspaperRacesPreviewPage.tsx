@@ -70,7 +70,7 @@ export default function NewspaperRacesPreviewPage() {
         </PreviewSheet>
       ) : (
         shown.map((page) => (
-          <PreviewSheet key={page.folio} folio={page.folio} label={page.continued ? "Races We're Tracking · continued" : "Races We're Tracking"} volume={volume} issue={issue}>
+          <PreviewSheet key={page.folio} folio={page.folio} label={page.continued ? "Races We're Tracking · continued" : "Races We're Tracking"} volume={volume} issue={issue} live={live}>
             <RacesPage page={page} />
           </PreviewSheet>
         ))
@@ -84,12 +84,14 @@ function PreviewSheet({
   label,
   volume,
   issue,
+  live,
   children,
 }: {
   folio: string;
   label: string;
   volume: number;
   issue: number;
+  live?: boolean;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -105,6 +107,11 @@ function PreviewSheet({
   }, [children]);
   return (
     <div className="wsj-page" data-races-sheet={folio} data-sheet-h={height} data-vol={romanNumeral(volume)} data-issue={issue}>
+      {live ? (
+        <p className="tt-races-proof-stamp">
+          PROOF · iPad 768×1024 · live {DAY} rows · {folio} · {label}
+        </p>
+      ) : null}
       <div className="wsj-fit">
         <div ref={ref} className="wsj-sheet">
           <header className="wsj-run">
