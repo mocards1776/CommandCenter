@@ -43,7 +43,8 @@ function restoreFlow(root: HTMLElement): void {
   }
 }
 
-const PACK_ROOTS = ".wsj-front, .tt-section-front, .tt-scores, .wsj-sport-solo, .wx, .tt-stand-grid, .wsj-clubs-desk";
+const PACK_ROOTS = ".wsj-front, .tt-section-front, .tt-scores, .wsj-sport-solo, .wx, .tt-stand-grid";
+const KEEP_COPY = "[data-tt-lead], [data-tt-keep]";
 
 function hideLastPackChild(root: HTMLElement): boolean {
   const flow = [...root.querySelectorAll<HTMLElement>(FLOW_SEL)].reverse().find((node) => !node.hidden);
@@ -55,7 +56,10 @@ function hideLastPackChild(root: HTMLElement): boolean {
   for (const pack of root.querySelectorAll<HTMLElement>(PACK_ROOTS)) {
     const kids = [...pack.children].reverse().filter(
       (node): node is HTMLElement =>
-        node instanceof HTMLElement && !node.hidden && node.getAttribute("data-tt-keep") == null,
+        node instanceof HTMLElement &&
+        !node.hidden &&
+        node.getAttribute("data-tt-keep") == null &&
+        node.getAttribute("data-tt-lead") == null,
     );
     if (kids.length > 1) {
       kids[0]!.hidden = true;
@@ -87,7 +91,9 @@ export function fitSentencesIn(root: HTMLElement): void {
   fitting = true;
   try {
     restoreFlow(root);
-    const nodes = [...root.querySelectorAll<HTMLElement>(COPY_SEL)];
+    const nodes = [...root.querySelectorAll<HTMLElement>(COPY_SEL)].filter(
+      (node) => !node.closest(KEEP_COPY),
+    );
     for (const node of nodes) {
       if (node.dataset.fitFull == null) node.dataset.fitFull = node.textContent ?? "";
       if (node.textContent !== node.dataset.fitFull) node.textContent = node.dataset.fitFull;

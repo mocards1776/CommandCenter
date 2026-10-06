@@ -1148,7 +1148,7 @@ function Story({
       {artNode ? <div className="wsj-story-art">{artNode}</div> : null}
       <div className="wsj-story-copy">
         <Headline card={card} size={size} game={game} />
-        {dek && !recap ? <p className="wsj-dek">{dek}</p> : null}
+        {dek && (!recap || chrome === false) ? <p className="wsj-dek">{dek}</p> : null}
         {recap ? null : <ScoreBug card={card} />}
         <Byline card={card} />
         {recap && chrome !== false ? <RecapChrome card={card} game={game ?? null} compact={compactBox} /> : null}
@@ -1332,7 +1332,7 @@ function ClubTicker({ teams, onTurn }: { teams: TeamInfobox[]; onTurn?: (folio: 
   if (!teams.length) return null;
   const cols = balancedCols(teams.length, [5, 4, 3]);
   return (
-    <ul className="wsj-ticker" data-tt-keep="" style={{ ["--cols" as string]: String(cols) }}>
+    <ul className="wsj-ticker" style={{ ["--cols" as string]: String(cols) }}>
       {teams.map((t, i) => (
         <li key={t.fav.key} style={tint(teamColor(t))} data-tt-trim={55 + i}>
           <ExternalOrLink href={t.href} className="wsj-ticker-cell wsj-a">
@@ -1683,7 +1683,7 @@ function FrontPage({
 
   return (
     <div className="wsj-front">
-      <div className="wsj-front-grid" data-tt-keep="">
+      <div className="wsj-front-grid">
         <div className="wsj-front-main">
           <Story
             className="lead"
@@ -2633,12 +2633,12 @@ function SportSectionFront({
   return (
     <div className="tt-section-front">
       {lead ? (
-        <div className={cn("tt-front-grid", (underLead.length || railSeconds.length || railGames.length) && "with-side")} data-tt-keep="">
+        <div className={cn("tt-front-grid", (underLead.length || railSeconds.length || railGames.length) && "with-side")}>
           <div className="tt-front-lead">
             <Story
               className="lead"
               card={lead}
-              text={splitStoryCopy(cardCopy(lead), 1100).teaser}
+              text={splitStoryCopy(cardCopy(lead), 640).teaser}
               size="xl"
               cols={1}
               art="top"
@@ -4212,6 +4212,7 @@ function ClubFormGrid({
     {full.length ? (
     <div
       className={cn("wsj-form-grid", wide && "wide")}
+      data-tt-keep=""
       style={{ ["--cols" as string]: String(cols) }}
     >
       {full.map((club, i) => {
@@ -4772,8 +4773,8 @@ function FolioSlot({
   render: () => ReactNode;
 }) {
   const current = useContext(PagerIndexContext);
-  const near = index < 2 || Math.abs(index - current) <= 1;
-  const [shown, setShown] = useState(index < 2);
+  const near = index < 3 || Math.abs(index - current) <= 1;
+  const [shown, setShown] = useState(index < 3);
   useEffect(() => {
     if (near) setShown(true);
   }, [near]);
