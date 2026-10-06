@@ -429,6 +429,18 @@ export function pitchTypeLabel(pitch: MlbPbpPitch): string {
     .toUpperCase();
 }
 
+export function pitchCallShort(pitch: MlbPbpPitch): string {
+  const kind = pitchChipKind(pitch.call);
+  if (kind === "inplay") return "IN PLAY";
+  const label = (pitch.callLabel || "").toLowerCase();
+  if (/foul/.test(label)) return "FOUL";
+  if (/called strike/.test(label)) return "CALLED STRIKE";
+  if (/swinging/.test(label)) return "SWINGING";
+  if (/ball/.test(label)) return "BALL";
+  if (/hit by pitch/.test(label)) return "HBP";
+  return (pitch.callLabel || "PITCH").toUpperCase();
+}
+
 export function pitchChipKind(call: MlbPbpPitchCall): "ball" | "strike" | "inplay" | "other" {
   if (call === "B") return "ball";
   if (call === "X") return "inplay";
@@ -445,13 +457,20 @@ export function normalizeHeatTemp(raw: string | null | undefined): MlbHeatTemp {
   return "lukewarm";
 }
 
+export function formatHeatValue(raw: string | null | undefined): string {
+  if (raw == null || raw === "" || raw === "—") return "—";
+  const n = Number(raw);
+  if (Number.isFinite(n) && n >= 0 && n <= 1) return n.toFixed(3).replace(/^0/, "");
+  return String(raw);
+}
+
 export function heatZoneGrid(cells: MlbHeatZoneCell[] | null | undefined): MlbHeatZoneCell[] {
   const byZone = new Map((cells ?? []).map((c) => [c.zone.replace(/^0/, "").padStart(2, "0"), c]));
   return HEAT_ZONE_ORDER.map((zone) => {
     const hit = byZone.get(zone);
     return {
       zone,
-      value: hit?.value ?? "—",
+      value: formatHeatValue(hit?.value),
       temp: hit ? normalizeHeatTemp(hit.temp) : "lukewarm",
     };
   });

@@ -13,6 +13,7 @@ import {
   flightPathD,
   heatZoneGrid,
   mapSprayToField,
+  pitchCallShort,
   pitchChipKind,
   pitchTypeLabel,
   playHeadline,
@@ -73,20 +74,20 @@ function BatterSilhouette({ side }: { side: "L" | "R" | "S" | null }) {
   const flip = side === "L";
   return (
     <svg
-      viewBox="0 0 80 140"
+      viewBox="0 0 120 200"
       className={cn(
-        "pointer-events-none absolute bottom-0 h-[92%] w-auto text-white/70",
-        flip ? "right-[4%] -scale-x-100" : "left-[2%]",
+        "pointer-events-none absolute bottom-0 h-full w-auto text-white/[0.14]",
+        flip ? "right-[-6%] -scale-x-100" : "left-[-8%]",
       )}
       aria-hidden
     >
       <g fill="currentColor">
-        <circle cx="36" cy="16" r="10" />
-        <path d="M28 28c-6 4-10 16-9 28l6 4 3-14 8 16 10-2-7-18c3-8 4-16-1-20-3-2-7-2-10 0z" />
-        <path d="M32 58 28 98l10 2 6-28 8 36h10l-10-48-8-4z" />
-        <path d="M26 98h12l2 28H28z" />
-        <path d="M48 104h11l3 22h-10z" />
-        <rect x="54" y="8" width="3.2" height="62" rx="1.4" transform="rotate(18 56 40)" />
+        <ellipse cx="48" cy="22" rx="16" ry="18" />
+        <path d="M34 38c-8 6-16 22-14 42 1 9 6 14 14 16l6-22 14 28 18-4-12-30c6-12 6-24-2-32-6-6-16-6-24 2z" />
+        <path d="M38 88c-4 22-8 44-6 58l22 4 8-40 16 52 24-2-18-64-20-12z" />
+        <path d="M34 148c-2 16 0 34 2 46h22c-2-16-4-30-2-46z" />
+        <path d="M68 154c2 14 6 30 8 40h22c-4-12-8-28-10-40z" />
+        <path d="M78 20c22-28 36-8 32 14-8 18-22 40-28 52l-10-6c8-14 18-30 22-42 2-8-2-16-16-8z" />
       </g>
     </svg>
   );
@@ -104,11 +105,11 @@ function HeatGrid({
   pending: boolean;
 }) {
   return (
-    <div className="relative mx-auto flex h-[220px] w-full max-w-[22rem] items-end justify-center sm:h-[240px]">
+    <div className="relative mx-auto flex h-[250px] w-full max-w-[24rem] items-center justify-center sm:h-[270px]">
       <BatterSilhouette side={batSide} />
       <div
         key={batterId ?? "none"}
-        className="relative z-[1] mb-7 grid grid-cols-3 gap-[3px] rounded-sm p-[3px]"
+        className="relative z-[1] grid grid-cols-3 gap-[4px] rounded-[2px] bg-black/20 p-[4px]"
         role="img"
         aria-label="Batter strike-zone heat"
       >
@@ -117,7 +118,7 @@ function HeatGrid({
           return (
             <div
               key={cell.zone}
-              className="mlb-pbp-cell-in flex h-[2.15rem] w-[2.55rem] items-center justify-center text-[11px] font-semibold tabular-nums sm:h-9 sm:w-[2.75rem] sm:text-[12px]"
+              className="mlb-pbp-cell-in flex h-11 w-[3.15rem] items-center justify-center text-[12px] font-semibold tabular-nums sm:h-12 sm:w-[3.4rem] sm:text-[13px]"
               style={{
                 background: pending ? "rgba(255,255,255,0.08)" : bg,
                 color: pending ? "rgba(255,255,255,0.35)" : fg,
@@ -142,18 +143,20 @@ function OnBaseRow({ runners }: { runners: MlbPbpRunner[] }) {
     return r ? `${n}B: ${r.shortName}` : `${n}B: empty`;
   };
   return (
-    <div className="flex items-center gap-3 border-t border-white/[0.06] px-3 py-2.5 sm:px-4">
-      <div className="relative h-8 w-8 shrink-0" aria-hidden>
-        <span className={cn("absolute top-0 left-1/2 h-2 w-2 -translate-x-1/2 rotate-45", bag(Boolean(at(2))))} />
-        <span className={cn("absolute top-1/2 left-0 h-2 w-2 -translate-y-1/2 rotate-45", bag(Boolean(at(3))))} />
-        <span className={cn("absolute top-1/2 right-0 h-2 w-2 -translate-y-1/2 rotate-45", bag(Boolean(at(1))))} />
+    <div className="flex items-center gap-3 border-t border-white/[0.06] px-3 py-3 sm:px-4">
+      <div className="relative h-10 w-10 shrink-0" aria-hidden>
+        <span className={cn("absolute top-0 left-1/2 h-2.5 w-2.5 -translate-x-1/2 rotate-45", bag(Boolean(at(2))))} />
+        <span className={cn("absolute top-1/2 left-0 h-2.5 w-2.5 -translate-y-1/2 rotate-45", bag(Boolean(at(3))))} />
+        <span className={cn("absolute top-1/2 right-0 h-2.5 w-2.5 -translate-y-1/2 rotate-45", bag(Boolean(at(1))))} />
       </div>
-      <p className="min-w-0 text-[11px] leading-snug text-white/70">
-        <span className="mr-1.5 text-[10px] font-semibold tracking-[0.14em] text-white/40">ON BASE</span>
+      <p className="min-w-0 text-[12px] leading-snug text-white/75">
+        <span className="mr-2 text-[10px] font-semibold tracking-[0.14em] text-white/40">
+          ON BASE
+        </span>
         {label(1)}
-        <span className="mx-1.5 text-white/20">·</span>
+        <span className="mx-2 text-white/20">·</span>
         {label(2)}
-        <span className="mx-1.5 text-white/20">·</span>
+        <span className="mx-2 text-white/20">·</span>
         {label(3)}
       </p>
     </div>
@@ -299,7 +302,7 @@ function PitchChips({ pitches }: { pitches: MlbPbpPitch[] }) {
             </span>
             <div className="min-w-0">
               <p className="truncate text-[11px] font-semibold tracking-[0.08em] text-white/80">
-                {kind === "inplay" ? "IN PLAY" : p.callLabel.toUpperCase()}
+                {pitchCallShort(p)}
               </p>
               <p className="truncate text-[10px] tracking-[0.08em] text-white/40">
                 {pitchTypeLabel(p)}

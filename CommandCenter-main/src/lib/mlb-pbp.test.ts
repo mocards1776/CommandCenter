@@ -6,6 +6,7 @@ import {
   clampFieldPoint,
   FIELD_HOME,
   flightArcHeight,
+  formatHeatValue,
   heatZoneGrid,
   mapLiveFeedToPbp,
   mapPlayHit,
@@ -125,6 +126,9 @@ assert.equal(grid[0]!.zone, "01");
 assert.equal(grid[0]!.value, ".059");
 assert.equal(grid[4]!.value, ".540");
 assert.equal(grid[8]!.value, "—");
+assert.equal(formatHeatValue(".540"), ".540");
+assert.equal(formatHeatValue("0.222"), ".222");
+assert.equal(formatHeatValue(""), "—");
 
 const feed: MlbLiveFeedRaw = {
   gamePk: 849839,
