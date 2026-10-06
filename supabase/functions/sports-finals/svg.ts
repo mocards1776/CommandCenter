@@ -874,7 +874,16 @@ function performersBlock(
   rows.forEach((row, i) => {
     const cx = x + CARD_IN + colW * i;
     const paint = row.teamAbbrev === card.away.abbrev ? awayPaint : homePaint;
+    const side = row.teamAbbrev === card.away.abbrev ? card.away : card.home;
     parts.push(playerPhoto(row.photoData, cx, y + 32, 36, row.name));
+    if (side.logoData) {
+      const badge = 16;
+      const bx = cx + 24;
+      const by = y + 52;
+      parts.push(
+        `<image href="${side.logoData}" x="${bx}" y="${by}" width="${badge}" height="${badge}" preserveAspectRatio="xMidYMid meet"/>`,
+      );
+    }
     parts.push(text(row.name, cx + 46, y + 48, { size: 16, fill: "#f7f4ee", weight: 700 }));
     parts.push(text(row.line || row.groupLabel, cx + 46, y + 66, { size: 13, fill: paint, weight: 600 }));
     parts.push(text(row.teamAbbrev, cx + 46, y + 80, { size: 12, fill: "#a8b0c2", weight: 700, spacing: 0.6 }));

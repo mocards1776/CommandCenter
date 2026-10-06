@@ -437,8 +437,14 @@ export function finalCaption(card: FinalCard, _origin?: string): string {
   return lines.join("\n").slice(0, 1000);
 }
 
+function espnLogoLeague(sport: string | undefined): string | null {
+  if (sport === "cfb") return "ncaa";
+  if (sport === "nfl" || sport === "mlb" || sport === "nhl") return sport;
+  return null;
+}
+
 /** ESPN `dark` rel is the light mark for navy cards. Fall back to 500-dark. */
-export function pickCardLogoHref(team: Rec): string | null {
+export function pickCardLogoHref(team: Rec, sport?: string): string | null {
   const logos = arr(team.logos)
     .map((row) => rec(row))
     .filter((logo) => str(logo.href).startsWith("https://"));
@@ -452,15 +458,27 @@ export function pickCardLogoHref(team: Rec): string | null {
     return { href: str(logo.href), score };
   });
   scored.sort((a, b) => b.score - a.score);
-  const picked = scored[0]?.href || (str(team.logo).startsWith("https://") ? str(team.logo) : "");
+  let picked = scored[0]?.href || (str(team.logo).startsWith("https://") ? str(team.logo) : "");
+  if (!picked) {
+    const league = espnLogoLeague(sport);
+    const slug = (str(team.abbreviation) || str(team.id)).toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (league && slug) picked = `https://a.espncdn.com/i/teamlogos/${league}/500-dark/${slug}.png`;
+  }
   if (!picked) return null;
   return picked.replace(/\/i\/teamlogos\/([a-z]+)\/500\//i, "/i/teamlogos/$1/500-dark/");
 }
 
-function linescores(comp: Rec): (number | null)[] {
-  return arr(comp.linescores).map((row) => {
+/**
+ * Inning / period runs. ESPN summaries often send `{ displayValue }` without
+ * `value`. Fixtures and some feeds send bare numbers, including `0`.
+ */
+export function parseLinescores(raw: unknown): (number | null)[] {
+  return arr(raw).map((row) => {
+    if (typeof row === "number" && Number.isFinite(row)) return row;
+    const direct = num(row);
+    if (direct != null) return direct;
     const line = rec(row);
-    return num(line.value) ?? num(line.displayValue);
+    return num(line.value) ?? num(line.displayValue) ?? num(line.runs);
   });
 }
 
@@ -477,7 +495,7 @@ function rankOf(comp: Rec): number | null {
   return rank;
 }
 
-function sideFrom(comp: Rec): FinalSide {
+function sideFrom(comp: Rec, sport: string): FinalSide {
   const team = rec(comp.team);
   const display = str(team.displayName);
   const short = str(team.shortDisplayName) || str(team.name) || str(team.abbreviation) || "Team";
@@ -489,9 +507,9 @@ function sideFrom(comp: Rec): FinalSide {
     score: num(comp.score),
     color: str(team.color) || "334155",
     alternateColor: str(team.alternateColor) || null,
-    logoUrl: pickCardLogoHref(team),
+    logoUrl: pickCardLogoHref(team, sport),
     logoData: null,
-    linescores: linescores(comp),
+    linescores: parseLinescores(comp.linescores),
     rank: rankOf(comp),
     hits: num(comp.hits),
     errors: num(comp.errors),
@@ -598,7 +616,7 @@ function titleGroup(name: string): string {
     .replace(/\b\w/g, (ch) => ch.toUpperCase());
 }
 
-function pickLeaders(raw: Rec): FinalLeader[] {
+function pickLeaders(raw: Rec, sport: string): FinalLeader[] {
   const groups = new Map<string, { label: string; rows: FinalLeader[] }>();
   for (const side of arr(rec(raw.boxscore).players)) {
     const abbrev = str(rec(rec(side).team).abbreviation) || "—";
@@ -625,7 +643,7 @@ function pickLeaders(raw: Rec): FinalLeader[] {
         line,
         highlight: hint?.text ?? null,
         highlightScore: hint?.score,
-        photoUrl: headshotHref(person),
+        photoUrl: headshotHref(person, sport),
         photoData: null,
       });
       groups.set(name, slot);
@@ -638,11 +656,21 @@ function pickLeaders(raw: Rec): FinalLeader[] {
   return ordered.flatMap((name) => groups.get(name)?.rows ?? []);
 }
 
-function headshotHref(person: Rec): string | null {
+function espnHeadshotLeague(sport: string | undefined): string | null {
+  if (sport === "cfb") return "college-football";
+  if (sport === "nfl" || sport === "mlb" || sport === "nhl") return sport;
+  return null;
+}
+
+function headshotHref(person: Rec, sport?: string): string | null {
   const nested = str(rec(person.headshot).href);
   if (nested.startsWith("https://")) return nested;
   const direct = str(person.headshot);
-  return direct.startsWith("https://") ? direct : null;
+  if (direct.startsWith("https://")) return direct;
+  const id = str(person.id);
+  const league = espnHeadshotLeague(sport);
+  if (id && league) return `https://a.espncdn.com/i/headshots/${league}/players/full/${id}.png`;
+  return null;
 }
 
 function statCell(labels: string[], stats: string[], ...keys: string[]): string {
@@ -653,7 +681,7 @@ function statCell(labels: string[], stats: string[], ...keys: string[]): string 
   return "";
 }
 
-function pickGoalies(raw: Rec): FinalPlayer[] {
+function pickGoalies(raw: Rec, sport: string): FinalPlayer[] {
   const out: FinalPlayer[] = [];
   for (const side of arr(rec(raw.boxscore).players)) {
     const abbrev = str(rec(rec(side).team).abbreviation) || "—";
@@ -684,7 +712,7 @@ function pickGoalies(raw: Rec): FinalPlayer[] {
           name: player,
           teamAbbrev: abbrev,
           line,
-          photoUrl: headshotHref(person),
+          photoUrl: headshotHref(person, sport),
           photoData: null,
         });
       }
@@ -706,7 +734,7 @@ function mlbGroupKind(block: Rec): "batting" | "pitching" | null {
   return null;
 }
 
-function pickMlbSide(raw: Rec, abbrev: string, kind: "batting" | "pitching"): MlbBoxSide {
+function pickMlbSide(raw: Rec, abbrev: string, kind: "batting" | "pitching", sport = "mlb"): MlbBoxSide {
   const want = kind === "batting" ? MLB_BAT_COLS : MLB_PITCH_COLS;
   const empty: MlbBoxSide = { abbrev, labels: want, rows: [] };
   for (const side of arr(rec(raw.boxscore).players)) {
@@ -733,7 +761,7 @@ function pickMlbSide(raw: Rec, abbrev: string, kind: "batting" | "pitching"): Ml
           name: player,
           pos: str(rec(row.position).abbreviation) || str(rec(person.position).abbreviation),
           cells,
-          photoUrl: headshotHref(person),
+          photoUrl: headshotHref(person, sport),
           note: decision ? decision.split(/[,\s]/)[0]!.toUpperCase() : null,
         });
       }
@@ -746,12 +774,12 @@ function pickMlbSide(raw: Rec, abbrev: string, kind: "batting" | "pitching"): Ml
 export function pickMlbBox(raw: Rec, awayAbbrev: string, homeAbbrev: string): MlbBox {
   return {
     batting: {
-      away: pickMlbSide(raw, awayAbbrev, "batting"),
-      home: pickMlbSide(raw, homeAbbrev, "batting"),
+      away: pickMlbSide(raw, awayAbbrev, "batting", "mlb"),
+      home: pickMlbSide(raw, homeAbbrev, "batting", "mlb"),
     },
     pitching: {
-      away: pickMlbSide(raw, awayAbbrev, "pitching"),
-      home: pickMlbSide(raw, homeAbbrev, "pitching"),
+      away: pickMlbSide(raw, awayAbbrev, "pitching", "mlb"),
+      home: pickMlbSide(raw, homeAbbrev, "pitching", "mlb"),
     },
   };
 }
@@ -956,8 +984,8 @@ export function cardFromSummary(sport: string, eventId: string, raw: unknown): F
   const awayComp = competitors.find((row) => str(row.homeAway) === "away");
   const homeComp = competitors.find((row) => str(row.homeAway) === "home");
   if (!awayComp || !homeComp) throw new Error("Summary is missing away or home");
-  const away = sideFrom(awayComp);
-  const home = sideFrom(homeComp);
+  const away = sideFrom(awayComp, sport);
+  const home = sideFrom(homeComp, sport);
   const status = rec(rec(comp.status).type);
   const state = str(status.state);
   const final = state === "post" || status.completed === true;
@@ -969,7 +997,7 @@ export function cardFromSummary(sport: string, eventId: string, raw: unknown): F
   const date = str(comp.date) || str(rec(body.header).date) || null;
   const playoff = mlbPlayoffFromSummary(sport, body, comp);
   const mlbBox = sport === "mlb" ? pickMlbBox(body, away.abbrev, home.abbrev) : null;
-  const leaders = pickLeaders(body);
+  const leaders = pickLeaders(body, sport);
   if (sport === "mlb" && mlbBoxHasRows(mlbBox)) {
     const performers = pickMlbPerformers(mlbBox!);
     if (performers.length) leaders.splice(0, leaders.length, ...performers);
@@ -995,7 +1023,7 @@ export function cardFromSummary(sport: string, eventId: string, raw: unknown): F
     stats: sport === "mlb" ? [] : pickStats(away.abbrev, home.abbrev, body),
     leaders,
     threeStars: [],
-    goalies: sport === "nhl" ? pickGoalies(body) : [],
+    goalies: sport === "nhl" ? pickGoalies(body, sport) : [],
     mlbBox: mlbBoxHasRows(mlbBox) ? mlbBox : null,
     standings: [],
     date,
@@ -1070,18 +1098,39 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(bin);
 }
 
-export async function fetchLogoDataUri(url: string | null): Promise<string | null> {
-  if (!url || !url.startsWith("https://")) return null;
+const IMAGE_UA = "CommandCenterSportsFinals";
+
+function imageMime(bytes: Uint8Array): string | null {
+  if (bytes[0] === 0x89 && bytes[1] === 0x50) return "image/png";
+  if (bytes[0] === 0xff && bytes[1] === 0xd8) return "image/jpeg";
+  if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[8] === 0x57 && bytes[9] === 0x45) return "image/webp";
+  return null;
+}
+
+async function fetchImageDataUri(url: string): Promise<string | null> {
   try {
-    const res = await fetch(url, { headers: { Accept: "image/png,image/*" } });
+    const res = await fetch(url, {
+      headers: { Accept: "image/png,image/jpeg,image/webp,image/*", "User-Agent": IMAGE_UA },
+      signal: AbortSignal.timeout(8_000),
+    });
     if (!res.ok) return null;
     const bytes = new Uint8Array(await res.arrayBuffer());
     if (bytes.length < 32 || bytes.length > 1_500_000) return null;
-    const mime = bytes[0] === 0x89 && bytes[1] === 0x50 ? "image/png" : "image/jpeg";
+    const mime = imageMime(bytes);
+    if (!mime) return null;
     return `data:${mime};base64,${bytesToBase64(bytes)}`;
   } catch {
     return null;
   }
+}
+
+/** resvg cannot fetch remote hrefs. Inline ESPN marks / headshots first. */
+export async function fetchLogoDataUri(url: string | null): Promise<string | null> {
+  if (!url || !url.startsWith("https://")) return null;
+  const data = await fetchImageDataUri(url);
+  if (data) return data;
+  if (/\/500-dark\//i.test(url)) return fetchImageDataUri(url.replace(/\/500-dark\//i, "/500/"));
+  return null;
 }
 
 async function hydratePhotos(card: FinalCard): Promise<void> {
@@ -1098,6 +1147,18 @@ async function hydratePhotos(card: FinalCard): Promise<void> {
   for (const row of card.leaders) row.photoData = row.photoUrl ? byUrl.get(row.photoUrl) ?? null : null;
 }
 
+/** Logos + key-performer headshots for a card already built from a summary. */
+export async function hydrateFinalCardArt(card: FinalCard): Promise<FinalCard> {
+  const [away, home] = await Promise.all([
+    fetchLogoDataUri(card.away.logoUrl),
+    fetchLogoDataUri(card.home.logoUrl),
+  ]);
+  card.away.logoData = away;
+  card.home.logoData = home;
+  await hydratePhotos(card);
+  return card;
+}
+
 export async function loadFinalCard(
   sport: string,
   eventId: string,
@@ -1105,9 +1166,7 @@ export async function loadFinalCard(
 ): Promise<FinalCard> {
   const card = cardFromSummary(sport, eventId, await fetchSummary(sport, eventId));
   const skipStandings = card.playoff && card.sport === "mlb";
-  const [away, home, standings, stars] = await Promise.all([
-    fetchLogoDataUri(card.away.logoUrl),
-    fetchLogoDataUri(card.home.logoUrl),
+  const [standings, stars] = await Promise.all([
     skipStandings ? Promise.resolve([]) : loadCardStandings(sport, card.away, card.home),
     sport === "nhl"
       ? fetchNhlThreeStarsWithRetry(
@@ -1116,10 +1175,8 @@ export async function loadFinalCard(
         )
       : Promise.resolve([]),
   ]);
-  card.away.logoData = away;
-  card.home.logoData = home;
   card.standings = standings;
   card.threeStars = starsFromLanding(stars);
-  await hydratePhotos(card);
+  await hydrateFinalCardArt(card);
   return card;
 }

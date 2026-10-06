@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { cardFromSummary, finalCaption, formatFinalsTimestamp, highlightFromBox, pickCardLogoHref, pickMlbPerformers, starsFromLanding, statMagnitude } from "./card.ts";
+import { cardFromSummary, finalCaption, formatFinalsTimestamp, highlightFromBox, parseLinescores, pickCardLogoHref, pickMlbPerformers, starsFromLanding, statMagnitude } from "./card.ts";
 import { mapMlbWinProbability, mlbInningLabels, mlbPlayRefs, mlbWinProbDomain } from "./mlb-win-probability.ts";
 import { mapThreeStars } from "./nhl-stars.ts";
 import { formatBestOf, formatPlayoffSeriesLine, mlbPlayoffFromSummary } from "./series.ts";
@@ -100,6 +100,16 @@ assert.ok(
       { href: "https://a.espncdn.com/i/teamlogos/mlb/500-dark/sd.png", rel: ["full", "dark"] },
     ],
   })?.includes("500-dark/sd.png"),
+);
+assert.match(
+  pickCardLogoHref({ id: "4", abbreviation: "CHW" }, "mlb") ?? "",
+  /mlb\/500-dark\/chw\.png/,
+  "construct ESPN 500-dark when the summary omits logos[]",
+);
+assert.deepEqual(parseLinescores([0, 0, 0, 1, 0, 3, 0, 0, 0]), [0, 0, 0, 1, 0, 3, 0, 0, 0]);
+assert.deepEqual(
+  parseLinescores([{ displayValue: "2" }, { displayValue: "0" }, { hits: 1 }, { value: 1 }]),
+  [2, 0, null, 1],
 );
 
 assert.deepEqual(parseScope(undefined), { favorites: true, ruwt: true, all: false });
@@ -932,6 +942,14 @@ assert.deepEqual(soxGuardians.mlbBox?.batting.away.labels, ["AB", "R", "H", "RBI
 assert.deepEqual(soxGuardians.mlbBox?.pitching.home.labels, ["IP", "H", "R", "ER", "BB", "K"]);
 assert.ok((soxGuardians.mlbBox?.batting.away.rows.length ?? 0) >= 11, "full CHW batting order");
 assert.ok((soxGuardians.mlbBox?.pitching.away.rows.length ?? 0) >= 4, "full CHW pitching staff");
+assert.deepEqual(soxGuardians.away.linescores, [0, 0, 0, 1, 0, 3, 0, 0, 0]);
+assert.deepEqual(soxGuardians.home.linescores, [2, 0, 0, 0, 0, 0, 0, 1, 0]);
+assert.match(soxGuardians.away.logoUrl ?? "", /500-dark\/chw/);
+assert.match(soxGuardians.home.logoUrl ?? "", /500-dark\/cle/);
+assert.ok(
+  soxGuardians.leaders.every((row) => row.photoUrl?.startsWith("https://")),
+  "key performers carry ESPN headshot URLs",
+);
 const soxSvg = renderFinalSvg(soxGuardians);
 assert.match(soxSvg, /S\. Antonacci/);
 assert.match(soxSvg, /C\. DeLautter/);
@@ -942,6 +960,17 @@ assert.match(soxSvg, new RegExp(`font-size="${MLB_BOX_STAT_SIZE}"[^>]*>11<`));
 assert.ok(MLB_BOX_NAME_SIZE >= 20 && MLB_BOX_STAT_SIZE >= 20, "box type must stay phone-readable");
 const soxH = Number(/<svg [^>]*height="(\d+(?:\.\d+)?)"/.exec(soxSvg)?.[1] ?? 0);
 assert.ok(soxH > 1350 && soxH <= FINALS_ALERT_TARGET_HEIGHT + 500, `full-box MLB card height ${soxH}`);
+{
+  const withArt = structuredClone(soxGuardians);
+  withArt.away.logoData = "data:image/png;base64,aaa";
+  withArt.home.logoData = "data:image/png;base64,bbb";
+  for (const row of withArt.leaders) row.photoData = "data:image/png;base64,ccc";
+  const artSvg = renderFinalSvg(withArt);
+  assert.match(artSvg, /<image href="data:image\/png;base64,aaa"/);
+  assert.match(artSvg, /<image href="data:image\/png;base64,bbb"/);
+  assert.match(artSvg, /<image href="data:image\/png;base64,ccc"/);
+  assert.doesNotMatch(artSvg, /logoHalo|logo-plate|<ellipse/);
+}
 
 assert.equal(TELEGRAM_GRAPHIC_METHOD, "sendDocument");
 {
