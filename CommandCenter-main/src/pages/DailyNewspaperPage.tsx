@@ -6707,10 +6707,14 @@ function NewspaperDesk() {
   }, [pageIndex, sheets]);
 
   useLayoutEffect(() => {
+    // Reveal once the sheets are painted. Waiting on companions left the
+    // pager visibility:hidden (navy chrome, no cream) if that fetch lagged.
     const packReady =
-      recent != null &&
-      ((docPhase === "document" && lockedCopy?.id === pressId && companions?.id === pressId) ||
-        (docPhase === "press" && pressReady));
+      docPhase !== "boot" &&
+      Boolean(sheets) &&
+      (docPhase === "press"
+        ? pressReady
+        : lockedCopy?.id === pressId || recent != null);
     if (!packReady || revealFor.current === pressId) return;
     let cancel = false;
     const cap = window.setTimeout(() => {
