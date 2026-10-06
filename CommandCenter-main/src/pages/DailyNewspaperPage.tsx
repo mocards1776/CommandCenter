@@ -6168,12 +6168,13 @@ function NewspaperDesk() {
     [clubs, teams],
   );
   const pages = edition.pages;
+  const pagesRef = useRef(pages);
+  pagesRef.current = pages;
   useEffect(() => {
     const page = pages[pageIndex];
     const names = heavyDesksForPage(page);
     if (names.length) releaseHeavy(names);
-  }, [pageIndex, pages, releaseHeavy]);
-  const weatherFolio = useMemo(() => pages.find((p) => p.kind === "favorites-clubs")?.folio ?? null, [pages]);
+  }, [pageIndex, pages, releaseHeavy]);  const weatherFolio = useMemo(() => pages.find((p) => p.kind === "favorites-clubs")?.folio ?? null, [pages]);
   // A club's numbers print once in Section A — on the first story page it owns.
   const notebookByFolio = useMemo(() => {
     const seen = new Set<string>();
@@ -6276,19 +6277,30 @@ function NewspaperDesk() {
   useEffect(() => {
     const root = document.documentElement;
     let open = root.classList.contains("tt-reader-open");
-    const saved = { idx: pageIndexRef.current, folio: pages[pageIndexRef.current]?.folio ?? "" };
+    const saved = { idx: pageIndexRef.current, folio: "" };
+    const visibleFolio = () => {
+      const el = pagerRef.current;
+      if (!el) return pagesRef.current[pageIndexRef.current]?.folio ?? "";
+      const hit = [...el.querySelectorAll(".wsj-page")].find((node) => {
+        const r = node.getBoundingClientRect();
+        return r.left > -40 && r.left < el.clientWidth * 0.55;
+      });
+      const label = hit?.getAttribute("aria-label")?.replace(/^Page\s+/, "") ?? "";
+      return label || pagesRef.current[pageIndexRef.current]?.folio || "";
+    };
     const obs = new MutationObserver(() => {
       const now = root.classList.contains("tt-reader-open");
       if (now && !open) {
+        saved.folio = visibleFolio();
         saved.idx = pageIndexRef.current;
-        saved.folio = pages[pageIndexRef.current]?.folio ?? saved.folio;
       }
       if (!now && open) {
         restoringRef.current = true;
         const restore = () => {
           const el = pagerRef.current;
           if (!el) return;
-          const byFolio = saved.folio ? pages.findIndex((p) => p.folio === saved.folio) : -1;
+          const list = pagesRef.current;
+          const byFolio = saved.folio ? list.findIndex((p) => p.folio === saved.folio) : -1;
           const idx = byFolio >= 0 ? byFolio : saved.idx;
           el.scrollTo({ left: idx * el.clientWidth, behavior: "instant" });
           setPageIndex(idx);
@@ -6306,7 +6318,7 @@ function NewspaperDesk() {
     });
     obs.observe(root, { attributes: true, attributeFilter: ["class"] });
     return () => obs.disconnect();
-  }, [markFolio, pages]);
+  }, [markFolio]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
