@@ -814,13 +814,15 @@ function RecapCard({
   lead,
   wide,
   desk,
+  fill,
 }: {
   card: GameWrapCard;
   game?: BoxGame | null;
   lead?: boolean;
   wide?: boolean;
-  /** Recaps desk: full-width photo + graf, no leftover fill. */
+  /** Recaps desk: photo + graf. Skip leftover fill unless `fill` is set. */
   desk?: boolean;
+  fill?: boolean;
 }) {
   const path = game?.path ?? card.leaguePath ?? null;
   const eventId = game?.espnEventId ?? (card.gameId && /^\d{6,}$/.test(card.gameId) ? card.gameId : null);
@@ -887,7 +889,7 @@ function RecapCard({
           </StoryLink>
         </p>
       </div>
-      {desk ? null : <RecapFill card={card} game={live} density={lead || wide ? "page" : "card"} />}
+      {desk && !fill ? null : <RecapFill card={card} game={live} density={lead || wide ? "page" : "card"} />}
     </article>
   );
 }
@@ -2881,15 +2883,15 @@ function WrapPlayers({ card }: { card: GameWrapCard }) {
   );
 }
 
-function DeskWraps({ cards, stack }: { cards: GameWrapCard[]; stack?: boolean }) {
+function DeskWraps({ cards, fill }: { cards: GameWrapCard[]; fill?: boolean }) {
   const lookup = useContext(GameLookup);
   if (!cards.length) return null;
-  const cols = stack || cards.length === 1 ? 1 : Math.min(3, cards.length);
+  const cols = cards.length === 1 ? 1 : Math.min(3, cards.length);
   return (
     <section className={cn("tt-desk-wraps", cols === 1 && "stack")}>
       <div className="tt-desk-wraps-grid" style={{ ["--cols" as string]: String(cols) }}>
         {cards.map((card) => (
-          <RecapCard key={card.id} card={card} game={lookup(card)} wide={cols === 1} desk />
+          <RecapCard key={card.id} card={card} game={lookup(card)} wide={cols === 1} desk fill={fill} />
         ))}
       </div>
     </section>
@@ -3079,7 +3081,7 @@ function ScoresDesk({
   return (
     <div className="tt-scores">
       {recapsWraps && wrapCards.length ? <DeskWraps cards={wrapCards} /> : null}
-      {shortCont && contWraps.length ? <DeskWraps cards={contWraps} stack /> : null}
+      {shortCont && contWraps.length ? <DeskWraps cards={contWraps} fill /> : null}
       {recapsWraps && !wrapCards.length ? (
       <article
         className={cn("tt-feature", !photo && "graphic")}
