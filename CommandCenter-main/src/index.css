@@ -10031,3 +10031,115 @@ li.counting .tt-count.card {
 .mlb-pbp-chip-in {
   animation: mlb-pbp-chip-in 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
+
+/* Game-detail moment alerts (sports PBP only — not Telegram / Times). */
+@keyframes gm-alert-veil {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes gm-alert-card {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes gm-alert-line {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+@keyframes gm-alert-score {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes gm-alert-ring {
+  0% {
+    opacity: 0;
+    transform: scale(0.72);
+  }
+  40% { opacity: 0.7; }
+  100% {
+    opacity: 0;
+    transform: scale(1.28);
+  }
+}
+@keyframes gm-alert-out {
+  to {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+.gm-alert-root {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  padding: max(1.25rem, env(safe-area-inset-top)) 1rem 2rem;
+  pointer-events: none;
+}
+.gm-alert-veil {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: radial-gradient(ellipse at 50% 42%, rgba(5, 8, 14, 0.28), rgba(5, 8, 14, 0.55));
+  animation: gm-alert-veil 320ms ease both;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.gm-alert-card {
+  position: relative;
+  width: min(24.5rem, calc(100vw - 2rem));
+  overflow: hidden;
+  border-radius: 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #05070c;
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.45);
+  padding: 1.1rem 1.15rem 1.15rem;
+  color: #fff;
+  pointer-events: auto;
+  animation: gm-alert-card 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  cursor: pointer;
+}
+.gm-alert-card-high {
+  padding-top: 1.2rem;
+  padding-bottom: 1.25rem;
+}
+.gm-alert-line {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: gm-alert-line 720ms 80ms cubic-bezier(0.22, 0.8, 0.28, 1) forwards;
+}
+.gm-alert-score {
+  animation: gm-alert-score 420ms 160ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.gm-alert-ring {
+  position: absolute;
+  inset: -6px;
+  border-radius: 999px;
+  border: 1px solid var(--gm-accent, rgba(255, 255, 255, 0.45));
+  pointer-events: none;
+  animation: gm-alert-ring 900ms 80ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.gm-alert-root-out .gm-alert-card,
+.gm-alert-root-out .gm-alert-veil {
+  animation: gm-alert-out 280ms ease forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .gm-alert-veil,
+  .gm-alert-card,
+  .gm-alert-line,
+  .gm-alert-score,
+  .gm-alert-ring {
+    animation: gm-alert-veil 180ms ease both;
+  }
+}
