@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
-import { ScoreCard, ScoreStrip, SlateLine, StandingsTable } from "@/components/newspaper/BoxScore";
+import { DeskSnap, ScoreCard, ScoreStrip, SlateLine } from "@/components/newspaper/BoxScore";
 import { RecapBox, RecapChrome, RecapPhoto } from "@/components/newspaper/GameRecap";
 import {
   boxStoryCard,
@@ -163,13 +163,15 @@ function LockedSheet({ folio, children }: { folio: string; children: ReactNode }
     const check = () => {
       setOverflow(el.scrollHeight > PAGE_CANVAS.height + 1);
       const box = el.getBoundingClientRect();
-      const ink = [...el.querySelectorAll(".wsj-sport-solo, .tt-slate-desk, .tt-front-side, .tt-front-lead")]
+      const folio = el.querySelector(".wsj-folio");
+      const foot = folio ? folio.getBoundingClientRect().top - box.top : PAGE_CANVAS.height;
+      const ink = [...el.querySelectorAll(".tt-section-front, .tt-slate-desk, .tt-front-side")]
         .flatMap((node) => [...node.children])
         .filter((node) => node.getBoundingClientRect().height > 2);
       const bottoms = ink.map((node) => node.getBoundingClientRect().bottom);
       const contentBottom = bottoms.length ? Math.max(...bottoms) - box.top : 0;
       const gaps: number[] = [];
-      const bands = [...el.querySelectorAll(".tt-slate-desk > *, .tt-front-side > *")];
+      const bands = [...el.querySelectorAll(".tt-slate-desk > section, .tt-slate-desk > h2, .tt-front-side > *")];
       for (let i = 1; i < bands.length; i++) {
         const gap = bands[i]!.getBoundingClientRect().top - bands[i - 1]!.getBoundingClientRect().bottom;
         if (gap > 1) gaps.push(Math.round(gap));
@@ -177,7 +179,7 @@ function LockedSheet({ folio, children }: { folio: string; children: ReactNode }
       setSparse(
         pageHasBlankBand({
           contentBottomPx: Math.round(contentBottom),
-          canvasHeight: PAGE_CANVAS.height,
+          canvasHeight: Math.round(foot),
           internalGapsPx: gaps,
         }),
       );
@@ -452,14 +454,7 @@ function byeAbbrevs(slate: BoxGame[], tables: StandGroup[]): string[] {
 }
 
 function DeskTables({ tables }: { tables: StandGroup[] }) {
-  if (!tables.length) return null;
-  return (
-    <div className="tt-stand-grid tt-desk-tables">
-      {tables.map((group) => (
-        <StandingsTable key={group.name} group={group} mine={() => false} />
-      ))}
-    </div>
-  );
+  return <DeskSnap tables={tables} />;
 }
 
 function A1Front({
@@ -621,13 +616,13 @@ function NflSchedule({
             </h3>
             <div className="tt-slate-list">
               {list.map((g) => (
-                <SlateLine key={g.id} game={g} />
+                <SlateLine key={g.id} game={g} clockOnly />
               ))}
             </div>
           </section>
         ))}
         <div className="tt-slate-fill">
-          <DeskTables tables={tables ?? []} />
+          <DeskTables tables={(allTables ?? tables ?? []).length ? (allTables ?? tables ?? []) : []} />
           {byes.length ? (
             <p className="tt-bye-line">
               On bye <em>{byes.join(" · ")}</em>

@@ -8,6 +8,7 @@ import {
   gameClock,
   gameDay,
   shortBroadcast,
+  slateClock,
   slateKickoff,
 } from "@/lib/newspaper-box";
 import {
@@ -662,8 +663,8 @@ export function MatchupCard({ game }: { game: BoxGame }) {
 }
 
 /** One compact slate row: time, crests, matchup, TV. Used so NFL7 fits the canvas. */
-export function SlateLine({ game }: { game: BoxGame }) {
-  const when = slateKickoff(game);
+export function SlateLine({ game, clockOnly }: { game: BoxGame; clockOnly?: boolean }) {
+  const when = clockOnly ? slateClock(game) : slateKickoff(game);
   return (
     <article className={cn("tt-slate-line", game.live && "live")}>
       <time dateTime={game.startIso ?? undefined}>{when || game.status}</time>
@@ -678,6 +679,28 @@ export function SlateLine({ game }: { game: BoxGame }) {
       </span>
       <span className="tt-slate-line-tv">{shortBroadcast(game.broadcasts.filter(Boolean)[0]) || ""}</span>
     </article>
+  );
+}
+
+/** Compact division snapshot: abbrev + W–L. Packs a remaining band without wrapping a full table. */
+export function DeskSnap({ tables }: { tables: StandGroup[] }) {
+  if (!tables.length) return null;
+  return (
+    <div className={cn("tt-desk-tables", tables.length >= 4 && "cols-4")}>
+      {tables.map((group) => (
+        <section key={group.name} className="tt-desk-div">
+          <h4>{group.name}</h4>
+          <ol>
+            {group.rows.map((row) => (
+              <li key={row.id || row.abbrev}>
+                <b>{row.abbrev}</b>
+                <em>{row.cells.slice(0, 2).join("–")}</em>
+              </li>
+            ))}
+          </ol>
+        </section>
+      ))}
+    </div>
   );
 }
 

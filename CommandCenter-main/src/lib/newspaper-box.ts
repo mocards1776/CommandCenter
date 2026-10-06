@@ -918,9 +918,14 @@ export function gameClock(game: Pick<BoxGame, "final" | "live" | "status" | "sta
   return clockInCentral(game.startIso);
 }
 
+/** Clock for a packed slate cell — drop AM/PM so "Thu 7:15" fits a fixed column. */
+export function slateClock(game: Pick<BoxGame, "final" | "live" | "startIso" | "status">): string {
+  return gameClock(game).replace(/\s*[AP]M$/i, "").trim();
+}
+
 /** Weekday + clock for a packed slate cell — never the long "Sun Oct 11 · 12:00". */
 export function slateKickoff(game: Pick<BoxGame, "final" | "live" | "startIso" | "status">): string {
-  const clock = gameClock(game);
+  const clock = slateClock(game);
   if (game.final || game.live) return clock;
   if (!game.startIso) return clock || game.status;
   const d = new Date(game.startIso);

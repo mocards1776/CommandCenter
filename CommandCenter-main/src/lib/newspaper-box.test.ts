@@ -322,6 +322,7 @@ const thu = slateKickoff({
   startIso: "2026-10-09T00:15:00Z",
 });
 assert(/^Thu\s/.test(thu) && /\d{1,2}:\d{2}/.test(thu), `kickoff is weekday + clock (${thu})`);
+assert(!/[AP]M/i.test(thu), "slate kickoff drops AM/PM to fit the time cell");
 assert(!/Oct/.test(thu), "slate kickoff drops the calendar date");
 
 console.log("newspaper-box ok");

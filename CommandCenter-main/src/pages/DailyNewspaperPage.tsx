@@ -69,6 +69,7 @@ import {
   Linescore,
   MlbAgate,
   SlateLine,
+  DeskSnap,
 } from "@/components/newspaper/BoxScore";
 import { RecapBox, RecapChrome, RecapPhoto } from "@/components/newspaper/GameRecap";
 import { groupByDay, planSchedulePages } from "@/lib/newspaper-page";
@@ -2418,6 +2419,20 @@ function SportSectionFront({
                 ))}
               </div>
             ) : null}
+            {football && (board?.slate ?? []).some((g) => !g.final && !g.live) ? (
+              <section className="tt-side-fill" aria-label="This week">
+                <h3 className="wsj-band-title">
+                  {board?.slateWeekNumber ? `Week ${board.slateWeekNumber}` : "This week"} <em>kickoffs · CT</em>
+                </h3>
+                <div className="tt-slate-list cols-2">
+                  {(board?.slate ?? [])
+                    .filter((g) => !g.final && !g.live)
+                    .map((g) => (
+                      <SlateLine key={g.id} game={g} />
+                    ))}
+                </div>
+              </section>
+            ) : null}
           </div>
         </div>
       ) : (
@@ -3008,6 +3023,7 @@ function ScheduleDesk({
     if (nfl) {
       const pages = planSchedulePages(games);
       const pack = pages[0] ?? games;
+      const finals = (board?.week ?? board?.results ?? []).filter((g) => g.final);
       return (
         <div className="tt-schedule tt-schedule-fill tt-slate-desk">
           {pages.length > 1 ? (
@@ -3016,17 +3032,28 @@ function ScheduleDesk({
             </p>
           ) : null}
           {groupByDay(pack).map(([day, list]) => (
-            <section key={day}>
+            <section key={day} className={list.length >= 6 ? "tt-slate-heavy" : undefined}>
               <h3 className="wsj-band-title">
                 {dayHeading(day, edition)} <em>{list.length} {list.length === 1 ? "game" : "games"}</em>
               </h3>
               <div className="tt-slate-list">
                 {list.map((g) => (
-                  <SlateLine key={g.id} game={g} />
+                  <SlateLine key={g.id} game={g} clockOnly />
                 ))}
               </div>
             </section>
           ))}
+          <div className="tt-slate-fill">
+            <DeskSnap tables={standings} />
+            {finals.length ? (
+              <section aria-label="Last week">
+                <h3 className="wsj-band-title">
+                  Finals <em>{finals.length} games</em>
+                </h3>
+                <ScoreStrip games={finals} />
+              </section>
+            ) : null}
+          </div>
         </div>
       );
     }
