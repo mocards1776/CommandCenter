@@ -49,20 +49,40 @@ function overflowsClip(el: HTMLElement): boolean {
 }
 
 function restoreFlow(root: HTMLElement): void {
-  for (const node of root.querySelectorAll<HTMLElement>(FLOW_SEL)) {
+  for (const node of root.querySelectorAll<HTMLElement>(`${FLOW_SEL}, [data-tt-flowed]`)) {
     node.hidden = false;
     delete node.dataset.ttFlowed;
   }
+}
+
+const PACK_ROOTS = ".wsj-front, .tt-section-front, .tt-scores, .wsj-sport-solo";
+
+function hideLastPackChild(root: HTMLElement): boolean {
+  const flow = [...root.querySelectorAll<HTMLElement>(FLOW_SEL)].reverse().find((node) => !node.hidden);
+  if (flow) {
+    flow.hidden = true;
+    flow.dataset.ttFlowed = "1";
+    return true;
+  }
+  for (const pack of root.querySelectorAll<HTMLElement>(PACK_ROOTS)) {
+    const kids = [...pack.children].reverse().filter(
+      (node): node is HTMLElement =>
+        node instanceof HTMLElement && !node.hidden && node.getAttribute("data-tt-keep") == null,
+    );
+    if (kids.length > 1) {
+      kids[0]!.hidden = true;
+      kids[0]!.dataset.ttFlowed = "1";
+      return true;
+    }
+  }
+  return false;
 }
 
 function hideOverflowBlocks(root: HTMLElement): void {
   const sheet = root.closest(".wsj-sheet") ?? root;
   let guard = 24;
   while (guard-- && sheet.scrollHeight > HARD_PAGE_H + 8) {
-    const last = [...root.querySelectorAll<HTMLElement>(FLOW_SEL)].reverse().find((node) => !node.hidden);
-    if (!last) break;
-    last.hidden = true;
-    last.dataset.ttFlowed = "1";
+    if (!hideLastPackChild(root)) break;
   }
 }
 

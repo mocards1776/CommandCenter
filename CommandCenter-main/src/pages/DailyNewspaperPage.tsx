@@ -1055,6 +1055,8 @@ function Story({
   dress,
   inset,
   trim,
+  chrome,
+  compactBox,
 }: {
   card: GameWrapCard;
   team?: TeamInfobox | null;
@@ -1080,6 +1082,9 @@ function Story({
   inset?: ReactNode;
   /** Higher drops first when the folio runs past the 1040×1480 canvas. */
   trim?: number;
+  /** False skips the recap box when a banner already carries the score. */
+  chrome?: boolean;
+  compactBox?: boolean;
 }) {
   const full = cardCopy(card);
   const copy = substantive(card, text ?? full);
@@ -1115,7 +1120,7 @@ function Story({
         {dek && !recap ? <p className="wsj-dek">{dek}</p> : null}
         {recap ? null : <ScoreBug card={card} />}
         <Byline card={card} />
-        {recap ? <RecapChrome card={card} game={game ?? null} /> : null}
+        {recap && chrome !== false ? <RecapChrome card={card} game={game ?? null} compact={compactBox} /> : null}
         {recap ? <RecapPhoto url={card.photo} width={card.photoWidth} caption={card.caption} /> : null}
         {storyCopy ? (
           <Prose
@@ -1297,7 +1302,7 @@ function ClubTicker({ teams, onTurn }: { teams: TeamInfobox[]; onTurn?: (folio: 
   if (!teams.length) return null;
   const cols = balancedCols(teams.length, [5, 4, 3]);
   return (
-    <ul className="wsj-ticker" style={{ ["--cols" as string]: String(cols) }}>
+    <ul className="wsj-ticker" data-tt-keep="" style={{ ["--cols" as string]: String(cols) }}>
       {teams.map((t, i) => (
         <li key={t.fav.key} style={tint(teamColor(t))} data-tt-trim={55 + i}>
           <ExternalOrLink href={t.href} className="wsj-ticker-cell wsj-a">
@@ -1649,7 +1654,7 @@ function FrontPage({
   return (
     <div className="wsj-front">
       <ClubTicker teams={teams} onTurn={onTurn} />
-      <div className="wsj-front-grid">
+      <div className="wsj-front-grid" data-tt-keep="">
         <div className="wsj-front-main">
           <Story
             className="lead"
@@ -1661,11 +1666,12 @@ function FrontPage({
             art="top"
             poster={leadPoster}
             drop
+            compactBox
             jump={pageLeadContinue}
             onTurn={onTurn}
           />
           {pageSecond || pageThird ? (
-            <div className={cn("wsj-front-row", stack ? "stack" : pageSecond && pageThird ? "two" : "one")}>
+            <div className={cn("wsj-front-row", stack ? "stack" : pageSecond && pageThird ? "two" : "one")} data-tt-flow="">
               {pageSecond ? (
                 <Story
                   card={pageSecond}
@@ -1699,7 +1705,8 @@ function FrontPage({
         </div>
         {rail}
       </div>
-      {scoutBand}
+      {scoutBand ? <div data-tt-flow="">{scoutBand}</div> : null}
+      <div data-tt-flow="">
       <BriefGrid
         cards={pageBriefs}
         title="More from your clubs"
@@ -1712,6 +1719,7 @@ function FrontPage({
         }}
         colorFor={(c) => teamColor(teamForCard(teams, c))}
       />
+      </div>
       <TurnBar onTurn={onTurn} folio="A2" label="The clubs desk — every slate, table and leader" />
     </div>
   );
@@ -2523,7 +2531,11 @@ function SportSectionFront({
   const recapsFolio = deskFolio(page, "recaps", `${page.section}2`);
   const crestFor = (card: GameWrapCard) =>
     leagueClubs.find((c) => c.short && card.teamName?.toLowerCase().includes(c.short.toLowerCase()))?.logo ?? null;
-  const railGames = strips.flatMap((s) => s.games).slice(0, 16);
+  const frontStrips = strips.slice(0, cfb || mlb ? 1 : 2).map((strip) => ({
+    ...strip,
+    games: strip.games.slice(0, cfb || mlb ? 8 : 10),
+  }));
+  const railGames = frontStrips.flatMap((s) => s.games);
   const favIds = new Set(leagueClubs.filter((c) => c.favorite).map((c) => c.id));
   const mine = (row: { id: string; name: string }) => favIds.has(row.id);
   const tables = rankStandings(standings).slice(0, 2);
@@ -2535,7 +2547,7 @@ function SportSectionFront({
   return (
     <div className="tt-section-front">
       {lead ? (
-        <div className={cn("tt-front-grid", (underLead.length || railSeconds.length || railGames.length) && "with-side")}>
+        <div className={cn("tt-front-grid", (underLead.length || railSeconds.length || railGames.length) && "with-side")} data-tt-keep="">
           <div className="tt-front-lead">
             <Story
               className="lead"
@@ -2546,7 +2558,7 @@ function SportSectionFront({
               art="top"
               drop
               readOn
-              game={leadGame}
+              chrome={false}
               jump={folios[lead.id] && folios[lead.id] !== page.folio ? folios[lead.id] : undefined}
               onTurn={onTurn}
             />
@@ -2566,7 +2578,7 @@ function SportSectionFront({
                     size="md"
                     art="none"
                     readOn
-                    game={gameOf(card)}
+                    chrome={false}
                     jump={folios[card.id] && folios[card.id] !== page.folio ? folios[card.id] : undefined}
                     onTurn={onTurn}
                   />
@@ -2596,16 +2608,16 @@ function SportSectionFront({
                     size="md"
                     art="top"
                     readOn
-                    game={gameOf(card)}
+                    chrome={false}
                     jump={folios[card.id] && folios[card.id] !== page.folio ? folios[card.id] : undefined}
                     onTurn={onTurn}
                   />
                 ))}
               </div>
             ) : null}
-            {strips.length ? (
+            {frontStrips.length ? (
               <div className="tt-front-rails">
-                {strips.map((strip) => (
+                {frontStrips.map((strip) => (
                   <section className="tt-front-rail" aria-label={strip.title} key={strip.title}>
                     <h3 className="wsj-band-title">
                       {strip.title}
@@ -2628,7 +2640,7 @@ function SportSectionFront({
           </div>
         </div>
       ) : (
-        <div className={cn("tt-front-grid", (railGames.length || tables.length) && "with-side")}>
+        <div className={cn("tt-front-grid", (railGames.length || tables.length) && "with-side")} data-tt-keep="">
           <div className="tt-front-lead">
             {tables[0] ? (
               <StandingsTable group={tables[0]} mine={mine} />
@@ -2636,11 +2648,11 @@ function SportSectionFront({
               <p className="wsj-empty">The league wire is quiet. Scores, tables and the slate follow.</p>
             )}
           </div>
-          {strips.length || tables.length > 1 ? (
+          {frontStrips.length || tables.length > 1 ? (
             <div className="tt-front-side">
-              {strips.length ? (
+              {frontStrips.length ? (
                 <div className="tt-front-rails">
-                  {strips.map((strip) => (
+                  {frontStrips.map((strip) => (
                     <section className="tt-front-rail" aria-label={strip.title} key={strip.title}>
                       <h3 className="wsj-band-title">
                         {strip.title}
@@ -3081,7 +3093,8 @@ function WrapBrief({ card, trim }: { card: GameWrapCard; trim?: number }) {
 
 function WrapFlow({ cards, path }: { cards: GameWrapCard[]; path: string }) {
   if (!cards.length) return null;
-  const bands = groupSportRecaps(cards, path);
+  const shown = cards.slice(0, 4);
+  const bands = groupSportRecaps(shown, path);
   return (
     <div className="tt-wrap-flow">
       {bands.map((band) => (
