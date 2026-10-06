@@ -1354,7 +1354,7 @@ function ClubTicker({
   if (!teams.length) return null;
   const cols = balancedCols(teams.length, [5, 4, 3]);
   return (
-    <ul className="wsj-ticker" style={{ ["--cols" as string]: String(cols) }}>
+    <ul className="wsj-ticker" data-tt-keep="" style={{ ["--cols" as string]: String(cols) }}>
       {teams.map((t, i) => {
         const path = leaguePathFromEspn(t.fav.espnPath);
         const inSeason = !path || sportInSeason(path, editionDay);
