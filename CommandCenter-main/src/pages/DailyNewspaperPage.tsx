@@ -59,7 +59,9 @@ import {
   type StandGroup,
 } from "@/lib/newspaper-box";
 import { cleanStoryCopy, proseParas, tidy, truncateAtSentence } from "@/lib/newspaper-copy";
-import { fitSentencesIn } from "@/lib/newspaper-fit";
+import { prefetchSrc } from "@/lib/newspaper-fit";
+import { FitCopy, FittedSheet } from "@/components/newspaper/FittedSheet";
+import { TimesCommitBoundary } from "@/components/newspaper/TimesCommitBoundary";
 import { recapBodyForPage, recapDropLead, recapIsScoreOnly, recapPhotoKind, recapShouldDropCap, splitApDateline } from "@/lib/newspaper-recap";
 import {
   Face,
@@ -896,15 +898,17 @@ function Prose({
           {i === insetAt ? inset : null}
           {i === quoteAt && quote ? (
             <blockquote className="wsj-pull" style={tint(color)}>
-              <p>{quote}</p>
+              <FitCopy cid={`${card.id}:q`} full={quote}>
+                {quote}
+              </FitCopy>
             </blockquote>
           ) : null}
           {dress && i > 0 && i % 5 === 0 ? (
-            <p className="wsj-runin">
+            <FitCopy cid={`${card.id}:p${i}`} full={p} className="wsj-runin">
               <b>{runIn(p)[0]}</b> <NamedText text={runIn(p)[1]} seen={seen} />
-            </p>
+            </FitCopy>
           ) : (
-            <p>
+            <FitCopy cid={`${card.id}:p${i}`} full={plainProsePara(card, p, i, drop)}>
               {i === 0 && drop
                 ? (() => {
                     const lead = recapDropLead(card.dateline, p);
@@ -929,13 +933,25 @@ function Prose({
                       );
                     })()
                   : <NamedText text={p} seen={seen} />}
-            </p>
+            </FitCopy>
           )}
         </Fragment>
       ))}
       {insetAt >= paras.length ? inset : null}
     </div>
   );
+}
+
+function plainProsePara(card: GameWrapCard, p: string, i: number, drop?: boolean): string {
+  if (i !== 0) return p;
+  if (drop) {
+    const lead = recapDropLead(card.dateline, p);
+    if (!lead) return p;
+    return `${lead.letter}${lead.datelineRest != null ? `${lead.datelineRest} — ` : ""}${lead.body}`;
+  }
+  const split = splitApDateline(p);
+  const city = card.dateline || split.dateline;
+  return city ? `${city} — ${split.body}` : p;
 }
 
 /** The story's own words, pulled out large: a quotation if it has one, else a strong line. */
@@ -1161,7 +1177,11 @@ function Story({
       {artNode ? <div className="wsj-story-art">{artNode}</div> : null}
       <div className="wsj-story-copy">
         <Headline card={card} size={size} game={game} />
-        {dek && (!recap || chrome === false) ? <p className="wsj-dek">{dek}</p> : null}
+        {dek && (!recap || chrome === false) ? (
+          <FitCopy cid={`${card.id}:dek`} full={dek} className="wsj-dek">
+            {dek}
+          </FitCopy>
+        ) : null}
         {recap ? null : <ScoreBug card={card} />}
         <Byline card={card} />
         {recap && chrome !== false ? <RecapChrome card={card} game={game ?? null} compact={compactBox} /> : null}
@@ -1240,7 +1260,11 @@ function Brief({
           </HeadlineSave>
         </h3>
         <ScoreBug card={card} />
-        {dek ? <p className="wsj-brief-dek">{dek}</p> : null}
+        {dek ? (
+          <FitCopy cid={`${card.id}:brief-dek`} full={dek} className="wsj-brief-dek">
+            {dek}
+          </FitCopy>
+        ) : null}
         <ReadOn card={card} label="Click for full story" />
       </div>
     </article>
@@ -3293,7 +3317,11 @@ function WrapBrief({
         </HeadlineSave>
       </h3>
       {recap ? <RecapChrome card={card} game={game} compact /> : <ScoreBug card={card} />}
-      {brief ? <p className="tt-wrap-copy">{brief}</p> : null}
+      {brief ? (
+        <FitCopy cid={`${card.id}:wrap`} full={brief} className="tt-wrap-copy">
+          {brief}
+        </FitCopy>
+      ) : null}
       {recap ? null : <WrapPlayers card={card} />}
       {card.related?.length ? (
         <ul className="tt-wrap-related">
@@ -3484,9 +3512,9 @@ function ScoresDesk({
             )}
           </h2>
           {featured.recap?.blurb ? (
-            <p className="wsj-dek">
+            <FitCopy cid={`${card?.id ?? featured.id}:dek`} full={featured.recap.blurb} className="wsj-dek">
               <NamedText text={featured.recap.blurb} />
-            </p>
+            </FitCopy>
           ) : null}
           {photo ? <ScoreHero game={featured} size="md" /> : null}
           <Linescore game={featured} />
@@ -4950,7 +4978,7 @@ function FolioSlot({
     if (near) setShown(true);
   }, [near]);
   return (
-    <section className="wsj-page" aria-label={`Page ${folio}`}>
+    <section className="wsj-page" aria-label={`Page ${folio}`} {...(near ? { "data-near": "" } : {})}>
       <div className="wsj-fit">
         <FittedSheet>{shown ? <FolioBody render={render} /> : null}</FittedSheet>
       </div>
@@ -4958,60 +4986,12 @@ function FolioSlot({
   );
 }
 
-/** Height is dynamic. Pack toward 1480; hide [data-tt-flow] blocks past 1650. */
-function FittedSheet({ children }: { children: ReactNode }) {
-  const ref = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    let cancel = false;
-    const run = () => {
-      if (cancel) return;
-      try {
-        fitSentencesIn(el);
-      } catch {
-        /* React owns this node this frame; the next pass will pack. */
-      }
-    };
-    run();
-    void document.fonts?.ready.then(async () => {
-      await Promise.all(
-        [...el.querySelectorAll("img")].map((img) =>
-          img.decode ? img.decode().catch(() => undefined) : Promise.resolve(),
-        ),
-      );
-      run();
-    });
-    const ro = new ResizeObserver(run);
-    ro.observe(el);
-    for (const img of el.querySelectorAll("img")) img.addEventListener("load", run);
-    return () => {
-      cancel = true;
-      ro.disconnect();
-      for (const img of el.querySelectorAll("img")) img.removeEventListener("load", run);
-    };
-  }, [children]);
-  return (
-    <div ref={ref} className="wsj-sheet">
-      {children}
-    </div>
-  );
-}
-
-function markNearPages(pager: HTMLElement, index: number) {
+function prefetchNearArt(pager: HTMLElement, index: number) {
   const sheets = pager.children;
   for (let i = 0; i < sheets.length; i++) {
+    if (Math.abs(i - index) > NEAR_PAGES) continue;
     const sheet = sheets[i] as HTMLElement;
-    const near = Math.abs(i - index) <= NEAR_PAGES;
-    if (near === ("near" in sheet.dataset)) continue;
-    if (near) sheet.dataset.near = "";
-    else delete sheet.dataset.near;
-  }
-  for (const sheet of pager.querySelectorAll<HTMLElement>(".wsj-page[data-near]")) {
-    for (const img of sheet.querySelectorAll("img")) {
-      if (img.loading === "lazy") img.loading = "eager";
-      if (img.complete && img.naturalWidth) img.decode().catch(() => {});
-    }
+    for (const img of sheet.querySelectorAll("img")) prefetchSrc(img.currentSrc || img.src);
   }
 }
 
@@ -5025,26 +5005,21 @@ function warmEdition(pager: HTMLElement, cap = 4): () => void {
   let stopped = false;
   let inflight = 0;
   let handle = 0;
+  const seen = new Set<string>();
   const pump = () => {
     handle = 0;
     if (stopped) return;
-    const queue = pager.querySelectorAll<HTMLImageElement>('img[loading="lazy"]');
-    for (let i = 0; i < queue.length && inflight < cap; i++) {
-      const img = queue[i];
-      img.loading = "eager";
-      if (img.complete) continue;
+    for (const img of pager.querySelectorAll<HTMLImageElement>("img[src]")) {
+      if (inflight >= cap) break;
+      const src = img.currentSrc || img.src;
+      if (!src || seen.has(src) || img.complete) continue;
+      seen.add(src);
+      prefetchSrc(src);
       inflight++;
-      let timer = 0;
-      const done = () => {
-        window.clearTimeout(timer);
-        img.removeEventListener("load", done);
-        img.removeEventListener("error", done);
+      window.setTimeout(() => {
         inflight--;
         schedule();
-      };
-      timer = window.setTimeout(done, 10_000);
-      img.addEventListener("load", done);
-      img.addEventListener("error", done);
+      }, 800);
     }
   };
   const schedule = () => {
@@ -7013,7 +6988,7 @@ function NewspaperDesk() {
 
   useEffect(() => {
     const el = pagerRef.current;
-    if (el) markNearPages(el, pageIndex);
+    if (el) prefetchNearArt(el, pageIndex);
   }, [pageIndex, sheets]);
 
   useLayoutEffect(() => {
@@ -7224,6 +7199,7 @@ function NewspaperDesk() {
       </div>
 
       <PagerIndexContext.Provider value={pageIndex}>
+        <TimesCommitBoundary>
         <div className="tt-spread">
           <div
             className="newspaper-edition wsj-pager"
@@ -7248,6 +7224,7 @@ function NewspaperDesk() {
             </button>
           ) : null}
         </div>
+        </TimesCommitBoundary>
       </PagerIndexContext.Provider>
       {savedOpen ? <SavedDrawer onClose={() => setSavedOpen(false)} /> : null}
       </ReaderProvider>

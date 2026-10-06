@@ -4,12 +4,22 @@ const COPY_SEL = ".wsj-prose p, .wsj-dek, .wsj-brief-dek, .tt-under-story p, .tt
 
 /**
  * Soft pack target: compose to one newspaper page. The sheet may grow to
- * HARD_PAGE_H only to keep a sentence intact. Whole blocks marked
+ * HARD_PAGE_H only to keep a sentence intact. Whole extra blocks marked
  * [data-tt-flow] then continue on the next folio instead of stretching.
  */
 export const SOFT_PAGE_H = 1480;
 export const HARD_PAGE_H = 1650;
 const FLOW_SEL = "[data-tt-flow]";
+const PACK_ROOTS = ".wsj-front, .tt-section-front, .tt-scores, .wsj-sport-solo, .wx, .tt-stand-grid";
+const KEEP_COPY = "[data-tt-lead], [data-tt-keep]";
+
+export type SheetFitPlan = {
+  /** nth-child paths from the sheet, e.g. ":nth-child(3) > :nth-child(1)" */
+  hide: string[];
+  cuts: Record<string, string>;
+};
+
+export const EMPTY_FIT_PLAN: SheetFitPlan = { hide: [], cuts: {} };
 
 export function sheetZoom(sheet: Element): number {
   const z = Number.parseFloat(getComputedStyle(sheet).zoom || "1");
@@ -28,11 +38,34 @@ export function sheetLocalBottom(el: HTMLElement, sheet: Element): number {
   return unzoomedPx(el.getBoundingClientRect().bottom - sheet.getBoundingClientRect().top, zoom);
 }
 
+export function plansEqual(a: SheetFitPlan, b: SheetFitPlan): boolean {
+  if (a.hide.length !== b.hide.length) return false;
+  const hideA = [...a.hide].sort();
+  const hideB = [...b.hide].sort();
+  if (hideA.some((id, i) => id !== hideB[i])) return false;
+  const keysA = Object.keys(a.cuts);
+  const keysB = Object.keys(b.cuts);
+  if (keysA.length !== keysB.length) return false;
+  return keysA.every((key) => a.cuts[key] === b.cuts[key]);
+}
+
+export function childPath(el: HTMLElement, root: HTMLElement): string | null {
+  const parts: string[] = [];
+  let node: HTMLElement | null = el;
+  while (node && node !== root) {
+    const parent: HTMLElement | null = node.parentElement;
+    if (!parent) return null;
+    const idx = [...parent.children].indexOf(node);
+    if (idx < 0) return null;
+    parts.unshift(`:nth-child(${idx + 1})`);
+    node = parent;
+  }
+  return node === root && parts.length ? parts.join(" > ") : null;
+}
+
 function overflowsClip(el: HTMLElement): boolean {
   const sheet = el.closest(".wsj-sheet");
   if (!sheet) return el.scrollHeight > el.clientHeight + 6;
-  // scrollHeight is the unzoomed layout size, so 768 and 1280 pack the same
-  // 1032-wide sheet. getBoundingClientRect follows CSS zoom and the viewport.
   return sheet.scrollHeight > SOFT_PAGE_H + 6;
 }
 
@@ -42,9 +75,6 @@ function restoreFlow(root: HTMLElement): void {
     delete node.dataset.ttFlowed;
   }
 }
-
-const PACK_ROOTS = ".wsj-front, .tt-section-front, .tt-scores, .wsj-sport-solo, .wx, .tt-stand-grid";
-const KEEP_COPY = "[data-tt-lead], [data-tt-keep]";
 
 function hideLastPackChild(root: HTMLElement): boolean {
   const flow = [...root.querySelectorAll<HTMLElement>(FLOW_SEL)].reverse().find((node) => !node.hidden);
@@ -78,36 +108,115 @@ function hideOverflowBlocks(root: HTMLElement): void {
   }
 }
 
-/**
- * Restore full copy, then drop the last sentence that does not fit the
- * soft 1480 pack target. Whole extra blocks marked [data-tt-flow] hide past
- * HARD_PAGE_H so they can run on the next section folio instead of stretching
- * this sheet. Packing uses unzoomed sheet coordinates so 768 and 1280 compose
- * the same folio when the sheet is 1032 CSS px wide.
- */
-let fitting = false;
-export function fitSentencesIn(root: HTMLElement): void {
-  if (fitting) return;
-  fitting = true;
-  try {
-    restoreFlow(root);
-    const nodes = [...root.querySelectorAll<HTMLElement>(COPY_SEL)].filter(
-      (node) => !node.closest(KEEP_COPY),
-    );
-    for (const node of nodes) {
-      if (node.dataset.fitFull == null) node.dataset.fitFull = node.textContent ?? "";
-      if (node.textContent !== node.dataset.fitFull) node.textContent = node.dataset.fitFull;
-    }
-    let guard = 80;
-    while (guard--) {
-      const hit = [...nodes].reverse().find((node) => (node.textContent ?? "").trim() && overflowsClip(node));
-      if (!hit) break;
-      const next = dropLastSentence(hit.textContent ?? "");
-      if (next === hit.textContent) break;
-      hit.textContent = next;
-    }
-    hideOverflowBlocks(root);
-  } finally {
-    fitting = false;
+function restoreCopy(root: HTMLElement): HTMLElement[] {
+  const nodes = [...root.querySelectorAll<HTMLElement>(COPY_SEL)].filter((node) => !node.closest(KEEP_COPY));
+  for (const node of nodes) {
+    if (node.dataset.fitFull == null) node.dataset.fitFull = node.textContent ?? "";
+    if (node.textContent !== node.dataset.fitFull) node.textContent = node.dataset.fitFull;
   }
+  return nodes;
+}
+
+/** Mutates a detached clone only. Never call on a React-owned sheet. */
+function fitClone(root: HTMLElement): void {
+  restoreFlow(root);
+  const nodes = restoreCopy(root);
+  let guard = 80;
+  while (guard--) {
+    const hit = [...nodes].reverse().find((node) => (node.textContent ?? "").trim() && overflowsClip(node));
+    if (!hit) break;
+    const next = dropLastSentence(hit.textContent ?? "");
+    if (next === hit.textContent) break;
+    hit.textContent = next;
+  }
+  hideOverflowBlocks(root);
+}
+
+function readPlan(root: HTMLElement): SheetFitPlan {
+  const hide: string[] = [];
+  for (const node of root.querySelectorAll<HTMLElement>("[data-tt-flowed], [hidden]")) {
+    if (!node.hidden && !node.dataset.ttFlowed) continue;
+    const path = childPath(node, root);
+    if (path) hide.push(path);
+  }
+  const cuts: Record<string, string> = {};
+  for (const node of root.querySelectorAll<HTMLElement>("[data-tt-cid]")) {
+    const cid = node.dataset.ttCid;
+    const full = node.dataset.fitFull ?? "";
+    const text = node.textContent ?? "";
+    if (cid && full && text !== full) cuts[cid] = text;
+  }
+  return { hide, cuts };
+}
+
+let measureHost: HTMLDivElement | null = null;
+
+function getMeasureHost(): HTMLDivElement {
+  if (measureHost?.isConnected) return measureHost;
+  const el = document.createElement("div");
+  el.dataset.ttFitHost = "1";
+  el.setAttribute("aria-hidden", "true");
+  el.style.cssText = "position:absolute;left:-10000px;top:0;visibility:hidden;pointer-events:none;";
+  document.body.appendChild(el);
+  measureHost = el;
+  return el;
+}
+
+function attachMeasureClone(live: HTMLElement): HTMLElement {
+  const clone = live.cloneNode(true) as HTMLElement;
+  clone.dataset.ttFitClone = "1";
+  for (const node of clone.querySelectorAll("style")) node.remove();
+  const width = live.clientWidth || live.offsetWidth || 1032;
+  const cs = getComputedStyle(live);
+  clone.style.cssText = [
+    "position:absolute",
+    "left:0",
+    "top:0",
+    `width:${width}px`,
+    `zoom:${cs.zoom || "1"}`,
+  ].join(";");
+  const fit = cs.getPropertyValue("--tt-fit");
+  const pageW = cs.getPropertyValue("--tt-page-w");
+  if (fit) clone.style.setProperty("--tt-fit", fit);
+  if (pageW) clone.style.setProperty("--tt-page-w", pageW);
+  getMeasureHost().appendChild(clone);
+  return clone;
+}
+
+/**
+ * Measure packing on a detached clone. The live React tree is not written —
+ * hide/cut come back as a plan for React to apply.
+ */
+export function planSheetFit(live: HTMLElement): SheetFitPlan {
+  if (!live.isConnected) return EMPTY_FIT_PLAN;
+  const clone = attachMeasureClone(live);
+  try {
+    fitClone(clone);
+    return readPlan(clone);
+  } finally {
+    clone.remove();
+  }
+}
+
+/**
+ * Live sheets must not call this. It only packs a clone marked
+ * `data-tt-fit-clone`. React owns the printed tree.
+ */
+export function fitSentencesIn(root: HTMLElement): void {
+  if (root.dataset.ttFitClone !== "1") return;
+  fitClone(root);
+}
+
+export function hideCssForPlan(sheetId: string, plan: SheetFitPlan): string {
+  if (!plan.hide.length) return "";
+  const root = `[data-tt-sheet="${sheetId}"]`;
+  return plan.hide.map((path) => `${root} > ${path}{display:none!important}`).join("");
+}
+
+/** Prefetch art without touching React-owned <img> nodes. */
+export function prefetchSrc(src: string | null | undefined): void {
+  if (!src || src.startsWith("data:")) return;
+  const img = new Image();
+  img.decoding = "async";
+  img.src = src;
 }
