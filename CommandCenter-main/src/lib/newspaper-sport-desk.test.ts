@@ -18,6 +18,7 @@ import {
   orderSportSectionFront,
   pickSectionFrontLead,
   sportFillerReason,
+  relatedFitsSection,
   storyFitsSection,
 } from "./newspaper-sport-desk.ts";
 
@@ -138,6 +139,24 @@ assert(
     "football/college-football",
   ),
   "a Post-Dispatch CFB note still belongs on the CFB desk",
+);
+assert(
+  !storyFitsSection(
+    card({
+      id: "news-usmnt",
+      headline: "State of Canada men's soccer as USMNT clash looms",
+      leaguePath: null,
+    }),
+    "football/college-football",
+  ),
+  "a soccer World Cup note stays off CFB",
+);
+assert(
+  !relatedFitsSection(
+    { headline: "State of Canada men's soccer as USMNT clash looms", source: "The Athletic" },
+    "football/college-football",
+  ),
+  "a soccer related note stays off CFB wraps",
 );
 
 const attached = attachRelatedGameCopy([wrap, athletic, video]);

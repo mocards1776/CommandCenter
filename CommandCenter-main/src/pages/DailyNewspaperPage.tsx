@@ -3256,13 +3256,27 @@ function balanceWrapColumns(cards: GameWrapCard[], n = 3): GameWrapCard[][] {
 function WrapFlow({ cards, path }: { cards: GameWrapCard[]; path: string }) {
   if (!cards.length) return null;
   const shown: GameWrapCard[] = [];
+  const notes: NonNullable<GameWrapCard["related"]> = [];
   for (const card of cards) {
     if (!storyFitsSection(card, path)) continue;
     if (shown.some((prev) => prev.id === card.id || sameGameStory(prev, card))) continue;
-    shown.push(card);
+    for (const item of card.related ?? []) {
+      if (path && !relatedFitsSection(item, path)) continue;
+      if (notes.some((n) => n.id === item.id || n.headline === item.headline)) continue;
+      notes.push(item);
+    }
+    shown.push({ ...card, related: undefined });
     if (shown.length >= 6) break;
   }
   const cols = balanceWrapColumns(shown, 3);
+  const colNotes = cols.map(() => [] as typeof notes);
+  const weights = cols.map((col) => col.reduce((sum, card) => sum + wrapColumnWeight(card), 0));
+  for (const note of notes) {
+    let i = 0;
+    for (let c = 1; c < weights.length; c++) if ((weights[c] ?? 0) < (weights[i] ?? 0)) i = c;
+    colNotes[i]!.push(note);
+    weights[i] = (weights[i] ?? 0) + 40;
+  }
   return (
     <div className="tt-wrap-flow">
       {cols.map((col, i) => (
@@ -3270,6 +3284,16 @@ function WrapFlow({ cards, path }: { cards: GameWrapCard[]; path: string }) {
           {col.map((card, j) => (
             <WrapBrief key={card.id} card={card} path={path} trim={45 + i * 10 + j} flow={j > 1} />
           ))}
+          {colNotes[i]!.length ? (
+            <ul className="tt-wrap-related" data-tt-flow="">
+              {colNotes[i]!.map((item) => (
+                <li key={item.id}>
+                  <em>{item.source || "Related"}</em>
+                  {item.headline}
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </div>
       ))}
     </div>

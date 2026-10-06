@@ -101,14 +101,22 @@ export function isEflChampionshipStory(card: GameWrapCard): boolean {
 
 const CFB_OFF_DESK =
   /\b(colts|commanders|jordan walker|nfl\b|world series|nlcs|alcs)\b/i;
+const CFB_OTHER_SPORT =
+  /\b(soccer|usmnt|world cup|\bmls\b|premier league|nba\b|nhl\b)\b/i;
 const CFB_SIGNAL = /\b(college|ncaa|sec\b|acc\b|big ten|big 12|mizzou|missouri tigers)\b/i;
+
+function cfbDeskCopy(text: string): boolean {
+  if (CFB_OTHER_SPORT.test(text)) return false;
+  if (CFB_OFF_DESK.test(text) && !CFB_SIGNAL.test(text)) return false;
+  return true;
+}
 
 export function storyFitsSection(card: GameWrapCard, path: string): boolean {
   if (path === "soccer/eng.2") return isEflChampionshipStory(card);
   if (card.leaguePath && card.leaguePath !== path) return false;
   if (path === "football/college-football") {
     const text = hay(card);
-    if (CFB_OFF_DESK.test(text) && !CFB_SIGNAL.test(text)) return false;
+    if (!cfbDeskCopy(text)) return false;
     if (!card.leaguePath && /\b(nfl|mlb|nhl|nba)\b/i.test(text) && !CFB_SIGNAL.test(text)) return false;
   }
   return !card.leaguePath || card.leaguePath === path;
@@ -120,7 +128,7 @@ export function relatedFitsSection(
 ): boolean {
   if (path !== "football/college-football") return true;
   const text = `${item.headline} ${item.source ?? ""} ${item.href ?? ""}`;
-  return !(CFB_OFF_DESK.test(text) && !CFB_SIGNAL.test(text));
+  return cfbDeskCopy(text);
 }
 
 function eventIdOf(card: GameWrapCard): string | null {

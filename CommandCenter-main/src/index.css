@@ -8118,12 +8118,16 @@ li.counting .tt-count.card {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0 22px;
-  align-items: start;
+  align-items: stretch;
 }
 .newspaper-root .tt-wrap-col {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 100%;
+}
+.newspaper-root .tt-wrap-col > .tt-wrap-related {
+  margin-top: auto;
 }
 .tt-section-pointer {
   margin: 0;
