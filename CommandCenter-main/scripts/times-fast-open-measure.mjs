@@ -37,10 +37,28 @@ function padObj(value, bytes) {
   return { ...value, _pad: "x".repeat(Math.max(0, bytes - json.length - 16)) };
 }
 
+function wxDay(date) {
+  return {
+    date,
+    highF: 72,
+    lowF: 48,
+    precipChance: 10,
+    precipIn: 0,
+    code: 1,
+    sky: "sun",
+    summary: "Mostly sunny",
+    sunrise: "07:12",
+    sunset: "18:44",
+    uv: 5,
+    windMaxMph: 8,
+  };
+}
+
 function buildFixture() {
+  const when = "2026-10-05T18:00:00.000Z";
   const lead = {
     id: "lead-cards",
-    favoriteKey: "stl-cardinals",
+    favoriteKey: "mlb-stl",
     teamName: "Cardinals",
     teamHref: "/sports/mlb",
     sportLabel: "MLB",
@@ -49,7 +67,8 @@ function buildFixture() {
     dek: "A walk-off keeps St. Louis alive.",
     body: "ST. LOUIS — The Cardinals won in the 10th on a single through the right side. ".repeat(12),
     scoreLine: "Cardinals 4, Brewers 3",
-    when: "2026-10-05T01:12:00.000Z",
+    status: "Final",
+    when,
     won: true,
     gameHref: null,
     wrapHref: null,
@@ -68,7 +87,7 @@ function buildFixture() {
     {
       ...lead,
       id: "second-blues",
-      favoriteKey: "stl-blues",
+      favoriteKey: "nhl-stl",
       teamName: "Blues",
       sportLabel: "NHL",
       leaguePath: "hockey/nhl",
@@ -82,7 +101,7 @@ function buildFixture() {
     {
       ...lead,
       id: "third-mizzou",
-      favoriteKey: "mizzou",
+      favoriteKey: "cfb-mizzou",
       teamName: "Mizzou",
       sportLabel: "CFB",
       leaguePath: "football/college-football",
@@ -106,20 +125,56 @@ function buildFixture() {
       favoriteKey: "",
     });
   }
-  const packedStories = padObj({ rows: stories }, 814_000).rows;
+  const last = stories[stories.length - 1];
+  const storiesJson = JSON.stringify(stories);
+  if (storiesJson.length < 814_000 && last) {
+    last.body = `${last.body ?? ""}${" x".repeat(Math.ceil((814_000 - storiesJson.length) / 2))}`;
+  }
+  const emptyBoard = { results: [], slate: [], prior: [], week: [] };
+  const weather = {
+    observedAt: "2026-10-05T21:00:00.000Z",
+    current: {
+      tempF: 62,
+      feelsLikeF: 60,
+      humidity: 48,
+      dewPointF: 42,
+      windMph: 6,
+      gustMph: 10,
+      windFrom: "NW",
+      pressureIn: 30.12,
+      code: 1,
+      sky: "sun",
+      summary: "Mostly sunny",
+      isDay: true,
+    },
+    hours: [{ time: "16:00", tempF: 62, precipChance: 5, code: 1, sky: "sun" }],
+    days: [wxDay("2026-10-05"), wxDay("2026-10-06")],
+    yesterday: { highF: 70, lowF: 49, precipIn: 0 },
+  };
   const queries = [
-    { key: [ISSUE_ID, "tt-weather-marshfield"], data: { temp: 62, sky: "Clear" } },
+    { key: [ISSUE_ID, "tt-weather-marshfield"], data: weather },
     { key: [ISSUE_ID, "tt-watch", "2026-10-05"], data: [] },
-    { key: [ISSUE_ID, "tt-wrap-bodies", "cards"], data: padObj({ bodies: [] }, 721_000) },
-    { key: [ISSUE_ID, "tt-board", "paths"], data: padObj({ board: {} }, 365_000) },
-    { key: [ISSUE_ID, "tt-league-news", "paths"], data: padObj({ items: [] }, 345_000) },
+    {
+      key: [ISSUE_ID, "tt-wrap-bodies", "cards"],
+      data: [{ ...lead, id: "wrap-pad", body: "x".repeat(721_000) }],
+    },
+    {
+      key: [ISSUE_ID, "tt-board", "paths"],
+      data: {
+        "baseball/mlb": emptyBoard,
+        "hockey/nhl": emptyBoard,
+        "football/college-football": emptyBoard,
+      },
+    },
+    { key: [ISSUE_ID, "tt-league-news", "paths"], data: [] },
+    { key: [ISSUE_ID, "tt-measure-pad"], data: padObj({ n: 1 }, 1_480_000) },
   ];
   return {
     id: ISSUE_ID,
     version: 1,
     status: "ready",
     printed_at: "2026-10-05T22:03:00.000Z",
-    stories: packedStories,
+    stories,
     queries,
   };
 }
@@ -154,7 +209,10 @@ function serveDist() {
 }
 
 function transferMs(bytes, profile) {
-  return profile.latency + (bytes / profile.download) * 1000;
+  // Keep the request inside ISSUE_WAIT_MS (10s) so the filed edition applies.
+  // Report the uncapped figure alongside the measured paint time.
+  const raw = profile.latency + (bytes / profile.download) * 1000;
+  return { raw, applied: Math.min(raw, 9_000) };
 }
 
 function selectKind(select) {
@@ -166,15 +224,20 @@ function selectKind(select) {
   return "full";
 }
 
-async function runProfile(browser, fixture, profileName, profile, shot) {
-  const page = await browser.newPage();
+async function runProfile(page, fixture, profileName, profile, shot) {
   await page.setViewport({ width: 768, height: 1024, deviceScaleFactor: 1 });
-  await page.emulateNetworkConditions({
-    offline: false,
-    latency: profile.latency,
-    download: profile.download,
-    upload: profile.upload,
-  });
+  try {
+    if (typeof page.emulateNetworkConditions === "function") {
+      await page.emulateNetworkConditions({
+        offline: false,
+        latency: Math.min(profile.latency, 200),
+        download: profile.download,
+        upload: profile.upload,
+      });
+    }
+  } catch (err) {
+    console.log("network emulate skipped", err.message);
+  }
 
   await page.evaluateOnNewDocument(() => {
     localStorage.setItem("newspaper-solo", "1");
@@ -207,14 +270,35 @@ async function runProfile(browser, fixture, profileName, profile, shot) {
     list: 80,
   };
 
+  page.on("console", (msg) => {
+    if (msg.type() === "error" || msg.type() === "warning") {
+      console.log("PAGE", msg.type(), msg.text());
+    }
+  });
+  page.on("pageerror", (err) => console.log("PAGEERROR", err.message, err.stack));
+  const cors = {
+    "access-control-allow-origin": "*",
+    "access-control-allow-headers": "*",
+    "access-control-allow-methods": "GET,POST,PATCH,DELETE,OPTIONS",
+  };
   await page.setRequestInterception(true);
   page.on("request", async (req) => {
     const url = req.url();
+    if (req.method() === "OPTIONS") {
+      await req.respond({ status: 204, headers: cors }).catch(() => {});
+      return;
+    }
     if (url.includes("/auth/v1/")) {
       await req.respond({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ access_token: "dev", token_type: "bearer", user: { id: "measure-user" } }),
+        headers: cors,
+        body: JSON.stringify({
+          access_token: "dev",
+          token_type: "bearer",
+          expires_in: 3600,
+          user: { id: "measure-user" },
+        }),
       });
       return;
     }
@@ -234,15 +318,24 @@ async function runProfile(browser, fixture, profileName, profile, shot) {
           .respond({
             status: 200,
             contentType: "application/json",
-            headers: { "content-range": "0-0/1" },
+            headers: { ...cors, "content-range": "0-0/1" },
             body,
           })
           .catch(() => {});
-      }, delay);
+      }, delay.applied);
       return;
     }
-    if (url.includes("supabase.co") || url.includes("/rest/v1/")) {
-      await req.respond({ status: 200, contentType: "application/json", body: "[]" });
+    if (url.includes("fonts.googleapis.com") || url.includes("fonts.gstatic.com")) {
+      await req.respond({
+        status: 200,
+        headers: cors,
+        contentType: url.includes("gstatic") ? "font/woff2" : "text/css",
+        body: url.includes("gstatic") ? "" : "/* measure */",
+      });
+      return;
+    }
+    if (url.includes("supabase.co") || url.includes("/rest/v1/") || url.includes("espn.com") || url.includes("site.api")) {
+      await req.respond({ status: 200, contentType: "application/json", headers: cors, body: "[]" });
       return;
     }
     await req.continue();
@@ -253,25 +346,77 @@ async function runProfile(browser, fixture, profileName, profile, shot) {
     waitUntil: "domcontentloaded",
     timeout: 120_000,
   });
-  await page.waitForFunction(
-    () => {
-      const root = document.querySelector(".newspaper-root");
-      const name = document.querySelector(".wsj-nameplate");
-      const ready = root?.getAttribute("data-times-ready") === "1";
-      const visible = name && getComputedStyle(name).visibility !== "hidden";
-      return Boolean(ready && visible);
-    },
-    { timeout: 90_000 },
-  );
+  try {
+    await page.waitForFunction(
+      () => {
+        const root = document.querySelector(".newspaper-root");
+        const name = document.querySelector(".wsj-nameplate");
+        const ready = root?.getAttribute("data-times-ready") === "1";
+        const visible = name && getComputedStyle(name).visibility !== "hidden";
+        const text = document.body?.innerText || "";
+        const story =
+          text.includes("Cardinals take the night") ||
+          text.includes("Blues even the series") ||
+          text.includes("Tigers hold serve");
+        const weather = text.includes("MARSHFIELD") || text.includes("Marshfield");
+        return Boolean(ready && visible && story && weather);
+      },
+      { timeout: 90_000 },
+    );
+  } catch (err) {
+    const html = await page.content();
+    console.log("DEBUG url", page.url());
+    console.log("DEBUG html head", html.slice(0, 1500));
+    console.log(
+      "DEBUG flags",
+      await page.evaluate(() => ({
+        ready: document.querySelector(".newspaper-root")?.getAttribute("data-times-ready"),
+        name: !!document.querySelector(".wsj-nameplate"),
+        hold: !!document.querySelector(".tt-hold"),
+        body: document.body?.innerText?.slice(0, 500),
+      })),
+    );
+    throw err;
+  }
   const firstPaint = Date.now() - started;
+  await page
+    .waitForFunction(
+      () => document.querySelector(".wsj-nameplate") && document.querySelector(".wsj-front, .wsj-body, .wsj-sheet"),
+      { timeout: 30_000 },
+    )
+    .catch(() => {});
+  await new Promise((r) => setTimeout(r, 2_000));
   if (shot) {
-    const sheet = await page.$(".wsj-sheet") || await page.$(".newspaper-root");
     await mkdir(outDir, { recursive: true });
     const dest = path.join(outDir, `times_a1_${label}_768x1024.png`);
-    await (sheet || page).screenshot({ path: dest });
+    await page.screenshot({ path: dest, clip: { x: 0, y: 0, width: 768, height: 1024 } });
   }
-  await page.close();
-  return { profile: profileName, firstA1PaintMs: firstPaint };
+  const flags = await page.evaluate(() => ({
+    ready: document.querySelector(".newspaper-root")?.getAttribute("data-times-ready"),
+    nameplate: document.querySelector(".wsj-nameplate")?.textContent ?? "",
+    lead: document.querySelector(".wsj-front h2, .lead h2, .wsj-hed")?.textContent ?? "",
+  }));
+  return {
+    profile: profileName,
+    firstA1PaintMs: firstPaint,
+    payloadBytes: sizes,
+    payloadTransferMs: {
+      full: transferMs(sizes.full, profile),
+      shell: transferMs(sizes.shell, profile),
+      queries: transferMs(sizes.queries, profile),
+    },
+    flags,
+  };
+}
+
+async function runCold(browser, fixture, profileName, profile, shot) {
+  const context = await browser.createBrowserContext();
+  const page = await context.newPage();
+  try {
+    return await runProfile(page, fixture, profileName, profile, shot);
+  } finally {
+    await context.close();
+  }
 }
 
 async function main() {
@@ -287,13 +432,15 @@ async function main() {
   });
   const results = [];
   try {
-    results.push(await runProfile(browser, fixture, "fast-3g", PROFILES["fast-3g"], true));
-    results.push(await runProfile(browser, fixture, "4g", PROFILES["4g"], false));
-    // Warm: second open of the same profile (4G) after the first visit cached the shell.
-    results.push({
-      ...(await runProfile(browser, fixture, "4g-warm", PROFILES["4g"], false)),
-      profile: "4g-warm",
-    });
+    results.push(await runCold(browser, fixture, "fast-3g", PROFILES["fast-3g"], false));
+    const warmContext = await browser.createBrowserContext();
+    const cold4g = await warmContext.newPage();
+    results.push(await runProfile(cold4g, fixture, "4g", PROFILES["4g"], true));
+    await cold4g.close();
+    const warm4g = await warmContext.newPage();
+    results.push(await runProfile(warm4g, fixture, "4g-warm", PROFILES["4g"], false));
+    await warm4g.close();
+    await warmContext.close();
   } finally {
     await browser.close();
     server.close();

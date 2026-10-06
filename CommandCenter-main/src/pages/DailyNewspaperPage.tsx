@@ -695,7 +695,7 @@ function Masthead({
           Section {page.section} · {page.folio}
         </span>
       </div>
-      {weather?.days.length ? (
+      {weather?.days?.length ? (
         <WeatherStrip
           weather={weather}
           folio={weatherFolio}
@@ -4576,6 +4576,14 @@ function NewspaperDesk() {
   latestRef.current = latestId;
   const pendingHeavyRef = useRef<PrintedIssue["queries"]>([]);
   const cacheUser = user?.id ?? readCacheUserId();
+  const cacheUserRef = useRef(cacheUser);
+  cacheUserRef.current = cacheUser;
+  const dayRef = useRef(day);
+  dayRef.current = day;
+  const teamFavsRef = useRef(teamFavs);
+  teamFavsRef.current = teamFavs;
+  const clockPressIdRef = useRef(clockPress.id);
+  clockPressIdRef.current = clockPress.id;
   const seedQueries = useCallback(
     (queries: PrintedIssue["queries"], mode: "light" | "all") => {
       const { light, heavy } = splitQueries(queries);
@@ -4599,9 +4607,9 @@ function NewspaperDesk() {
 
   useEffect(() => {
     if (loadedRef.current === pressId) return;
-    let cancel = false;
+    let stale = false;
     const fallToPress = () => {
-      if (cancel || loadedRef.current === pressId || pressId !== clockPress.id) return;
+      if (stale || loadedRef.current === pressId || pressId !== clockPressIdRef.current) return;
       setLockedCopy((prev) => (prev?.id === pressId ? prev : null));
       setDocPhase("press");
       loadedRef.current = pressId;
@@ -4628,7 +4636,7 @@ function NewspaperDesk() {
         });
         setDocPhase("document");
         loadedRef.current = issue.id;
-        void writeLocalIssue({ ...issue, companions: extra }, cacheUser);
+        void writeLocalIssue({ ...issue, companions: extra }, cacheUserRef.current);
         void prefetchEditionImages(collectEditionImageUrls({ ...issue, companions: extra }));
       };
 
@@ -4658,29 +4666,29 @@ function NewspaperDesk() {
         }
         if (isLatest && queryNamed(queries, "tt-watch") == null) {
           const watch = await withDeadline(
-            fetchWatchList(day, { limit: WATCH_PAGE_GAMES, favorites: teamFavs }).catch(() => []),
+            fetchWatchList(dayRef.current, { limit: WATCH_PAGE_GAMES, favorites: teamFavsRef.current }).catch(() => []),
             COMPANION_WAIT_MS,
             [],
           );
-          queries = [...queries, { key: [pressId, "tt-watch", day], data: watch }];
+          queries = [...queries, { key: [pressId, "tt-watch", dayRef.current], data: watch }];
         }
         return { ...issue, queries };
       };
 
       const finishDesks = (issue: PrintedIssue, extra: { dayAhead: DaySchedule | null; national: NationalDesk | null; beez: BeezDesk | null }) => {
         seedQueries(issue.queries, "light");
-        void writeLocalIssue({ ...issue, companions: extra }, cacheUser);
+        void writeLocalIssue({ ...issue, companions: extra }, cacheUserRef.current);
         void prefetchEditionImages(collectEditionImageUrls({ ...issue, companions: extra }));
         const idle = window.requestIdleCallback?.bind(window);
         const run = () => {
-          if (!cancel) seedQueries(issue.queries, "all");
+          if (loadedRef.current === issue.id) seedQueries(issue.queries, "all");
         };
         if (idle) idle(run, { timeout: 4_000 });
         else window.setTimeout(run, 800);
       };
 
-      const local = await withDeadline(readLocalIssue(pressId, cacheUser).catch(() => null), COMPANION_WAIT_MS, null);
-      if (cancel) return;
+      const local = await withDeadline(readLocalIssue(pressId, cacheUserRef.current).catch(() => null), COMPANION_WAIT_MS, null);
+      if (stale) return;
       if (local?.id === pressId) {
         const cachedDay = asStoredSchedule(local.companions?.dayAhead);
         const cachedNat = asStoredNational(local.companions?.national);
@@ -4699,7 +4707,7 @@ function NewspaperDesk() {
           national: cachedNat,
           beez: cachedBeez,
         }).then(([dayAhead, national, beez]) => {
-          if (cancel) return;
+          if (stale) return;
           setCompanions((prev) =>
             prev?.id === pressId
               ? {
@@ -4715,9 +4723,9 @@ function NewspaperDesk() {
         if (missingHeavy) {
           void readRemoteQueries(pressId)
             .then(async (queries) => {
-              if (cancel || !queries) return;
+              if (loadedRef.current !== pressId || !queries) return;
               const filled = await attachLiveDesks({ ...local, queries: mergeQueries(local.queries, queries) });
-              if (cancel) return;
+              if (loadedRef.current !== pressId) return;
               finishDesks(filled, {
                 dayAhead: cachedDay,
                 national: cachedNat,
@@ -4731,15 +4739,15 @@ function NewspaperDesk() {
 
       const queriesP = readRemoteQueries(pressId).catch(() => null);
       const shell = await withDeadline(readRemoteIssueShell(pressId).catch(() => null), ISSUE_WAIT_MS, null);
-      if (cancel) return;
+      if (stale) return;
       if (shell?.id === pressId && isIssueWithinLookback(shell)) {
         const [dayAhead, national, beez] = await loadCompanions();
-        if (cancel) return;
+        if (stale) return;
         apply(shell, { dayAhead, national, beez }, "light");
         void queriesP.then(async (queries) => {
-          if (cancel || !queries) return;
+          if (loadedRef.current !== pressId || !queries) return;
           const filled = await attachLiveDesks({ ...shell, queries: mergeQueries(shell.queries, queries) });
-          if (cancel) return;
+          if (loadedRef.current !== pressId) return;
           finishDesks(filled, { dayAhead, national, beez });
         });
         return;
@@ -4748,10 +4756,10 @@ function NewspaperDesk() {
       fallToPress();
     })();
     return () => {
-      cancel = true;
+      stale = true;
       window.clearTimeout(bootEscape);
     };
-  }, [pressId, queryClient, day, clockPress.id, teamFavs, cacheUser, seedQueries]);
+  }, [pressId, queryClient, seedQueries]);
 
   useEffect(() => {
     void registerTimesWorker().then(async () => {
