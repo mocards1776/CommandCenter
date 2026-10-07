@@ -69,7 +69,13 @@ export function sheetNeedsTransformFit(
   return layout > 90;
 }
 
-/** Size the fit wrapper to the visual sheet when using transform:scale (not CSS zoom). */
+/**
+ * Size the fit wrapper to the visual sheet when using transform:scale (not CSS zoom).
+ *
+ * Never clear an applied scale to measure — that flashes the 1032 sheet at
+ * full width and blanks columns on iPad. Transform does not affect layout, so
+ * offsetHeight is the unscaled sheet height.
+ */
 export function applyScaledFitBox(
   fitBox: HTMLElement,
   sheet: HTMLElement,
@@ -78,29 +84,26 @@ export function applyScaledFitBox(
   useTransform: boolean,
 ): void {
   if (!useTransform || fit >= 1) {
-    fitBox.classList.remove("tt-fit-transform");
-    fitBox.style.width = "";
-    fitBox.style.height = "";
-    fitBox.style.overflow = "";
-    sheet.style.transform = "";
-    sheet.style.transformOrigin = "";
+    if (fitBox.classList.contains("tt-fit-transform")) fitBox.classList.remove("tt-fit-transform");
+    if (fitBox.style.width) fitBox.style.width = "";
+    if (fitBox.style.height) fitBox.style.height = "";
+    if (fitBox.style.overflow) fitBox.style.overflow = "";
+    if (sheet.style.transform) sheet.style.transform = "";
+    if (sheet.style.transformOrigin) sheet.style.transformOrigin = "";
     return;
   }
-  fitBox.classList.add("tt-fit-transform");
-  // Measure the unscaled sheet, then lock the wrapper to the visual box.
-  // A stale overflow:hidden height makes offsetHeight lie; transform makes
-  // scrollHeight balloon. Clear both before reading.
-  sheet.style.transform = "none";
-  fitBox.style.height = "auto";
-  fitBox.style.overflow = "visible";
-  const box = scaledFitBox(pageW, sheetLayoutHeight(sheet), fit);
+  if (!fitBox.classList.contains("tt-fit-transform")) fitBox.classList.add("tt-fit-transform");
+  const box = scaledFitBox(pageW, sheet.offsetHeight || sheetLayoutHeight(sheet), fit);
   const nextW = `${box.width}px`;
   const nextH = `${box.height}px`;
-  sheet.style.transform = `scale(${fit})`;
-  sheet.style.transformOrigin = "top left";
+  const nextScale = `scale(${fit})`;
+  if (sheet.style.transform !== nextScale) {
+    sheet.style.transform = nextScale;
+    sheet.style.transformOrigin = "top left";
+  }
   if (fitBox.style.width !== nextW) fitBox.style.width = nextW;
   if (fitBox.style.height !== nextH) fitBox.style.height = nextH;
-  fitBox.style.overflow = "hidden";
+  if (fitBox.style.overflow !== "hidden") fitBox.style.overflow = "hidden";
 }
 
 /** Convert a zoomed viewport distance into unzoomed sheet CSS pixels. */
