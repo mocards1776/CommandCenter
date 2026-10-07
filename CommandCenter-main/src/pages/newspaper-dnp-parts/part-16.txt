@@ -1,0 +1,287 @@
+opText text={p} /> : p}</p>
+          ))}
+        </div>
+        {right.length ? (
+          <div className="tt-nat-lead-col">
+            {right.map((p, i) => (
+              <p key={i}>{p}</p>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+  return (
+    <div className={cn("wsj-prose", `c${cols}`, ended && "ended")}>
+      {paras.map((p, i) => (
+        <p key={i}>{drop && i === 0 ? <NatDropText text={p} /> : p}</p>
+      ))}
+    </div>
+  );
+}
+
+function NatPhoto({
+  story,
+  size,
+  onFail,
+}: {
+  story: NationalStory;
+  size: NationalPhotoSize;
+  onFail: () => void;
+}) {
+  if (!story.imageUrl) return null;
+  const credit = story.imageCredit || story.source;
+  return (
+    <figure className={cn("tt-nat-cut", size)}>
+      <img
+        src={story.imageUrl}
+        alt=""
+        loading={size === "lead" ? "eager" : "lazy"}
+        onError={onFail}
+      />
+      {credit ? <figcaption>Photo: {credit}</figcaption> : null}
+    </figure>
+  );
+}
+
+function NatStory({
+  story,
+  size,
+  photo,
+  trim,
+}: {
+  story: NationalStory;
+  size: NationalStorySize;
+  photo: NationalPhotoSize | null;
+  trim?: number;
+}) {
+  const open = useReader();
+  const [failed, setFailed] = useState(false);
+  const showPhoto = Boolean(photo && story.imageUrl && !failed);
+  const card = natCard(story);
+  const more = nationalStoryHasMore(story, size);
+  return (
+    <article
+      className={cn("tt-nat-story", size, showPhoto && "has-photo")}
+      data-tt-keys={storyReadKeys({ id: story.id, headline: story.headline, wrapHref: story.url }).join("|")}
+      data-tt-title={story.headline}
+      {...(trim != null ? { "data-tt-trim": trim } : {})}
+    >
+      {showPhoto && photo ? (
+        <button type="button" className="tt-nat-photo-btn" onClick={() => open({ card })} aria-label={story.headline}>
+          <NatPhoto story={story} size={photo} onFail={() => setFailed(true)} />
+        </button>
+      ) : null}
+      <div className="tt-nat-copy">
+        <p className="tt-nat-src">
+          <b>{story.source}</b>
+          {story.credit && story.credit !== story.source ? <span> · {story.credit}</span> : null}
+          {story.byline ? <span> · {story.byline}</span> : null}
+          {natWhen(story.publishedAt) ? <em> · {natWhen(story.publishedAt)}</em> : null}
+        </p>
+        <h3 className={cn("wsj-hl", size === "lead" ? "xl" : size === "medium" ? "md" : "sm")}>
+          <HeadlineSave card={card}>
+            <button type="button" className="wsj-a wsj-story-link" onClick={() => open({ card })}>
+              {story.headline}
+            </button>
+          </HeadlineSave>
+        </h3>
+        <NatSummary story={story} cols={size === "lead" ? 2 : 1} drop={size === "lead"} size={size} ended={!more} />
+        {story.bodyNote ? <p className="tt-nat-note">{story.bodyNote}</p> : null}
+        {more ? (
+          <p className="wsj-jump">
+            <button type="button" className="wsj-jump-btn" onClick={() => open({ card })}>
+              Click for full story <span aria-hidden="true">→</span>
+            </button>
+          </p>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
+function NationalNewsDesk({
+  page,
+  onTurn,
+}: {
+  page: NationalEditionPage;
+  onTurn: (folio: string) => void;
+}) {
+  if (!page.stories.length) return null;
+  const lead = page.stories[0]!;
+  const afterLead = page.stories.slice(1);
+  const mediums = afterLead.filter((_, i) => nationalStorySize(1 + i) === "medium");
+  const rest = afterLead.filter((_, i) => nationalStorySize(1 + i) === "col");
+  const more = page.jumpFolio ?? (page.sectionPage < page.sectionCount ? `${page.section}${page.sectionPage + 1}` : null);
+  const photoAt = (offset: number, story: NationalStory) =>
+    nationalPhotoSize(offset, Boolean(story.imageUrl));
+  const front = page.sectionPage === 1;
+  return (
+    <div className="tt-nat">
+      <header className="wsj-sport-hero tt-nat-hero">
+        <div className="wsj-sport-hero-mark">
+          <span className="wsj-sport-code">{page.section}</span>
+          <div>
+            <h3>National News</h3>
+            <p>
+              {front ? page.editionLabel : "Inside the desk"} · {natDate(page.day)} · {page.stories.length}{" "}
+              {page.stories.length === 1 ? "story" : "stories"}
+              {page.sectionCount > 1 ? ` · ${page.folio}` : ""}
+            </p>
+          </div>
+        </div>
+      </header>
+      {front ? (
+        <p className="tt-nat-byline">
+          The Times national desk · {page.editionLabel} · {natDate(page.day)}
+        </p>
+      ) : (
+        <p className="tt-nat-byline">Continued from B{page.sectionPage - 1} · news only</p>
+      )}
+      <NatStory story={lead} size="lead" photo={photoAt(0, lead)} />
+      {mediums.length ? (
+        <div className="tt-nat-mediums">
+          {mediums.map((story, i) => (
+            <NatStory key={story.id} story={story} size="medium" photo={photoAt(1 + i, story)} trim={18 + i} />
+          ))}
+        </div>
+      ) : null}
+      {rest.length ? (
+        <div className="tt-nat-cols">
+          {rest.map((story, i) => (
+            <NatStory
+              key={story.id}
+              story={story}
+              size="col"
+              photo={photoAt(1 + mediums.length + i, story)}
+              trim={28 + i}
+            />
+          ))}
+        </div>
+      ) : null}
+      {more ? <TurnBar onTurn={onTurn} folio={more} label="More national news" /> : null}
+    </div>
+  );
+}
+
+/* ───────────────────────── Missouri ───────────────────────── */
+
+type MissouriEditionPage = Extract<EditionPage, { kind: "missouri" }>;
+
+/** A Missouri item set as a story card, so the reader can pull and set it. */
+function moCard(item: MoItem): GameWrapCard {
+  return missouriStoryCard(item);
+}
+
+function moWhen(iso: string | null): string {
+  if (!iso) return "";
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return "";
+  const hours = Math.round((Date.now() - t) / 3_600_000);
+  if (hours < 1) return "Just now";
+  if (hours < 24) return `${hours} hr ago`;
+  return new Date(t).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+}
+
+/** Feed snippets stop mid-word; end them on a sentence, or at least a word. */
+function cleanDek(text: string): string {
+  return truncateAtSentence(text, 420);
+}
+
+function MoSource({ item }: { item: MoItem }) {
+  return (
+    <p className="tt-mo-src">
+      <b>{item.source}</b>
+      {item.also?.length ? <span> · also {item.also.join(", ")}</span> : null}
+      {moWhen(item.when) ? <em> · {moWhen(item.when)}</em> : null}
+    </p>
+  );
+}
+
+function MoStory({ item, size, trim }: { item: MoItem; size: "xl" | "md" | "sm"; trim?: number }) {
+  const open = useReader();
+  const card = moCard(item);
+  return (
+    <article
+      className={cn("tt-mo-story", size, item.photo && size !== "sm" && "has-photo")}
+      data-tt-keys={storyReadKeys({ id: item.id, headline: item.headline, wrapHref: item.url }).join("|")}
+      data-tt-title={item.headline}
+      {...(trim != null ? { "data-tt-trim": trim } : {})}
+    >
+      {item.photo && size !== "sm" ? (
+        <button type="button" className="tt-mo-photo" onClick={() => open({ card })} aria-label={item.headline}>
+          <img src={item.photo} alt="" loading="lazy" />
+        </button>
+      ) : null}
+      <div className="tt-mo-copy">
+        <MoSource item={item} />
+        <h3 className={cn("wsj-hl", size === "xl" ? "xl" : size === "md" ? "md" : "sm")}>
+          <HeadlineSave card={card}>
+            <button type="button" className="wsj-a wsj-story-link" onClick={() => open({ card })}>
+              {item.headline}
+            </button>
+          </HeadlineSave>
+        </h3>
+        {item.dek && size !== "sm" ? <p className="tt-mo-dek">{cleanDek(item.dek)}</p> : null}
+        <p className="wsj-jump">
+          <button type="button" className="wsj-jump-btn" onClick={() => open({ card })}>
+            Click for full story <span aria-hidden="true">→</span>
+          </button>
+        </p>
+      </div>
+    </article>
+  );
+}
+
+function MissouriDesk({ page, onTurn }: { page: MissouriEditionPage; onTurn: (folio: string) => void }) {
+  const items = page.items;
+  const outlets = new Set(items.flatMap((i) => [i.source, ...(i.also ?? [])])).size;
+  const flag = (
+    <header className="wsj-sport-hero tt-mo-hero">
+      <div className="wsj-sport-hero-mark">
+        <span className="wsj-sport-code">{page.section}</span>
+        <div>
+          <h3>Missouri</h3>
+          <p>
+            {page.sectionPage === 1 ? "Statehouse and the state" : "Around the state"} · {items.length} stories · {outlets} outlets
+          </p>
+        </div>
+      </div>
+    </header>
+  );
+  const more = page.sectionPage < page.sectionCount ? `${page.section}${page.sectionPage + 1}` : null;
+  if (page.sectionPage > 1) {
+    return (
+      <div className="tt-mo">
+        {flag}
+        <div className="tt-mo-briefs">
+          {items.map((item, i) => (
+            <MoStory key={item.id} item={item} size={item.photo ? "md" : "sm"} trim={22 + i} />
+          ))}
+        </div>
+        {more ? <TurnBar onTurn={onTurn} folio={more} label="More from around the state" /> : null}
+      </div>
+    );
+  }
+  const lead = items.find((i) => i.photo) ?? items[0]!;
+  const seconds = items.filter((i) => i !== lead && i.photo).slice(0, 2);
+  const list = items.filter((i) => i !== lead && !seconds.includes(i));
+  return (
+    <div className="tt-mo">
+      {flag}
+      <div className="tt-mo-grid">
+        <div className="tt-mo-main">
+          <MoStory item={lead} size="xl" />
+          {seconds.length ? (
+            <div className={cn("tt-mo-seconds", seconds.length === 1 && "one")}>
+              {seconds.map((item, i) => (
+                <MoStory key={item.id} item={item} size="md" trim={16 + i} />
+              ))}
+            </div>
+          ) : null}
+        </div>
+        <aside className="tt-mo-rail">
+          <section>
+            <h4>The headlines</h4>
+            <ol className="tt-mo-list">
+              {
