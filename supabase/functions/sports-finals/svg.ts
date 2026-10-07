@@ -18,6 +18,7 @@ import {
   formatFinalsTimestamp,
   formatGameStart,
   formatGameStartLong,
+  type FinalBoxPlayer,
   type FinalCard,
   type FinalLeader,
   type FinalPlayer,
@@ -28,6 +29,7 @@ import {
   type MlbBoxSide,
   type MlbDecision,
 } from "./card.ts";
+import type { AlbumDecision, FeaturedPlayer } from "./favorites.ts";
 import type { SeriesGame } from "./series.ts";
 import {
   mlbInningLabels,
@@ -1647,4 +1649,256 @@ export function renderFinalSvg(card: FinalCard): string {
     parts.join(""),
     `</svg>`,
   ].join("");
+}
+
+function featuredHeight(rows: FeaturedPlayer[]): number {
+  if (!rows.length) return 0;
+  return 56 + rows.length * 118 + 12;
+}
+
+function featuredBlock(
+  rows: FeaturedPlayer[],
+  card: FinalCard,
+  x: number,
+  y: number,
+  w: number,
+  awayPaint: string,
+  homePaint: string,
+): string {
+  const parts = [
+    sectionTitle("Your players", x + CARD_IN, y + 34),
+    text("Favorites in this game", x + w - CARD_IN, y + 34, {
+      size: 13,
+      fill: "#8b93a7",
+      anchor: "end",
+      weight: 700,
+      spacing: 1.2,
+    }),
+  ];
+  let cursor = y + 52;
+  for (const row of rows) {
+    const paint = row.teamAbbrev === card.away.abbrev ? awayPaint : homePaint;
+    parts.push(playerPhoto(row.photoData, x + CARD_IN, cursor, 72, row.name, paint));
+    parts.push(text(row.name, x + CARD_IN + 90, cursor + 28, { size: 26, fill: "#f7f4ee", weight: 700 }));
+    const meta = [row.teamAbbrev, row.position].filter(Boolean).join("  ·  ");
+    if (meta) {
+      parts.push(text(meta, x + CARD_IN + 90, cursor + 52, { size: 16, fill: paint, weight: 700, spacing: 0.4 }));
+    }
+    const line = row.lines.map((item) => item.text).filter(Boolean).join("   ");
+    if (line) {
+      parts.push(text(line, x + CARD_IN + 90, cursor + 78, { size: 18, fill: "#d5dae6", weight: 600 }));
+    }
+    cursor += 118;
+  }
+  return parts.join("");
+}
+
+function teamFocusHeight(rows: FinalBoxPlayer[]): number {
+  if (!rows.length) return 0;
+  return 56 + Math.min(rows.length, 6) * 56 + 12;
+}
+
+function teamFocusBlock(
+  rows: FinalBoxPlayer[],
+  card: FinalCard,
+  teams: AlbumDecision["teams"],
+  x: number,
+  y: number,
+  w: number,
+  awayPaint: string,
+  homePaint: string,
+): string {
+  const label = teams[0]?.names[0]
+    ? `${teams.map((team) => team.abbrev || team.names[0]).filter(Boolean).join(" / ")} tonight`
+    : "Key performers";
+  const parts = [sectionTitle(label, x + CARD_IN, y + 34)];
+  let cursor = y + 52;
+  for (const row of rows.slice(0, 6)) {
+    const paint = row.teamAbbrev === card.away.abbrev ? awayPaint : homePaint;
+    parts.push(playerPhoto(row.photoData, x + CARD_IN, cursor, 40, row.name));
+    parts.push(text(row.name, x + CARD_IN + 56, cursor + 18, { size: 20, fill: "#f7f4ee", weight: 700 }));
+    parts.push(text(row.line, x + CARD_IN + 56, cursor + 40, { size: 15, fill: paint, weight: 600 }));
+    cursor += 56;
+  }
+  return parts.join("");
+}
+
+function page2Shell(card: FinalCard, body: string[], contentBottom: number, headerBottom: number): string {
+  const awayPaint = paintColor(card.away.color, card.away.alternateColor);
+  const homePaint = paintColor(card.home.color, card.home.alternateColor);
+  const awayLoses = loserOf(card, "away");
+  const homeLoses = loserOf(card, "home");
+  const wash = [
+    `<defs>`,
+    `<radialGradient id="awayWash" cx="18%" cy="18%" r="52%">`,
+    `<stop offset="0%" stop-color="${awayPaint}" stop-opacity="${awayLoses ? 0.18 : 0.42}"/>`,
+    `<stop offset="72%" stop-color="${awayPaint}" stop-opacity="0"/>`,
+    `</radialGradient>`,
+    `<radialGradient id="homeWash" cx="82%" cy="18%" r="52%">`,
+    `<stop offset="0%" stop-color="${homePaint}" stop-opacity="${homeLoses ? 0.18 : 0.42}"/>`,
+    `<stop offset="72%" stop-color="${homePaint}" stop-opacity="0"/>`,
+    `</radialGradient>`,
+    `</defs>`,
+    `<rect width="${W}" height="${contentBottom}" fill="#07101d"/>`,
+    `<rect width="${W / 2}" height="8" fill="${awayPaint}" opacity="${awayLoses ? 0.35 : 1}"/>`,
+    `<rect x="${W / 2}" width="${W / 2}" height="8" fill="${homePaint}" opacity="${homeLoses ? 0.35 : 1}"/>`,
+    `<rect width="${W}" height="${headerBottom}" fill="url(#awayWash)"/>`,
+    `<rect width="${W}" height="${headerBottom}" fill="url(#homeWash)"/>`,
+  ].join("");
+  return [
+    `<?xml version="1.0" encoding="UTF-8"?>`,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${contentBottom}" viewBox="0 0 ${W} ${contentBottom}" font-family="Inter, sans-serif">`,
+    wash,
+    body.join(""),
+    `</svg>`,
+  ].join("");
+}
+
+/**
+ * Album page 2 — deeper box / stars / goalies plus a featured favorites block.
+ * Same navy card as page 1. Logos stay raw marks (no cream discs).
+ */
+export function renderFinalPage2Svg(card: FinalCard, album: AlbumDecision): string {
+  const awayPaint = paintColor(card.away.color, card.away.alternateColor);
+  const homePaint = paintColor(card.home.color, card.home.alternateColor);
+  const awayWins = winner(card, "away");
+  const homeWins = winner(card, "home");
+  const awayLoses = loserOf(card, "away");
+  const homeLoses = loserOf(card, "home");
+  const parts: string[] = [];
+  const stamp = formatFinalsTimestamp(card.sentAt);
+  let y = 28;
+  const fullW = W - M * 2;
+
+  parts.push(
+    text("PAGE 2 · DETAIL", M, y + 20, { size: 18, fill: "#8b93a7", weight: 700, spacing: 2.2 }),
+  );
+  parts.push(
+    text(centerStatus(card.statusLabel).toUpperCase(), W - M, y + 20, {
+      size: 18,
+      fill: "#e8e4d9",
+      anchor: "end",
+      weight: 700,
+      spacing: 2.4,
+    }),
+  );
+  y += 36;
+
+  const logoSize = 72;
+  parts.push(logo(card.away, M + 4, y, logoSize, awayPaint, awayLoses));
+  parts.push(logo(card.home, W - M - 4 - logoSize, y, logoSize, homePaint, homeLoses));
+  const awayScore = card.away.score == null ? "–" : String(card.away.score);
+  const homeScore = card.home.score == null ? "–" : String(card.home.score);
+  parts.push(
+    text(awayScore, W / 2 - 48, y + 54, {
+      size: 72,
+      fill: awayWins || !homeWins ? "#f7f4ee" : "#5c6578",
+      anchor: "end",
+      weight: 700,
+    }),
+  );
+  parts.push(
+    text(homeScore, W / 2 + 48, y + 54, {
+      size: 72,
+      fill: homeWins || !awayWins ? "#f7f4ee" : "#5c6578",
+      anchor: "start",
+      weight: 700,
+    }),
+  );
+  parts.push(text("–", W / 2, y + 48, { size: 36, fill: "#8b93a7", anchor: "middle", weight: 500 }));
+  y += logoSize + 18;
+  parts.push(
+    text(card.away.abbrev, M, y, {
+      size: 22,
+      fill: awayLoses ? "#8b93a7" : "#f7f4ee",
+      weight: 700,
+    }),
+  );
+  parts.push(
+    text(card.home.abbrev, W - M, y, {
+      size: 22,
+      fill: homeLoses ? "#8b93a7" : "#f7f4ee",
+      anchor: "end",
+      weight: 700,
+    }),
+  );
+  y += 20;
+  const headerBottom = y;
+  y += 16;
+
+  if (album.featured.length) {
+    const h = featuredHeight(album.featured);
+    parts.push(panel(M, y, fullW, h));
+    parts.push(featuredBlock(album.featured, card, M, y, fullW, awayPaint, homePaint));
+    y += h + GAP;
+  } else if (album.teamPerformers.length) {
+    const h = teamFocusHeight(album.teamPerformers);
+    parts.push(panel(M, y, fullW, h));
+    parts.push(teamFocusBlock(album.teamPerformers, card, album.teams, M, y, fullW, awayPaint, homePaint));
+    y += h + GAP;
+  }
+
+  const hasStars = card.threeStars.length > 0;
+  const hasGoalies = card.goalies.length > 0;
+  const hasLeaders = card.leaders.length > 0;
+  const hasPerformers = card.sport === "mlb" && hasLeaders;
+
+  if (hasStars) {
+    const starH = starsHeight(card.threeStars);
+    parts.push(panel(M, y, fullW, starH));
+    parts.push(starsBlock(card.threeStars, card, M, y, fullW, awayPaint, homePaint));
+    y += starH + GAP;
+  }
+
+  if (hasGoalies) {
+    const goalieH = peopleHeight("Goalies", card.goalies, true);
+    parts.push(panel(M, y, fullW, goalieH));
+    parts.push(peopleBlock("Goalies", card.goalies, M, y, fullW, awayPaint, homePaint, card.away.abbrev, true));
+    y += goalieH + GAP;
+  }
+
+  if (hasPerformers && !hasStars) {
+    const perfH = Math.max(performersHeight(card.leaders), 96);
+    parts.push(panel(M, y, fullW, perfH));
+    parts.push(performersBlock(card.leaders, card, M, y, fullW, awayPaint, homePaint));
+    y += perfH + GAP;
+  } else if (hasLeaders && !hasStars && !hasPerformers) {
+    const leadH = leadersHeight(card.leaders, true);
+    parts.push(panel(M, y, fullW, leadH));
+    parts.push(sectionTitle("Box leaders", M + CARD_IN, y + 34));
+    parts.push(leaderBlock(card.leaders, M, y + 50, fullW, awayPaint, homePaint, card.away.abbrev, true));
+    y += leadH + GAP;
+  }
+
+  if (card.stats.length && card.sport !== "mlb") {
+    const statsH = statsHeight(card.stats.length, card.sport === "nhl");
+    parts.push(panel(M, y, fullW, statsH));
+    parts.push(
+      text("Team stats", M + fullW / 2, y + 34, {
+        size: 17,
+        fill: "#e8e4d9",
+        anchor: "middle",
+        weight: 700,
+        spacing: 1.2,
+      }),
+    );
+    parts.push(statRows(card.stats, M, y + 50, fullW, awayPaint, homePaint, card.sport === "nhl"));
+    y += statsH + GAP;
+  }
+
+  y += 4;
+  const footerRight = card.odds?.graphicLine || centerStatus(card.statusLabel);
+  const footerLeft = [stamp, card.daySlot].filter(Boolean).join("  ·  ");
+  parts.push(text(footerLeft, M, y + 22, { size: 18, fill: "#c5cce0", weight: 700, spacing: 0.4 }));
+  parts.push(
+    text(footerRight, W - M, y + 22, {
+      size: footerRight.length > 28 ? 16 : 18,
+      fill: "#d5dae6",
+      anchor: "end",
+      weight: 700,
+      spacing: 0.2,
+    }),
+  );
+  y += 42;
+  return page2Shell(card, parts, y, headerBottom);
 }
