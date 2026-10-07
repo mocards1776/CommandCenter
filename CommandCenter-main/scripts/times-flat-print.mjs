@@ -162,7 +162,9 @@ async function loadPlaywright() {
 
 function ffmpeg(args) {
   return new Promise((resolve, reject) => {
-    const child = spawn("ffmpeg", ["-hide_banner", "-loglevel", "error", ...args], { stdio: "inherit" });
+    const env = { ...process.env };
+    delete env.LD_LIBRARY_PATH;
+    const child = spawn("ffmpeg", ["-hide_banner", "-loglevel", "error", ...args], { stdio: "inherit", env });
     child.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`ffmpeg ${code}`))));
   });
 }
@@ -173,9 +175,9 @@ function pngSize(buf) {
 
 async function encodeWebp(pngPath, webpPath, lossless) {
   if (lossless) {
-    await ffmpeg(["-y", "-i", pngPath, "-c:libwebp", "-lossless", "1", "-compression_level", "6", webpPath]);
+    await ffmpeg(["-y", "-i", pngPath, "-c:v", "libwebp", "-lossless", "1", "-compression_level", "6", webpPath]);
   } else {
-    await ffmpeg(["-y", "-i", pngPath, "-c:libwebp", "-q:v", "95", webpPath]);
+    await ffmpeg(["-y", "-i", pngPath, "-c:v", "libwebp", "-q:v", "95", webpPath]);
   }
 }
 
