@@ -153,7 +153,7 @@ import {
   queryDeskName,
   splitQueries,
 } from "@/lib/newspaper-payload";
-import { frontPrefixLength, yieldToPaint } from "@/lib/newspaper-front-load";
+import { yieldToPaint } from "@/lib/newspaper-front-load";
 import {
   cacheTimesShell,
   collectEditionImageUrls,
@@ -5020,6 +5020,14 @@ const FolioSlot = memo(function FolioSlot({
   );
 });
 
+function prefetchStoryArt(stories: readonly unknown[]) {
+  for (const card of stories) {
+    if (!card || typeof card !== "object") continue;
+    const photo = (card as { photo?: unknown }).photo;
+    if (typeof photo === "string") prefetchSrc(photo);
+  }
+}
+
 function prefetchNearArt(pager: HTMLElement, index: number) {
   const sheets = pager.children;
   for (let i = 0; i < sheets.length; i++) {
@@ -5136,7 +5144,16 @@ function NewspaperDesk() {
     national: NationalDesk | null;
     beez: BeezDesk | null;
     printedAt?: string;
-  } | null>(null);
+  } | null>(() => {
+    if (!opened || opened.id !== openingPressId) return null;
+    return {
+      id: opened.id,
+      dayAhead: asStoredSchedule(opened.companions?.dayAhead),
+      national: asStoredNational(opened.companions?.national),
+      beez: asStoredBeez(opened.companions?.beez),
+      printedAt: opened.printedAt,
+    };
+  });
   const [revealed, setRevealed] = useState(false);
   const [savedOpen, setSavedOpen] = useState(false);
   const [newerEdition, setNewerEdition] = useState<string | null>(null);
@@ -5303,6 +5320,23 @@ function NewspaperDesk() {
       loadedRef.current = pressId;
     };
     const bootEscape = window.setTimeout(fallToPress, SHELL_WAIT_MS + COMPANION_WAIT_MS);
+    if (opened?.id === pressId) {
+      loadedRef.current = pressId;
+      void prefetchEditionImages(
+        collectEditionImageUrls({
+          ...opened,
+          companions: {
+            dayAhead: asStoredSchedule(opened.companions?.dayAhead),
+            national: asStoredNational(opened.companions?.national),
+            beez: asStoredBeez(opened.companions?.beez),
+          },
+        }),
+      );
+      return () => {
+        stale = true;
+        window.clearTimeout(bootEscape);
+      };
+    }
     void (async () => {
       const apply = (
         issue: PrintedIssue,
@@ -5333,22 +5367,18 @@ function NewspaperDesk() {
         }
       };
 
-      const emptyCompanions = { dayAhead: null, national: null, beez: null };
-
-      /** A1 from the story prefix, then the rest of the folio after a paint. */
-      const paintFrontFirst = async (
+      /**
+       * One commit of the filed paper. A prefix paint (the first ~48 stories)
+       * was a different A1 than the full folio — Padres, then Hawley, then
+       * McDowell — and each commit remounted the sheet under the cover.
+       * Heavy desks are already in memory here; seeding them on a later tick
+       * rebuilt the book after the cover had a chance to drop.
+       */
+      const paintFiled = (
         issue: PrintedIssue,
         extra: { dayAhead: DaySchedule | null; national: NationalDesk | null; beez: BeezDesk | null },
       ) => {
-        const n = frontPrefixLength(issue.stories);
-        if (n < issue.stories.length) {
-          apply({ ...issue, stories: issue.stories.slice(0, n), queries: [] }, extra, "light", { persist: false });
-          await yieldToPaint();
-          if (stale) return;
-          startTransition(() => apply(issue, extra, "light"));
-          return;
-        }
-        apply(issue, extra, "light");
+        apply(issue, extra, "all");
       };
 
       const loadCompanions = (cached?: {
@@ -5389,16 +5419,9 @@ function NewspaperDesk() {
       };
 
       const finishDesks = (issue: PrintedIssue, extra: { dayAhead: DaySchedule | null; national: NationalDesk | null; beez: BeezDesk | null }) => {
-        seedQueries(issue.queries, "light");
-        releaseHeavy(["tt-board"]);
+        if (loadedRef.current === issue.id) seedQueries(issue.queries, "all");
         void writeLocalIssue({ ...issue, companions: extra }, cacheUserRef.current);
         void prefetchEditionImages(collectEditionImageUrls({ ...issue, companions: extra }));
-        const idle = window.requestIdleCallback?.bind(window);
-        const run = () => {
-          if (loadedRef.current === issue.id) seedQueries(issue.queries, "all");
-        };
-        if (idle) idle(run, { timeout: 4_000 });
-        else window.setTimeout(run, 800);
       };
 
       const local = await withDeadline(readLocalIssue(pressId, cacheUserRef.current).catch(() => null), COMPANION_WAIT_MS, null);
@@ -5407,7 +5430,7 @@ function NewspaperDesk() {
         const cachedDay = asStoredSchedule(local.companions?.dayAhead);
         const cachedNat = asStoredNational(local.companions?.national);
         const cachedBeez = asStoredBeez(local.companions?.beez);
-        await paintFrontFirst(local, {
+        paintFiled(local, {
           dayAhead: cachedDay,
           national: cachedNat,
           beez: cachedBeez,
@@ -5454,42 +5477,34 @@ function NewspaperDesk() {
         return;
       }
 
-      let paintedFront = false;
+      // Stories, the filed board, and the companion desks start together.
+      // Committing the stream prefix first painted a throwaway A1, then the
+      // full folio and the desks each replaced it.
+      const queriesP = readRemoteQueries(pressId).catch(() => null);
+      const companionsP = loadCompanions();
       const shellP = readRemoteIssueFrontFirst(pressId, (partial) => {
-        if (stale || paintedFront || !isIssueWithinLookback(partial)) return;
-        paintedFront = true;
-        apply(partial, emptyCompanions, "light", { persist: false });
+        if (stale || !isIssueWithinLookback(partial)) return;
+        prefetchStoryArt(partial.stories);
       }).catch(() => null);
       let shell = await withDeadline(shellP, SHELL_WAIT_MS, null);
       if (!shell) shell = await shellP;
       if (stale) return;
       const opened = shell;
       if (opened?.id === pressId && isIssueWithinLookback(opened)) {
-        if (!paintedFront) {
-          apply(opened, emptyCompanions, "light", { persist: false });
-        } else {
-          startTransition(() => {
-            setLockedCopy({ id: opened.id, stories: opened.stories as GameWrapCard[] });
-          });
-        }
-        const queriesP = readRemoteQueries(pressId).catch(() => null);
-        const [dayAhead, national, beez] = await loadCompanions();
-        if (stale || loadedRef.current !== pressId) return;
-        setCompanions({
-          id: opened.id,
-          dayAhead,
-          national,
-          beez,
-          printedAt: opened.printedAt,
-        });
-        const queries = await queriesP;
-        if (loadedRef.current !== pressId) return;
+        const [companions, queries] = await Promise.all([
+          withDeadline(companionsP, 8_000, [null, null, null] as const),
+          queriesP,
+        ]);
+        if (stale) return;
+        await yieldToPaint();
+        if (stale) return;
+        const [dayAhead, national, beez] = companions;
         const filled = await attachLiveDesks({
           ...opened,
           queries: mergeQueries(opened.queries, queries ?? []),
         });
-        if (loadedRef.current !== pressId) return;
-        finishDesks(filled, { dayAhead, national, beez });
+        if (stale) return;
+        paintFiled(filled, { dayAhead, national, beez });
         return;
       }
 
@@ -5499,7 +5514,7 @@ function NewspaperDesk() {
       stale = true;
       window.clearTimeout(bootEscape);
     };
-  }, [pressId, queryClient, seedQueries]);
+  }, [pressId, queryClient, seedQueries, opened]);
 
   useEffect(() => {
     void registerTimesWorker().then(async () => {
@@ -5556,9 +5571,11 @@ function NewspaperDesk() {
   const [pageIndex, setPageIndex] = useState(0);
   const [fillFor, setFillFor] = useState(pressId);
   const [filled, setFilled] = useState<ReadonlySet<number>>(() => new Set([0]));
+  const [armedFor, setArmedFor] = useState<string | null>(null);
   if (fillFor !== pressId) {
     setFillFor(pressId);
     setFilled(new Set([0]));
+    setArmedFor(null);
   }
   const filledRef = useRef(filled);
   filledRef.current = filled;
@@ -6073,7 +6090,7 @@ function NewspaperDesk() {
       );
       return Object.fromEntries(entries) as Record<string, SectionBoard>;
     },
-    enabled: leadBoardPaths.length > 0,
+    enabled: pressing && leadBoardPaths.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -6317,7 +6334,7 @@ function NewspaperDesk() {
 
   const weatherQ = useQuery({
     queryKey: [pressId, "tt-weather-marshfield"],
-    enabled: true,
+    enabled: pressing,
     queryFn: fetchMarshfieldWeather,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
@@ -6714,7 +6731,7 @@ function NewspaperDesk() {
   const beezDesk = companions?.id === pressId ? companions.beez : (beezQ.data ?? null);
   const raceDesk: RaceBriefsDesk | null =
     racesSample && scheduleDate ? sampleRaceBriefs(scheduleDate) : (racesQ.data ?? null);
-  const edition = useMemo(
+  const builtBook = useMemo(
     () =>
       dropEmptyFolios(
         paginateEditionDesks(
@@ -6724,6 +6741,15 @@ function NewspaperDesk() {
       ),
     [builtEdition, raceDesk, daySchedule, beezDesk, standingsQ.data],
   );
+  // The cover drops onto this book and then stays there. A later desk
+  // (live board, companions, playoff tree) used to swap the A1 lead and
+  // remount every sheet the reader was already looking at.
+  const frozenEdition = useRef<{ pressId: string; book: typeof builtBook } | null>(null);
+  if (frozenEdition.current && frozenEdition.current.pressId !== pressId) frozenEdition.current = null;
+  if (revealed && builtBook.pages.length && !frozenEdition.current) {
+    frozenEdition.current = { pressId, book: builtBook };
+  }
+  const edition = revealed && frozenEdition.current?.pressId === pressId ? frozenEdition.current.book : builtBook;
   const comingUp = useMemo<ComingUp[]>(
     () =>
       sortComingUp(
@@ -6776,7 +6802,7 @@ function NewspaperDesk() {
         const id = idle(() => pump(), { timeout: 500 });
         cancelPump = () => window.cancelIdleCallback(id);
       } else {
-        const id = window.setTimeout(pump, 16);
+        const id = window.setTimeout(pump, 80);
         cancelPump = () => window.clearTimeout(id);
       }
     };
@@ -7209,13 +7235,15 @@ function NewspaperDesk() {
     if (el) prefetchNearArt(el, pageIndex);
   }, [pageIndex, sheets]);
 
+  const revealFront = pages.find((p) => p.kind === "favorites-front");
+  const revealLead = revealFront?.kind === "favorites-front" ? revealFront.lead : null;
+  if (docPhase !== "boot" && revealLead && armedFor !== pressId) setArmedFor(pressId);
+
   useLayoutEffect(() => {
-    // A1's lead is enough to drop the cover. Boards and the rest of the folio
-    // fill in behind it; waiting on them held the paper for the whole file.
-    if (docPhase === "boot" || !sheets || revealFor.current === pressId) return;
-    const front = pages.find((p) => p.kind === "favorites-front");
-    const haveLead = front?.kind === "favorites-front" && Boolean(front.lead);
-    if (!haveLead) return;
+    // Arm once per edition. Rebuilding the folio used to cancel this effect
+    // on every pages identity, so the 7s cap never fired and the cover stayed
+    // up while A1 was replaced underneath it.
+    if (armedFor !== pressId || docPhase === "boot" || revealFor.current === pressId) return;
     let cancel = false;
     const cap = window.setTimeout(() => {
       if (cancel) return;
@@ -7233,12 +7261,12 @@ function NewspaperDesk() {
       cancel = true;
       window.clearTimeout(cap);
     };
-  }, [docPhase, pressId, sheets, pages]);
+  }, [armedFor, pressId, docPhase]);
 
   // A story that sat on the sheet counts as read. The next press leaves it out.
   useEffect(() => {
     const root = pagerRef.current;
-    if (!root || !user?.id) return;
+    if (!root || !user?.id || !revealed) return;
     const sheet = root.children[pageIndex] as HTMLElement | undefined;
     if (!sheet) return;
     const pending = new Map<Element, number>();
@@ -7283,7 +7311,7 @@ function NewspaperDesk() {
       observer.disconnect();
       for (const timer of pending.values()) window.clearTimeout(timer);
     };
-  }, [pageIndex, sheets, user?.id]);
+  }, [pageIndex, sheets, user?.id, revealed]);
 
   useEffect(() => {
     const el = pagerRef.current;
