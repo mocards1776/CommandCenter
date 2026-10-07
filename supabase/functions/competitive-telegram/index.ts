@@ -25,6 +25,8 @@ import { parseChatIds, sendTelegramPhoto } from "./telegram.ts";
  *     Inserts: Just In = those buys' full spend + GRP.
  *     Revisions: also pass just_in with *delta* amount + GRP (never full
  *     revised totals). buy_ids still required. Race / pies = live Almanac.
+ *     buy_ids only + an edited row (updated_at past the insert window) → 409.
+ *     Daily recap of today's inserts: pass recap: true to skip that guard.
  *     On just_in without color, pass side: "gop" or an explicit red color
  *     so GOP / MSCC tiles are never Dem blue.
  *     If Almanac keys are unset, also pass just_in + buyers (or totals).

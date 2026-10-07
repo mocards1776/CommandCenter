@@ -8,6 +8,7 @@
  * Inserts (true new rows):
  *   { action: "send", race_slug, buy_ids }
  *   Just In = those rows' full spend + GRP via rowsToJustIn.
+ *   A same-load patch within FRESH_INSERT_WINDOW_MS still counts as new.
  *
  * Revisions (spend/GRP increase on an existing buy):
  *   { action: "send", race_slug, buy_ids, just_in: [{ amount, grp, … }] }
@@ -16,6 +17,12 @@
  *   and does not fetchBuysByIds for Just In when `just_in` is present.
  *   Multi-station same sponsor|market|media → one DMA tile (Almanac may
  *   send that already aggregated).
+ *   buy_ids only + an edited row (updated_at > created_at + window) → 409.
+ *
+ * Daily recap (6:04pm CT, today's inserts, buy_ids only):
+ *   { action: "send", race_slug, buy_ids, recap: true }
+ *   Skips the edited-buy guard. source_label (etc.) may bump updated_at
+ *   hours after insert.
  *
  * Colors on `just_in`: pass `side: "gop"` / affiliation / MSCC sponsor, or
  * an explicit red `color`. Missing color is inferred — GOP tiles must never
@@ -43,6 +50,12 @@ export const ALMANAC_DEFAULT_URL = "https://sdixnhobyzxfimubxspi.supabase.co";
 export const MAX_JUST_IN_TILES = 2;
 /** Light isolate guard — Almanac load batches are small; reject absurd payloads. */
 export const MAX_BUY_IDS = 200;
+/**
+ * Same-load insert window. A fresh row patched within this interval still
+ * counts as new (full spend + GRP, no just_in required). Revisions hours
+ * later must pass just_in; the daily recap uses `recap: true` instead.
+ */
+export const FRESH_INSERT_WINDOW_MS = 5 * 60 * 1000;
 
 export type EnvGet = { get(name: string): string | undefined };
 
@@ -59,6 +72,10 @@ export type AlmanacBuyRow = {
   sponsorType: string;
   color?: string;
   flightStart: string;
+  /** Almanac competitive_buys.created_at — used to detect revisions. */
+  createdAt?: string;
+  /** Almanac competitive_buys.updated_at — used to detect revisions. */
+  updatedAt?: string;
 };
 
 export type AlmanacClient = {
@@ -77,6 +94,11 @@ export type CompetitiveSendBody = {
   buy_ids?: unknown;
   /** On revisions: delta spend/GRP tiles. Inserts omit this and use buy_ids rows. */
   just_in?: unknown;
+  /**
+   * Daily recap of today's inserts. Skips the edited-buy just_in guard
+   * because source_label (etc.) may bump updated_at hours after insert.
+   */
+  recap?: boolean;
   buyers?: unknown;
   totals?: SendPayloadTotals;
   asOf?: string;
@@ -96,6 +118,31 @@ export function almanacCredentials(env: EnvGet): { url: string; key: string } {
 export function parseBuyIds(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
   return raw.map((value) => String(value ?? "").trim()).filter(Boolean);
+}
+
+export function isEditedBuy(
+  row: Pick<AlmanacBuyRow, "createdAt" | "updatedAt">,
+  windowMs = FRESH_INSERT_WINDOW_MS,
+): boolean {
+  if (!row.createdAt || !row.updatedAt) return false;
+  const created = Date.parse(row.createdAt);
+  const updated = Date.parse(row.updatedAt);
+  if (!Number.isFinite(created) || !Number.isFinite(updated)) return false;
+  return updated - created > windowMs;
+}
+
+export function editedBuyIds(
+  rows: readonly AlmanacBuyRow[],
+  windowMs = FRESH_INSERT_WINDOW_MS,
+): string[] {
+  return rows.filter((row) => isEditedBuy(row, windowMs)).map((row) => row.id).filter(Boolean);
+}
+
+export function editedBuysRefuseError(ids: readonly string[]): string {
+  return (
+    `Edited buys cannot be sent as buy_ids only — Just In would post full row totals instead of the change. ` +
+    `Pass the spend/GRP increase in just_in. Edited buy_ids: ${ids.join(", ")}`
+  );
 }
 
 const SIDE_BY_AFFILIATION: Record<string, Affiliation> = {
@@ -318,10 +365,12 @@ export function mapRestBuy(raw: Record<string, unknown>, raceSlug: string): Alma
     sponsorType: String(sponsor.sponsor_type ?? raw.sponsor_type ?? ""),
     color: typeof raw.color === "string" ? raw.color : undefined,
     flightStart: String(raw.flight_start ?? raw.flightStart ?? ""),
+    createdAt: raw.created_at != null ? String(raw.created_at) : undefined,
+    updatedAt: raw.updated_at != null ? String(raw.updated_at) : undefined,
   };
 }
 
-const BUY_SELECT = "id,race_slug,spend,grp35,media_type,flight_start,affiliation,stations(call_sign,market),sponsors(name,default_affiliation,sponsor_type)";
+const BUY_SELECT = "id,race_slug,spend,grp35,media_type,flight_start,affiliation,created_at,updated_at,stations(call_sign,market),sponsors(name,default_affiliation,sponsor_type)";
 
 export function restAlmanacClient(url: string, key: string, fetchFn: typeof fetch = fetch): AlmanacClient {
   const headers = {
