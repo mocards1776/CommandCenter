@@ -522,12 +522,27 @@ export async function printFlatEdition() {
         }, i);
         await page.waitForTimeout(250);
       }
-      const box = await sheet.boundingBox();
+      let box = await sheet.boundingBox();
       if (!full || full.h < 40 || !box) {
         log("skip", leaf.folio, "no sheet");
         continue;
       }
-      const png = await sheet.screenshot({ animations: "disabled", type: "png" });
+      const need = Math.ceil(box.y + box.height + 40);
+      if (need > (page.viewportSize()?.height || 0)) {
+        await page.setViewportSize({ width: IPAD13.width, height: Math.min(16_000, Math.max(IPAD13.height, need)) });
+        await page.waitForTimeout(100);
+        box = (await sheet.boundingBox()) || box;
+      }
+      const vp = page.viewportSize() || IPAD13;
+      const clip = {
+        x: Math.max(0, Math.min(box.x, vp.width - 1)),
+        y: Math.max(0, Math.min(box.y, vp.height - 1)),
+        width: Math.max(1, Math.min(box.width, vp.width - Math.max(0, box.x))),
+        height: Math.max(1, Math.min(box.height, vp.height - Math.max(0, box.y))),
+      };
+      // Locator screenshots wait for the sheet to stop moving. Live desks keep
+      // nudging layout, so clip the viewport instead.
+      const png = await page.screenshot({ animations: "disabled", type: "png", clip, timeout: 20_000 });
       const px = pngSize(png);
       const pngPath = path.join(outDir, `${leaf.folio}.png`);
       const webpPath = path.join(outDir, `${leaf.folio}.webp`);
