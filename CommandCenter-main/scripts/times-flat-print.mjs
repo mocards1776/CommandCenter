@@ -139,6 +139,27 @@ async function loadSession(config) {
   return { session, layout };
 }
 
+async function loadPlaywright() {
+  try {
+    return await import("playwright");
+  } catch {
+    const extra = (process.env.NODE_PATH || "").split(path.delimiter).filter(Boolean);
+    const candidates = [
+      ...extra.map((dir) => path.join(dir, "playwright", "index.js")),
+      "/tmp/tt-measure/node_modules/playwright/index.js",
+    ];
+    let last = "playwright is not installed";
+    for (const file of candidates) {
+      try {
+        return await import(pathToFileURL(file).href);
+      } catch (err) {
+        last = err.message;
+      }
+    }
+    throw new Error(last);
+  }
+}
+
 function ffmpeg(args) {
   return new Promise((resolve, reject) => {
     const child = spawn("ffmpeg", ["-hide_banner", "-loglevel", "error", ...args], { stdio: "inherit" });
@@ -419,7 +440,7 @@ export async function printFlatEdition() {
   const projectRef = new URL(config.url).hostname.split(".")[0];
   await mkdir(outDir, { recursive: true });
 
-  const { webkit } = await import("playwright");
+  const { webkit } = await loadPlaywright();
   const browser = await webkit.launch();
   const shots = [];
   try {
