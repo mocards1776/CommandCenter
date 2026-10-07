@@ -244,6 +244,14 @@ function scoreNfl(input: LiveDramaInput): { score: number; reasons: string[] } {
   return { score, reasons };
 }
 
+/** Same ladder as scoreNhlRuwtGame. A missing 3rd-period clock stays on the small step. */
+function nhlThirdLateBonus(clockSec: number | null): number {
+  if (clockSec == null || clockSec > 10 * 60) return 8;
+  if (clockSec <= 2 * 60) return 20;
+  if (clockSec <= 5 * 60) return 16;
+  return 12;
+}
+
 function scoreNhl(input: LiveDramaInput): { score: number; reasons: string[] } {
   let score = 40;
   const reasons = ["Live"];
@@ -254,19 +262,23 @@ function scoreNhl(input: LiveDramaInput): { score: number; reasons: string[] } {
   const opening = scoreless && !ot && !third;
 
   if (diff != null && !opening) {
-    if (diff <= 1) {
+    if (diff === 0) {
+      score += 32;
+      reasons.push("Tied");
+    } else if (diff === 1) {
       score += 28;
-      reasons.push(diff === 0 ? "Tied" : "One-goal game");
+      reasons.push("One-goal game");
     } else if (diff <= 2) {
       score += 14;
       reasons.push("Tight");
     }
   }
+  // OT matches the top 3rd-period step so overtime is never colder than a late 3rd.
   if (ot) {
-    score += 18;
+    score += 20;
     reasons.push("Overtime");
   } else if (third && diff != null && diff <= 1 && !opening) {
-    score += 12;
+    score += nhlThirdLateBonus(parseClockSeconds(text));
     reasons.push("Late & close");
   }
   return { score, reasons };

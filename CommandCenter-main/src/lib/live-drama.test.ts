@@ -70,8 +70,21 @@ assert(nhlOne.score === 68 && nhlOne.hot && nhlOne.why === "One-goal game", nhlO
 const nhlOpen = drama({ sport: "nhl", awayScore: 0, homeScore: 0, detail: "10:00 - 1st", period: 1 });
 assert(!nhlOpen.hot, "0-0 hockey is not heat");
 
+const nhlThirdOne = drama({ sport: "nhl", awayScore: 4, homeScore: 3, detail: "11:58 - 3rd", period: 3 });
+assert(nhlThirdOne.score === 76 && nhlThirdOne.score > nhlOne.score, `3rd one-goal at 11:58 is ${nhlThirdOne.score}`);
+assert(nhlThirdOne.why.includes("One-goal game") && !nhlThirdOne.why.includes("Tied"), nhlThirdOne.why);
+
+const nhlThirdTie = drama({ sport: "nhl", awayScore: 4, homeScore: 4, detail: "4:44 - 3rd", period: 3 });
+assert(nhlThirdTie.score === 88 && nhlThirdTie.score > nhlThirdOne.score, `3rd tie at 4:44 is ${nhlThirdTie.score}`);
+assert(nhlThirdTie.why.startsWith("Tied"), nhlThirdTie.why);
+assert(!nhlThirdTie.reasons.includes("One-goal game"), nhlThirdTie.reasons.join(","));
+
+const nhlThirdFromDetail = drama({ sport: "nhl", awayScore: 4, homeScore: 4, detail: "4:44 - 3rd", period: null });
+assert(nhlThirdFromDetail.score === nhlThirdTie.score, "3rd in the detail counts when period is omitted");
+
 const nhlOt = drama({ sport: "nhl", awayScore: 2, homeScore: 2, detail: "3:11 - OT", period: 4 });
-assert(nhlOt.hot && nhlOt.why.includes("Overtime"), nhlOt.why);
+assert(nhlOt.score === 92 && nhlOt.hot && nhlOt.why.includes("Tied") && nhlOt.why.includes("Overtime"), nhlOt.why);
+assert(nhlOt.score > nhlThirdTie.score, "OT tie outranks a 4:44 3rd tie");
 
 const cfbOne = drama({ sport: "cfb", awayScore: 7, homeScore: 0, detail: "10:00 - 1st", period: 1 });
 assert(cfbOne.score === 68 && cfbOne.hot && cfbOne.why === "One-score game", `${cfbOne.score} ${cfbOne.why}`);

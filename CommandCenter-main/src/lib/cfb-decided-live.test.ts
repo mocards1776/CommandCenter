@@ -632,6 +632,29 @@ const nhlEarlyTwo = scoreNhlRuwtGame(nhl("nhl-early", 0, 2, "12:00 - 1st"));
 assert.equal(nhlEarlyTwo.score, 54, "an early two-goal game is still tight: live 40 + 14");
 assert.ok(nhlEarlyTwo.reasons.includes("Tight"));
 
+const nhlSecond = scoreNhlRuwtGame(nhl("nhl-2nd", 2, 1, "8:00 - 2nd"));
+assert.equal(nhlSecond.score, 68, "a 2nd-period one-goal game has no late bonus");
+
+const nhlThirdEarly = scoreNhlRuwtGame(nhl("nhl-3rd-early", 4, 3, "11:58 - 3rd"));
+assert.equal(nhlThirdEarly.score, 76, "3rd one-goal with 11:58 left is live 40 + 28 + late 8");
+assert.ok(nhlThirdEarly.reasons.includes("One-goal game"));
+assert.ok(!nhlThirdEarly.reasons.includes("Tied"));
+assert.ok(nhlThirdEarly.reasons.includes("Late & close"));
+assert.ok(nhlOne.score < nhlThirdEarly.score, "1st one-goal stays under a 3rd one-goal");
+assert.ok(nhlSecond.score < nhlThirdEarly.score, "2nd one-goal stays under a 3rd one-goal");
+
+const nhlThirdTie = scoreNhlRuwtGame(nhl("nhl-3rd-tie", 4, 4, "4:44 - 3rd"));
+assert.equal(nhlThirdTie.score, 88, "3rd tie at 4:44 is live 40 + tie 32 + late 16");
+assert.ok(nhlThirdTie.reasons.includes("Tied"));
+assert.ok(!nhlThirdTie.reasons.includes("One-goal game"));
+assert.ok(nhlThirdTie.score - nhlThirdEarly.score >= 8, "late tie outranks an early-3rd one-goal");
+
+const nhlOtTie = scoreNhlRuwtGame(nhl("nhl-ot-tie", 3, 3, "2:10 - OT"));
+assert.equal(nhlOtTie.score, 92, "OT tie is live 40 + tie 32 + OT 20");
+assert.ok(nhlOtTie.reasons.includes("Tied"));
+assert.ok(nhlOtTie.reasons.includes("Overtime"));
+assert.ok(nhlOtTie.score > nhlThirdTie.score, "OT stays above a mid-3rd tie");
+
 // Soccer scoreboard rows have no win probability. A multi-goal game never gets the one-goal bonus.
 function soccer(id: string, away: string, home: string, shortDetail: string): SoccerScoreGame {
   const side = (teamId: string, score: string) => ({

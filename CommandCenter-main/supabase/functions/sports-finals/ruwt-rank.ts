@@ -558,6 +558,9 @@ export function rankRuwtNflGames<T extends NflScoreGame>(
     .slice(0, limit);
 }
 
+/** Matches the hottest 3rd-period clock step so OT is never colder than a late 3rd. */
+const NHL_OT_LATE_BONUS = 20;
+
 function nhlClockSeconds(detail: string): number | null {
   const m = detail.match(/\b(\d{1,2}):(\d{2})\b/);
   if (!m) return null;
@@ -565,6 +568,14 @@ function nhlClockSeconds(detail: string): number | null {
   const sec = Number(m[2]);
   if (!Number.isFinite(min) || !Number.isFinite(sec) || sec > 59) return null;
   return min * 60 + sec;
+}
+
+/** One-goal or tied, 3rd period. A missing clock stays on the small step. */
+function nhlThirdLateBonus(clockSec: number | null): number {
+  if (clockSec == null || clockSec > 10 * 60) return 8;
+  if (clockSec <= 2 * 60) return 20;
+  if (clockSec <= 5 * 60) return 16;
+  return 12;
 }
 
 function nhlEffectivelyDecided(diff: number, detail: string): boolean {
@@ -586,7 +597,10 @@ export function scoreNhlRuwtGame(g: NhlScoreGame, ctx?: NhlRuwtContext): { score
     score += 40;
     reasons.push("Live");
     const diff = liveDiff;
-    if (!decided && diff <= 1) {
+    if (!decided && diff === 0) {
+      score += 32;
+      reasons.push("Tied");
+    } else if (!decided && diff === 1) {
       score += 28;
       reasons.push("One-goal game");
     } else if (!decided && diff <= 2) {
@@ -594,10 +608,10 @@ export function scoreNhlRuwtGame(g: NhlScoreGame, ctx?: NhlRuwtContext): { score
       reasons.push("Tight");
     }
     if (!decided && inOt) {
-      score += 18;
+      score += NHL_OT_LATE_BONUS;
       reasons.push("Overtime");
     } else if (!decided && /\b3rd\b/.test(detail) && diff <= 1) {
-      score += 12;
+      score += nhlThirdLateBonus(nhlClockSeconds(detail));
       reasons.push("Late & close");
     }
   } else if (!g.final) {

@@ -14,6 +14,8 @@ export type ClockWindow = "early" | "late" | "unknown";
 
 export type LateCloseGame = {
   detail?: string | null;
+  /** ESPN shortDetail when the caller has not copied it onto detail. */
+  shortDetail?: string | null;
   period?: number | null;
   awayScore?: number | null;
   homeScore?: number | null;
@@ -49,10 +51,11 @@ export function isLateAndClose(sport: string, game: LateCloseGame): boolean {
 /**
  * Hot flag the heat cross stores.
  * Over the line and late-and-close is hot.
- * A game already marked hot stays hot while it is still early, or while the
- * clock or score cannot be read, so a deploy does not drop it and ping again
- * when it later becomes close and late. A known late game that is no longer
- * close drops. Coming back is a new cross.
+ * A known early game is never hot, even when a previous sweep stored hot.
+ * That false flag clears, and the sweep releases the heat claim on the drop.
+ * Stickiness is only for an unreadable period or clock, so a blip does not
+ * flap and ping again. A missing score also holds. A known late game that
+ * is no longer close drops. Coming back is a new cross.
  */
 export function heatCrossHot(input: {
   overLine: boolean;
@@ -64,7 +67,7 @@ export function heatCrossHot(input: {
   if (!input.scoresKnown && input.prevHot) return true;
   if (!input.overLine) return false;
   if (input.lateAndClose) return true;
-  if (input.prevHot && input.window !== "late") return true;
+  if (input.prevHot && input.window === "unknown") return true;
   return false;
 }
 
@@ -155,17 +158,28 @@ function asPct(raw: number | null | undefined): number | null {
   return pct;
 }
 
+/**
+ * ESPN sometimes omits status.period and leaves the period only in
+ * shortDetail ("1st", "2nd", "3rd", "OT", "Period 1"). An unreadable
+ * period stays unknown and must not alert.
+ */
+function nhlPeriodFromText(text: string): number | null {
+  if (/\bot\b|overtime|shootout|\bso\b/.test(text)) return 4;
+  if (/\b3rd\b/.test(text)) return 3;
+  if (/\b2nd\b/.test(text)) return 2;
+  if (/\b1st\b/.test(text)) return 1;
+  const labeled = text.match(/\bperiod\s*([1-5])\b/);
+  if (!labeled) return null;
+  const period = Number(labeled[1]);
+  return Number.isFinite(period) ? period : null;
+}
+
 function nhlWindow(game: LateCloseGame): ClockWindow {
   const text = detailText(game);
-  const period = finitePeriod(game.period);
-  if (/\bot\b|overtime|shootout|\bso\b/.test(text)) return "late";
-  if (period != null) {
-    if (period >= 3) return "late";
-    if (period >= 1) return "early";
-  }
-  if (/\b3rd\b/.test(text)) return "late";
-  if (/\b1st\b/.test(text) || /\b2nd\b/.test(text)) return "early";
-  return "unknown";
+  const fromStatus = finitePeriod(game.period);
+  const period = fromStatus != null && fromStatus >= 1 ? fromStatus : nhlPeriodFromText(text);
+  if (period == null) return "unknown";
+  return period >= 3 ? "late" : "early";
 }
 
 function footballWindow(game: LateCloseGame): ClockWindow {
@@ -226,7 +240,7 @@ function margin(game: LateCloseGame): number | null {
 }
 
 function detailText(game: LateCloseGame): string {
-  return `${game.detail ?? ""}`.toLowerCase();
+  return `${game.detail ?? ""} ${game.shortDetail ?? ""}`.toLowerCase();
 }
 
 function finitePeriod(period: number | null | undefined): number | null {
