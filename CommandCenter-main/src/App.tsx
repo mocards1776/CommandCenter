@@ -34,7 +34,7 @@ const RuwtPage = lazy(() => import("@/pages/RuwtPage"));
 const CardinalsProspectsPage = lazy(() => import("@/pages/CardinalsProspectsPage"));
 const TagPlayersPage = lazy(() => import("@/pages/TagPlayersPage"));
 const MlbPlayerPage = lazy(() => import("@/pages/MlbPlayerPage"));
-const MlbGamePage = lazy(() => import("@/pages/MlbGamePage"));
+const MlbGameRoutePage = lazy(() => import("@/pages/MlbGameRoutePage"));
 const MlbManagersPage = lazy(() => import("@/pages/MlbManagersPage"));
 const MlbManagerPage = lazy(() => import("@/pages/MlbManagerPage"));
 const HotSeatPage = lazy(() => import("@/pages/HotSeatPage"));
@@ -199,7 +199,7 @@ export default function App() {
               <Route path="/sports/mlb/managers/:managerId" element={<MlbManagerPage />} />
               <Route path="/sports/hot-seat" element={<HotSeatPage />} />
               <Route path="/sports/mlb/player/:playerId" element={<MlbPlayerPage />} />
-              <Route path="/sports/mlb/game/:gamePk" element={<MlbGamePage />} />
+              <Route path="/sports/mlb/game/:gamePk" element={<MlbGameRoutePage />} />
               <Route path="/sports/golf/player/:golferId" element={<GolferPage />} />
               <Route path="/sports/nfl" element={<NflPage />} />
               <Route path="/sports/nfl/game/:eventId" element={<NflGamePage />} />
