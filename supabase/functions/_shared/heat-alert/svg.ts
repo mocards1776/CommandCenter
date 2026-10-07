@@ -10,7 +10,7 @@ import {
 import { clockParts, isBreakStatus } from "./clock.ts";
 import { onDark } from "./color.ts";
 import { formatHeatTimestamp, leagueLabel, phaseLabel, situationLine } from "./copy.ts";
-import { mlbHeroNest } from "./mlb-hero.ts";
+import { mlbHeroNest, mlbInningLabel } from "./mlb-hero.ts";
 import { footballMarks, spotIsRedZone } from "./field.ts";
 import { RINK_HEIGHT_FT, RINK_WIDTH_FT, rinkMarkings } from "./ice.ts";
 import { HEAT_ALERT_HEIGHT, HEAT_ALERT_WIDTH, type HeatAlertCard, type HeatStat } from "./types.ts";
@@ -125,17 +125,31 @@ function mlbScoreNest(card: HeatAlertCard): string {
     awayAbbrev: card.away.abbrev,
     homeAbbrev: card.home.abbrev,
   });
+  // Inning on top of the nest ("Top 3rd", "Mid 3rd"), above outs/count —
+  // same rule as the app hero. A notch stronger than the OUTS line.
+  const inning = card.live && !card.final ? mlbInningLabel(card.detail) : null;
+  const inningLine = inning
+    ? textEl(inning, 540, 128, { size: 28, fill: "#f7f4ee", weight: 700, spacing: 0.6 })
+    : "";
   if (hero.liveCount) {
     return `
+      ${inningLine}
       ${textEl((hero.secondary || "").toUpperCase(), 540, 164, { size: 22, fill: "#c8f5d4", weight: 700, spacing: 0.8 })}
       ${textEl(hero.primary, 540, 236, { size: 84, family: "condensed", fill: "#ffffff", weight: 700 })}
       ${hero.runners ? textEl(hero.runners.toUpperCase(), 540, 278, { size: 20, fill: "#c5cce0", weight: 700, spacing: 0.6 }) : ""}
       ${hero.winChip ? nestChip(hero.winChip, 540, 316) : ""}
     `;
   }
-  const size = hero.primary.length > 12 ? 40 : hero.primary.length > 8 ? 52 : 68;
+  // Half-inning break ("Middle 3rd", "End 3rd"): the big slot already names
+  // the inning and there's no outs/count under it, so print it once there,
+  // in the inning-label wording, instead of stacking a duplicate on top.
+  const breakInning = Boolean(inning && mlbInningLabel(hero.primary) === inning);
+  const primary = breakInning ? inning! : hero.primary;
+  const top = breakInning ? "" : inningLine;
+  const size = primary.length > 12 ? 40 : primary.length > 8 ? 52 : 68;
   return `
-    ${textEl(hero.primary, 540, hero.secondary || hero.winChip ? 214 : 230, {
+    ${top}
+    ${textEl(primary, 540, hero.secondary || hero.winChip ? 214 : 230, {
       size,
       family: "condensed",
       fill: "#ffffff",
