@@ -1,7 +1,10 @@
 /**
- * Today's boards for the push sweep. ESPN scoreboard only — the same feeds
- * the sports app already ranks. Parsing stays here so the heat hook does not
- * import the browser scorers.
+ * Today's (and yesterday's) boards for the push / finals sweeps. ESPN
+ * scoreboard only — the same feeds the sports app already ranks. Dated
+ * leagues also load Chicago-yesterday so late West Coast finals that ESPN
+ * keeps on the prior calendar date still get a live→final transition after
+ * midnight CT. Parsing stays here so the heat hook does not import the
+ * browser scorers.
  */
 import { type PushGame, type PushSide } from "./live-drama.ts";
 
@@ -71,6 +74,21 @@ const BOARDS: { sport: string; path: string; dated: boolean; league?: string }[]
 
 export function chicagoYmd(now = new Date()): string {
   return now.toLocaleDateString("en-CA", { timeZone: "America/Chicago" }).replace(/-/g, "");
+}
+
+/** Civil calendar day in America/Chicago, `daysAgo` days before `now`. */
+export function chicagoYmdDaysAgo(now = new Date(), daysAgo = 0): string {
+  const ymd = chicagoYmd(now);
+  if (!daysAgo) return ymd;
+  const y = Number(ymd.slice(0, 4));
+  const m = Number(ymd.slice(4, 6));
+  const d = Number(ymd.slice(6, 8));
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() - daysAgo);
+  const yy = dt.getUTCFullYear();
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getUTCDate()).padStart(2, "0");
+  return `${yy}${mm}${dd}`;
 }
 
 function chicagoTime(iso: string | undefined): string | null {
@@ -159,23 +177,33 @@ export function mapEspnEvent(sport: string, event: RawEvent, league?: string | n
   };
 }
 
+async function fetchBoardDay(
+  board: { sport: string; path: string; dated: boolean; league?: string },
+  ymd: string | null,
+): Promise<PushGame[]> {
+  const url = `${ESPN}/${board.path}/scoreboard${ymd ? `?dates=${ymd}` : ""}`;
+  try {
+    const res = await fetch(url, {
+      headers: { Accept: "application/json", "User-Agent": "CommandCenterSportsPush" },
+    });
+    if (!res.ok) return [];
+    const raw = (await res.json()) as { events?: RawEvent[] };
+    return (raw.events ?? [])
+      .map((event) => mapEspnEvent(board.sport, event, board.league ?? null))
+      .filter((g): g is PushGame => g != null);
+  } catch {
+    return [];
+  }
+}
+
 export async function fetchPushBoards(now = new Date()): Promise<PushGame[]> {
-  const ymd = chicagoYmd(now);
+  const today = chicagoYmd(now);
+  const yesterday = chicagoYmdDaysAgo(now, 1);
+  const datedDays = yesterday === today ? [today] : [today, yesterday];
   const boards = await Promise.all(
-    BOARDS.map(async (board) => {
-      const url = `${ESPN}/${board.path}/scoreboard${board.dated ? `?dates=${ymd}` : ""}`;
-      try {
-        const res = await fetch(url, {
-          headers: { Accept: "application/json", "User-Agent": "CommandCenterSportsPush" },
-        });
-        if (!res.ok) return [] as PushGame[];
-        const raw = (await res.json()) as { events?: RawEvent[] };
-        return (raw.events ?? [])
-          .map((event) => mapEspnEvent(board.sport, event, board.league ?? null))
-          .filter((g): g is PushGame => g != null);
-      } catch {
-        return [] as PushGame[];
-      }
+    BOARDS.flatMap((board) => {
+      if (!board.dated) return [fetchBoardDay(board, null)];
+      return datedDays.map((ymd) => fetchBoardDay(board, ymd));
     }),
   );
   const seen = new Set<string>();
