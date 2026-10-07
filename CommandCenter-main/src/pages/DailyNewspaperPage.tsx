@@ -175,6 +175,7 @@ import {
 import {
   COMPANION_WAIT_MS,
   ISSUE_POLL_MS,
+  primeFolioImage,
   queryNamed,
   SHELL_WAIT_MS,
   waitForPrintedReveal,
@@ -4969,6 +4970,8 @@ const NO_STORIES: GameWrapCard[] = [];
 const PagerIndexContext = createContext(0);
 /** Folios already filled after A1. A1 is in the set from the start. */
 const FolioFillContext = createContext<ReadonlySet<number>>(new Set([0]));
+/** True only after the cover has dropped, so neighbor folios do not mount during the open. */
+const FolioNeighborContext = createContext(false);
 
 const MemoSportFront = memo(SportFront);
 
@@ -4984,8 +4987,13 @@ const FolioBody = memo(function FolioBody({ render }: { render: () => ReactNode 
 function FolioGate({ index, onShow }: { index: number; onShow: () => void }) {
   const current = useContext(PagerIndexContext);
   const filled = useContext(FolioFillContext);
+  const neighbors = useContext(FolioNeighborContext);
+  // Neighbors stay mounted while the reader is still on A1. The old guard
+  // waited until the first swipe, so every turn mounted a blank folio.
   const want =
-    index === 0 || filled.has(index) || (current !== 0 && Math.abs(index - current) <= NEAR_PAGES);
+    index === 0 ||
+    filled.has(index) ||
+    (neighbors && Math.abs(index - current) <= NEAR_PAGES);
   useLayoutEffect(() => {
     if (want) onShow();
   }, [want, onShow]);
@@ -5030,11 +5038,17 @@ function prefetchStoryArt(stories: readonly unknown[]) {
 
 function prefetchNearArt(pager: HTMLElement, index: number) {
   const sheets = pager.children;
+  // Two folios stay mounted beside the one in view. Decode two more ahead of
+  // that, so a 600ms swipe still lands on a bitmap that was fetched offscreen.
+  const ahead = index + NEAR_PAGES * 2;
+  const behind = index - NEAR_PAGES;
+  const jobs: Promise<void>[] = [];
   for (let i = 0; i < sheets.length; i++) {
-    if (Math.abs(i - index) > NEAR_PAGES) continue;
+    if (i < behind || i > ahead) continue;
     const sheet = sheets[i] as HTMLElement;
-    for (const img of sheet.querySelectorAll("img")) prefetchSrc(img.currentSrc || img.src);
+    for (const img of sheet.querySelectorAll("img")) jobs.push(primeFolioImage(img));
   }
+  void Promise.all(jobs);
 }
 
 /** Fetch the rest of the edition's art in idle time, a few at a time, so far folios open already printed. */
@@ -5571,9 +5585,11 @@ function NewspaperDesk() {
   const [pageIndex, setPageIndex] = useState(0);
   const [fillFor, setFillFor] = useState(pressId);
   const [filled, setFilled] = useState<ReadonlySet<number>>(() => new Set([0]));
+  const [neighbors, setNeighbors] = useState(false);
   if (fillFor !== pressId) {
     setFillFor(pressId);
     setFilled(new Set([0]));
+    setNeighbors(false);
   }
   const filledRef = useRef(filled);
   filledRef.current = filled;
@@ -6770,20 +6786,31 @@ function NewspaperDesk() {
   const pagesRef = useRef(pages);
   pagesRef.current = pages;
 
-  // After A1 is up, mount the rest of the book from the back so the front
-  // stays put and the inside folios fill in idle slices.
+  // After the cover drops, mount the next folios first and decode them
+  // before a swipe. The rest of the book fills forward in idle slices.
+  // Mounting them earlier held the open.
   useEffect(() => {
     if (!revealed || pages.length <= 1) return;
+    setNeighbors(true);
     let cancelled = false;
-    let cursor = pages.length - 1;
+    let cursor = 1;
     let cancelPump = () => {};
     const pump = () => {
       if (cancelled) return;
       const have = filledRef.current;
+      const queued = new Set(have);
       const batch: number[] = [];
-      while (cursor >= 1 && batch.length < 4) {
-        if (!have.has(cursor)) batch.push(cursor);
-        cursor--;
+      const take = (index: number) => {
+        if (index < 1 || index >= pages.length || queued.has(index) || batch.length >= 4) return;
+        queued.add(index);
+        batch.push(index);
+      };
+      const here = pageIndexRef.current;
+      const nearHi = Math.min(pages.length - 1, here + NEAR_PAGES);
+      for (let i = Math.max(1, here - NEAR_PAGES); i <= nearHi; i++) take(i);
+      while (cursor < pages.length && batch.length < 4) {
+        take(cursor);
+        cursor++;
       }
       if (batch.length) {
         setFilled((prev) => {
@@ -6792,7 +6819,7 @@ function NewspaperDesk() {
           return next;
         });
       }
-      if (cursor >= 1) schedulePump();
+      if (cursor < pages.length) schedulePump();
     };
     const schedulePump = () => {
       const idle = window.requestIdleCallback?.bind(window);
@@ -6804,17 +6831,23 @@ function NewspaperDesk() {
         cancelPump = () => window.clearTimeout(id);
       }
     };
-    schedulePump();
+    pump();
     return () => {
       cancelled = true;
       cancelPump();
     };
   }, [revealed, pages.length, pressId]);
   useEffect(() => {
-    const page = pages[pageIndex];
-    const names = heavyDesksForPage(page);
-    if (names.length) releaseHeavy(names);
-  }, [pageIndex, pages, releaseHeavy]);  const weatherFolio = useMemo(
+    const names = new Set<string>();
+    const lo = revealed ? Math.max(0, pageIndex - NEAR_PAGES) : pageIndex;
+    const hi = revealed ? Math.min(pages.length - 1, pageIndex + NEAR_PAGES) : pageIndex;
+    for (let i = lo; i <= hi; i++) {
+      for (const name of heavyDesksForPage(pages[i])) names.add(name);
+    }
+    if (names.size) releaseHeavy([...names]);
+  }, [pageIndex, pages, releaseHeavy, revealed]);
+
+  const weatherFolio = useMemo(
     () => pages.find((p) => p.kind === "favorites-clubs" && (p.weatherPart ?? "today") === "today")?.folio ?? pages.find((p) => p.kind === "favorites-clubs")?.folio ?? null,
     [pages],
   );
@@ -7229,9 +7262,22 @@ function NewspaperDesk() {
   );
 
   useEffect(() => {
+    if (!revealed) return;
     const el = pagerRef.current;
-    if (el) prefetchNearArt(el, pageIndex);
-  }, [pageIndex, sheets]);
+    if (!el) return;
+    let cancel = false;
+    let id2 = 0;
+    const id = requestAnimationFrame(() => {
+      id2 = requestAnimationFrame(() => {
+        if (!cancel && el.isConnected) prefetchNearArt(el, pageIndexRef.current);
+      });
+    });
+    return () => {
+      cancel = true;
+      cancelAnimationFrame(id);
+      cancelAnimationFrame(id2);
+    };
+  }, [revealed, neighbors, pageIndex, filled, sheets]);
 
   const revealFront = pages.some((p) => p.kind === "favorites-front");
 
@@ -7424,6 +7470,7 @@ function NewspaperDesk() {
       </div>
 
       <FolioFillContext.Provider value={filled}>
+      <FolioNeighborContext.Provider value={neighbors}>
       <PagerIndexContext.Provider value={pageIndex}>
         <TimesCommitBoundary>
         <div className="tt-spread">
@@ -7452,6 +7499,7 @@ function NewspaperDesk() {
         </div>
         </TimesCommitBoundary>
       </PagerIndexContext.Provider>
+      </FolioNeighborContext.Provider>
       </FolioFillContext.Provider>
       {savedOpen ? <SavedDrawer onClose={() => setSavedOpen(false)} /> : null}
       </ReaderProvider>
