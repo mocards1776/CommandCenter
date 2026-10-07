@@ -41,11 +41,13 @@ export function FitCopy({
 export function FittedSheet({
   children,
   folio,
+  ready = true,
   overflow,
   sparse,
 }: {
   children: ReactNode;
   folio?: string;
+  ready?: boolean;
   overflow?: boolean;
   sparse?: boolean;
 }) {
@@ -55,31 +57,26 @@ export function FittedSheet({
 
   useLayoutEffect(() => {
     const el = ref.current;
-    if (!el) return;
+    if (!el || !ready) return;
     let cancel = false;
-    let raf = 0;
+    let passes = 0;
     const measure = () => {
-      if (cancel || !el.isConnected) return;
+      if (cancel || !el.isConnected || passes > 1) return;
       const next = planSheetFit(el);
       setPlan((prev) => (plansEqual(prev, next) ? prev : next));
-    };
-    const schedule = () => {
-      if (raf) cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => {
-        raf = 0;
-        measure();
-      });
+      passes += 1;
     };
     measure();
-    void document.fonts?.ready.then(() => schedule());
-    const ro = new ResizeObserver(schedule);
-    ro.observe(el);
+    // Fonts can still be swapping on the first folio; one follow-up is enough.
+    // Do not remesure on every children swap — that is the iPad flash.
+    void document.fonts?.ready.then(() => {
+      if (cancel || passes > 1) return;
+      measure();
+    });
     return () => {
       cancel = true;
-      if (raf) cancelAnimationFrame(raf);
-      ro.disconnect();
     };
-  }, [children]);
+  }, [folio, ready]);
 
   const hideCss = hideCssForPlan(sheetId, plan);
 
