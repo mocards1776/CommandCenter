@@ -14,6 +14,7 @@ import {
   barWidth,
   displayMedia,
   formatGrp,
+  formatJustInNote,
   formatSpendExact,
   formatSpendShort,
   landscapeBuyers,
@@ -214,7 +215,17 @@ function justInHero(buys: readonly JustInBuy[], y: number): string {
         anchor: "middle",
       }),
     );
-    parts.push(text(buy.station, cx, tileY + 214, { size: 13, fill: FAINT, anchor: "middle", weight: 700, spacing: 1.2 }));
+    const note = formatJustInNote(buy);
+    if (note) {
+      parts.push(fittedLines(note, cx, tileY + 214, colW - 28, {
+        maxSize: 13,
+        minSize: 10,
+        fill: MUTED,
+        anchor: "middle",
+        weight: 400,
+        baseline: tileY + 214,
+      }));
+    }
   });
   return parts.join("");
 }
@@ -419,7 +430,7 @@ export function renderCompetitiveSvg(card: CompetitiveCard): string {
   ${logoMark(card)}
   ${text(card.kicker, CX, 108, { size: 12, fill: BRAND, anchor: "middle", weight: 700, spacing: 2.8 })}
   ${text(card.title, CX, 158, { size: 48, fill: INK, anchor: "middle", weight: 700 })}
-  ${text(`${card.dateLabel}  ·  ${card.market}`, CX, 190, { size: 16, fill: MUTED, anchor: "middle" })}
+  ${text(`${card.dateLabel}  ·  ${card.market}  ·  ${card.weekNumberLabel}`, CX, 190, { size: 16, fill: MUTED, anchor: "middle" })}
   ${justInHero(card.justIn, heroY)}
   ${raceGrid(card.buyers, raceY)}
   ${affiliationPies(sides, dmaY)}

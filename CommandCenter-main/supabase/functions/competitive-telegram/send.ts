@@ -8,7 +8,7 @@
  * Inserts (true new rows) — buy_ids only:
  *   POST { "action": "send", "race_slug": "mo-sd30", "buy_ids": ["…"] }
  *   Just In = those rows' full spend + GRP (rowsToJustIn). Same
- *   sponsor|market|media across stations collapses to "{market} DMA".
+ *   sponsor + station group across stations collapses to one tile.
  *   A same-load patch within FRESH_INSERT_WINDOW_MS still counts as new.
  *
  * Revisions (increase on an existing buy) — buy_ids + just_in deltas:
@@ -18,7 +18,7 @@
  *   `amount` / `grp` are the *increase*, never the full revised row totals
  *   (e.g. MSCC Nexstar +$6,450 / ~47 GRP, not $17.6k / 134 GRP).
  *   parseJustInPayload wins; fetchBuysByIds is skipped for Just In.
- *   Almanac may send one already-aggregated DMA tile.
+ *   Almanac may send one tile per station group.
  *   buy_ids only + updated_at past the insert window → 409 (do not post
  *   full totals as if they were the change).
  *
@@ -34,8 +34,9 @@
  * or `totals` on the payload.
  */
 import {
+  almanacWeekBounds,
   buildCompetitiveCard,
-  SAMPLE_AS_OF,
+  chicagoToday,
   type CompetitiveCard,
 } from "./card.ts";
 import {
@@ -43,6 +44,7 @@ import {
   buyersFromTotals,
   editedBuyIds,
   editedBuysRefuseError,
+  enrichJustInFromRows,
   MAX_BUY_IDS,
   parseBuyersPayload,
   parseBuyIds,
@@ -50,6 +52,7 @@ import {
   restAlmanacClient,
   rowsToBuyers,
   rowsToJustIn,
+  rowsToWeekBuyers,
   type AlmanacClient,
   type CompetitiveSendBody,
   type EnvGet,
@@ -86,12 +89,16 @@ export async function planCompetitiveSend(
 
   let justIn = payloadJustIn;
   let buyers = payloadBuyers.length ? payloadBuyers : totalBuyers;
+  let weekBuyers: typeof buyers = [];
   let source: "almanac" | "payload" = payloadJustIn.length && buyers.length ? "payload" : "payload";
+  const asOf = opts.asOf
+    ?? (typeof body.asOf === "string" && body.asOf.trim() ? body.asOf.trim() : chicagoToday());
+  const weekOf = almanacWeekBounds(asOf).start;
 
   if (client) {
     const [batch, raceRows] = await Promise.all([
       justIn.length ? Promise.resolve([]) : client.fetchBuysByIds(buyIds),
-      buyers.length ? Promise.resolve([]) : client.fetchRaceBuys(raceSlug),
+      client.fetchRaceBuys(raceSlug),
     ]);
     if (!justIn.length) {
       if (!recap) {
@@ -101,8 +108,12 @@ export async function planCompetitiveSend(
         }
       }
       justIn = rowsToJustIn(batch.filter((row) => !row.race_slug || row.race_slug === raceSlug));
+    } else {
+      const metaRows = raceRows.filter((row) => buyIds.includes(row.id));
+      justIn = enrichJustInFromRows(justIn, metaRows);
     }
     if (!buyers.length) buyers = rowsToBuyers(raceRows);
+    weekBuyers = rowsToWeekBuyers(raceRows, weekOf);
     source = "almanac";
   }
 
@@ -126,7 +137,8 @@ export async function planCompetitiveSend(
     slug: raceSlug,
     justIn,
     buyers,
-    asOf: opts.asOf ?? (typeof body.asOf === "string" ? body.asOf : SAMPLE_AS_OF),
+    weekBuyers,
+    asOf,
     market,
   });
   return { ok: true, skipped: false, card, race_slug: raceSlug, buy_ids: buyIds, source };
