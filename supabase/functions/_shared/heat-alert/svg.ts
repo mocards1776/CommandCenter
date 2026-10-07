@@ -425,23 +425,55 @@ function bag(on: boolean, cx: number, cy: number): string {
   return `<rect x="${cx - 16}" y="${cy - 16}" width="32" height="32" rx="3" fill="${fill}" transform="rotate(45 ${cx} ${cy})"/>`;
 }
 
+// Right-hand column of the diamond panel: count, outs, then batter/pitcher.
+// Baselines are laid out from the panel's vertical centre so the stack never
+// collides (the outs line used to sit 14px above an 18px batter line and the
+// two overlapped). Long names shrink before they clip so nothing is dropped.
+const DIAMOND_TEXT_CX = 760;
+const DIAMOND_PEOPLE_MAX = 18;
+const DIAMOND_PEOPLE_MIN = 14;
+const DIAMOND_CHAR_EM = 0.54;
+
+export function diamondTextLayout(panelY: number, panelH: number) {
+  const mid = panelY + panelH / 2;
+  return {
+    count: mid - 30,
+    outs: mid + 2,
+    people: [mid + 40, mid + 70],
+  };
+}
+
+export function diamondPeopleSize(line: string, maxW: number): number {
+  const chars = Math.max(1, line.length);
+  const fit = Math.floor(maxW / (chars * DIAMOND_CHAR_EM));
+  return Math.max(DIAMOND_PEOPLE_MIN, Math.min(DIAMOND_PEOPLE_MAX, fit));
+}
+
 function diamondPanel(card: HeatAlertCard, panelX: number, panelY: number, panelW: number, panelH: number): string {
   const spot = card.diamond;
   if (!spot) return "";
   const cx = panelX + 300;
   const cy = panelY + panelH / 2 + 6;
   const arm = 88;
+  const textX = panelX + DIAMOND_TEXT_CX;
+  // Column runs from just right of the first-base foul line to the panel edge.
+  const colHalf = Math.min(textX - (cx + arm + 60), panelX + panelW - 24 - textX);
+  const colW = colHalf * 2;
+  const rows = diamondTextLayout(panelY, panelH);
   const outs = `${spot.outs} out${spot.outs === 1 ? "" : "s"}`;
   const people = [spot.batter ? `Batter  ${spot.batter}` : "", spot.pitcher ? `Pitcher  ${spot.pitcher}` : ""]
     .filter(Boolean)
-    .map((line, i) =>
-      textEl(clipText(line, 28), panelX + 760, panelY + 150 + i * 36, {
-        size: 18,
+    .map((raw, i) => {
+      const line = raw.replace(/\s+/g, " ").trim();
+      const size = diamondPeopleSize(line, colW);
+      const maxChars = Math.floor(colW / (size * DIAMOND_CHAR_EM));
+      return textEl(clipText(line, maxChars), textX, rows.people[i], {
+        size,
         fill: "#f4f1e9",
         weight: 600,
         anchor: "middle",
-      }),
-    )
+      });
+    })
     .join("");
   return `
     ${panel(panelX, panelY, panelW, panelH, "#10281f")}
@@ -453,8 +485,8 @@ function diamondPanel(card: HeatAlertCard, panelX: number, panelY: number, panel
     ${bag(spot.onThird, cx - arm, cy)}
     ${bag(spot.onFirst, cx + arm, cy)}
     <polygon points="${cx}, ${cy + arm + 18} ${cx - 16}, ${cy + arm} ${cx - 10}, ${cy + arm - 8} ${cx + 10}, ${cy + arm - 8} ${cx + 16}, ${cy + arm}" fill="#f4f1e9"/>
-    ${textEl(`${spot.balls}-${spot.strikes}`, panelX + 760, panelY + 108, { size: 48, family: "condensed", fill: "#ffffff", weight: 700 })}
-    ${textEl(outs, panelX + 760, panelY + 136, { size: 18, fill: "rgba(244,241,233,0.72)", weight: 600, spacing: 1.2 })}
+    ${textEl(`${spot.balls}-${spot.strikes}`, textX, rows.count, { size: 48, family: "condensed", fill: "#ffffff", weight: 700 })}
+    ${textEl(outs, textX, rows.outs, { size: 18, fill: "rgba(244,241,233,0.72)", weight: 600, spacing: 1.2 })}
     ${people}
   `;
 }
