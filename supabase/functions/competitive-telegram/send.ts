@@ -34,6 +34,7 @@
  * or `totals` on the payload.
  */
 import {
+  almanacWeekBounds,
   buildCompetitiveCard,
   SAMPLE_AS_OF,
   type CompetitiveCard,
@@ -50,6 +51,7 @@ import {
   restAlmanacClient,
   rowsToBuyers,
   rowsToJustIn,
+  rowsToWeekBuyers,
   type AlmanacClient,
   type CompetitiveSendBody,
   type EnvGet,
@@ -86,12 +88,15 @@ export async function planCompetitiveSend(
 
   let justIn = payloadJustIn;
   let buyers = payloadBuyers.length ? payloadBuyers : totalBuyers;
+  let weekBuyers: typeof buyers = [];
   let source: "almanac" | "payload" = payloadJustIn.length && buyers.length ? "payload" : "payload";
+  const asOf = opts.asOf ?? (typeof body.asOf === "string" ? body.asOf : undefined);
+  const weekOf = almanacWeekBounds(asOf).start;
 
   if (client) {
     const [batch, raceRows] = await Promise.all([
       justIn.length ? Promise.resolve([]) : client.fetchBuysByIds(buyIds),
-      buyers.length ? Promise.resolve([]) : client.fetchRaceBuys(raceSlug),
+      client.fetchRaceBuys(raceSlug),
     ]);
     if (!justIn.length) {
       if (!recap) {
@@ -103,6 +108,7 @@ export async function planCompetitiveSend(
       justIn = rowsToJustIn(batch.filter((row) => !row.race_slug || row.race_slug === raceSlug));
     }
     if (!buyers.length) buyers = rowsToBuyers(raceRows);
+    weekBuyers = rowsToWeekBuyers(raceRows, weekOf);
     source = "almanac";
   }
 
@@ -126,7 +132,8 @@ export async function planCompetitiveSend(
     slug: raceSlug,
     justIn,
     buyers,
-    asOf: opts.asOf ?? (typeof body.asOf === "string" ? body.asOf : SAMPLE_AS_OF),
+    weekBuyers,
+    asOf: asOf ?? SAMPLE_AS_OF,
     market,
   });
   return { ok: true, skipped: false, card, race_slug: raceSlug, buy_ids: buyIds, source };

@@ -45,6 +45,7 @@ import {
   type BuyerRow,
   type JustInBuy,
 } from "./card.ts";
+import { weekSliceOfFlight } from "./week.ts";
 
 export const ALMANAC_DEFAULT_URL = "https://sdixnhobyzxfimubxspi.supabase.co";
 export const MAX_JUST_IN_TILES = 2;
@@ -72,6 +73,7 @@ export type AlmanacBuyRow = {
   sponsorType: string;
   color?: string;
   flightStart: string;
+  flightEnd: string;
   /** Almanac competitive_buys.created_at — used to detect revisions. */
   createdAt?: string;
   /** Almanac competitive_buys.updated_at — used to detect revisions. */
@@ -159,7 +161,11 @@ const SIDE_BY_AFFILIATION: Record<string, Affiliation> = {
   "sdcc": "dem",
   "patterson for missouri": "gop",
   "missouri alliance pac": "gop",
+  "alliance": "gop",
   "keri ingle for mo sd8": "dem",
+  "will of the people pac": "dem",
+  "wotp": "dem",
+  "legio xiii pac": "gop",
 };
 
 export function sideForAffiliation(affiliation: string): Affiliation {
@@ -171,42 +177,88 @@ export function sideForAffiliation(affiliation: string): Affiliation {
   return "dem";
 }
 
-const SHORT_NAME: Record<string, string> = {
+/**
+ * Race-tile / caption / footer labels. Candidates stay last names.
+ * PACs use Almanac's full sponsor name (or the short→full map when a
+ * payload sends SDCC / Alliance / MSCC / WOTP).
+ */
+const DISPLAY_NAME: Record<string, string> = {
   "fogle for missouri": "Fogle",
   "betsy fogle": "Fogle",
+  fogle: "Fogle",
   "friends of melanie stinnett": "Stinnett",
   "melanie stinnett": "Stinnett",
-  "missouri senate campaign committee": "MSCC",
-  "forward pac": "Forward",
-  "legio xiii pac": "Legio",
-  "will of the people pac": "WOTP",
-  "senate democratic campaign committee": "SDCC",
+  stinnett: "Stinnett",
+  "missouri senate campaign committee": "Missouri Senate Campaign Committee",
+  mscc: "Missouri Senate Campaign Committee",
+  "forward pac": "Forward PAC",
+  forward: "Forward PAC",
+  "legio xiii pac": "Legio XIII PAC",
+  "legio xiii": "Legio XIII PAC",
+  legio: "Legio XIII PAC",
+  "will of the people pac": "Will of the People PAC",
+  "will of the people": "Will of the People PAC",
+  wotp: "Will of the People PAC",
+  "senate democratic campaign committee": "Senate Democratic Campaign Committee",
+  sdcc: "Senate Democratic Campaign Committee",
   "patterson for missouri": "Patterson",
   "jon patterson": "Patterson",
-  "missouri alliance pac": "Alliance",
+  patterson: "Patterson",
+  "missouri alliance pac": "Missouri Alliance PAC",
+  alliance: "Missouri Alliance PAC",
   "keri ingle for mo sd8": "Ingle",
   "keri ingle": "Ingle",
+  ingle: "Ingle",
 };
 
+/** Just In keeps first+last for candidates; PACs are the full committee name. */
 const JUST_IN_NAME: Record<string, string> = {
   "fogle for missouri": "Betsy Fogle",
+  "betsy fogle": "Betsy Fogle",
+  fogle: "Betsy Fogle",
   "friends of melanie stinnett": "Melanie Stinnett",
-  "missouri senate campaign committee": "MSCC",
+  "melanie stinnett": "Melanie Stinnett",
+  stinnett: "Melanie Stinnett",
+  "missouri senate campaign committee": "Missouri Senate Campaign Committee",
+  mscc: "Missouri Senate Campaign Committee",
   "forward pac": "Forward PAC",
-  "legio xiii pac": "Legio XIII",
-  "will of the people pac": "Will of the People",
-  "senate democratic campaign committee": "SDCC",
+  forward: "Forward PAC",
+  "legio xiii pac": "Legio XIII PAC",
+  "legio xiii": "Legio XIII PAC",
+  legio: "Legio XIII PAC",
+  "will of the people pac": "Will of the People PAC",
+  "will of the people": "Will of the People PAC",
+  wotp: "Will of the People PAC",
+  "senate democratic campaign committee": "Senate Democratic Campaign Committee",
+  sdcc: "Senate Democratic Campaign Committee",
   "patterson for missouri": "Jon Patterson",
-  "missouri alliance pac": "Alliance",
+  "jon patterson": "Jon Patterson",
+  patterson: "Jon Patterson",
+  "missouri alliance pac": "Missouri Alliance PAC",
+  alliance: "Missouri Alliance PAC",
   "keri ingle for mo sd8": "Keri Ingle",
+  "keri ingle": "Keri Ingle",
+  ingle: "Keri Ingle",
 };
 
+export function displaySponsorName(name: string): string {
+  const raw = name.trim();
+  if (!raw) return raw;
+  return (
+    DISPLAY_NAME[raw.toLowerCase()] ??
+    raw.replace(/\s+for Missouri$/i, "").replace(/^Friends of\s+/i, "").replace(/\s+for MO SD\d+$/i, "")
+  );
+}
+
+/** @deprecated Use displaySponsorName — kept so older callers still resolve. */
 export function shortSponsorName(name: string): string {
-  return SHORT_NAME[name.trim().toLowerCase()] ?? name.replace(/\s+for Missouri$/i, "").replace(/^Friends of\s+/i, "");
+  return displaySponsorName(name);
 }
 
 export function justInSponsorName(name: string): string {
-  return JUST_IN_NAME[name.trim().toLowerCase()] ?? shortSponsorName(name);
+  const raw = name.trim();
+  if (!raw) return raw;
+  return JUST_IN_NAME[raw.toLowerCase()] ?? displaySponsorName(raw);
 }
 
 export function isPacSponsor(row: { sponsorType?: string; sponsor?: string }): boolean {
@@ -247,26 +299,44 @@ export function colorForSponsor(row: {
   return pac ? DEM_PAC : DEM_CANDIDATE;
 }
 
+function buyerId(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+function addBuyer(buckets: Map<string, BuyerRow>, row: AlmanacBuyRow, name: string, spend: number, grp: number): void {
+  if (!(spend > 0) && !(grp > 0)) return;
+  const existing = buckets.get(name);
+  if (existing) {
+    existing.spend += spend;
+    existing.grp += grp;
+    existing.cpp = existing.grp > 0 ? existing.spend / existing.grp : 0;
+    return;
+  }
+  buckets.set(name, {
+    id: buyerId(name),
+    name,
+    spend,
+    grp,
+    cpp: grp > 0 ? spend / grp : 0,
+    color: colorForSponsor(row),
+    side: sideForAffiliation(row.affiliation),
+  });
+}
+
 export function rowsToBuyers(rows: readonly AlmanacBuyRow[]): BuyerRow[] {
   const buckets = new Map<string, BuyerRow>();
   for (const row of rows) {
-    const name = shortSponsorName(row.sponsor);
-    const side = sideForAffiliation(row.affiliation);
-    const existing = buckets.get(name);
-    if (existing) {
-      existing.spend += row.spend;
-      existing.grp += row.grp;
-      continue;
-    }
-    buckets.set(name, {
-      id: name.toLowerCase().replace(/\s+/g, "-"),
-      name,
-      spend: row.spend,
-      grp: row.grp,
-      cpp: row.grp > 0 ? row.spend / row.grp : 0,
-      color: colorForSponsor(row),
-      side,
-    });
+    addBuyer(buckets, row, displaySponsorName(row.sponsor), row.spend, row.grp);
+  }
+  return [...buckets.values()].sort((a, b) => b.spend - a.spend);
+}
+
+/** This-week (Tue–Mon) sponsor totals, Almanac-weighted. $0 weeks are omitted. */
+export function rowsToWeekBuyers(rows: readonly AlmanacBuyRow[], weekOf: string): BuyerRow[] {
+  const buckets = new Map<string, BuyerRow>();
+  for (const row of rows) {
+    const slice = weekSliceOfFlight(row.flightStart, row.flightEnd, { spend: row.spend, grp: row.grp }, weekOf);
+    addBuyer(buckets, row, displaySponsorName(row.sponsor), slice.spend, slice.grp);
   }
   return [...buckets.values()].sort((a, b) => b.spend - a.spend);
 }
@@ -365,12 +435,13 @@ export function mapRestBuy(raw: Record<string, unknown>, raceSlug: string): Alma
     sponsorType: String(sponsor.sponsor_type ?? raw.sponsor_type ?? ""),
     color: typeof raw.color === "string" ? raw.color : undefined,
     flightStart: String(raw.flight_start ?? raw.flightStart ?? ""),
+    flightEnd: String(raw.flight_end ?? raw.flightEnd ?? ""),
     createdAt: raw.created_at != null ? String(raw.created_at) : undefined,
     updatedAt: raw.updated_at != null ? String(raw.updated_at) : undefined,
   };
 }
 
-const BUY_SELECT = "id,race_slug,spend,grp35,media_type,flight_start,affiliation,created_at,updated_at,stations(call_sign,market),sponsors(name,default_affiliation,sponsor_type)";
+const BUY_SELECT = "id,race_slug,spend,grp35,media_type,flight_start,flight_end,affiliation,created_at,updated_at,stations(call_sign,market),sponsors(name,default_affiliation,sponsor_type)";
 
 export function restAlmanacClient(url: string, key: string, fetchFn: typeof fetch = fetch): AlmanacClient {
   const headers = {
@@ -404,7 +475,7 @@ export function parseJustInPayload(raw: unknown): JustInBuy[] {
   return raw.flatMap((item) => {
     const row = asRecord(item);
     if (!row) return [];
-    const sponsor = String(row.sponsor ?? "");
+    const sponsor = justInSponsorName(String(row.sponsor ?? ""));
     const explicit = typeof row.color === "string" ? row.color.trim() : "";
     return [{
       id: row.id != null ? String(row.id) : undefined,
@@ -436,7 +507,7 @@ export function parseBuyersPayload(raw: unknown): BuyerRow[] {
     const side: Affiliation = String(row.side ?? "") === "gop" ? "gop" : "dem";
     return [{
       id: String(row.id ?? row.name ?? side),
-      name: String(row.name ?? ""),
+      name: displaySponsorName(String(row.name ?? "")),
       spend: Number(row.spend ?? 0),
       grp: Number(row.grp ?? 0),
       cpp: Number(row.cpp ?? 0),
