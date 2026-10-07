@@ -22,7 +22,11 @@ import { parseChatIds, sendTelegramPhoto } from "./telegram.ts";
  * POST { "action": "render", "format": "png" | "svg" }
  * POST { "action": "send", "race_slug": "mo-sd30", "buy_ids": ["…"] }
  *     Almanac: one call per finished load batch. Empty buy_ids → skip.
- *     Just In = those buys (spend + GRP). Race / pies = live Almanac totals.
+ *     Inserts: Just In = those buys' full spend + GRP.
+ *     Revisions: also pass just_in with *delta* amount + GRP (never full
+ *     revised totals). buy_ids still required. Race / pies = live Almanac.
+ *     On just_in without color, pass side: "gop" or an explicit red color
+ *     so GOP / MSCC tiles are never Dem blue.
  *     If Almanac keys are unset, also pass just_in + buyers (or totals).
  * POST { "action": "send", "dryRun": true, ... }
  */

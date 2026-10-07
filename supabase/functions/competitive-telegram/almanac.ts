@@ -3,7 +3,23 @@
  *
  * Almanac is project sdixnhobyzxfimubxspi — not Command Center.
  * No INSERT trigger on competitive_buys. Almanac POSTs one send per
- * finished load batch: { action: "send", race_slug, buy_ids }.
+ * finished load batch.
+ *
+ * Inserts (true new rows):
+ *   { action: "send", race_slug, buy_ids }
+ *   Just In = those rows' full spend + GRP via rowsToJustIn.
+ *
+ * Revisions (spend/GRP increase on an existing buy):
+ *   { action: "send", race_slug, buy_ids, just_in: [{ amount, grp, … }] }
+ *   `just_in` must be the *delta* (increase), never the full revised totals.
+ *   buy_ids stay required. planCompetitiveSend prefers parseJustInPayload
+ *   and does not fetchBuysByIds for Just In when `just_in` is present.
+ *   Multi-station same sponsor|market|media → one DMA tile (Almanac may
+ *   send that already aggregated).
+ *
+ * Colors on `just_in`: pass `side: "gop"` / affiliation / MSCC sponsor, or
+ * an explicit red `color`. Missing color is inferred — GOP tiles must never
+ * fall back to Dem blue. GOP PAC and MSCC use the red-family PAC shade.
  *
  * Secrets:
  *   ALMANAC_SUPABASE_URL                 (or THOMPSON_ALMANAC_SUPABASE_URL)
@@ -13,6 +29,10 @@
  * (or `totals`) so Almanac can still fire the card.
  */
 import {
+  DEM_CANDIDATE,
+  DEM_PAC,
+  GOP_CANDIDATE,
+  GOP_PAC,
   displayMedia,
   type Affiliation,
   type BuyerRow,
@@ -55,6 +75,7 @@ export type CompetitiveSendBody = {
   action?: string;
   race_slug?: string;
   buy_ids?: unknown;
+  /** On revisions: delta spend/GRP tiles. Inserts omit this and use buy_ids rows. */
   just_in?: unknown;
   buyers?: unknown;
   totals?: SendPayloadTotals;
@@ -82,11 +103,22 @@ const SIDE_BY_AFFILIATION: Record<string, Affiliation> = {
   "keri ingle": "dem",
   "melanie stinnett": "gop",
   "jon patterson": "gop",
+  "missouri senate campaign committee": "gop",
+  "mscc": "gop",
+  "fogle for missouri": "dem",
+  "friends of melanie stinnett": "gop",
+  "forward pac": "dem",
+  "senate democratic campaign committee": "dem",
+  "sdcc": "dem",
+  "patterson for missouri": "gop",
+  "missouri alliance pac": "gop",
+  "keri ingle for mo sd8": "dem",
 };
 
 export function sideForAffiliation(affiliation: string): Affiliation {
   const key = affiliation.trim().toLowerCase();
   if (SIDE_BY_AFFILIATION[key]) return SIDE_BY_AFFILIATION[key]!;
+  if (/\bmscc\b/.test(key)) return "gop";
   if (/\b(democrat|democratic|dem)\b/.test(key)) return "dem";
   if (/\b(republican|gop|rep)\b/.test(key)) return "gop";
   return "dem";
@@ -130,15 +162,40 @@ export function justInSponsorName(name: string): string {
   return JUST_IN_NAME[name.trim().toLowerCase()] ?? shortSponsorName(name);
 }
 
-const DEM_CANDIDATE = "#0A84FF";
-const DEM_PAC = "#64D2FF";
-const GOP_CANDIDATE = "#FF3B30";
-const GOP_PAC = "#5E5CE6";
+export function isPacSponsor(row: { sponsorType?: string; sponsor?: string }): boolean {
+  const type = String(row.sponsorType ?? "");
+  const sponsor = String(row.sponsor ?? "");
+  return /pac|committee|\bmscc\b/i.test(`${type} ${sponsor}`);
+}
 
-export function colorForSponsor(row: { color?: string; sponsorType: string; affiliation: string }): string {
-  if (row.color) return row.color;
-  const side = sideForAffiliation(row.affiliation);
-  const pac = /pac|committee/i.test(row.sponsorType);
+export function inferSide(row: { side?: string; affiliation?: string; sponsor?: string }): Affiliation {
+  const explicit = String(row.side ?? "").trim().toLowerCase();
+  if (explicit === "gop" || explicit === "republican" || explicit === "rep") return "gop";
+  if (explicit === "dem" || explicit === "democrat" || explicit === "democratic") return "dem";
+  // Check fields separately so "Melanie Stinnett" still hits the GOP map
+  // (joining it with the committee name would miss and default Dem).
+  if (row.affiliation?.trim()) {
+    const fromAff = sideForAffiliation(row.affiliation);
+    const key = row.affiliation.trim().toLowerCase();
+    if (SIDE_BY_AFFILIATION[key] || /\bmscc\b/.test(key) || /\b(democrat|democratic|republican|gop)\b/.test(key)) {
+      return fromAff;
+    }
+  }
+  if (row.sponsor?.trim()) return sideForAffiliation(row.sponsor);
+  return row.affiliation?.trim() ? sideForAffiliation(row.affiliation) : "dem";
+}
+
+export function colorForSponsor(row: {
+  color?: string;
+  sponsorType?: string;
+  affiliation?: string;
+  sponsor?: string;
+  side?: string;
+}): string {
+  const explicit = typeof row.color === "string" ? row.color.trim() : "";
+  if (explicit) return explicit;
+  const side = inferSide(row);
+  const pac = isPacSponsor(row);
   if (side === "gop") return pac ? GOP_PAC : GOP_CANDIDATE;
   return pac ? DEM_PAC : DEM_CANDIDATE;
 }
@@ -190,7 +247,12 @@ export function rowsToJustIn(rows: readonly AlmanacBuyRow[], maxTiles = MAX_JUST
       media,
       station: row.station,
       grp: row.grp,
-      color: colorForSponsor(row),
+      color: colorForSponsor({
+        color: row.color,
+        sponsorType: row.sponsorType,
+        affiliation: row.affiliation,
+        sponsor: row.sponsor,
+      }),
       flightStart: row.flightStart,
     });
   }
@@ -293,15 +355,25 @@ export function parseJustInPayload(raw: unknown): JustInBuy[] {
   return raw.flatMap((item) => {
     const row = asRecord(item);
     if (!row) return [];
+    const sponsor = String(row.sponsor ?? "");
+    const explicit = typeof row.color === "string" ? row.color.trim() : "";
     return [{
       id: row.id != null ? String(row.id) : undefined,
-      sponsor: String(row.sponsor ?? ""),
+      sponsor,
       amount: Number(row.amount ?? row.spend ?? 0),
       market: String(row.market ?? ""),
       media: displayMedia(String(row.media ?? "TV")),
       station: String(row.station ?? ""),
       grp: Number(row.grp ?? 0),
-      color: String(row.color ?? DEM_CANDIDATE),
+      // Infer from side / affiliation / sponsor when Almanac omits color.
+      // GOP + MSCC must never fall back to Dem blue.
+      color: colorForSponsor({
+        color: explicit,
+        sponsor,
+        affiliation: String(row.affiliation ?? ""),
+        side: String(row.side ?? ""),
+        sponsorType: String(row.sponsorType ?? row.sponsor_type ?? ""),
+      }),
       flightStart: row.flightStart != null ? String(row.flightStart) : undefined,
     }];
   }).filter((row) => row.sponsor && row.amount > 0);
