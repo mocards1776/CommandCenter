@@ -1,0 +1,260 @@
+oming.map((game) => (
+              <li key={game.id}>
+                <strong>{game.label}</strong>
+                <span>{game.when || "TBD"}</span>
+                {game.detail ? <em>{game.detail}</em> : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function StandingsDesk({
+  page,
+  standings,
+  leagueClubs,
+  board,
+  edition,
+  onTurn,
+}: {
+  page: SportFrontPage;
+  standings: StandGroup[];
+  leagueClubs: LeagueClub[];
+  board: SectionBoard | null;
+  edition: string;
+  onTurn: (folio: string) => void;
+}) {
+  const scheduleFolio = deskFolio(page, "schedule", `${page.section}${isDeskPress(edition) ? 3 : 4}`);
+  const college = page.path.includes("college-football");
+  const upcoming = (board?.slate ?? []).filter((g) => !g.final && !g.live);
+  const schedule =
+    !college && upcoming.length ? (
+      <section className="tt-stand-fill">
+        <h3 className="wsj-band-title">
+          On the schedule
+          <button type="button" className="tt-band-link" onClick={() => onTurn(scheduleFolio)}>
+            Matchups and probables, page {scheduleFolio} →
+          </button>
+        </h3>
+        <div
+          className="tt-matchups"
+          style={{ ["--cols" as string]: String(page.path === "baseball/mlb" ? 2 : balancedCols(upcoming.length, [2, 3, 2])) }}
+        >
+          {upcoming.slice(0, page.path === "baseball/mlb" ? 8 : 6).map((g) => (
+            <MatchupCard key={g.id} game={g} />
+          ))}
+        </div>
+      </section>
+    ) : null;
+  if (!standings.length) {
+    return (
+      <>
+        {leagueClubs.length ? <LeagueFormGrid clubs={leagueClubs} /> : <ClubFormGrid clubs={page.clubs} />}
+        {schedule}
+      </>
+    );
+  }
+  const favIds = new Set(leagueClubs.filter((c) => c.favorite).map((c) => c.id));
+  const favNames = page.clubs.map((c) => squash(c.shortName));
+  const mine = (row: { id: string; name: string }) =>
+    favIds.has(row.id) || favNames.some((n) => n && squash(row.name) === n);
+  const ordered = rankStandings(standings);
+  const slice = page.standSlice;
+  const shown = slice ? ordered.slice(slice.offset, slice.offset + slice.count) : ordered;
+  const single = shown.length === 1;
+  return (
+    <>
+      <div className={cn("tt-stand-grid", single && "single")}>
+        {shown.map((group) => (
+          <div key={group.name} data-tt-flow="">
+            <StandingsTable group={group} mine={mine} />
+          </div>
+        ))}
+      </div>
+      {schedule}
+    </>
+  );
+}
+
+/** In the offseason only the tables holding a followed club are worth the ink. */
+function offseasonTables(standings: StandGroup[], page: SportFrontPage, leagueClubs: LeagueClub[]): StandGroup[] {
+  const favIds = new Set(leagueClubs.filter((c) => c.favorite).map((c) => c.id));
+  const favNames = page.clubs.map((c) => squash(c.shortName)).filter(Boolean);
+  const mine = standings.filter((g) =>
+    g.rows.some((r) => favIds.has(r.id) || favNames.some((n) => squash(r.name) === n)),
+  );
+  return mine.length ? mine : standings.slice(0, 2);
+}
+
+/** Passing yards, home runs, points — the league list, not one club's leaders. Rule-filed from ESPN. */
+function LeadersDesk({ groups }: { groups: LeagueLeaderGroup[] }) {
+  const printable = groups.filter(leaderGroupHasValidData);
+  if (!printable.length) return <p className="wsj-empty">The league has not posted its leaders.</p>;
+  const post = printable.some((g) => g.seasonType === 3);
+  return (
+    <section className="tt-lleaders tt-lleaders-desk" aria-label={post ? "Postseason leaders" : "League leaders"}>
+      <div className="tt-lleaders-grid">
+        {printable.map((group) => (
+          <div key={group.category} className="tt-lleaders-cat">
+            <h4>{leaderCategoryLabel(group.category)}</h4>
+            <ol>
+              {group.rows.map((row, i) => (
+                <li
+                  key={`${group.category}-${row.name}-${i}`}
+                  className={i === 0 ? "lead" : undefined}
+                  {...(i > 0 ? { "data-tt-trim": 35 + i } : {})}
+                >
+                  <i>{i + 1}</i>
+                  {row.headshot ? <img src={row.headshot} alt="" /> : <span className="tt-lleaders-ph" />}
+                  <span className="tt-lleaders-who">
+                    <strong>{row.name}</strong>
+                    <em>{row.team}</em>
+                  </span>
+                  <span className="tt-lleaders-val">
+                    <b>{row.line}</b>
+                    {row.note ? <em>{row.note}</em> : null}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function SportFront({
+  page,
+  leagueClubs,
+  board,
+  standings,
+  slate,
+  playoffs,
+  edition,
+  active,
+  hasPlayers,
+  nights,
+  coaches,
+  sheets,
+  leaders,
+  heisman,
+  leftover,
+  snaps,
+  alreadyOnA1,
+  onTurn,
+}: {
+  page: SportFrontPage;
+  leagueClubs: LeagueClub[];
+  board: SectionBoard | null;
+  standings: StandGroup[];
+  slate: LeagueSlateGame[];
+  playoffs: MlbPlayoffTree | null;
+  edition: string;
+  active: boolean;
+  hasPlayers: boolean;
+  nights: PlayerNight[];
+  coaches: FavoriteCoachTile[];
+  sheets: Record<string, ClubSheet>;
+  leaders: LeagueLeaderGroup[];
+  heisman?: HeismanBoard | null;
+  leftover?: GameWrapCard[];
+  snaps?: TeamSnapshot[];
+  alreadyOnA1?: GameWrapCard[];
+  onTurn: (folio: string) => void;
+}) {
+  const pollQ = useQuery({
+    queryKey: ["tt-cfb-ap-poll", edition],
+    queryFn: fetchCfbApPoll,
+    staleTime: 30 * 60_000,
+    enabled: page.path.includes("college-football"),
+  });
+  const poll = pollQ.data ?? [];
+  const results = (board?.results.length || board?.prior?.length) ?? 0;
+  const upcoming = board?.slate.length ?? slate.length;
+  const newsDay = editionNewsDay(edition);
+  const played = nights.filter((n) => n.day === newsDay).length;
+  const turnFocus = page.turn?.focus;
+  const turn =
+    page.turn && turnFocus && (turnFocus !== "players" || hasPlayers)
+      ? {
+          folio: page.turn.folio,
+          label: turnFocus === "teams" && page.offseason ? "Last season’s final standings" : TURN_LABELS[turnFocus],
+        }
+      : null;
+  const postLeaders = leaders.some((g) => g.seasonType === 3);
+  const blurb = {
+    front: page.articles.length
+      ? `${page.articles.length} ${page.articles.length === 1 ? "story" : "stories"} · ${results || upcoming ? `${results || upcoming} on the board` : "the night’s desk"}`
+      : results
+        ? `${results} ${results === 1 ? "final" : "finals"} · the night’s board`
+        : "The section front",
+    news: `${page.articles.length + results} stories and finals · ${leagueClubs.length || page.clubs.length} clubs`,
+    recaps: page.articles.length
+      ? `${page.articles.length} ${page.articles.length === 1 ? "wrap" : "wraps"} · every final in the window`
+      : results
+        ? `${results} ${results === 1 ? "final" : "finals"} · lines, decisions and the agate`
+        : "Box scores",
+    teams: (page.standSlice?.count ?? standings.length)
+      ? `${page.standSlice?.count ?? standings.length} ${
+          (page.standSlice?.count ?? standings.length) === 1 ? "table" : "tables"
+        }${standings.length > (page.standSlice?.count ?? standings.length) ? ` · ${standings.length} in all` : ""} · your clubs marked`
+      : "League tables",
+    leaders: leaders.length
+      ? `${leaders.length} categories · the top ${Math.max(...leaders.map((g) => g.rows.length), 5)} in each${postLeaders ? " · postseason" : ""}`
+      : postLeaders
+        ? "Postseason leaders"
+        : "League leaders",
+    schedule: upcoming ? `${upcoming} games ahead · probables, TV and venues` : "League calendar",
+    playoffs: playoffs ? `${playoffs.season} postseason bracket` : "Postseason bracket",
+    form: `${page.clubs.length} followed ${page.clubs.length === 1 ? "club" : "clubs"} · numbers, leaders, the table`,
+    players: `${nights.length} followed · ${played} played last night`,
+    opener: `${page.clubs.length} followed ${page.clubs.length === 1 ? "club" : "clubs"} · days to the first game`,
+    coaches: coaches.length
+      ? `${coaches.length} ${coaches.length === 1 ? "coach" : "coaches"} · this week’s desk`
+      : "Favorite coaches",
+  }[page.focus];
+  const offStandings = page.offseason ? offseasonTables(standings, page, leagueClubs) : standings;
+  const offBlurb =
+    page.offseason && page.focus === "teams"
+      ? `Last season’s final ${offStandings.length === 1 ? "table" : "tables"} · your clubs marked`
+      : page.offseason && page.focus === "news"
+        ? `Offseason · ${page.articles.length} stories · ${page.clubs.length} followed ${page.clubs.length === 1 ? "club" : "clubs"}`
+        : blurb;
+
+  return (
+    <div className={cn("wsj-sport", `focus-${page.focus}`, page.offseason && "offseason")}>
+      <SportHero
+        page={page}
+        leagueClubs={leagueClubs}
+        blurb={offBlurb}
+        deskTitle={page.focus === "leaders" && postLeaders ? "Postseason Leaders" : undefined}
+      />
+      <div className="wsj-sport-solo">
+        {page.focus === "news" && page.offseason ? <OpenerBand page={page} /> : null}
+        {page.focus === "front" ? (
+          <SportSectionFront
+            page={page}
+            board={board}
+            standings={standings}
+            leagueClubs={leagueClubs}
+            edition={edition}
+            playoffs={playoffs}
+            leaders={leaders}
+            heisman={heisman}
+            poll={poll}
+            leftover={leftover}
+            snaps={snaps}
+            coaches={coaches}
+            alreadyOnA1={alreadyOnA1}
+            onTurn={onTurn}
+          />
+        ) : page.focus === "news" ? (
+          <SportNewsDesk page={page} board={board} leagueClubs={leagueClubs} edition={edition} onTurn={onTurn} />
+        ) : page.focus === "opener" ? (
+          <OpenerDesk page={page} onTurn={onTurn} />
+        ) : page.focus === "recaps" ? (
+          <ScoresDesk page={page} board={board} active={active} edit
