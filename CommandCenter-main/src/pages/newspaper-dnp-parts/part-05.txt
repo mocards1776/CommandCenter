@@ -1,0 +1,323 @@
+im": 16 + i })}>
+                <TeamLogo src={g.logo} size="xs" />
+                <span className="t">
+                  <strong>{g.team}</strong> {g.label}
+                </span>
+                <em>{g.startIso ? formatFixtureWhen(g.startIso) || g.when || "TBD" : g.when || "TBD"}</em>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {tables.map((t, i) => (
+        <div key={`table-${t.fav.key}`} {...(i > 0 ? { "data-tt-flow": "" } : {})}>
+        <AgateBox
+          color={teamColor(t)}
+          title={`${t.fav.shortName} · ${tableTitle(t.snap.standing)}`}
+          rows={tableWindow(
+            (t.detail?.division ?? []).map((row) => ({
+              rank: row.rank,
+              team: row.team,
+              record: row.record,
+              me: row.isMe,
+            })),
+            6,
+          ).map((row) => ({ left: `${row.rank}. ${row.team}`, right: row.record, me: row.me }))}
+        />
+        </div>
+      ))}
+
+      {waiting.length ? (
+        <section className="wsj-rail-block" data-tt-flow="">
+          <h3>Countdown</h3>
+          <ul className="tt-count-list">
+            {waiting.map((t) => (
+              <li key={t.fav.key}>
+                <Countdown
+                  opener={openers.get(t.fav.key)!}
+                  name={t.fav.shortName}
+                  color={teamColor(t)}
+                  variant="line"
+                />
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {closed.length ? (
+        <section className="wsj-rail-block">
+          <h3>Season Complete</h3>
+          <ul className="wsj-rail-list">
+            {closed.map((t) => {
+              const opener = openers.get(t.fav.key);
+              return (
+                <li key={t.fav.key} className={cn(opener && "counting")}>
+                  <p>
+                    <ExternalOrLink href={t.href} className="wsj-a">
+                      <strong>{t.fav.shortName}</strong>
+                    </ExternalOrLink>{" "}
+                    finished {t.snap.record || "—"}
+                    {t.snap.standing ? `, ${t.snap.standing}` : ""}.
+                  </p>
+                  {opener ? (
+                    <Countdown opener={opener} color={teamColor(t)} logo={t.snap.logo || t.detail?.logo} variant="card" />
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ) : null}
+    </aside>
+  );
+}
+
+function FrontPage({
+  lead,
+  second,
+  third,
+  briefs,
+  news,
+  teams,
+  tonight,
+  bracket,
+  comingUp,
+  sections,
+  folios,
+  clubsFolio = "A3",
+  editionDay,
+  onTurn,
+  leadContinue,
+  secondContinue,
+  thirdContinue,
+  leadTeaser,
+  secondTeaser,
+  thirdTeaser,
+  scout,
+}: {
+  lead: GameWrapCard | null;
+  second: GameWrapCard | null;
+  third: GameWrapCard | null;
+  briefs: GameWrapCard[];
+  news?: GameWrapCard[];
+  teams: TeamInfobox[];
+  tonight: WireGame[];
+  bracket: WireGame[];
+  comingUp: ComingUp[];
+  sections: EditionSection[];
+  folios: Record<string, string>;
+  clubsFolio?: string;
+  editionDay: string;
+  onTurn: (folio: string) => void;
+  leadContinue?: string;
+  secondContinue?: string;
+  thirdContinue?: string;
+  leadTeaser?: string;
+  secondTeaser?: string;
+  thirdTeaser?: string;
+  scout?: MoItem | null;
+}) {
+  const moFolio = sections.find((s) => s.title === "Missouri")?.folio ?? null;
+  const scoutBand = scout ? <ScoutBand item={scout} onTurn={onTurn} deskFolio={moFolio} /> : null;
+  const rail = (
+    <FrontRail
+      teams={teams}
+      tonight={tonight}
+      bracket={bracket}
+      comingUp={comingUp}
+      sections={sections}
+      onTurn={onTurn}
+    />
+  );
+
+  const seenIds = new Set<string>();
+  const pool = [lead, second, third, ...briefs, ...(news ?? [])].filter((card): card is GameWrapCard => {
+    if (!card?.headline) return false;
+    if (isA1Muted(card, editionDay)) return false;
+    if (seenIds.has(card.id)) return false;
+    seenIds.add(card.id);
+    return true;
+  });
+  const pageLead = pool[0] ?? null;
+  const pageSecond = pool[1] ?? null;
+  const pageThird = pool[2] ?? null;
+  const pageBriefs = pool.slice(3, 6);
+  const pageLeadContinue = pageLead && pageLead.id === lead?.id ? leadContinue : folios[pageLead?.id ?? ""];
+  const pageSecondContinue = pageSecond && pageSecond.id === second?.id ? secondContinue : folios[pageSecond?.id ?? ""];
+  const pageThirdContinue = pageThird && pageThird.id === third?.id ? thirdContinue : folios[pageThird?.id ?? ""];
+  const pageLeadTeaser = pageLead && pageLead.id === lead?.id ? leadTeaser : undefined;
+  const pageSecondTeaser = pageSecond && pageSecond.id === second?.id ? secondTeaser : undefined;
+  const pageThirdTeaser = pageThird && pageThird.id === third?.id ? thirdTeaser : undefined;
+
+  if (!pageLead) {
+    return (
+      <div className="wsj-front">
+        <div className="wsj-front-grid">
+          <div className="wsj-front-main">
+            <ClubTicker teams={teams} editionDay={editionDay} onTurn={onTurn} />
+            <TurnBar onTurn={onTurn} folio={clubsFolio} label="The clubs desk — every slate, table and leader" />
+          </div>
+          {rail}
+        </div>
+        {scoutBand}
+      </div>
+    );
+  }
+
+  const copyOf = (card: GameWrapCard, teaser?: string) =>
+    teaser || storyBodyForJump(card) || cardCopy(card);
+
+  // The club poster stands in for a missing photo, once per club on the page.
+  const postered = new Set<string>();
+  const wantsPoster = (card: GameWrapCard | null) => {
+    if (!card || card.photo) return false;
+    const team = teamForCard(teams, card);
+    if (!team || postered.has(team.fav.key)) return false;
+    postered.add(team.fav.key);
+    return true;
+  };
+  const leadPoster = wantsPoster(pageLead);
+  const underCandidates = pool.filter((c) => c !== pageLead);
+  const underLead = pickFrontUnderLead(pool, pageLead, editionDay) ?? pageSecond;
+  const underContinue =
+    underLead && underLead.id === second?.id
+      ? pageSecondContinue
+      : underLead && underLead.id === third?.id
+        ? pageThirdContinue
+        : folios[underLead?.id ?? ""];
+  const underTeaser =
+    underLead && underLead.id === second?.id
+      ? pageSecondTeaser
+      : underLead && underLead.id === third?.id
+        ? pageThirdTeaser
+        : undefined;
+  const underPoster = wantsPoster(underLead);
+  const flowed = underCandidates.filter((c) => c !== underLead);
+  const flowCard = flowed[0] ?? null;
+  const flowPoster = wantsPoster(flowCard);
+  const flowContinue =
+    flowCard && flowCard.id === third?.id
+      ? pageThirdContinue
+      : flowCard && flowCard.id === second?.id
+        ? pageSecondContinue
+        : folios[flowCard?.id ?? ""];
+  const flowTeaser =
+    flowCard && flowCard.id === third?.id
+      ? pageThirdTeaser
+      : flowCard && flowCard.id === second?.id
+        ? pageSecondTeaser
+        : undefined;
+
+  return (
+    <div className="wsj-front">
+      <div className="wsj-front-grid">
+        <div className="wsj-front-main">
+          <Story
+            className="lead"
+            card={pageLead}
+            team={teamForCard(teams, pageLead)}
+            text={splitStoryCopy(copyOf(pageLead, pageLeadTeaser), 1100).teaser}
+            size="xl"
+            cols={2}
+            art="top"
+            poster={leadPoster}
+            drop
+            chrome={false}
+            jump={pageLeadContinue}
+            onTurn={onTurn}
+          />
+          {underLead ? (
+            <div className="wsj-front-under" data-tt-keep="">
+              <Story
+                className="under-lead"
+                card={underLead}
+                team={teamForCard(teams, underLead)}
+                text={
+                  recapDek(underLead, 4) ||
+                  wrapBriefCopy(underLead, 4) ||
+                  splitStoryCopy(copyOf(underLead, underTeaser), 480).teaser
+                }
+                size="md"
+                cols={1}
+                art={underLead.photo || underPoster ? "side" : "none"}
+                poster={underPoster}
+                chrome={false}
+                jump={underContinue}
+                onTurn={onTurn}
+              />
+            </div>
+          ) : null}
+          {flowCard ? (
+            <div className="wsj-front-row one" data-tt-flow="">
+              <Story
+                card={flowCard}
+                team={teamForCard(teams, flowCard)}
+                text={copyOf(flowCard, flowTeaser)}
+                size="md"
+                cols={1}
+                art="top"
+                poster={flowPoster}
+                jump={flowContinue}
+                onTurn={onTurn}
+                trim={24}
+              />
+            </div>
+          ) : null}
+        </div>
+        {rail}
+      </div>
+      <ClubTicker teams={teams} editionDay={editionDay} onTurn={onTurn} />
+      {scoutBand ? <div data-tt-flow="">{scoutBand}</div> : null}
+      <div data-tt-flow="">
+      <BriefGrid
+        cards={pageBriefs}
+        title="More from your clubs"
+        folios={folios}
+        here="A1"
+        onTurn={onTurn}
+        crestFor={(c) => {
+          const t = teamForCard(teams, c);
+          return t?.snap.logo || t?.detail?.logo;
+        }}
+        colorFor={(c) => teamColor(teamForCard(teams, c))}
+      />
+      </div>
+      <div data-tt-flow="">
+        <TurnBar onTurn={onTurn} folio={clubsFolio} label="The clubs desk — every slate, table and leader" />
+      </div>
+    </div>
+  );
+}
+
+function TurnBar({
+  onTurn,
+  folio,
+  label,
+}: {
+  onTurn: (folio: string) => void;
+  folio: string;
+  label: string;
+}) {
+  return (
+    <p className="wsj-page-trail">
+      <button type="button" className="wsj-jump-btn" onClick={() => onTurn(folio)}>
+        <span>{label}</span>
+        <b>
+          Page {folio} <span aria-hidden="true">→</span>
+        </b>
+      </button>
+    </p>
+  );
+}
+
+/* ───────────────────────── clubs desk ───────────────────────── */
+
+function ClubsDesk({
+  teams,
+  offset = 0,
+  limit,
+}: {
+  teams: TeamInfobox[];
+  offset?: 
