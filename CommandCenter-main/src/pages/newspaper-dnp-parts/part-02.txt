@@ -1,0 +1,325 @@
+s",
+        form: "Club Form",
+        players: "Your Players",
+        opener: "Countdown",
+        coaches: "Favorite Coaches",
+      }[page.focus];
+    case "national":
+      return page.sectionPage === 1 ? "National News" : "More National News";
+    case "missouri":
+      return page.sectionPage === 1 ? "Statehouse" : "Around the State";
+    case "sport-inside":
+    case "favorites-inside":
+      return "Stories";
+    case "favorites-clubs":
+      return page.weatherPart === "today" ? "Weather" : "Your Clubs";
+    case "favorites-form":
+      return "Club Form";
+    case "favorites-continue":
+      return "Continued";
+    case "favorites-watch":
+      return "What to Watch";
+    case "favorites-day":
+      return "The Day Ahead";
+    case "favorites-beez":
+      return "The Beez";
+    case "favorites-races":
+      return page.continued ? "More Races" : "Races We're Tracking";
+    default:
+      return "Front Page";
+  }
+}
+
+/* ───────────────────────── mastheads ───────────────────────── */
+
+function Masthead({
+  day,
+  page,
+  clubs,
+  live,
+  editionLabel,
+  weather,
+  weatherFolio,
+  onTurn,
+  editions,
+  selectedId,
+  onSelectEdition,
+  readingNote,
+}: {
+  day: string;
+  page: EditionPage;
+  clubs: number;
+  live: number;
+  editionLabel: string;
+  weather: MarshfieldWeather | null | undefined;
+  weatherFolio: string | null;
+  onTurn: (folio: string) => void;
+  editions: FiledIssueMeta[];
+  selectedId: string;
+  onSelectEdition: (id: string) => void;
+  readingNote: string | null;
+}) {
+  const { volume, issue } = editionIssue(day);
+  const ballot = electionEar(day);
+  const stand = uniqueEditionStand(editions);
+  const others = stand.filter((row) => row.id !== selectedId);
+  return (
+    <header className="wsj-mast">
+      <div className="wsj-mast-row">
+        {ballot ? (
+          <ElectionEar day={day} />
+        ) : (
+          <div className="wsj-ear">
+            <strong>Sports Final</strong>
+            <span>All the scores fit to print</span>
+          </div>
+        )}
+        <h1 className="wsj-nameplate">The Thompson Times</h1>
+        <div className="wsj-ear right">
+          <strong>{live ? `${live} live now` : editionLabel}</strong>
+          <span>{clubs} clubs on the desk</span>
+        </div>
+      </div>
+      <nav className="tt-editions" aria-label="Edition">
+        <span className="tt-editions-label">Edition</span>
+        <span className="tt-editions-current">{editionFolioLine(selectedId)}</span>
+        {others.length ? (
+          <details className="tt-editions-more">
+            <summary>More</summary>
+            <div className="tt-editions-menu">
+              {others.map((row) => (
+                <button key={row.id} type="button" onClick={() => onSelectEdition(row.id)}>
+                  {editionPickerLabel(row.id, stand)}
+                </button>
+              ))}
+            </div>
+          </details>
+        ) : null}
+      </nav>
+      {readingNote ? <p className="tt-reading-note">{readingNote}</p> : null}
+      <div className="wsj-dateline-bar">
+        <span>
+          Vol. {romanNumeral(volume)} · No. {issue}
+        </span>
+        <span className="c">{editionDateline(day)}</span>
+        <span className="r">
+          Section {page.section} · {page.folio}
+        </span>
+      </div>
+      {weather?.days?.length ? (
+        <WeatherStrip
+          weather={weather}
+          folio={weatherFolio}
+          onOpen={weatherFolio ? () => onTurn(weatherFolio) : undefined}
+        />
+      ) : null}
+    </header>
+  );
+}
+
+function RunningHead({ day, page }: { day: string; page: EditionPage }) {
+  const desk = pageLabel(page);
+  const dup = Boolean(desk && sameHead(desk, page.sectionTitle));
+  return (
+    <header className="wsj-run">
+      <span className="wsj-run-plate">The Thompson Times</span>
+      <span className="wsj-run-section">
+        <b>{page.section}</b>
+        <span>{page.sectionTitle}</span>
+        {desk && !dup ? <em>{desk}</em> : null}
+      </span>
+      <span className="wsj-run-folio">
+        {editionDateline(day)}
+        <b>{page.folio}</b>
+      </span>
+    </header>
+  );
+}
+
+/* ───────────────────────── story parts ───────────────────────── */
+
+function Kicker({ card }: { card: GameWrapCard }) {
+  return <p className="wsj-kicker">{kickerOf(card)}</p>;
+}
+
+/** Finds the box score behind a story, so the reader can set it with the copy. */
+const GameLookup = createContext<(card: GameWrapCard) => BoxGame | null>(() => null);
+
+/** A headline opens the story in the paper's reader, never the publisher's site. */
+function StoryLink({
+  card,
+  game,
+  color,
+  className,
+  children,
+}: {
+  card: GameWrapCard;
+  game?: BoxGame | null;
+  color?: string | null;
+  className?: string;
+  children: ReactNode;
+}) {
+  const open = useReader();
+  const lookup = useContext(GameLookup);
+  return (
+    <button
+      type="button"
+      className={cn("wsj-a wsj-story-link", className)}
+      onClick={() => open({ card, game: game ?? lookup(card), color })}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Headline({
+  card,
+  size,
+  game,
+}: {
+  card: GameWrapCard;
+  size: "xl" | "lg" | "md" | "sm";
+  game?: BoxGame | null;
+}) {
+  return (
+    <>
+      <Kicker card={card} />
+      <h2 className={cn("wsj-hl", size)}>
+        <HeadlineSave card={card}>
+          <StoryLink card={card} game={game}>
+            {card.headline}
+          </StoryLink>
+        </HeadlineSave>
+      </h2>
+    </>
+  );
+}
+
+function ReadOn({ card, game, label = "Read the full story" }: { card: GameWrapCard; game?: BoxGame | null; label?: string }) {
+  return (
+    <p className="wsj-jump">
+      <StoryLink card={card} game={game} className="wsj-jump-btn">
+        {label} <span aria-hidden="true">→</span>
+      </StoryLink>
+    </p>
+  );
+}
+
+function Byline({ card }: { card: GameWrapCard }) {
+  const author = cleanStoryCopy(card.body).author;
+  const source = storySource(card) ?? `${card.sportLabel} Wire`;
+  return (
+    <p className="wsj-byline">
+      <em>By</em> {author ? `${author} · ` : ""}
+      {source}
+      {card.followed || card.favoriteKey ? <span> · {card.teamName} desk</span> : null}
+    </p>
+  );
+}
+
+function ScoreBug({ card }: { card: GameWrapCard }) {
+  if (!card.scoreLine || !/\d/.test(card.scoreLine)) return null;
+  const state = gameState(card.status);
+  return (
+    <p className="wsj-scorebug">
+      {state ? <b>{state}</b> : null}
+      <span>{card.scoreLine}</span>
+    </p>
+  );
+}
+
+function Prose({
+  card,
+  text,
+  cols,
+  drop,
+  max,
+  dress,
+  color,
+  inset,
+  ended,
+}: {
+  card: GameWrapCard;
+  text: string;
+  cols: 1 | 2 | 3;
+  drop?: boolean;
+  max?: number;
+  /** Long inside-page copy: a pull quote and run-in subheads break the gray. */
+  dress?: boolean;
+  color?: string | null;
+  /** A panel set into the columns (the story's players), so it travels with the copy. */
+  inset?: ReactNode;
+  /** The whole story is set here: close it with an end mark. */
+  ended?: boolean;
+}) {
+  const paras = proseParas(text, max);
+  if (!paras.length) return null;
+  const length = paras.reduce((n, p) => n + p.length, 0);
+  // Short copy never splits into slivers of two-line columns.
+  const fit = Math.max(1, Math.min(cols, Math.floor(length / 360))) as 1 | 2 | 3;
+  const seen = new Set<string>();
+  const quote = dress && length > 1600 ? pullQuote(paras) : null;
+  const quoteAt = quote ? Math.max(2, Math.floor(paras.length * 0.45)) : -1;
+  let insetAt = inset ? (paras.length <= 2 ? paras.length : Math.max(1, Math.round(paras.length * 0.6))) : -1;
+  if (insetAt === quoteAt) insetAt += 1;
+  return (
+    <div className={cn("wsj-prose", `c${fit}`, drop && "drop", dress && "dressed", ended && "ended")}>
+      {paras.map((p, i) => (
+        <Fragment key={i}>
+          {i === insetAt ? inset : null}
+          {i === quoteAt && quote ? (
+            <blockquote className="wsj-pull" style={tint(color)}>
+              <FitCopy cid={`${card.id}:q`} full={quote}>
+                {quote}
+              </FitCopy>
+            </blockquote>
+          ) : null}
+          {dress && i > 0 && i % 5 === 0 ? (
+            <FitCopy cid={`${card.id}:p${i}`} full={p} className="wsj-runin">
+              <b>{runIn(p)[0]}</b> <NamedText text={runIn(p)[1]} seen={seen} />
+            </FitCopy>
+          ) : (
+            <FitCopy cid={`${card.id}:p${i}`} full={plainProsePara(card, p, i, drop)}>
+              {i === 0 && drop
+                ? (() => {
+                    const lead = recapDropLead(card.dateline, p);
+                    if (!lead) return <NamedText text={p} seen={seen} />;
+                    return (
+                      <>
+                        <span className="wsj-drop">{lead.letter}</span>
+                        {lead.datelineRest != null ? <span className="wsj-dateline">{lead.datelineRest} — </span> : null}
+                        <NamedText text={lead.body} seen={seen} />
+                      </>
+                    );
+                  })()
+                : i === 0
+                  ? (() => {
+                      const split = splitApDateline(p);
+                      const city = card.dateline || split.dateline;
+                      return (
+                        <>
+                          {city ? <span className="wsj-dateline">{city} — </span> : null}
+                          <NamedText text={split.body} seen={seen} />
+                        </>
+                      );
+                    })()
+                  : <NamedText text={p} seen={seen} />}
+            </FitCopy>
+          )}
+        </Fragment>
+      ))}
+      {insetAt >= paras.length ? inset : null}
+    </div>
+  );
+}
+
+function plainProsePara(card: GameWrapCard, p: string, i: number, drop?: boolean): string {
+  if (i !== 0) return p;
+  if (drop) {
+    const lead = recapDropLead(card.dateline, p);
+    if (!lead) return p;
+    return `${lead.letter}${lead.datelineRest != null ? `${lead.datelineRest} — ` : ""}${lead.body}`;
+  }
+  const split = splitApDateline(p);
+  const city = card.dateline || split.dateline;
+  r
