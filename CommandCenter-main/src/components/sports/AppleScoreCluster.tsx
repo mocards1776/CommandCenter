@@ -1,7 +1,7 @@
 import MlbBaseDiamond from "@/components/sports/MlbBaseDiamond";
 import PossessionFootball from "@/components/sports/PossessionFootball";
 import { appleClockParts, isBreakStatus, timeoutMarks } from "@/lib/apple-score";
-import { isEmptyBasesLabel } from "@/lib/mlb-score-ui";
+import { isEmptyBasesLabel, mlbInningLabel } from "@/lib/mlb-score-ui";
 import { mlbHeroNest, type MlbHeroDiamond } from "@heat/mlb-hero.ts";
 import { cn } from "@/lib/utils";
 
@@ -34,7 +34,9 @@ function TimeoutDashes({ count }: { count: number | null | undefined }) {
  * Timeout dashes are remaining ESPN counts, drawn small and dim for
  * the game page. RUWT cards omit the counts.
  * MLB live uses the shared heat-alert nest (count, outs, runners) so the
- * app hero and Telegram photo stay aligned. The inning stays in the status bar.
+ * app hero and Telegram photo stay aligned. Live MLB also gets an inning
+ * line ("Top 3rd", "Bottom 3rd", "Mid 3rd", "End 3rd") on top of that nest,
+ * between the scores; the status bar / header chip keep their own copy.
  */
 export default function AppleScoreCluster({
   away,
@@ -66,7 +68,7 @@ export default function AppleScoreCluster({
   /** Fade the away numeral (losing side on a final). */
   awayDim?: boolean;
   homeDim?: boolean;
-  /** Live MLB play-state. Replaces the inning word between the scores. */
+  /** Live MLB play-state (count, outs, runners) between the scores, under the inning line. */
   mlb?: MlbScoreNest | null;
 }) {
   const sans = face === "sans";
@@ -101,6 +103,14 @@ export default function AppleScoreCluster({
       })
     : null;
   const showMlbNest = Boolean(mlbNest && (mlbNest.liveCount || mlbNest.runners || (live && mlb)));
+  // Inning above the outs/count stack on live MLB ("Top 3rd", "Mid 3rd").
+  const mlbInning = showMlbNest && live && !final ? mlbInningLabel(detail) : null;
+  // On a half-inning break the nest primary is the raw break copy
+  // ("Middle 3rd") — the inning line already says it, so don't repeat it.
+  const mlbPrimary =
+    mlbNest && mlbInning && !mlbNest.liveCount && mlbInningLabel(mlbNest.primary) === mlbInning
+      ? null
+      : (mlbNest?.primary ?? null);
   // Break copy already lives in the game-detail status chip. Keeping it
   // between the tall scores makes "End of 1st" read as another numeral.
   const breakInHeader = size === "header" && !stacked && !showMlbNest && isBreakStatus(clock);
@@ -134,6 +144,16 @@ export default function AppleScoreCluster({
             size === "header" ? "min-w-[4.6rem] sm:min-w-[5.25rem]" : "min-w-[3.4rem]",
           )}
         >
+          {mlbInning ? (
+            <span
+              className={cn(
+                "whitespace-nowrap font-semibold leading-none tracking-[0.02em] text-white/90",
+                size === "header" ? "mb-1.5 text-[12px] sm:text-[13px]" : "mb-1 text-[10px]",
+              )}
+            >
+              {mlbInning}
+            </span>
+          ) : null}
           {mlbNest.secondary ? (
             <span
               className={cn(
@@ -144,18 +164,20 @@ export default function AppleScoreCluster({
               {mlbNest.secondary}
             </span>
           ) : null}
-          <span
-            className={cn(
-              "numeral font-semibold leading-none text-white",
-              size === "header"
-                ? "mt-1 text-[18px] sm:text-[22px]"
-                : sans
-                  ? "mt-0.5 text-[13px]"
-                  : "mt-0.5 text-[12px]",
-            )}
-          >
-            {mlbNest.primary}
-          </span>
+          {mlbPrimary ? (
+            <span
+              className={cn(
+                "numeral font-semibold leading-none text-white",
+                size === "header"
+                  ? "mt-1 text-[18px] sm:text-[22px]"
+                  : sans
+                    ? "mt-0.5 text-[13px]"
+                    : "mt-0.5 text-[12px]",
+              )}
+            >
+              {mlbPrimary}
+            </span>
+          ) : null}
           {mlb ? (
             <MlbBaseDiamond
               onFirst={mlb.onFirst}

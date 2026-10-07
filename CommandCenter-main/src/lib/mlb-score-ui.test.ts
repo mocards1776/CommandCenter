@@ -2,7 +2,7 @@
  * Run with: node --experimental-strip-types src/lib/mlb-score-ui.test.ts
  * from CommandCenter-main/.
  */
-import { isEmptyBasesLabel, mlbFinalWinnerFlags } from "./mlb-score-ui.ts";
+import { isEmptyBasesLabel, mlbFinalWinnerFlags, mlbInningLabel } from "./mlb-score-ui.ts";
 
 const assert = {
   equal(actual: unknown, expected: unknown, msg?: string) {
@@ -62,5 +62,25 @@ assert.equal(isEmptyBasesLabel("EMPTY"), true);
 assert.equal(isEmptyBasesLabel("Loaded"), false);
 assert.equal(isEmptyBasesLabel("1st"), false);
 assert.equal(isEmptyBasesLabel(null), false);
+
+assert.equal(mlbInningLabel("Top 3rd"), "Top 3rd");
+assert.equal(mlbInningLabel("Bottom 3rd"), "Bottom 3rd");
+assert.equal(mlbInningLabel("Bot 3rd"), "Bottom 3rd", "ESPN Bot → Bottom");
+assert.equal(mlbInningLabel("Middle 3rd"), "Mid 3rd", "StatsAPI Middle → Mid");
+assert.equal(mlbInningLabel("Mid 7th"), "Mid 7th");
+assert.equal(mlbInningLabel("End 3rd"), "End 3rd");
+assert.equal(mlbInningLabel("End of 8th"), "End 8th");
+assert.equal(mlbInningLabel("TOP 2ND"), "Top 2nd");
+assert.equal(mlbInningLabel("Top of the 9th"), "Top 9th");
+assert.equal(mlbInningLabel("Top 10th"), "Top 10th", "extras");
+assert.equal(mlbInningLabel("Bottom 11th"), "Bottom 11th");
+assert.equal(mlbInningLabel("Top 12th"), "Top 12th");
+assert.equal(mlbInningLabel("Bottom 21st"), "Bottom 21st");
+assert.equal(mlbInningLabel("Top 1"), "Top 1st");
+assert.equal(mlbInningLabel("Warmup"), null);
+assert.equal(mlbInningLabel("In Progress"), null);
+assert.equal(mlbInningLabel("Final"), null);
+assert.equal(mlbInningLabel(""), null);
+assert.equal(mlbInningLabel(null), null);
 
 console.log("mlb-score-ui: ok");
