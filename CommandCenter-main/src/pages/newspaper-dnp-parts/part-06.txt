@@ -1,0 +1,252 @@
+number;
+  limit?: number;
+}) {
+  const openers = useContext(OpenerContext);
+  const allActive = teams.filter((t) => !clubIsOffseason(t, openers.get(t.fav.key)));
+  const active = allActive.slice(offset, limit != null ? offset + limit : undefined);
+  const shelved = offset > 0 ? [] : teams.filter((t) => clubIsOffseason(t, openers.get(t.fav.key)));
+  const cols = balancedCols(active.length, [5, 4, 3, 6, 2]);
+  return (
+    <div className="wsj-clubs-desk">
+      <header className="wsj-desk-head">
+        <h2>Your Clubs</h2>
+        <p>
+          {active.length} in season · {shelved.length} between seasons · next games, tables and
+          leaders
+        </p>
+      </header>
+      {active.length ? (
+        <ul className="wsj-clubs-grid" style={{ ["--cols" as string]: String(cols) }}>
+          {active.map((t, i) => {
+            const slate = (t.detail?.upcoming ?? []).slice(0, 4);
+            const table = tableWindow(
+              (t.detail?.division ?? []).map((row) => ({
+                rank: row.rank,
+                team: row.team,
+                record: row.record,
+                me: row.isMe,
+              })),
+              5,
+            );
+            const leaders = teamLeaders(t).slice(0, 3);
+            return (
+              <li key={t.fav.key} {...(i > 0 ? { "data-tt-flow": "" } : {})}>
+                <ExternalOrLink href={t.href} className="wsj-club-card wsj-a" style={tint(teamColor(t))}>
+                  <header className="wsj-club-card-head">
+                    <span className="wsj-disc">
+                      <TeamLogo src={t.snap.logo || t.detail?.logo} size="md" />
+                    </span>
+                    <span className="wsj-club-card-id">
+                      <em>{t.fav.league}</em>
+                      <strong>{t.fav.shortName}</strong>
+                    </span>
+                    <b>{clubRecord(t) || "—"}</b>
+                  </header>
+                  <div className="wsj-club-card-body">
+                    <p className="wsj-club-card-standing">
+                      <span>{t.snap.standing || "—"}</span>
+                      <FormDots form={t.form} />
+                    </p>
+                    {t.odds ? <p className="wsj-club-odds">Playoff odds {t.odds}</p> : null}
+                    {slate.length || t.snap.nextGame ? (
+                      <div className="wsj-club-card-sec">
+                        <h4>Next up</h4>
+                        <ul className="wsj-club-slate">
+                          {(slate.length
+                            ? slate
+                            : [{ id: "next", when: t.snap.nextGame!.when, label: t.snap.nextGame!.label, detail: null }]
+                          ).map((game, i) => (
+                            <li key={game.id || `${t.fav.key}-u-${i}`}>
+                              <strong>{game.label}</strong>
+                              <span>{game.when || "TBD"}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                    {table.length ? (
+                      <div className="wsj-club-card-sec">
+                        <h4>{tableTitle(t.snap.standing)}</h4>
+                        <ul className="wsj-club-table">
+                          {table.map((row) => (
+                            <li key={`${row.rank}-${row.team}`} className={cn(row.me && "me")}>
+                              <span>
+                                {row.rank}. {row.team}
+                              </span>
+                              <b>{row.record}</b>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                    {leaders.length ? (
+                      <div className="wsj-club-card-sec">
+                        <h4>Leaders</h4>
+                        <ul className="wsj-club-table">
+                          {leaders.map((leader) => (
+                            <li key={leader.name}>
+                              <span>{leader.name}</span>
+                              <em>{leader.line}</em>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </div>
+                </ExternalOrLink>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+      {shelved.length ? (
+        <section>
+          <h3 className="wsj-band-title">Between seasons</h3>
+          <ul className="wsj-shelved" style={{ ["--cols" as string]: "2" }}>
+            {shelved.map((t) => {
+              const opener = openers.get(t.fav.key);
+              return (
+                <li key={t.fav.key} style={tint(teamColor(t))}>
+                  <ExternalOrLink href={t.href} className={cn("wsj-shelved-card wsj-a", opener && "counting")}>
+                    <TeamLogo src={t.snap.logo || t.detail?.logo} size="lg" />
+                    <span>
+                      <strong>{t.fav.shortName}</strong>
+                      <span>
+                        {t.seasonState === "complete" ? "Final" : t.fav.league} · {clubRecord(t) || "—"}
+                        {t.snap.standing ? ` · ${t.snap.standing}` : ""}
+                      </span>
+                      {opener ? null : <em>{clubCountdown(t)}</em>}
+                    </span>
+                    {opener ? <Countdown opener={opener} variant="line" /> : null}
+                  </ExternalOrLink>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
+/* ───────────────────────── inside pages ───────────────────────── */
+
+function InsidePage({
+  primary,
+  secondary,
+  briefs,
+  teams,
+  folios,
+  here,
+  onTurn,
+  notebooks = [],
+}: {
+  primary: GameWrapCard;
+  secondary?: GameWrapCard;
+  briefs: GameWrapCard[];
+  teams: TeamInfobox[];
+  folios?: Record<string, string>;
+  here: string;
+  onTurn: (folio: string) => void;
+  /** The club's numbers, printed on the first page that club appears. */
+  notebooks?: TeamInfobox[];
+}) {
+  const stories = ([primary, secondary].filter(Boolean) as GameWrapCard[]).sort(
+    (a, b) => substantive(b, cardCopy(b)).length - substantive(a, cardCopy(a)).length,
+  );
+  const lookup = useContext(GameLookup);
+  const noted = new Set(notebooks.map((t) => t.fav.key));
+  return (
+    <div className="wsj-inside">
+      {stories.map((card, i) => {
+        const team = teamForCard(teams, card);
+        const text = cardCopy(card);
+        const { art, cols } = artFor(card, text);
+        const game = isSingleGameRecap(card) ? lookup(card) : null;
+        // No photograph: the club's poster carries the art, unless its notebook already runs here.
+        const poster = !card.photo && Boolean(team) && !noted.has(team!.fav.key);
+        return (
+          <div key={card.id} className={cn("wsj-inside-story", i === 0 && "first")} style={tint(teamColor(team))}>
+            {i === 0 && !poster ? <InsideFlag card={card} team={team} /> : null}
+            <Story
+              className={cn(i === 0 ? "primary" : "secondary", poster && "postered")}
+              card={card}
+              team={team}
+              text={text}
+              size={i === 0 ? "xl" : "lg"}
+              cols={poster ? (text.length > 2400 ? 3 : text.length > 700 ? 2 : 1) : cols}
+              art={poster ? "top" : art}
+              poster={poster ? "band" : false}
+              drop
+              dress
+              game={game}
+              inset={game ? null : <StoryNames card={card} />}
+            />
+            {game || (isSingleGameRecap(card) && card.recapGame) ? (
+              <RecapBox card={card} game={game ?? null} compact />
+            ) : null}
+          </div>
+        );
+      })}
+      <BriefGrid
+        cards={briefs}
+        title="In brief"
+        folios={folios}
+        here={here}
+        onTurn={onTurn}
+        crestFor={(c) => {
+          const t = teamForCard(teams, c);
+          return t?.snap.logo || t?.detail?.logo;
+        }}
+        colorFor={(c) => teamColor(teamForCard(teams, c))}
+      />
+      {notebooks.map((team) => (
+        <StatPoster key={team.fav.key} team={team} layout="band" />
+      ))}
+    </div>
+  );
+}
+
+/** The inside page's flag: the club's crest and colors over the lead story. */
+function InsideFlag({ card, team }: { card: GameWrapCard; team: TeamInfobox | null }) {
+  const logo = team?.snap.logo || team?.detail?.logo || null;
+  return (
+    <header className="wsj-inside-flag">
+      {logo ? <img src={logo} alt="" aria-hidden="true" /> : null}
+      <span>{team?.fav.shortName || card.teamName || card.sportLabel}</span>
+      <em>{[card.sportLabel, team ? clubRecord(team) : null, team?.snap.standing].filter(Boolean).join(" · ")}</em>
+    </header>
+  );
+}
+
+const SubjectsContext = createContext<Record<string, PlayerFile[]>>({});
+
+/**
+ * The players the story is about — face, position, season line — boxed into the
+ * story's columns when no box score runs. One name to a row, so it holds its
+ * type at any count.
+ */
+function StoryNames({ card }: { card: GameWrapCard }) {
+  const files = useContext(SubjectsContext)[card.id] ?? [];
+  const stats = card.stats.slice(0, 6);
+  if (!files.length && !stats.length) return null;
+  return (
+    <aside className="wsj-story-facts" aria-label="In this story">
+      {stats.length ? (
+        <dl>
+          {stats.map((s) => (
+            <div key={`${s.label}-${s.value}`}>
+              <dd>{s.value}</dd>
+              <dt>{s.label}</dt>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+      {files.length ? (
+        <section className="tt-files">
+          <h4 className="tt-files-h">In this story</h4>
+          <ul>
+            {files.map((f) => (
+              <li key={f.href}>
+                <span className="tt-files-face">
+                  {f.headshot ? <img src={f.headshot} alt="" loading="lazy" /> : <b>{initials(f.name
