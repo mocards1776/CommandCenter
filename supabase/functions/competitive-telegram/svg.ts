@@ -111,10 +111,22 @@ export function fitName(
   minSize: number,
   weight = 700,
 ): { lines: string[]; size: number } {
+  const words = value.trim().split(/\s+/).filter(Boolean).length;
+  const readable = Math.max(minSize, Math.min(maxSize, words >= 3 ? 19 : 16));
+  for (let size = maxSize; size >= readable; size--) {
+    if (estimateTextWidth(value, size, weight) <= maxWidth) {
+      return { lines: [value], size };
+    }
+  }
   for (let size = maxSize; size >= minSize; size--) {
     const lines = wrapTwoLines(value, maxWidth, size, weight);
-    if (lines.every((line) => estimateTextWidth(line, size, weight) <= maxWidth)) {
+    if (lines.length === 2 && lines.every((line) => estimateTextWidth(line, size, weight) <= maxWidth)) {
       return { lines, size };
+    }
+  }
+  for (let size = readable - 1; size >= minSize; size--) {
+    if (estimateTextWidth(value, size, weight) <= maxWidth) {
+      return { lines: [value], size };
     }
   }
   return { lines: wrapTwoLines(value, maxWidth, minSize, weight), size: minSize };
@@ -311,10 +323,11 @@ function affiliationPies(slices: readonly AffiliationSlice[], y: number): string
  */
 function footerParties(label: string, cx: number, y: number, maxWidth: number): string {
   if (!label) return "";
-  if (estimateTextWidth(label, 12, 400) <= maxWidth) {
+  const plus = label.indexOf(" + ");
+  const oneLine = estimateTextWidth(label, 12, 400) <= maxWidth * 0.92 && label.length <= 26;
+  if (oneLine) {
     return text(label, cx, y, { size: 12, fill: MUTED, anchor: "middle" });
   }
-  const plus = label.indexOf(" + ");
   if (plus > 0) {
     let left = label.slice(0, plus);
     const right = label.slice(plus + 3);
