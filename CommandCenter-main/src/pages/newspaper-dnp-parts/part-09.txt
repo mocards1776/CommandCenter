@@ -1,0 +1,235 @@
+!== pointer);
+  const underLead = rest.slice(0, cfb || mlb ? 2 : 1);
+  const railSeconds = rest.slice(underLead.length, underLead.length + (cfb || mlb ? 1 : 3));
+  const more = rest.slice(underLead.length + railSeconds.length, underLead.length + railSeconds.length + (cfb || mlb ? 3 : 5));
+  const leadGame = lead ? gameForCard(lead, recent, page.clubs) : null;
+  const recapsFolio = deskFolio(page, "recaps", `${page.section}2`);
+  const crestFor = (card: GameWrapCard) =>
+    leagueClubs.find((c) => c.short && card.teamName?.toLowerCase().includes(c.short.toLowerCase()))?.logo ?? null;
+  const frontStrips = strips.slice(0, cfb || mlb ? 1 : 2).map((strip) => ({
+    ...strip,
+    games: strip.games.slice(0, cfb ? 12 : mlb ? 8 : 10),
+  }));
+  const railGames = frontStrips.flatMap((s) => s.games);
+  const favIds = new Set(leagueClubs.filter((c) => c.favorite).map((c) => c.id));
+  const mine = (row: { id: string; name: string }) => favIds.has(row.id);
+  const mlbPost =
+    mlb && Boolean(playoffs?.active || playoffs?.rounds.some((round) => round.series.length));
+  const tables = mlbPost ? [] : rankStandings(standings).slice(0, 2);
+  const stripIds = new Set(frontStrips.flatMap((strip) => strip.games.flatMap((g) => boxGameKeys(g))));
+  const leadKeys = new Set(leadGame ? boxGameKeys(leadGame) : []);
+  const otherScores = recent.filter((g) => {
+    const keys = boxGameKeys(g);
+    return keys.length > 0 && keys.every((key) => !leadKeys.has(key) && !stripIds.has(key));
+  });
+  const fixtures = (board?.slate ?? []).filter((g) => !g.final && !g.live);
+  const printableLeaders = leaders.filter(leaderGroupHasValidData).slice(0, 4);
+  const gameOf = (card: GameWrapCard) => gameForCard(card, recent, page.clubs);
+
+  return (
+    <div className="tt-section-front">
+      {lead ? (
+        <div className={cn("tt-front-grid", (underLead.length || railSeconds.length || railGames.length) && "with-side")}>
+          <div className="tt-front-lead">
+            {pointer ? (
+              <p className="tt-section-pointer">
+                <button type="button" className="wsj-a" onClick={() => onTurn("A1")}>
+                  {a1PointerLine(pointer)}, page A1
+                </button>
+              </p>
+            ) : null}
+            <Story
+              className="lead"
+              card={lead}
+              text={splitStoryCopy(cardCopy(lead), 640).teaser}
+              size="xl"
+              cols={1}
+              art="top"
+              drop
+              readOn
+              chrome={false}
+              jump={folios[lead.id] && folios[lead.id] !== page.folio ? folios[lead.id] : undefined}
+              onTurn={onTurn}
+            />
+            {leadGame && !isSingleGameRecap(lead) ? (
+              <div className="tt-front-banner">
+                <ScoreMast game={leadGame} />
+                <Linescore game={leadGame} compact />
+              </div>
+            ) : null}
+            {underLead.length ? (
+              <div className="tt-front-under">
+                {underLead.map((card, i) => (
+                  <div key={card.id} {...(i === 0 ? { "data-tt-keep": "" } : { "data-tt-flow": "" })}>
+                    <Story
+                      card={card}
+                      text={
+                        recapDek(card, 4) ||
+                        wrapBriefCopy(card, 4) ||
+                        gameOf(card)?.recap?.blurb ||
+                        recapDek(card, 2)
+                      }
+                      size="md"
+                      art={i === 0 && card.photo ? "top" : "none"}
+                      readOn
+                      chrome={false}
+                      jump={folios[card.id] && folios[card.id] !== page.folio ? folios[card.id] : undefined}
+                      onTurn={onTurn}
+                    />
+                  </div>
+                ))}
+              </div>
+            ) : football && !cfb && fixtures.length ? (
+              <section className="tt-front-under" aria-label="This week">
+                <h3 className="wsj-band-title">
+                  {board?.slateWeekNumber ? `Week ${board.slateWeekNumber}` : "This week"} <em>kickoffs</em>
+                </h3>
+                <div className="tt-slate-list cols-2">
+                  {fixtures.slice(0, 6).map((g) => (
+                    <SlateLine key={g.id} game={g} />
+                  ))}
+                </div>
+              </section>
+            ) : null}
+          </div>
+          <div className="tt-front-side">
+            {railSeconds.length ? (
+              <div className="wsj-sport-seconds" data-tt-flow="">
+                {railSeconds.map((card) => (
+                  <Story
+                    key={card.id}
+                    card={card}
+                    text={recapDek(card, 3)}
+                    size="md"
+                    art="top"
+                    readOn
+                    chrome={false}
+                    jump={folios[card.id] && folios[card.id] !== page.folio ? folios[card.id] : undefined}
+                    onTurn={onTurn}
+                  />
+                ))}
+              </div>
+            ) : null}
+            {frontStrips.length ? (
+              <div className="tt-front-rails">
+                {frontStrips.map((strip) => (
+                  <section className="tt-front-rail" aria-label={strip.title} key={strip.title}>
+                    <h3 className="wsj-band-title">
+                      {strip.title}
+                      <button type="button" className="tt-band-link" onClick={() => onTurn(recapsFolio)}>
+                        Recaps, page {recapsFolio} →
+                      </button>
+                    </h3>
+                    <ScoreStrip
+                      games={strip.games}
+                      onOpen={(g) => {
+                        const card = stampBoardCard(g, page.clubs);
+                        if (card) open({ card, game: g });
+                        else onTurn(recapsFolio);
+                      }}
+                    />
+                  </section>
+                ))}
+              </div>
+            ) : null}
+            {cfb && (poll.length || standings.length) ? (
+              <CfbFill poll={poll} standings={standings} heisman={heisman} compact />
+            ) : null}
+          </div>
+        </div>
+      ) : (
+        <div className={cn("tt-front-grid", (railGames.length || tables.length) && "with-side")} data-tt-keep="">
+          <div className="tt-front-lead">
+            {mlbPost ? (
+              <PlayoffDesk tree={playoffs} />
+            ) : tables[0] ? (
+              <StandingsTable group={tables[0]} mine={mine} />
+            ) : (
+              <p className="wsj-empty">The league wire is quiet. Scores, tables and the slate follow.</p>
+            )}
+          </div>
+          {frontStrips.length || tables.length > 1 ? (
+            <div className="tt-front-side">
+              {frontStrips.length ? (
+                <div className="tt-front-rails">
+                  {frontStrips.map((strip) => (
+                    <section className="tt-front-rail" aria-label={strip.title} key={strip.title}>
+                      <h3 className="wsj-band-title">
+                        {strip.title}
+                        <button type="button" className="tt-band-link" onClick={() => onTurn(recapsFolio)}>
+                          Recaps, page {recapsFolio} →
+                        </button>
+                      </h3>
+                      <ScoreStrip
+                        games={strip.games}
+                        onOpen={(g) => {
+                          const card = stampBoardCard(g, page.clubs);
+                          if (card) open({ card, game: g });
+                          else onTurn(recapsFolio);
+                        }}
+                      />
+                    </section>
+                  ))}
+                </div>
+              ) : null}
+              {tables.slice(1).map((group) => (
+                <StandingsTable key={group.name} group={group} mine={mine} />
+              ))}
+            </div>
+          ) : null}
+        </div>
+      )}
+      {mlbPost && lead ? (
+        <div className="tt-front-fill">
+          <PlayoffDesk tree={playoffs} compact />
+        </div>
+      ) : null}
+      {more.length ? (
+        <div data-tt-flow="">
+          <BriefGrid
+            cards={more}
+            title="Also in this section"
+            folios={folios}
+            here={page.folio}
+            onTurn={onTurn}
+            crestFor={crestFor}
+          />
+        </div>
+      ) : null}
+      {cfb && !lead && (poll.length || standings.length) ? (
+        <div data-tt-flow="">
+          <CfbFill poll={poll} standings={standings} heisman={heisman} />
+        </div>
+      ) : null}
+      {soccer || (mlb && otherScores.length) || (!cfb && !mlb && printableLeaders.length) ? (
+      <div className="tt-front-fill">
+        {mlb && otherScores.length ? (
+          <section className="tt-front-rail" aria-label="Other scores" data-tt-flow="">
+            <h3 className="wsj-band-title">
+              The rest of the postseason
+              <button type="button" className="tt-band-link" onClick={() => onTurn(deskFolio(page, "playoffs", `${page.section}2`))}>
+                Bracket, page {deskFolio(page, "playoffs", `${page.section}2`)} →
+              </button>
+            </h3>
+            <ScoreStrip
+              games={otherScores.slice(0, 8)}
+              onOpen={(g) => {
+                const card = stampBoardCard(g, page.clubs);
+                if (card) open({ card, game: g });
+              }}
+            />
+          </section>
+        ) : null}
+        {soccer ? (
+          <>
+            {lead
+              ? tables.slice(0, 1).map((group) => (
+                  <div key={group.name} data-tt-flow="">
+                    <StandingsTable group={group} mine={mine} />
+                  </div>
+                ))
+              : null}
+            {tables.length > 1 ? (
+              <div data-tt-flow="">
+                {tables.slice(1).map((group) => (
+  
