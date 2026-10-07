@@ -3,12 +3,15 @@
  *   node --experimental-strip-types supabase/functions/competitive-telegram/competitive-telegram.test.ts
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   CARD_HEIGHT,
   CARD_WIDTH,
+  SAMPLE_AS_OF,
   SD30_CAPTION_WHATS_NEW,
   SD30_SAMPLE_BUYERS,
   barWidth,
+  buildCompetitiveCard,
   competitiveCaption,
   formatJustInLine,
   formatCpp,
@@ -25,13 +28,15 @@ import {
   raceSpendTotal,
   sd30SampleCard,
 } from "./card.ts";
-import { parseBuyIds, rowsToBuyers, rowsToJustIn, type AlmanacBuyRow } from "./almanac.ts";
+import { MAX_BUY_IDS, parseBuyIds, rowsToBuyers, rowsToJustIn, type AlmanacBuyRow } from "./almanac.ts";
 import { planCompetitiveSend } from "./send.ts";
 import {
   COMPETITIVE_ALERT_HEIGHT,
   COMPETITIVE_ALERT_WIDTH,
+  GLASS_SHADOW_STD_DEVIATION,
   LOGO_DISPLAY_WIDTH,
   LOGO_X,
+  ORB_BLUR_STD_DEVIATION,
   renderCompetitiveSvg,
 } from "./svg.ts";
 import {
@@ -60,6 +65,18 @@ assert.match(svg, new RegExp(`<image href="data:image/png;base64,aaa" x="${LOGO_
 assert.doesNotMatch(svg, /logo-plate|logoHalo|logo-disc/i);
 assert.doesNotMatch(svg, /letter grade|Grade [A-F]|rating [A-F]|\bHIGH\b/i);
 assert.match(svg, /glassDepth|rgba\(255,255,255/, "liquid-glass panels");
+assert.equal(ORB_BLUR_STD_DEVIATION, 26, "feathered orbs without the 42-blur OOM path");
+assert.ok(ORB_BLUR_STD_DEVIATION > 14 && ORB_BLUR_STD_DEVIATION < 42);
+assert.match(svg, new RegExp(`stdDeviation="${ORB_BLUR_STD_DEVIATION}"`));
+assert.doesNotMatch(svg, /stdDeviation="42"/);
+assert.ok(GLASS_SHADOW_STD_DEVIATION <= 10, "glass shadow stays isolate-safe");
+{
+  const pngSrc = readFileSync(new URL("./png.ts", import.meta.url), "utf8");
+  assert.match(pngSrc, /PNG_FIT_TO_WIDTH = 900/);
+  assert.match(pngSrc, /fitTo: \{ mode: "width", value: PNG_FIT_TO_WIDTH \}/);
+}
+assert.match(svg, />added</, "Just In says added for net-new load-batch buys");
+assert.doesNotMatch(svg, />updated</);
 
 const fogle = SD30_SAMPLE_BUYERS[0]!;
 const stinnett = SD30_SAMPLE_BUYERS[1]!;
@@ -258,6 +275,12 @@ function almanacRow(partial: Partial<AlmanacBuyRow> & Pick<AlmanacBuyRow, "id" |
   assert.equal(skipped.ok && skipped.skipped, true);
   const noSlug = await planCompetitiveSend({ action: "send", buy_ids: ["1"] }, { env: emptyEnv });
   assert.equal(noSlug.ok, false);
+  const tooMany = await planCompetitiveSend(
+    { action: "send", race_slug: "mo-sd30", buy_ids: Array.from({ length: MAX_BUY_IDS + 1 }, (_, i) => String(i)) },
+    { env: emptyEnv },
+  );
+  assert.equal(tooMany.ok, false);
+  assert.equal(tooMany.ok === false && tooMany.status, 400);
 }
 
 {
@@ -294,6 +317,58 @@ function almanacRow(partial: Partial<AlmanacBuyRow> & Pick<AlmanacBuyRow, "id" |
   assert.match(sendCaption, /DMA spend: Dem \$/);
   assert.equal(plan.buy_ids.length, 2);
   assert.equal(rowsToJustIn(batch).length, 2);
+}
+
+{
+  const multi = [
+    almanacRow({
+      id: "fogle-kytv",
+      sponsor: "Fogle for Missouri",
+      spend: 20000,
+      grp: 200,
+      affiliation: "Betsy Fogle",
+      station: "KYTV",
+      market: "Springfield",
+    }),
+    almanacRow({
+      id: "fogle-kspr",
+      sponsor: "Fogle for Missouri",
+      spend: 12300,
+      grp: 158.9,
+      affiliation: "Betsy Fogle",
+      station: "KSPR",
+      market: "Springfield",
+    }),
+  ];
+  const just = rowsToJustIn(multi);
+  assert.equal(just.length, 1);
+  assert.equal(just[0]!.amount, 32300);
+  assert.equal(just[0]!.grp, 358.9);
+  assert.equal(just[0]!.station, "Springfield DMA");
+  assert.equal(just[0]!.sponsor, "Betsy Fogle");
+  const dmaSvg = renderCompetitiveSvg(buildCompetitiveCard({
+    slug: "mo-sd30",
+    justIn: just,
+    buyers: SD30_SAMPLE_BUYERS.map((row) => ({ ...row })),
+    asOf: SAMPLE_AS_OF,
+    market: "Springfield",
+  }));
+  assert.match(dmaSvg, /Springfield DMA/);
+  assert.doesNotMatch(dmaSvg, />KYTV<|>KSPR</);
+
+  const single = rowsToJustIn([
+    almanacRow({
+      id: "fogle-only",
+      sponsor: "Fogle for Missouri",
+      spend: 32300,
+      grp: 358.9,
+      affiliation: "Betsy Fogle",
+      station: "KYTV",
+      market: "Springfield",
+    }),
+  ]);
+  assert.equal(single.length, 1);
+  assert.equal(single[0]!.station, "KYTV");
 }
 
 {

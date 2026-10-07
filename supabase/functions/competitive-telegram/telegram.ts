@@ -2,8 +2,8 @@
  * Competitive graphic for @ThompsonCompetitive_bot.
  *
  * sendPhoto is the path Josh wants (same as sports-finals). Telegram
- * recompresses photos; a high-quality JPEG we encode at full 1080×1350
- * survives that better than a PNG. Never use Times browser screenshots.
+ * recompresses photos; a high-quality JPEG we encode from the fitTo-900
+ * raster survives that better than a PNG. Never use Times browser screenshots.
  */
 export const TELEGRAM_GRAPHIC_METHOD = "sendPhoto";
 /** Highest practical JPEG quality before Telegram’s own photo recompress. */

@@ -19,6 +19,7 @@ import {
 import {
   almanacCredentials,
   buyersFromTotals,
+  MAX_BUY_IDS,
   parseBuyersPayload,
   parseBuyIds,
   parseJustInPayload,
@@ -45,6 +46,9 @@ export async function planCompetitiveSend(
   const buyIds = parseBuyIds(body.buy_ids);
   if (!buyIds.length) {
     return { ok: true, skipped: true, reason: "empty buy_ids", race_slug: raceSlug };
+  }
+  if (buyIds.length > MAX_BUY_IDS) {
+    return { ok: false, error: `buy_ids exceeds ${MAX_BUY_IDS}`, status: 400 };
   }
 
   const payloadJustIn = parseJustInPayload(body.just_in);

@@ -21,6 +21,8 @@ import {
 
 export const ALMANAC_DEFAULT_URL = "https://sdixnhobyzxfimubxspi.supabase.co";
 export const MAX_JUST_IN_TILES = 2;
+/** Light isolate guard — Almanac load batches are small; reject absurd payloads. */
+export const MAX_BUY_IDS = 200;
 
 export type EnvGet = { get(name: string): string | undefined };
 
@@ -167,14 +169,17 @@ export function rowsToBuyers(rows: readonly AlmanacBuyRow[]): BuyerRow[] {
 
 export function rowsToJustIn(rows: readonly AlmanacBuyRow[], maxTiles = MAX_JUST_IN_TILES): JustInBuy[] {
   const groups = new Map<string, JustInBuy>();
+  const stationsByKey = new Map<string, Set<string>>();
   for (const row of rows) {
     const media = displayMedia(row.media);
     const key = `${justInSponsorName(row.sponsor)}|${row.market}|${media}`;
+    const stations = stationsByKey.get(key) ?? new Set<string>();
+    if (row.station) stations.add(row.station);
+    stationsByKey.set(key, stations);
     const existing = groups.get(key);
     if (existing) {
       existing.amount += row.spend;
       existing.grp += row.grp;
-      if (row.spend > 0) existing.station = row.station;
       continue;
     }
     groups.set(key, {
@@ -188,6 +193,12 @@ export function rowsToJustIn(rows: readonly AlmanacBuyRow[], maxTiles = MAX_JUST
       color: colorForSponsor(row),
       flightStart: row.flightStart,
     });
+  }
+  for (const [key, buy] of groups) {
+    const stations = stationsByKey.get(key);
+    if (stations && stations.size > 1) {
+      buy.station = `${buy.market} DMA`;
+    }
   }
   return [...groups.values()].sort((a, b) => b.amount - a.amount).slice(0, maxTiles);
 }

@@ -232,24 +232,31 @@ function spendTotalsStrip(slices: readonly AffiliationSlice[], race: number, y: 
   ].join("");
 }
 
+/** Mid-weight orb blur. 42 OOMs isolates (546); live hotfix 14 looked hard-edged. */
+export const ORB_BLUR_STD_DEVIATION = 26;
+/** Light glass shadow — the std=18 drop-shadow was part of the isolate OOM. */
+export const GLASS_SHADOW_STD_DEVIATION = 8;
+
 function field(): string {
   return `
   <rect width="${W}" height="${H}" fill="${CREAM}"/>
-  <ellipse filter="url(#orb)" cx="220" cy="280" rx="260" ry="180" fill="#7EB6FF" opacity="0.42"/>
-  <ellipse filter="url(#orb)" cx="880" cy="340" rx="240" ry="170" fill="#FF8A80" opacity="0.34"/>
-  <ellipse filter="url(#orb)" cx="540" cy="980" rx="320" ry="200" fill="#C4B5FD" opacity="0.3"/>
-  <ellipse filter="url(#orb)" cx="160" cy="1100" rx="180" ry="140" fill="#FFFFFF" opacity="0.35"/>
+  <ellipse filter="url(#orb)" cx="200" cy="260" rx="300" ry="210" fill="#7EB6FF" opacity="0.34"/>
+  <ellipse filter="url(#orb)" cx="900" cy="320" rx="280" ry="200" fill="#FF8A80" opacity="0.26"/>
+  <ellipse filter="url(#orb)" cx="540" cy="1000" rx="360" ry="230" fill="#C4B5FD" opacity="0.22"/>
+  <ellipse filter="url(#orb)" cx="140" cy="1120" rx="210" ry="160" fill="#FFFFFF" opacity="0.26"/>
 `;
 }
 
 function defs(): string {
+  // Soft depth without the 42-blur + heavy drop-shadow path that 546'd isolates.
+  // Filter region is wide enough that std=26 does not clip into a hard halo.
   return `
   <defs>
-    <filter id="orb" x="-40%" y="-40%" width="180%" height="180%">
-      <feGaussianBlur stdDeviation="42"/>
+    <filter id="orb" x="-45%" y="-45%" width="190%" height="190%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="${ORB_BLUR_STD_DEVIATION}"/>
     </filter>
-    <filter id="glassDepth" x="-15%" y="-20%" width="130%" height="160%">
-      <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#1A1814" flood-opacity="0.12"/>
+    <filter id="glassDepth" x="-8%" y="-12%" width="116%" height="130%">
+      <feDropShadow dx="0" dy="6" stdDeviation="${GLASS_SHADOW_STD_DEVIATION}" flood-color="#1A1814" flood-opacity="0.10"/>
     </filter>
   </defs>`;
 }
