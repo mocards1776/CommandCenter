@@ -2,51 +2,16 @@ import { Link } from "react-router-dom";
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import MlbBaseDiamond from "@/components/sports/MlbBaseDiamond";
-import MlbHeatGrid from "@/components/sports/MlbHeatGrid";
+import MlbPitchZone from "@/components/sports/MlbPitchZone";
 import PlayerHeadshot from "@/components/sports/PlayerHeadshot";
 import {
   fetchMlbLiveMatchupExtras,
   type MlbBoxscore,
   type MlbLivePlayerCard,
   type MlbLiveSituation,
-  type MlbPitchPlot,
 } from "@/lib/mlb";
 import { fetchMlbBatterHeatZones, heatZoneGrid } from "@/lib/mlb-pbp";
 import { cn } from "@/lib/utils";
-
-function pitchFill(call: MlbPitchPlot["call"]): string {
-  if (call === "B") return "bg-[#3b82f6] text-white";
-  if (call === "S") return "bg-[#ef4444] text-white";
-  if (call === "X") return "bg-[#22c55e] text-[#082014]";
-  return "bg-white/20 text-white";
-}
-
-function PitchDots({ pitches }: { pitches: MlbPitchPlot[] }) {
-  if (!pitches.length) return null;
-  return (
-    <div className="flex max-w-[16rem] flex-wrap items-center justify-center gap-1.5">
-      {pitches.map((p) => (
-        <span
-          key={p.number}
-          className={cn(
-            "grid h-6 w-6 place-items-center rounded-full text-[10px] font-bold tabular-nums",
-            pitchFill(p.call),
-          )}
-          title={[
-            `#${p.number}`,
-            p.pitchType,
-            p.speed != null ? `${Math.round(p.speed)} mph` : null,
-            p.callLabel,
-          ]
-            .filter(Boolean)
-            .join(" · ")}
-        >
-          {p.number}
-        </span>
-      ))}
-    </div>
-  );
-}
 
 function SideCard({
   card,
@@ -114,7 +79,7 @@ function SideCard({
   );
 }
 
-/** ESPN-style live pitcher / heat zone / batter panel. */
+/** ESPN-style live pitcher / strike zone (heat + pitch dots) / batter panel. */
 export default function MlbLiveMatchupPanel({
   game,
   situation,
@@ -161,10 +126,11 @@ export default function MlbLiveMatchupPanel({
         <SideCard card={pitcher} role="pitcher" align="left" />
 
         <div className="flex flex-col items-center gap-2">
-          <MlbHeatGrid
+          <MlbPitchZone
             batterId={batter?.id ?? null}
             cells={grid}
             pending={zones.isPending && !zones.data}
+            pitches={situation.pitches}
           />
           <p className="numeral text-[15px] font-semibold tracking-wide text-cream">
             {situation.balls}-{situation.strikes}
@@ -178,7 +144,6 @@ export default function MlbLiveMatchupPanel({
             onSecond={situation.onSecond}
             onThird={situation.onThird}
           />
-          <PitchDots pitches={situation.pitches} />
           {vsBits.length > 0 ? (
             <p className="max-w-[16rem] text-center text-[10px] leading-snug text-[#8b93a7]">
               {vsBits.join(" · ")}
