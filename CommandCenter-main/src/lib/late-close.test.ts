@@ -84,6 +84,7 @@ assert(
 assert(!isLateAndClose("cfb", game({ awayScore: 7, homeScore: 0, detail: "", period: null })), "CFB unknown quarter");
 
 assert(!isLateAndClose("mlb", game({ awayScore: 1, homeScore: 0, detail: "Top 4th", period: 4 })), "MLB 1-run in the 4th");
+assert(!isLateAndClose("mlb", game({ awayScore: 0, homeScore: 0, detail: "Top 1st", period: 1 })), "MLB 0-0 in the 1st is not late");
 assert(isLateAndClose("mlb", game({ awayScore: 2, homeScore: 1, detail: "Bot 8th", period: 8 })), "MLB 1-run in the 8th");
 assert(isLateAndClose("mlb", game({ awayScore: 4, homeScore: 2, detail: "Top 7th", period: 7 })), "MLB 2-run in the 7th");
 assert(!isLateAndClose("mlb", game({ awayScore: 5, homeScore: 2, detail: "Bot 8th", period: 8 })), "MLB 3-run in the 8th");
@@ -222,6 +223,27 @@ const first = liveDrama({
 });
 assert(first.score >= 68 && first.hot, "the heat line itself still marks a one-goal first period");
 assert(!isLateAndClose("nhl", earlyNhl), "the alert gate does not");
+
+const mlbFirstTie = liveDrama({
+  sport: "mlb",
+  live: true,
+  final: false,
+  awayScore: 0,
+  homeScore: 0,
+  detail: "Top 1st",
+  period: 1,
+});
+assert(mlbFirstTie.score < 68 && !mlbFirstTie.hot, `early MLB tie is ${mlbFirstTie.score}, under the heat line`);
+assert(
+  !heatCrossHot({
+    overLine: mlbFirstTie.hot,
+    lateAndClose: isLateAndClose("mlb", game({ awayScore: 0, homeScore: 0, detail: "Top 1st", period: 1 })),
+    window: clockWindow("mlb", game({ awayScore: 0, homeScore: 0, detail: "Top 1st", period: 1 })),
+    prevHot: false,
+    scoresKnown: true,
+  }),
+  "early MLB tie does not raise a heat alert",
+);
 
 const card: PushGame = {
   sport: "nhl",

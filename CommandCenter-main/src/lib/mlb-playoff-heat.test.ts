@@ -9,9 +9,16 @@
  * (soccer 20 + upcoming 12 + Premier League 10). NFL/NHL upcoming is 12.
  */
 import {
+  MLB_ELIM_EARLY,
+  MLB_ELIM_LIVE,
   MLB_PLAYOFF_LIVE_NUDGE,
   MLB_PLAYOFF_SERIES_HEAT,
+  MLB_TIE_CREDIT,
+  MLB_WTA_LIVE,
   mlbBoardMonth,
+  mlbCloseGameScale,
+  mlbEliminationHeat,
+  mlbLiveMarginHeat,
   mlbPostseasonHeat,
 } from "./mlb-playoff-heat.ts";
 
@@ -100,6 +107,55 @@ assert.ok(
   "live nudge must stay a small fraction of the series weight",
 );
 assert.ok(MLB_PLAYOFF_LIVE_NUDGE > 0, "live still gets an October nudge");
+
+assert.ok(mlbCloseGameScale(1, false) < 0.25, "1st-inning close credit is a sliver");
+assert.ok(mlbCloseGameScale(5, false) > mlbCloseGameScale(1, false), "5th grows past the 1st");
+assert.ok(mlbCloseGameScale(5, false) < mlbCloseGameScale(8, false), "8th is full close credit");
+assert.equal(mlbCloseGameScale(8, false), 1);
+assert.equal(mlbCloseGameScale(11, true), 1);
+
+const t1Tie = mlbLiveMarginHeat(0, 1, false);
+assert.equal(t1Tie.reason, "Tied");
+assert.ok(t1Tie.points < MLB_TIE_CREDIT / 4, `early tie is ${t1Tie.points}, not full ${MLB_TIE_CREDIT}`);
+assert.equal(mlbLiveMarginHeat(0, 8, false).points, MLB_TIE_CREDIT);
+
+const earlyElim = mlbEliminationHeat({
+  seriesLine: "LAD leads 2-1 · Game 4 of 5",
+  live: true,
+  final: false,
+  inning: 1,
+  blowout: false,
+});
+const midElim = mlbEliminationHeat({
+  seriesLine: "CWS leads 2-0 · Game 3 of 5",
+  live: true,
+  final: false,
+  inning: 5,
+  blowout: false,
+});
+assert.equal(earlyElim?.points, MLB_ELIM_EARLY);
+assert.equal(midElim?.points, MLB_ELIM_LIVE);
+assert.ok((midElim?.points ?? 0) > (earlyElim?.points ?? 0), "mid-game elimination outranks the 1st");
+assert.equal(
+  mlbEliminationHeat({
+    seriesLine: "Series tied 2-2 · Game 5 of 5",
+    live: true,
+    final: false,
+    inning: 8,
+    blowout: false,
+  })?.points,
+  MLB_WTA_LIVE,
+);
+assert.ok(
+  mlbEliminationHeat({
+    seriesLine: "CWS leads 2-0 · Game 3 of 5",
+    live: true,
+    final: false,
+    inning: 8,
+    blowout: true,
+  }) == null,
+  "a blowout does not get the elimination bump",
+);
 
 console.log("mlb-playoff-heat: ok");
 console.log(

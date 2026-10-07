@@ -28,6 +28,7 @@ import { applyLightningLogos, isLightningSide, lightningLogoDataUri } from "./pr
 import {
   mlbPostseasonHeat,
   MLB_PLAYOFF_SERIES_HEAT,
+  scoreGameInterest,
   scoreNhlRuwtGame,
   scoreRuwtGame,
   rankRuwtGames,
@@ -172,6 +173,90 @@ assert.ok(!nhlThirdTie.reasons.includes("One-goal game"));
 assert.ok(nhlThirdTie.score > nhlThirdGoal.score);
 assert.equal(nhlOt.score, 92, "OT tie matches the top late bonus");
 assert.ok(nhlOt.reasons.includes("Overtime"));
+
+function mlbLive(partial: {
+  id: string;
+  awayId: number;
+  homeId: number;
+  awayScore: number;
+  homeScore: number;
+  inning: string;
+  seriesLine: string;
+}): Parameters<typeof scoreGameInterest>[0] {
+  return {
+    id: partial.id,
+    live: true,
+    final: false,
+    inning: partial.inning,
+    officialDate: "2026-10-07",
+    seriesLine: partial.seriesLine,
+    away: {
+      teamId: partial.awayId,
+      name: "Away",
+      abbrev: "AWY",
+      score: partial.awayScore,
+      record: "2-1",
+      probablePitcher: null,
+      probablePitcherId: null,
+    },
+    home: {
+      teamId: partial.homeId,
+      name: "Home",
+      abbrev: "HME",
+      score: partial.homeScore,
+      record: "1-2",
+      probablePitcher: null,
+      probablePitcherId: null,
+    },
+  };
+}
+
+const ladAtl = mlbLive({
+  id: "lad-atl",
+  awayId: 119,
+  homeId: 144,
+  awayScore: 0,
+  homeScore: 0,
+  inning: "Top 1st",
+  seriesLine: "LAD leads 2-1 · Game 4 of 5",
+});
+const cleCws = mlbLive({
+  id: "cle-cws",
+  awayId: 114,
+  homeId: 145,
+  awayScore: 5,
+  homeScore: 2,
+  inning: "Top 5th",
+  seriesLine: "CWS leads 2-0 · Game 3 of 5",
+});
+const lateTie = mlbLive({
+  id: "late-tie",
+  awayId: 119,
+  homeId: 144,
+  awayScore: 3,
+  homeScore: 3,
+  inning: "Top 8th",
+  seriesLine: "LAD leads 2-1 · Game 4 of 5",
+});
+const raceCtx = {
+  teamInterest: {},
+  watchPlayerIds: new Set<number>(),
+  watchManagerIds: new Set<number>(),
+  playoffOddsByTeam: { 119: 40, 144: 35, 114: 38, 145: 30 },
+};
+const ladHeat = scoreRuwtGame(ladAtl, raceCtx);
+const cleHeat = scoreRuwtGame(cleCws, raceCtx);
+const lateHeat = scoreRuwtGame(lateTie, raceCtx);
+assert.equal(ladHeat.score, 76, "0-0 T1 elimination stays near a playoff baseline");
+assert.equal(cleHeat.score, 88, "5-2 T5 elimination outranks the 0-0 1st");
+assert.equal(lateHeat.score, 130, "T8 tie elimination is the hottest");
+assert.ok(cleHeat.score > ladHeat.score);
+assert.ok(lateHeat.score > cleHeat.score);
+assert.ok(ladHeat.reasons.includes("Tied") && ladHeat.reasons.includes("Elimination"));
+const mlbLiveRanked = rankRuwtGames([ladAtl, cleCws, lateTie], raceCtx, 3);
+assert.equal(mlbLiveRanked[0]!.id, "late-tie");
+assert.equal(mlbLiveRanked[1]!.id, "cle-cws");
+assert.equal(mlbLiveRanked[2]!.id, "lad-atl");
 
 const ranked = rankRuwtGames(
   [mlbGame({ id: "100", teamId: 143 }), mlbGame({ id: "200", teamId: 138, oppId: 112 })],

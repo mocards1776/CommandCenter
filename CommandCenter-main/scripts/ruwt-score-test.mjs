@@ -19,6 +19,7 @@ const server = await createServer({
 
 try {
   await server.ssrLoadModule("/src/lib/cfb-decided-live.test.ts");
+  await server.ssrLoadModule("/src/lib/mlb-inning-heat.test.ts");
 } finally {
   await server.close();
 }

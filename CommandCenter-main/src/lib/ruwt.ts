@@ -356,7 +356,7 @@ export function scoreRuwtGame(g: MlbScoreGame, ctx?: RuwtScoreContext): MlbGameI
   for (const r of reasons) {
     if (!unique.includes(r)) unique.push(r);
   }
-  return { score: Math.max(0, score), reasons: unique.slice(0, 5) };
+  return { score: Math.max(0, score), reasons: unique.slice(0, 6) };
 }
 
 export function rankRuwtGames(

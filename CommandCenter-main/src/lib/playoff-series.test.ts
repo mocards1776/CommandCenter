@@ -5,6 +5,7 @@
 import {
   formatPlayoffSeriesLine,
   mergeSeriesLines,
+  playoffElimination,
   seriesLineFromEspn,
   seriesLineFromMlb,
 } from "./playoff-series.ts";
@@ -122,5 +123,41 @@ assertEqual(
   "an existing lead is kept",
 );
 assertEqual(mergeSeriesLines(null, null), null, "nothing to show");
+
+assertEqual(
+  playoffElimination({ seriesLine: "LAD leads 2-1 · Game 4 of 5" })?.facing,
+  1,
+  "ATL is out with a loss in a 2-1 best-of-five",
+);
+assertEqual(
+  playoffElimination({ seriesLine: "CWS leads 2-0 · Game 3 of 5" })?.facing,
+  1,
+  "CLE is out with a loss in a 2-0 best-of-five",
+);
+assertEqual(
+  playoffElimination({ seriesLine: "Series tied 2-2 · Game 5 of 5" })?.facing,
+  2,
+  "2-2 in a best of five is winner-take-all",
+);
+assertEqual(
+  playoffElimination({ seriesLine: "Series tied 1-1 · Game 3 of 5" }),
+  null,
+  "1-1 in a best of five is not elimination yet",
+);
+assertEqual(
+  playoffElimination({ seriesLine: "SEA leads 3-2 · Game 6 of 7" })?.facing,
+  1,
+  "a 3-2 best-of-seven is one-sided elimination",
+);
+assertEqual(
+  playoffElimination({ seriesLine: "Game 7 of 7" })?.facing,
+  2,
+  "the last scheduled game is winner-take-all when the lead is missing",
+);
+assertEqual(
+  playoffElimination({ seriesLine: "Game 1 of 5" }),
+  null,
+  "game 1 with no lead is not elimination",
+);
 
 console.log("playoff-series.test.ts ok");

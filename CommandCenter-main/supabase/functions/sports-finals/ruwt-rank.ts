@@ -2,7 +2,8 @@
  * Deno port of RUWT Today's Top scorers.
  *
  * Source of truth (do not rewrite weights):
- *   CommandCenter-main/src/lib/mlb-playoff-heat.ts  mlbPostseasonHeat
+ *   CommandCenter-main/src/lib/mlb-playoff-heat.ts  mlbPostseasonHeat / inning ladder
+ *   CommandCenter-main/src/lib/playoff-series.ts    playoffElimination
  *   CommandCenter-main/src/lib/mlb.ts               scoreGameInterest
  *   CommandCenter-main/src/lib/ruwt.ts              scoreRuwtGame / rankRuwtGames
  *   CommandCenter-main/src/lib/nfl.ts               scoreNflRuwtGame / rankNflRuwtGames
@@ -17,8 +18,20 @@
  * sports_push_game_state.drama_score.
  */
 
+import { playoffElimination } from "./series.ts";
+
 export const MLB_PLAYOFF_SERIES_HEAT = 54;
 export const MLB_PLAYOFF_LIVE_NUDGE = 4;
+const MLB_TIE_CREDIT = 28;
+const MLB_ONE_RUN_CREDIT = 24;
+const MLB_WITHIN_TWO_CREDIT = 14;
+const MLB_TIGHT_CREDIT = 8;
+const MLB_BLOWOUT_PENALTY = -16;
+const MLB_BLOWOUT_MARGIN = 6;
+const MLB_ELIM_EARLY = 10;
+const MLB_ELIM_LIVE = 22;
+const MLB_WTA_EARLY = 14;
+const MLB_WTA_LIVE = 32;
 const CARDINALS_TEAM_ID = 138;
 
 export const CFB_SEC_INTEREST_FLOOR = 4;
@@ -77,6 +90,7 @@ export type MlbScoreGame = {
   away: MlbScoreSide;
   home: MlbScoreSide;
   situation?: { batter?: { id?: number }; pitcher?: { id?: number } } | null;
+  seriesLine?: string | null;
 };
 
 export type NflScoreSide = {
@@ -216,6 +230,53 @@ function teamInGame(g: MlbScoreGame, teamId: number): boolean {
   return g.away.teamId === teamId || g.home.teamId === teamId;
 }
 
+function mlbInningNumber(label: string | null | undefined): number | null {
+  if (!label) return null;
+  const text = label.toLowerCase();
+  if (/\bextra/.test(text)) return 10;
+  const match = text.match(/\b(\d+)(?:st|nd|rd|th)\b/);
+  if (!match) return null;
+  const inning = Number(match[1]);
+  return Number.isFinite(inning) && inning >= 1 ? inning : null;
+}
+
+function mlbInningIsExtras(label: string | null | undefined, inning: number | null): boolean {
+  if (inning != null && inning >= 10) return true;
+  return /extra|10th|11th|12th|13th|14th|15th|16th|17th|18th/.test((label ?? "").toLowerCase());
+}
+
+function mlbInningIsLate(label: string | null | undefined, inning: number | null): boolean {
+  if (mlbInningIsExtras(label, inning)) return false;
+  if (inning != null && inning >= 7) return true;
+  const text = (label ?? "").toLowerCase();
+  return (
+    /\b(7th|8th|9th)\b/.test(text) ||
+    /mid\s*7|top\s*7|bot\s*7|end\s*7|mid\s*8|top\s*8|bot\s*8|end\s*8|mid\s*9|top\s*9|bot\s*9|end\s*9/.test(
+      text,
+    )
+  );
+}
+
+function mlbCloseGameScale(inning: number | null, extras: boolean): number {
+  if (extras || (inning != null && inning >= 10)) return 1;
+  if (inning == null) return 0.15;
+  if (inning >= 7) return 1;
+  if (inning === 6) return 0.65;
+  if (inning === 5) return 0.45;
+  if (inning === 4) return 0.3;
+  return 0.15;
+}
+
+function mlbMarginHeat(diff: number, scale: number): { points: number; reason: string | null; blowout: boolean } {
+  if (diff >= MLB_BLOWOUT_MARGIN) return { points: MLB_BLOWOUT_PENALTY, reason: "Blowout", blowout: true };
+  if (diff >= 5) return { points: -8, reason: null, blowout: false };
+  if (diff === 0) return { points: Math.round(MLB_TIE_CREDIT * scale), reason: "Tied", blowout: false };
+  if (diff === 1) return { points: Math.round(MLB_ONE_RUN_CREDIT * scale), reason: "One-run game", blowout: false };
+  if (diff === 2) return { points: Math.round(MLB_WITHIN_TWO_CREDIT * scale), reason: "Within two", blowout: false };
+  if (diff === 3) return { points: Math.round(MLB_TIGHT_CREDIT * scale), reason: "Tight", blowout: false };
+  return { points: 0, reason: null, blowout: false };
+}
+
 export function scoreGameInterest(g: MlbScoreGame): { score: number; reasons: string[] } {
   const reasons: string[] = [];
   let score = 0;
@@ -239,35 +300,20 @@ export function scoreGameInterest(g: MlbScoreGame): { score: number; reasons: st
     reasons.push("Cardinals");
   }
 
-  if (diff != null) {
-    if (diff === 0) {
-      score += 28;
-      reasons.push("Tied");
-    } else if (diff === 1) {
-      score += 24;
-      reasons.push("One-run game");
-    } else if (diff === 2) {
-      score += 14;
-      reasons.push("Within two");
-    } else if (diff <= 3) {
-      score += 8;
-      reasons.push("Tight");
-    } else if (diff >= 7) {
-      score -= 16;
-      reasons.push("Blowout");
-    } else if (diff >= 5) {
-      score -= 8;
-    }
+  const inning = mlbInningNumber(g.inning);
+  const extras = mlbInningIsExtras(g.inning, inning);
+  let blowout = false;
+  if (diff != null && (g.live || g.final)) {
+    const margin = mlbMarginHeat(diff, g.live ? mlbCloseGameScale(inning, extras) : 1);
+    score += margin.points;
+    blowout = margin.blowout;
+    if (margin.reason) reasons.push(margin.reason);
   }
 
-  const inn = (g.inning ?? "").toLowerCase();
-  if (/extra|10th|11th|12th|13th|14th|15th/.test(inn)) {
+  if (extras) {
     score += 32;
     reasons.push("Extras");
-  } else if (
-    /\b(7th|8th|9th)\b/.test(inn) ||
-    /mid\s*7|top\s*7|bot\s*7|end\s*7|mid\s*8|top\s*8|bot\s*8|end\s*8|mid\s*9|top\s*9|bot\s*9|end\s*9/.test(inn)
-  ) {
+  } else if (mlbInningIsLate(g.inning, inning)) {
     score += 18;
     reasons.push("Late innings");
   }
@@ -307,7 +353,22 @@ export function scoreGameInterest(g: MlbScoreGame): { score: number; reasons: st
     reasons.push(postseason.reason);
   }
 
-  return { score: Math.max(0, score), reasons: reasons.slice(0, 4) };
+  if (!blowout) {
+    const state = playoffElimination({ seriesLine: g.seriesLine });
+    if (state) {
+      const midLate = g.live && !g.final && inning != null && inning >= 4;
+      score += state.facing === 2
+        ? midLate
+          ? MLB_WTA_LIVE
+          : MLB_WTA_EARLY
+        : midLate
+          ? MLB_ELIM_LIVE
+          : MLB_ELIM_EARLY;
+      reasons.push("Elimination");
+    }
+  }
+
+  return { score: Math.max(0, score), reasons: reasons.slice(0, 6) };
 }
 
 function parseWinPct(record: string | null): number | null {
@@ -423,7 +484,7 @@ export function scoreRuwtGame(g: MlbScoreGame, ctx?: RuwtScoreContext): { score:
   for (const r of reasons) {
     if (!unique.includes(r)) unique.push(r);
   }
-  return { score: Math.max(0, score), reasons: unique.slice(0, 5) };
+  return { score: Math.max(0, score), reasons: unique.slice(0, 6) };
 }
 
 export function rankRuwtGames<T extends MlbScoreGame>(
