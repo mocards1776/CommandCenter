@@ -14,7 +14,8 @@ import { initWasm, Resvg } from "@resvg/resvg-wasm";
 import { cardFromSummary, fetchDaySlot, hydrateFinalCardArt, loadFinalCard, type FinalCard } from "../supabase/functions/sports-finals/card.ts";
 import { whiteSoxGuardiansPlayoffFixture } from "../supabase/functions/sports-finals/mlb-playoff-fixture.ts";
 import { tablesFromStandings } from "../supabase/functions/sports-finals/standings.ts";
-import { renderFinalSvg } from "../supabase/functions/sports-finals/svg.ts";
+import { decideAlbum, teamFromBoardName, type AlbumFavorites } from "../supabase/functions/sports-finals/favorites.ts";
+import { renderFinalPage2Svg, renderFinalSvg } from "../supabase/functions/sports-finals/svg.ts";
 
 function arg(name: string): string | null {
   const i = process.argv.indexOf(`--${name}`);
@@ -399,9 +400,28 @@ if (!card.away.logoData || !card.home.logoData || card.leaders.some((row) => row
   await hydrateFinalCardArt(card);
 }
 
-const svg = renderFinalSvg(card);
+const page = arg("page") === "2" ? 2 : 1;
+const album = decideAlbum(card, demoAlbum(card));
+const svg = page === 2 ? renderFinalPage2Svg(card, album.album ? album : { ...album, album: true }) : renderFinalSvg(card);
 const png = await rasterize(svg);
 const size = svgSize(svg);
+
+function demoAlbum(game: FinalCard): AlbumFavorites {
+  const team =
+    teamFromBoardName(game.home.name, game.sport, game.sport) ??
+    teamFromBoardName(game.away.name, game.sport, game.sport);
+  return {
+    teams: team ? [team] : [],
+    players: game.boxPlayers.slice(0, 2).map((row) => ({
+      sport: game.sport,
+      playerId: row.playerId,
+      playerName: row.name,
+      teamId: null,
+      teamName: null,
+      position: row.position,
+    })),
+  };
+}
 
 await mkdir(path.dirname(outPath), { recursive: true });
 await writeFile(outPath, png);

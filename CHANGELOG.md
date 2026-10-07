@@ -2,6 +2,21 @@
 
 ---
 
+## Finals Telegram: two-page album for favorite games — October 7, 2026
+
+- `@FinalsAndStats_bot` still sends one `sendPhoto` scoreboard card for
+  ordinary finals (RUWT heat, non-favorite games).
+- When the game involves a Command Center favorite team and/or favorite
+  player (`favorite_sports_teams`, `favorite_sports_players`, plus the
+  existing board / `TELEGRAM_FINALS_FAVORITES` team ids), it sends a
+  two-page album (`sendMediaGroup`; falls back to two photos).
+- Page 1 is the current scoreboard card. Page 2 is deeper detail (three
+  stars / key performers / goalies / box leaders) with a featured block
+  for favorited player lines. Team-only favorites still get page 2.
+- Newspaper / Thompson Times / press were not edited. No cream logo discs.
+
+---
+
 ## Reading: split last-12-months charts + iPhone tap — October 6, 2026
 
 - `/reading` (above Tags) now stacks two charts: books finished, then

@@ -94,6 +94,7 @@ export type FinalLeader = {
   teamAbbrev: string;
   name: string;
   line: string;
+  playerId?: string | null;
   /** Caption-only sentence. The graphic still draws `line`. */
   highlight?: string | null;
   highlightScore?: number;
@@ -106,6 +107,7 @@ export type FinalStar = {
   name: string;
   teamAbbrev: string;
   line: string;
+  playerId?: string | null;
   position: string | null;
   sweaterNo: string | null;
   goals: number | null;
@@ -121,6 +123,21 @@ export type FinalPlayer = {
   name: string;
   teamAbbrev: string;
   line: string;
+  playerId?: string | null;
+  photoUrl: string | null;
+  photoData: string | null;
+};
+
+/** Every boxscore athlete — album page 2 matches favorite players from this list. */
+export type FinalBoxPlayer = {
+  playerId: string;
+  name: string;
+  shortName: string;
+  teamAbbrev: string;
+  group: string;
+  groupLabel: string;
+  line: string;
+  position: string | null;
   photoUrl: string | null;
   photoData: string | null;
 };
@@ -129,6 +146,7 @@ export type MlbBoxRow = {
   name: string;
   pos: string;
   cells: string[];
+  playerId?: string | null;
   photoUrl?: string | null;
   note?: string | null;
   record?: string | null;
@@ -183,6 +201,8 @@ export type FinalCard = {
   /** Official NHL Three Stars. Empty until NHL.com posts them. */
   threeStars: FinalStar[];
   goalies: FinalPlayer[];
+  /** Full box athletes for the favorites album gate / page 2. */
+  boxPlayers: FinalBoxPlayer[];
   /** MLB batting + pitching lines. Null for other sports. */
   mlbBox: MlbBox | null;
   winProbability: CfbWinProbPoint[];
@@ -733,6 +753,7 @@ function pickLeaders(raw: Rec, sport: string): FinalLeader[] {
         groupLabel: slot.label,
         teamAbbrev: abbrev,
         name: player,
+        playerId: str(person.id) || null,
         line,
         highlight: hint?.text ?? null,
         highlightScore: hint?.score,
@@ -804,6 +825,7 @@ function pickGoalies(raw: Rec, sport: string): FinalPlayer[] {
         out.push({
           name: player,
           teamAbbrev: abbrev,
+          playerId: str(person.id) || null,
           line,
           photoUrl: headshotHref(person, sport),
           photoData: null,
@@ -855,6 +877,7 @@ function pickMlbSide(raw: Rec, abbrev: string, kind: "batting" | "pitching", spo
           name: player,
           pos: str(rec(row.position).abbreviation) || str(rec(person.position).abbreviation),
           cells,
+          playerId: str(person.id) || null,
           photoUrl: headshotHref(person, sport),
           note: parsed?.role ?? (decisionText ? decisionText.split(/[,\s]/)[0]!.toUpperCase() : null),
           record: parsed?.record ?? null,
@@ -1085,11 +1108,90 @@ function leadersFromMlbBox(box: MlbBox): FinalLeader[] {
   return out;
 }
 
+function boxPlayerLine(group: string, labels: string[], stats: string[]): string {
+  const kind = mlbGroupKind({ name: group, type: group, labels });
+  if (kind === "batting") {
+    const bits = ["H", "HR", "RBI", "R", "AB"]
+      .map((key) => {
+        const value = statCell(labels, stats, key);
+        return value && value !== "0" && value !== "–" ? `${value} ${key}` : null;
+      })
+      .filter(Boolean);
+    if (bits.length) return bits.join(" · ");
+  }
+  if (kind === "pitching") {
+    const bits = ["IP", "H", "ER", "K", "BB"]
+      .map((key) => {
+        const value = statCell(labels, stats, key);
+        return value && value !== "–" ? `${value} ${key}` : null;
+      })
+      .filter(Boolean);
+    if (bits.length) return bits.join(" · ");
+  }
+  if (/skat|forward|defense|scoring/i.test(group)) {
+    const g = statCell(labels, stats, "G", "GOALS");
+    const a = statCell(labels, stats, "A", "ASSISTS");
+    const p = statCell(labels, stats, "P", "PTS", "POINTS");
+    const bits = [g ? `${g} G` : null, a ? `${a} A` : null, p ? `${p} P` : null].filter(Boolean);
+    if (bits.length) return bits.join(" · ");
+  }
+  if (/goal/i.test(group)) {
+    const sv = statCell(labels, stats, "SV", "SAVES", "SVS");
+    const sa = statCell(labels, stats, "SA");
+    const ga = statCell(labels, stats, "GA");
+    const pct = statCell(labels, stats, "SV%");
+    const bits = [
+      sv && sa ? `${sv}/${sa} SV` : sv ? `${sv} SV` : null,
+      ga ? `${ga} GA` : null,
+      pct ? `${pct} SV%` : null,
+    ].filter(Boolean);
+    if (bits.length) return bits.join(" · ");
+  }
+  return leaderLine(group, labels, stats);
+}
+
+export function pickBoxPlayers(raw: unknown, sport: string): FinalBoxPlayer[] {
+  const out: FinalBoxPlayer[] = [];
+  for (const side of arr(rec(rec(raw).boxscore).players)) {
+    const abbrev = str(rec(rec(side).team).abbreviation) || "—";
+    for (const group of arr(rec(side).statistics)) {
+      const block = rec(group);
+      const name = str(block.name).toLowerCase() || str(block.type).toLowerCase();
+      if (!name) continue;
+      const labels = arr(block.labels).map((label) => str(label));
+      for (const athlete of arr(block.athletes)) {
+        const row = rec(athlete);
+        const person = rec(row.athlete);
+        const display = str(person.displayName) || str(person.shortName);
+        const short = str(person.shortName) || display;
+        if (!display) continue;
+        const stats = arr(row.stats).map((stat) => str(stat));
+        const line = boxPlayerLine(name, labels, stats);
+        if (!line) continue;
+        out.push({
+          playerId: str(person.id),
+          name: display,
+          shortName: short,
+          teamAbbrev: abbrev,
+          group: name,
+          groupLabel: titleGroup(str(block.name) || name),
+          line,
+          position: str(rec(person.position).abbreviation) || str(rec(row.position).abbreviation) || null,
+          photoUrl: headshotHref(person, sport),
+          photoData: null,
+        });
+      }
+    }
+  }
+  return out;
+}
+
 export function starsFromLanding(stars: NhlLandingStar[]): FinalStar[] {
   return stars.map((star) => ({
     star: star.star,
     name: star.name,
     teamAbbrev: star.teamAbbrev,
+    playerId: star.nhlPlayerId ? String(star.nhlPlayerId) : null,
     line: starLine(star),
     position: star.position,
     sweaterNo: star.sweaterNo,
@@ -1142,6 +1244,7 @@ export function cardFromSummary(sport: string, eventId: string, raw: unknown): F
   const playoff = mlbPlayoffFromSummary(sport, body, comp);
   const mlbBox = sport === "mlb" ? pickMlbBox(body, away.abbrev, home.abbrev) : null;
   const leaders = pickLeaders(body, sport);
+  const boxPlayers = pickBoxPlayers(body, sport);
   if (sport === "mlb" && mlbBoxHasRows(mlbBox)) {
     const performers = pickMlbPerformers(mlbBox!);
     if (performers.length) leaders.splice(0, leaders.length, ...performers);
@@ -1168,6 +1271,7 @@ export function cardFromSummary(sport: string, eventId: string, raw: unknown): F
     leaders,
     threeStars: [],
     goalies: sport === "nhl" ? pickGoalies(body, sport) : [],
+    boxPlayers,
     mlbBox: mlbBoxHasRows(mlbBox) ? mlbBox : null,
     mlbDecisions: sport === "mlb" && mlbBoxHasRows(mlbBox) ? pickMlbDecisions(mlbBox!) : [],
     standings: [],
@@ -1341,6 +1445,7 @@ async function hydratePhotos(card: FinalCard): Promise<void> {
     ...card.goalies.map((row) => row.photoUrl),
     ...card.leaders.map((row) => row.photoUrl ?? null),
     ...card.mlbDecisions.map((row) => row.photoUrl),
+    ...(card.boxPlayers ?? []).map((row) => row.photoUrl),
   ].filter((url): url is string => Boolean(url));
   const unique = [...new Set(urls)];
   const fetched = await Promise.all(unique.map((url) => fetchLogoDataUri(url)));
@@ -1349,6 +1454,7 @@ async function hydratePhotos(card: FinalCard): Promise<void> {
   for (const row of card.goalies) row.photoData = row.photoUrl ? byUrl.get(row.photoUrl) ?? null : null;
   for (const row of card.leaders) row.photoData = row.photoUrl ? byUrl.get(row.photoUrl) ?? null : null;
   for (const row of card.mlbDecisions) row.photoData = row.photoUrl ? byUrl.get(row.photoUrl) ?? null : null;
+  for (const row of card.boxPlayers ?? []) row.photoData = row.photoUrl ? byUrl.get(row.photoUrl) ?? null : null;
 }
 
 /** Logos + key-performer headshots for a card already built from a summary. */

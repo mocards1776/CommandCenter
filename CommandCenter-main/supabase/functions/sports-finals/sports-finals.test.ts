@@ -6,6 +6,15 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { cardFromSummary, daySlotFromScoreboard, daySlotLabel, finalCaption, formatFinalsTimestamp, formatGameStart, highlightFromBox, parseLinescores, parsePitchingDecision, pickCardLogoHref, pickMlbDecisions, pickMlbPerformers, starsFromLanding, statMagnitude } from "./card.ts";
+import {
+  decideAlbum,
+  isPerformerPosition,
+  namesMatch,
+  playerFromRow,
+  teamFromBoardName,
+  teamFromPush,
+  teamHitsCard,
+} from "./favorites.ts";
 import { mapMlbWinProbability, mlbInningLabels, mlbPlayRefs, mlbWinProbDomain } from "./mlb-win-probability.ts";
 import { mapThreeStars } from "./nhl-stars.ts";
 import { formatBestOf, formatPlayoffSeriesLine, mlbPlayoffFromSummary } from "./series.ts";
@@ -23,7 +32,9 @@ import { tablesFromStandings, windowRows, shortGroupTitle } from "./standings.ts
 import { whiteSoxGuardiansPlayoffFixture } from "./mlb-playoff-fixture.ts";
 import {
   prepareTelegramPhoto,
+  sendTelegramAlbum,
   sendTelegramPhoto,
+  TELEGRAM_ALBUM_METHOD,
   TELEGRAM_GRAPHIC_METHOD,
   TELEGRAM_JPEG_QUALITY,
   TELEGRAM_JPEG_QUALITY_FLOOR,
@@ -46,6 +57,7 @@ import {
   STANDINGS_TITLE_DY,
   distinctTeamPaints,
   paintColor,
+  renderFinalPage2Svg,
   renderFinalSvg,
 } from "./svg.ts";
 import { mapCfbWinProbability as edgeMap, plotCfbWinProbability as edgePlot } from "./win-probability.ts";
@@ -284,7 +296,7 @@ const card = cardFromSummary("nfl", "401872964", {
           {
             name: "passing",
             labels: ["C/ATT", "YDS", "TD", "INT"],
-            athletes: [{ athlete: { displayName: "Aaron Rodgers" }, stats: ["22/40", "299", "3", "2"] }],
+            athletes: [{ athlete: { id: "14881", displayName: "Aaron Rodgers" }, stats: ["22/40", "299", "3", "2"] }],
           },
         ],
       },
@@ -294,7 +306,7 @@ const card = cardFromSummary("nfl", "401872964", {
           {
             name: "passing",
             labels: ["C/ATT", "YDS", "TD", "INT"],
-            athletes: [{ athlete: { displayName: "Joe Flacco" }, stats: ["18/25", "220", "2", "0"] }],
+            athletes: [{ athlete: { id: "11252", displayName: "Joe Flacco" }, stats: ["18/25", "220", "2", "0"] }],
           },
         ],
       },
@@ -588,7 +600,7 @@ const mlbCaption = finalCaption(
             {
               name: "batting",
               labels: ["H", "HR", "RBI"],
-              athletes: [{ athlete: { displayName: "Nolan Arenado" }, stats: ["3", "1", "2"] }],
+              athletes: [{ athlete: { id: "31261", displayName: "Nolan Arenado" }, stats: ["3", "1", "2"] }],
             },
           ],
         },
@@ -1155,5 +1167,161 @@ const logoSvg = renderFinalSvg(nhlCard);
 assert.match(logoSvg, /Team stats/);
 assert.match(logoSvg, /data:image\/png;base64,aaa/);
 assert.match(logoSvg, /data:image\/png;base64,bbb/);
+
+assert.ok(namesMatch("Masyn Winn", "M. Winn"));
+assert.ok(namesMatch("Amon-Ra St. Brown", "A. St. Brown"));
+assert.equal(namesMatch("Jordan Walker", "Jordan Spieth"), false);
+assert.equal(isPerformerPosition("QB"), true);
+assert.equal(isPerformerPosition("Coach"), false);
+assert.equal(isPerformerPosition("Manager"), false);
+{
+  const blues = teamFromBoardName("St. Louis Blues", "Hockey", "NHL");
+  assert.equal(blues?.sport, "nhl");
+  assert.equal(blues?.teamId, "19");
+  assert.equal(teamHitsCard(nhlCard, blues!), true);
+  const lions = teamFromPush("nfl", "8", "Lions");
+  assert.equal(teamHitsCard(card, lions!), false);
+  const rodgers = playerFromRow({
+    player_id: "999",
+    player_name: "Aaron Rodgers",
+    sport: "football",
+    league: "NFL",
+    position: "QB",
+  });
+  const drinkwitz = playerFromRow({
+    player_id: "4409388",
+    player_name: "Eliah Drinkwitz",
+    sport: "football",
+    league: "CFB",
+    position: "Coach",
+  });
+  assert.equal(card.boxPlayers.some((row) => row.playerId === "3139477"), false);
+  assert.equal(card.boxPlayers.some((row) => row.name === "Aaron Rodgers"), true);
+
+  const none = decideAlbum(card, { teams: [], players: [] });
+  assert.equal(none.album, false);
+
+  const teamOnly = decideAlbum(nhlCard, { teams: [blues!], players: [] });
+  assert.equal(teamOnly.album, true);
+  assert.equal(teamOnly.reason, "team");
+  assert.equal(teamOnly.featured.length, 0);
+
+  const playerOnly = decideAlbum(card, { teams: [], players: [rodgers!] });
+  assert.equal(playerOnly.album, true);
+  assert.equal(playerOnly.reason, "player");
+  assert.equal(playerOnly.featured[0]?.name, "Aaron Rodgers");
+  assert.match(playerOnly.featured[0]?.lines[0]?.text ?? "", /299/);
+
+  const idHit = decideAlbum(card, {
+    teams: [],
+    players: [playerFromRow({ player_id: "3139477", player_name: "Patrick Mahomes", sport: "football", league: "NFL", position: "QB" })!],
+  });
+  assert.equal(idHit.album, false, "Mahomes id is not in Steelers-Browns box");
+
+  const staff = decideAlbum(card, { teams: [], players: [drinkwitz!] });
+  assert.equal(staff.album, false, "coaches do not open the album");
+
+  const mlbFavCard = cardFromSummary("mlb", "401581234", {
+    header: {
+      competitions: [
+        {
+          status: { type: { state: "post", completed: true, shortDetail: "Final" } },
+          competitors: [
+            { homeAway: "away", score: "3", team: { id: "16", abbreviation: "CHC", displayName: "Chicago Cubs" } },
+            { homeAway: "home", score: "5", team: { id: "24", abbreviation: "STL", displayName: "St. Louis Cardinals" } },
+          ],
+        },
+      ],
+    },
+    boxscore: {
+      players: [
+        {
+          team: { abbreviation: "STL" },
+          statistics: [
+            {
+              name: "batting",
+              labels: ["AB", "R", "H", "RBI", "HR"],
+              athletes: [
+                {
+                  athlete: { id: "espn-winn", displayName: "Masyn Winn", shortName: "M. Winn", position: { abbreviation: "SS" } },
+                  stats: ["4", "1", "2", "1", "0"],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  });
+  const winn = playerFromRow({
+    player_id: "691026",
+    player_name: "Masyn Winn",
+    sport: "baseball",
+    league: "MLB",
+    position: "SS",
+    team_id: "138",
+  });
+  const cards = teamFromBoardName("St. Louis Cardinals", "Baseball", "MLB");
+  const both = decideAlbum(mlbFavCard, { teams: [cards!], players: [winn!] });
+  assert.equal(both.album, true);
+  assert.equal(both.reason, "both");
+  assert.equal(both.featured[0]?.name, "Masyn Winn");
+  assert.match(both.featured[0]?.lines[0]?.text ?? "", /2 H/);
+
+  const page2Team = renderFinalPage2Svg(nhlCard, teamOnly);
+  assert.match(page2Team, /PAGE 2/);
+  assert.doesNotMatch(page2Team, /Your players/);
+  assert.doesNotMatch(page2Team, /<ellipse/);
+  assert.doesNotMatch(page2Team, /cream|#f5e6c8|#efe6d4/i);
+
+  nhlCard.threeStars = starsFromLanding(stars);
+  const page2Stars = renderFinalPage2Svg(nhlCard, teamOnly);
+  assert.match(page2Stars, /Three Stars/);
+  assert.match(page2Stars, /Goalies/);
+
+  const page2Player = renderFinalPage2Svg(card, playerOnly);
+  assert.match(page2Player, /Your players/);
+  assert.match(page2Player, /Aaron Rodgers/);
+  assert.match(page2Player, /Box leaders/);
+  assert.doesNotMatch(page2Player, /<ellipse/);
+
+  const page2Mlb = renderFinalPage2Svg(mlbFavCard, both);
+  assert.match(page2Mlb, /Your players/);
+  assert.match(page2Mlb, /Masyn Winn/);
+}
+
+{
+  const calls: { url: string; media?: unknown }[] = [];
+  const orig = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const form = init?.body as FormData;
+    calls.push({
+      url: String(input),
+      media: form?.get("media") ? JSON.parse(String(form.get("media"))) : undefined,
+    });
+    return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "Content-Type": "application/json" } });
+  }) as typeof fetch;
+  try {
+    const jpegBytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
+    const sent = await sendTelegramAlbum(
+      "tok",
+      "857547432",
+      [new Uint8Array([137, 80, 78, 71, 1]), new Uint8Array([137, 80, 78, 71, 2])],
+      "FINAL · NHL\nBlues beat Bruins 3-2.",
+      null,
+      () => jpegBytes,
+    );
+    assert.equal(sent.method, TELEGRAM_ALBUM_METHOD);
+    assert.equal(sent.pages, 2);
+  } finally {
+    globalThis.fetch = orig;
+  }
+  assert.equal(calls.length, 1);
+  assert.match(calls[0]!.url, /\/sendMediaGroup$/);
+  assert.equal((calls[0]!.media as { type: string }[])[0]?.type, "photo");
+  assert.equal((calls[0]!.media as { caption?: string }[])[0]?.caption?.startsWith("FINAL"), true);
+  assert.equal((calls[0]!.media as { media: string }[])[0]?.media, "attach://page1");
+  assert.equal((calls[0]!.media as { media: string }[])[1]?.media, "attach://page2");
+}
 
 console.log("sports-finals.test.ts ok");

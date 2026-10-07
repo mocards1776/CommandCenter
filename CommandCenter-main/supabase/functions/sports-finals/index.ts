@@ -3,7 +3,13 @@ import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { fetchPushBoards } from "../sports-push/boards.ts";
 import { dramaInput, gameKey, gamePhase, liveDrama, type PushGame } from "../sports-push/live-drama.ts";
 import { alertReplyMarkup } from "../_shared/telegram-markup.ts";
-import { finalCaption, loadFinalCard, SUMMARY_PATH } from "./card.ts";
+import { finalCaption, loadFinalCard, SUMMARY_PATH, type FinalCard } from "./card.ts";
+import {
+  decideAlbum,
+  emptyAlbumFavorites,
+  loadAlbumFavorites,
+  type AlbumFavorites,
+} from "./favorites.ts";
 import { rasterizeSvg } from "./png.ts";
 import {
   buildEveningPreview,
@@ -24,8 +30,8 @@ import {
   type FavoriteToken,
   type WatchSnap,
 } from "./select.ts";
-import { renderFinalSvg } from "./svg.ts";
-import { sendTelegramPhoto } from "./telegram.ts";
+import { renderFinalPage2Svg, renderFinalSvg } from "./svg.ts";
+import { sendTelegramAlbum, sendTelegramPhoto } from "./telegram.ts";
 
 /**
  * Telegram final-score photos for @FinalsAndStats_bot.
@@ -34,8 +40,9 @@ import { sendTelegramPhoto } from "./telegram.ts";
  * rasterized here. This function builds a post-game card from the same ESPN
  * summary (score, records, linescore, team stats, box leaders, win-probability
  * series, pregame odds) and sends it with sendPhoto (high-quality JPEG when
- * we can encode one; PNG if it still fits the 10MB photo cap). The live field stays off
- * the graphic; the in-app NFL/CFB pages also hide it after the whistle.
+ * we can encode one; PNG if it still fits the 10MB photo cap). Games that
+ * involve a Command Center favorite team or player send a two-page album
+ * (scoreboard + detail). The live field stays off the graphic.
  *
  * Secrets (never commit the token):
  *   TELEGRAM_FINALS_BOT_TOKEN
@@ -49,6 +56,7 @@ import { sendTelegramPhoto } from "./telegram.ts";
  * Sweep: POST { "action": "sweep" } with header x-sports-finals-cron.
  * Test:  POST { "action": "send", "sport": "nfl", "eventId": "401872964" }.
  * PNG:   POST { "action": "render", "sport": "nfl", "eventId": "401872964" }.
+ *        POST { "action": "render", "page": 2, ... } for the album verso.
  * Evening preview (RUWT Today's Top, ~5pm CT):
  *   POST { "action": "evening-preview" }
  *   POST { "action": "evening-preview", "dryRun": true }
@@ -146,16 +154,47 @@ async function favorites(db: SupabaseClient): Promise<FavoriteToken[]> {
   return out;
 }
 
-async function deliver(game: PushGame, chats: string[], token: string): Promise<{ caption: string; bytes: number }> {
+async function deliver(
+  game: PushGame,
+  chats: string[],
+  token: string,
+  board: AlbumFavorites,
+): Promise<{ caption: string; bytes: number; pages: number }> {
   const card = await loadFinalCard(game.sport, game.id, { waitForStars: true });
   if (!card.final) throw new Error(`${game.sport}:${game.id} is not final`);
-  const png = await rasterizeSvg(renderFinalSvg(card));
+  const sent = await deliverCard(card, chats, token, board);
+  return sent;
+}
+
+async function deliverCard(
+  card: FinalCard,
+  chats: string[],
+  token: string,
+  board: AlbumFavorites,
+  forceAlbum?: boolean | null,
+): Promise<{ caption: string; bytes: number; pages: number; album: boolean; reason: string | null }> {
+  const album = forceAlbum === false ? { album: false, reason: null, teams: [], featured: [], teamPerformers: [] } : decideAlbum(card, board);
+  const wantAlbum = forceAlbum === true || album.album;
   const caption = finalCaption(card, origin());
   const replyMarkup = alertReplyMarkup(origin(), card.path);
-  for (const chatId of chats) {
-    await sendTelegramPhoto(token, chatId, png, caption, replyMarkup);
+  const page1 = await rasterizeSvg(renderFinalSvg(card));
+  if (!wantAlbum) {
+    for (const chatId of chats) {
+      await sendTelegramPhoto(token, chatId, page1, caption, replyMarkup);
+    }
+    return { caption, bytes: page1.byteLength, pages: 1, album: false, reason: album.reason };
   }
-  return { caption, bytes: png.byteLength };
+  const page2 = await rasterizeSvg(renderFinalPage2Svg(card, forceAlbum === true && !album.album ? { ...album, album: true } : album));
+  for (const chatId of chats) {
+    await sendTelegramAlbum(token, chatId, [page1, page2], caption, replyMarkup);
+  }
+  return {
+    caption,
+    bytes: page1.byteLength + page2.byteLength,
+    pages: 2,
+    album: true,
+    reason: album.reason ?? (forceAlbum === true ? "forced" : null),
+  };
 }
 
 async function sweep(db: SupabaseClient, dryRun: boolean): Promise<Response> {
@@ -166,7 +205,7 @@ async function sweep(db: SupabaseClient, dryRun: boolean): Promise<Response> {
   if (!dryRun && !token) return json({ error: "TELEGRAM_FINALS_BOT_TOKEN is not set" }, 503);
   if (!dryRun && !chats.length) return json({ error: "TELEGRAM_FINALS_CHAT_IDS is empty" }, 503);
 
-  const [games, favs] = await Promise.all([fetchPushBoards(), favorites(db)]);
+  const [games, favs, board] = await Promise.all([fetchPushBoards(), favorites(db), loadAlbumFavorites(db)]);
   const tracked = games.filter((game) => sports.includes(game.sport));
   const keys = tracked.map(gameKey);
   const prev = new Map<string, WatchSnap>();
@@ -237,7 +276,7 @@ async function sweep(db: SupabaseClient, dryRun: boolean): Promise<Response> {
           fired += 1;
         } else {
           try {
-            await deliver(game, chats, token);
+            await deliver(game, chats, token, board);
             fired += 1;
             delivered += 1;
           } catch (err) {
@@ -311,15 +350,29 @@ Deno.serve(async (req: Request) => {
       if (action === "send" && body.allowLive !== true && !card.final) {
         return json({ error: "Game is not final" }, 409);
       }
-      const png = await rasterizeSvg(renderFinalSvg(card));
+      const db = admin();
+      const board = db ? await loadAlbumFavorites(db) : emptyAlbumFavorites();
+      const forceAlbum = body.album === true ? true : body.album === false ? false : null;
+      const album = forceAlbum === false ? { album: false, reason: null, teams: [], featured: [], teamPerformers: [] } : decideAlbum(card, board);
+      const wantAlbum = forceAlbum === true || album.album;
+      const page1 = await rasterizeSvg(renderFinalSvg(card));
+      const page2 = wantAlbum
+        ? await rasterizeSvg(renderFinalPage2Svg(card, album.album ? album : { ...album, album: true }))
+        : null;
       const caption = finalCaption(card, origin());
       const replyMarkup = alertReplyMarkup(origin(), card.path);
+      const wantPage = Number(body.page) === 2 ? 2 : 1;
+      const png = wantPage === 2 && page2 ? page2 : page1;
       const meta = {
         sport,
         eventId,
         status: card.statusLabel,
         caption,
-        bytes: png.byteLength,
+        bytes: page1.byteLength + (page2?.byteLength ?? 0),
+        pages: wantAlbum ? 2 : 1,
+        album: wantAlbum,
+        albumReason: album.reason,
+        featured: album.featured.map((row) => row.name),
         winProbability: card.winProbability.length,
         stats: card.stats.map((stat) => stat.label),
         leaders: card.leaders.length,
@@ -339,7 +392,11 @@ Deno.serve(async (req: Request) => {
         chats = [chatId];
       }
       if (!chats.length) return json({ error: "TELEGRAM_FINALS_CHAT_IDS is empty" }, 503);
-      for (const chatId of chats) await sendTelegramPhoto(token, chatId, png, caption, replyMarkup);
+      if (wantAlbum && page2) {
+        for (const chatId of chats) await sendTelegramAlbum(token, chatId, [page1, page2], caption, replyMarkup);
+      } else {
+        for (const chatId of chats) await sendTelegramPhoto(token, chatId, page1, caption, replyMarkup);
+      }
       if (body.record !== false) {
         const db = admin();
         if (db) {
