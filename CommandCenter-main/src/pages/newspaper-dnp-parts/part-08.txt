@@ -1,0 +1,307 @@
+s.length) return null;
+  return (
+    <section className="tt-open-band" aria-label="Countdown to opening night">
+      <h3 className="wsj-band-title">Offseason · countdown to the opener</h3>
+      <div className="tt-open-band-row">
+        {rows.map(({ club, opener }) => (
+          <Countdown key={club.key} opener={opener} name={club.shortName} logo={club.logo} color={club.color} variant="line" />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/** Section flag: big on the section front, a slim band on the desk pages behind it. */
+function SportHero({
+  page,
+  leagueClubs,
+  blurb,
+  deskTitle,
+}: {
+  page: SportFrontPage;
+  leagueClubs: LeagueClub[];
+  blurb: string;
+  deskTitle?: string;
+}) {
+  if (page.focus !== "front") {
+    return (
+      <header className="wsj-sport-band">
+        <span className="wsj-sport-code">{page.section}</span>
+        <h3>
+          {page.sectionTitle}
+          {deskTitle ?? FOCUS_TITLES[page.focus] ? (
+            sameHead(deskTitle ?? FOCUS_TITLES[page.focus], page.sectionTitle) ? null : (
+              <>
+                {" "}
+                <em>{deskTitle ?? FOCUS_TITLES[page.focus]}</em>
+              </>
+            )
+          ) : null}
+        </h3>
+        <p>{blurb}</p>
+      </header>
+    );
+  }
+  return (
+    <header className="wsj-sport-hero">
+      <div className="wsj-sport-hero-mark">
+        <span className="wsj-sport-code">{page.section}</span>
+        <div>
+          <h3>{page.sectionTitle}</h3>
+          <p>{blurb}</p>
+        </div>
+      </div>
+      <div className="wsj-sport-hero-rail" aria-hidden="true">
+        {leagueClubs.slice(0, 32).map((club) => (
+          <TeamLogo key={club.id} src={club.logo} size="sm" />
+        ))}
+      </div>
+    </header>
+  );
+}
+
+function involvesClub(game: BoxGame, clubs: ClubDesk[]): boolean {
+  return Boolean(
+    favoriteKeyForGame(
+      {
+        away: { short: game.away.short, name: game.away.name, id: game.away.id, abbrev: game.away.abbrev },
+        home: { short: game.home.short, name: game.home.name, id: game.home.id, abbrev: game.home.abbrev },
+        path: game.path,
+      },
+      clubs,
+    ),
+  );
+}
+
+function stampBoardCard(game: BoxGame, clubs: ClubDesk[]): GameWrapCard | null {
+  const card = boxStoryCard(game);
+  if (!card) return null;
+  const key = favoriteKeyForGame(game, clubs);
+  return {
+    ...card,
+    favoriteKey: key || card.favoriteKey,
+    followed: Boolean(key) || card.followed,
+  };
+}
+
+function favoriteKeyFromCopy(card: GameWrapCard, clubs: ClubDesk[]): string {
+  if (
+    card.favoriteKey &&
+    clubs.some(
+      (c) =>
+        c.key === card.favoriteKey && (!c.leaguePath || !card.leaguePath || c.leaguePath === card.leaguePath),
+    )
+  ) {
+    return card.favoriteKey;
+  }
+  for (const club of clubs) {
+    const fav = DEFAULT_FAVORITES.find((f) => f.key === club.key);
+    if (fav && storyMatchesFavorite(card, fav)) return club.key;
+  }
+  return "";
+}
+
+function gameForCard(card: GameWrapCard, games: BoxGame[], clubs: ClubDesk[]): BoxGame | null {
+  if (card.gameId) {
+    const hit = games.find(
+      (g) => g.espnEventId === card.gameId || (g.gamePk != null && String(g.gamePk) === card.gameId),
+    );
+    if (hit) return hit;
+  }
+  return (
+    games.find((g) => {
+      const stamped = stampBoardCard(g, clubs);
+      return Boolean(stamped && (stamped.id === card.id || sameGameStory(stamped, card)));
+    }) ??
+    games.find((g) => gameMatchesRecap(g, card)) ??
+    null
+  );
+}
+
+function mergeFrontStories(
+  page: SportFrontPage,
+  board: SectionBoard | null,
+  edition: string,
+  fill?: {
+    leftover?: GameWrapCard[];
+    snaps?: TeamSnapshot[];
+    coaches?: FavoriteCoachTile[];
+  },
+): GameWrapCard[] {
+  const filed = page.articles
+    .map((a) => a.card)
+    .filter((c) => c.headline)
+    .map((c) => {
+      const key = favoriteKeyFromCopy(c, page.clubs);
+      return key && key !== c.favoriteKey ? { ...c, favoriteKey: key, followed: true } : c;
+    });
+  const extras: GameWrapCard[] = frontPageLeftover(filed, fill?.leftover ?? [], page.path.includes("college-football") || page.path === "baseball/mlb" ? 4 : 2);
+  if (board) {
+    let added = 0;
+    for (const g of [...(board.results ?? []), ...(board.prior ?? [])]) {
+      const card = stampBoardCard(g, page.clubs);
+      if (!card?.favoriteKey) continue;
+      extras.push(card);
+      if (++added >= 2) break;
+    }
+  }
+  if (page.path.startsWith("soccer/")) {
+    for (const tile of fill?.coaches ?? []) {
+      extras.push(...tile.headlines.filter((c) => c.headline));
+      const last = tile.lastGame;
+      const club = page.clubs.find((c) => c.key === tile.teamAbbrev || squash(c.shortName) === squash(tile.teamName ?? tile.teamAbbrev));
+      if (last && club) {
+        extras.push(
+          lastMatchCardFromChip({
+            key: club.key,
+            name: tile.teamName || club.shortName,
+            shortName: club.shortName,
+            logo: tile.teamLogo || club.logo,
+            leaguePath: page.path,
+            sportLabel: page.sectionTitle,
+            last: {
+              label: `${last.homeAway === "at" ? "@" : "vs"} ${last.opponent ?? "OPP"}`,
+              detail: last.score,
+              when: last.date,
+              won: last.result === "W" ? true : last.result === "L" ? false : null,
+            },
+          }),
+        );
+      }
+    }
+    for (const snap of fill?.snaps ?? []) {
+      if (!snap.lastGame) continue;
+      extras.push(
+        lastMatchCardFromChip({
+          key: snap.key,
+          name: snap.name,
+          shortName: snap.shortName,
+          logo: snap.logo,
+          leaguePath: page.path,
+          sportLabel: page.sectionTitle,
+          last: snap.lastGame,
+        }),
+      );
+    }
+  }
+  const pooled: GameWrapCard[] = [];
+  for (const extra of [...filed, ...extras]) {
+    if (!extra.headline) continue;
+    const hit = pooled.findIndex((s) => s.id === extra.id || sameGameStory(s, extra));
+    if (hit >= 0) pooled[hit] = preferFrontCard(pooled[hit]!, extra);
+    else pooled.push(extra);
+  }
+  return orderSportSectionFront(pooled, page.path, edition);
+}
+
+/**
+ * The front's score strip. Football turns the page on Thursday: from the
+ * Thursday game through Monday night the strip is this week's slate, finals
+ * filling in as they go; Tuesday and Wednesday it still carries last week.
+ */
+function weekdayName(day: string): string {
+  return new Date(`${day}T12:00:00`).toLocaleDateString("en-US", {
+    weekday: "long",
+    timeZone: "America/Chicago",
+  });
+}
+
+/** Yesterday’s college finals stand alone. The rest of the slate follows them. */
+function finalsSplit(games: BoxGame[], edition: string): { yesterday: BoxGame[]; rest: BoxGame[]; title: string } {
+  const yday = editionNewsDay(edition);
+  const yesterday = games.filter((game) => game.final && game.day === yday);
+  const seen = new Set(yesterday.map((game) => game.id));
+  return {
+    yesterday,
+    rest: games.filter((game) => !seen.has(game.id)),
+    title: `${weekdayName(yday)}’s finals`,
+  };
+}
+
+function stripFor(path: string, board: SectionBoard | null, edition: string): { title: string; games: BoxGame[] }[] {
+  const bands = sportScoreBands(path, board, edition);
+  if (bands.length) return bands;
+  if (!board) return [];
+  if (board.slate.length) return [{ title: "Upcoming fixtures", games: board.slate }];
+  if (board.prior?.length) return [{ title: "Recent results", games: [...board.prior].reverse() }];
+  return [];
+}
+
+function boxGameKeys(game: {
+  id?: string | null;
+  espnEventId?: string | null;
+  gamePk?: string | number | null;
+  away?: { abbrev?: string | null };
+  home?: { abbrev?: string | null };
+  day?: string | null;
+}): string[] {
+  const pair = `${game.away?.abbrev ?? ""}-${game.home?.abbrev ?? ""}-${game.day ?? ""}`;
+  return [
+    ...new Set(
+      [game.id, game.espnEventId, game.gamePk != null ? String(game.gamePk) : null, pair !== "--" ? pair : null].filter(
+        (key): key is string => Boolean(key),
+      ),
+    ),
+  ];
+}
+
+function boxGameKey(game: {
+  id?: string | null;
+  espnEventId?: string | null;
+  gamePk?: string | number | null;
+  away?: { abbrev?: string | null };
+  home?: { abbrev?: string | null };
+  day?: string | null;
+}): string {
+  return boxGameKeys(game)[0] ?? "";
+}
+
+function deskFolio(page: SportFrontPage, focus: SportFrontPage["focus"], fallback: string): string {
+  return page.sectionDesks?.find((d) => d.focus === focus)?.folio ?? fallback;
+}
+
+/** Section front: flag already printed, then the lead, secondaries, and a scores rail. */
+function SportSectionFront({
+  page,
+  board,
+  leagueClubs,
+  standings,
+  edition,
+  playoffs,
+  leaders,
+  leftover,
+  snaps,
+  coaches,
+  heisman,
+  poll,
+  alreadyOnA1,
+  onTurn,
+}: {
+  page: SportFrontPage;
+  board: SectionBoard | null;
+  leagueClubs: LeagueClub[];
+  standings: StandGroup[];
+  edition: string;
+  playoffs: MlbPlayoffTree | null;
+  leaders: LeagueLeaderGroup[];
+  heisman?: HeismanBoard | null;
+  poll: CfbPollRow[];
+  leftover?: GameWrapCard[];
+  snaps?: TeamSnapshot[];
+  coaches?: FavoriteCoachTile[];
+  alreadyOnA1?: GameWrapCard[];
+  onTurn: (folio: string) => void;
+}) {
+  const open = useReader();
+  const strips = stripFor(page.path, board, edition);
+  const football = page.path.startsWith("football/");
+  const soccer = page.path.startsWith("soccer/");
+  const cfb = page.path.includes("college-football");
+  const mlb = page.path === "baseball/mlb";
+  const finals = football ? [...(board?.results ?? []), ...(board?.prior ?? [])] : board?.results ?? [];
+  const recent = soccer || football ? [...finals].reverse() : finals;
+  const stories = mergeFrontStories(page, board, edition, { leftover, snaps, coaches });
+  const folios = Object.fromEntries(page.articles.map((a) => [a.card.id, a.folio]));
+  const pointer = stories.find((c) => alreadyOnSectionA(c, alreadyOnA1 ?? [])) ?? null;
+  const lead = stories.find((c) => !pointer || (c.id !== pointer.id && !sameGameStory(c, pointer))) ?? null;
+  const rest = stories.filter((c) => c !== lead && c 
