@@ -472,6 +472,23 @@ export async function printFlatEdition() {
     });
     if (new URL(page.url()).pathname.startsWith("/login")) throw new Error("landed on /login");
     await reveal(page);
+    let folioCount = 0;
+    {
+      let last = -1;
+      let quiet = Date.now();
+      const start = Date.now();
+      while (Date.now() - start < 25_000) {
+        const n = await page.evaluate(() => document.querySelectorAll(".wsj-page").length);
+        if (n !== last) {
+          last = n;
+          quiet = Date.now();
+        }
+        if (n > 3 && Date.now() - quiet > 2500) break;
+        await page.waitForTimeout(250);
+      }
+      folioCount = last;
+    }
+    log("folio count settled", folioCount);
     const leaves = await page.evaluate(() =>
       [...document.querySelectorAll(".wsj-page")].map((el) => ({
         folio: el.getAttribute("data-folio") || "",
