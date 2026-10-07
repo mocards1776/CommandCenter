@@ -474,19 +474,25 @@ export async function printFlatEdition() {
     await reveal(page);
     let folioCount = 0;
     {
-      let last = -1;
+      let last = "";
       let quiet = Date.now();
       const start = Date.now();
-      while (Date.now() - start < 25_000) {
-        const n = await page.evaluate(() => document.querySelectorAll(".wsj-page").length);
-        if (n !== last) {
-          last = n;
+      while (Date.now() - start < 45_000) {
+        const snap = await page.evaluate(() => {
+          const n = document.querySelectorAll(".wsj-page").length;
+          const h = document.querySelector(".wsj-page .wsj-sheet")?.offsetHeight || 0;
+          return `${n}:${h}`;
+        });
+        if (snap !== last) {
+          last = snap;
           quiet = Date.now();
+          log("settling", snap);
         }
-        if (n > 3 && Date.now() - quiet > 2500) break;
-        await page.waitForTimeout(250);
+        const n = Number(snap.split(":")[0]);
+        if (n > 3 && Date.now() - quiet > 8_000) break;
+        await page.waitForTimeout(400);
       }
-      folioCount = last;
+      folioCount = Number(last.split(":")[0]) || 0;
     }
     log("folio count settled", folioCount);
     const leaves = await page.evaluate(() =>
