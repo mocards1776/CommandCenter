@@ -486,7 +486,21 @@ export async function printFlatEdition() {
       const leaf = leaves[i];
       await primePage(page, i);
       const sheet = page.locator(".wsj-page").nth(i).locator(".wsj-sheet");
-      const box = await sheet.boundingBox();
+      let box = await sheet.boundingBox();
+      if (box && box.height > 40) {
+        // WebKit leaves everything below the viewport transparent in an element
+        // shot. Grow the viewport so the whole sheet paints, width unchanged.
+        const viewH = Math.min(16_000, Math.ceil(box.height + 180));
+        await page.setViewportSize({ width: IPAD13.width, height: Math.max(IPAD13.height, viewH) });
+        await page.evaluate((i) => {
+          const pager = document.querySelector(".newspaper-edition");
+          const leaf = pager?.querySelectorAll(".wsj-page")[i];
+          if (pager) pager.scrollTo({ left: i * pager.clientWidth, behavior: "instant" });
+          if (leaf) leaf.scrollTop = 0;
+        }, i);
+        await page.waitForTimeout(200);
+        box = await sheet.boundingBox();
+      }
       if (!box || box.height < 40) {
         log("skip", leaf.folio, "no sheet");
         continue;
