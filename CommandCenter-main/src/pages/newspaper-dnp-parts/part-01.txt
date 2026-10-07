@@ -97,7 +97,7 @@ function blankRecord(r: string | null | undefined): boolean {
 }
 
 function zeroStat(value: string): boolean {
-  return /^[+\-]?0(\.0+)?$/.test(value.trim());
+  return /^[+-]?0(\.0+)?$/.test(value.trim());
 }
 
 function clubRecord(team: TeamInfobox | null | undefined): string | null {
