@@ -3,6 +3,7 @@
  * from CommandCenter-main/.
  */
 import {
+  DOT_MIN_SEP,
   DEFAULT_ZONE_BOTTOM_FT,
   DEFAULT_ZONE_TOP_FT,
   formatPitchMph,
@@ -16,6 +17,7 @@ import {
   pitchTypeCode,
   pitchResultStyle,
   pitchZonePosition,
+  relaxPitchDots,
   ZONE_HALF_WIDTH_FT,
   zoneInsetPct,
 } from "./mlb-pitch-zone.ts";
@@ -176,5 +178,76 @@ assert.equal(pitchTypeCode(null), null);
 assert.equal(formatPitchMph(87.4), "87");
 assert.equal(formatPitchMph(96.6), "97");
 assert.equal(formatPitchMph(null), "—");
+
+
+// --- dot collision relaxation ---------------------------------------------
+{
+  const aspect = (1 + 2 * PLOT_MARGIN_X) / ((1 + 2 * PLOT_MARGIN_Y) * 0.92);
+  // Distance in plot widths (same scale both axes).
+  const gap = (a: { leftPct: number; topPct: number }, b: { leftPct: number; topPct: number }) =>
+    Math.hypot((a.leftPct - b.leftPct) / 100, (a.topPct - b.topPct) / 100 / aspect);
+  const tol = 0.003; // rounding to 0.1%
+
+  // Far-apart dots are untouched.
+  const apart = relaxPitchDots(
+    [
+      { leftPct: 30, topPct: 30, n: 1 },
+      { leftPct: 70, topPct: 70, n: 2 },
+    ],
+    { aspect },
+  );
+  assert.equal(apart[0].leftPct, 30);
+  assert.equal(apart[0].topPct, 30);
+  assert.equal(apart[1].leftPct, 70);
+  assert.equal(apart[0].shifted, false);
+  assert.equal(apart[1].shifted, false);
+  assert.equal(apart[1].n, 2, "extra fields carried through");
+
+  // Two dots pinned at the same right-edge spot (the clustered 1 and 6 case).
+  const edge = pitchZonePosition({ pX: 2.4, pZ: 2.6, zoneTop: 3.4, zoneBottom: 1.6 })!;
+  const edge2 = pitchZonePosition({ pX: 2.1, pZ: 2.55, zoneTop: 3.4, zoneBottom: 1.6 })!;
+  const pinned = relaxPitchDots([edge, edge2], { aspect });
+  assert.ok(gap(pinned[0], pinned[1]) >= DOT_MIN_SEP - tol, `edge pair separated (${gap(pinned[0], pinned[1])})`);
+  for (const p of pinned) {
+    assert.ok(p.leftPct <= 100 - PLOT_EDGE_PAD * 100 + 0.05, "stays inside right pad");
+  }
+  assert.ok(pinned[0].topPct < pinned[1].topPct, "earlier coincident dot moves up");
+
+  // Partial overlap: pushed apart along the line between them, each shift bounded.
+  const near = [
+    { leftPct: 50, topPct: 50 },
+    { leftPct: 53, topPct: 51 },
+  ];
+  const nearOut = relaxPitchDots(near, { aspect });
+  assert.ok(gap(nearOut[0], nearOut[1]) >= DOT_MIN_SEP - tol, "overlap resolved");
+  assert.ok(nearOut[0].leftPct < 50 && nearOut[1].leftPct > 53, "pushed apart horizontally");
+  for (let k = 0; k < near.length; k++) {
+    assert.ok(gap(near[k], nearOut[k]) <= DOT_MIN_SEP + tol, "within maxShift of true spot");
+  }
+
+  // Five coincident pitches all end up readable and near the true spot.
+  const five = Array.from({ length: 5 }, () => ({ leftPct: 48, topPct: 52 }));
+  const fiveOut = relaxPitchDots(five, { aspect });
+  for (let i = 0; i < fiveOut.length; i++) {
+    assert.ok(gap(five[i], fiveOut[i]) <= DOT_MIN_SEP + tol, `dot ${i} within maxShift`);
+    for (let j = i + 1; j < fiveOut.length; j++) {
+      assert.ok(gap(fiveOut[i], fiveOut[j]) >= DOT_MIN_SEP * 0.9, `dots ${i},${j} readable (${gap(fiveOut[i], fiveOut[j])})`);
+    }
+  }
+
+  // Deterministic, order preserved (latest stays last → top z-index).
+  assert.deepEqual(relaxPitchDots(five, { aspect }), fiveOut);
+  assert.equal(relaxPitchDots([], { aspect }).length, 0);
+
+  // A tight maxShift caps movement even if overlap remains.
+  const capped = relaxPitchDots(
+    [
+      { leftPct: 50, topPct: 50 },
+      { leftPct: 50, topPct: 50 },
+    ],
+    { aspect, maxShift: 0.01 },
+  );
+  assert.ok(gap({ leftPct: 50, topPct: 50 }, capped[0]) <= 0.01 + tol, "maxShift honoured");
+}
 
 console.log("mlb-pitch-zone tests passed");
