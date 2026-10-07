@@ -1,0 +1,320 @@
+rd} />
+        <h3>
+          <HeadlineSave card={card}>
+            <StoryLink card={card} color={color}>
+              {card.headline}
+            </StoryLink>
+          </HeadlineSave>
+        </h3>
+        <ScoreBug card={card} />
+        {dek ? (
+          <FitCopy cid={`${card.id}:brief-dek`} full={dek} className="wsj-brief-dek">
+            {dek}
+          </FitCopy>
+        ) : null}
+        <ReadOn card={card} label="Click for full story" />
+      </div>
+    </article>
+  );
+}
+
+function BriefGrid({
+  cards,
+  title,
+  folios,
+  here,
+  onTurn,
+  crestFor,
+  colorFor,
+  maxCols = 4,
+}: {
+  cards: GameWrapCard[];
+  title?: string;
+  folios?: Record<string, string>;
+  here?: string;
+  onTurn?: (folio: string) => void;
+  crestFor?: (card: GameWrapCard) => string | null | undefined;
+  colorFor?: (card: GameWrapCard) => string | null | undefined;
+  maxCols?: number;
+}) {
+  if (!cards.length) return null;
+  const cols = Math.min(maxCols, cards.length);
+  // A lone brief sets across the page, photo beside the type.
+  const wide = cards.length === 1 ? 1 : doubleWide(cards.length, cols);
+  return (
+    <section className="wsj-briefs-wrap">
+      {title ? <h3 className="wsj-band-title">{title}</h3> : null}
+      <div className="wsj-briefs" style={{ ["--cols" as string]: String(cols) }}>
+        {cards.map((c, i) => {
+          const folio = folios?.[c.id];
+          return (
+            <Brief
+              key={c.id}
+              card={c}
+              featured={i < wide}
+              folio={folio && folio !== here ? folio : undefined}
+              onTurn={onTurn}
+              crest={crestFor?.(c)}
+              color={colorFor?.(c)}
+              trim={40 + i}
+            />
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+/* ───────────────────────── club strips ───────────────────────── */
+
+function FormDots({ form }: { form: TeamInfobox["form"] }) {
+  if (!form.length) return null;
+  return (
+    <span className="wsj-form" aria-label={`Last ${form.length}: ${form.join(" ")}`}>
+      {form.slice(-5).map((f, i) => (
+        <i key={i} className={f === "W" ? "w" : f === "L" ? "l" : ""} />
+      ))}
+    </span>
+  );
+}
+
+/** Closes a club grid's short last row with a turn to the clubs desk. */
+function DeskFiller({
+  count,
+  cols,
+  onTurn,
+}: {
+  count: number;
+  cols: number;
+  onTurn?: (folio: string) => void;
+}) {
+  const empty = (cols - (count % cols)) % cols;
+  if (!empty) return null;
+  const tile = (
+    <>
+      <strong>The clubs desk</strong>
+      <span>
+        Slates, tables &amp; leaders · <b>Page A2 →</b>
+      </span>
+    </>
+  );
+  return (
+    <li className="wsj-filler" style={{ ["--tt-fill-span" as string]: String(empty) }}>
+      {onTurn ? (
+        <button type="button" onClick={() => onTurn("A2")}>
+          {tile}
+        </button>
+      ) : (
+        <span className="wsj-filler-static">{tile}</span>
+      )}
+    </li>
+  );
+}
+
+/** The front's scoreboard: every club, its record, its last five. */
+function ClubTicker({
+  teams,
+  editionDay,
+  onTurn,
+}: {
+  teams: TeamInfobox[];
+  editionDay: string;
+  onTurn?: (folio: string) => void;
+}) {
+  const openers = useContext(OpenerContext);
+  if (!teams.length) return null;
+  const cols = balancedCols(teams.length, [5, 4, 3]);
+  return (
+    <ul className="wsj-ticker" data-tt-keep="" style={{ ["--cols" as string]: String(cols) }}>
+      {teams.map((t, i) => {
+        const path = leaguePathFromEspn(t.fav.espnPath);
+        const inSeason = !path || sportInSeason(path, editionDay);
+        const opener = openers.get(t.fav.key) ?? null;
+        const opensLine = clubOpensLabel(opener?.iso, t.snap.nextGame?.when ?? t.detail?.upcoming?.[0]?.when);
+        return (
+          <li key={t.fav.key} style={tint(teamColor(t))} data-tt-trim={55 + i}>
+            <ExternalOrLink href={t.href} className="wsj-ticker-cell wsj-a">
+              <span className="wsj-ticker-id">
+                <TeamLogo src={t.snap.logo || t.detail?.logo} size="sm" />
+                <strong>{t.fav.shortName}</strong>
+              </span>
+              <span className="wsj-ticker-rec">
+                <b>{clubTickerRecord(clubRecord(t), inSeason, opensLine)}</b>
+                <FormDots form={inSeason ? t.form : []} />
+              </span>
+              <em className="wsj-ticker-place">{inSeason ? t.snap.standing || t.fav.league : t.fav.league}</em>
+            </ExternalOrLink>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/** Foot-of-page board so an inside folio always closes on the clubs. */
+function DeskBoard({
+  teams,
+  title = "Around the desk",
+  onTurn,
+}: {
+  teams: TeamInfobox[];
+  title?: string;
+  onTurn?: (folio: string) => void;
+}) {
+  if (!teams.length) return null;
+  const cols = teams.length < 4 ? 4 : balancedCols(teams.length, [6, 5, 4, 3, 2]);
+  return (
+    <section className="wsj-deskboard">
+      <h3 className="wsj-band-title">{title}</h3>
+      <ul style={{ ["--cols" as string]: String(cols) }}>
+        {teams.map((t) => (
+          <li key={t.fav.key} style={tint(teamColor(t))}>
+            <ExternalOrLink href={t.href} className="wsj-desk-tile wsj-a">
+              <TeamLogo src={t.snap.logo || t.detail?.logo} size="sm" />
+              <strong className="wsj-desk-name">{t.fav.shortName}</strong>
+              <em className="wsj-desk-lg">{t.fav.league}</em>
+              <b className="wsj-desk-rec">{clubRecord(t) || "—"}</b>
+              <span className="wsj-desk-next">{nextLine(t)}</span>
+            </ExternalOrLink>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/* ───────────────────────── agate ───────────────────────── */
+
+function AgateBox({
+  title,
+  rows,
+  color,
+}: {
+  title: ReactNode;
+  rows: { left: ReactNode; right?: ReactNode; me?: boolean }[];
+  color?: string | null;
+}) {
+  if (!rows.length) return null;
+  return (
+    <div className="wsj-box" style={tint(color)}>
+      <h4>{title}</h4>
+      <ul>
+        {rows.map((r, i) => (
+          <li key={i} className={cn(r.me && "me")}>
+            <span>{r.left}</span>
+            {r.right != null ? <span className="v">{r.right}</span> : null}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/* ───────────────────────── front page ───────────────────────── */
+
+function bracketWhen(game: WireGame): string {
+  if (game.live) return game.statusDetail;
+  if (game.final) {
+    const a = game.away.score;
+    const h = game.home.score;
+    return a != null && h != null ? `Final ${a}–${h}` : "Final";
+  }
+  if (game.startedAt) {
+    const when = formatFixtureWhen(game.startedAt);
+    return when ? `${when} CT` : game.statusDetail;
+  }
+  return game.statusDetail;
+}
+
+function FrontRail({
+  teams,
+  tonight,
+  bracket,
+  comingUp,
+  sections,
+  onTurn,
+}: {
+  teams: TeamInfobox[];
+  tonight: WireGame[];
+  bracket: WireGame[];
+  comingUp: ComingUp[];
+  sections: EditionSection[];
+  onTurn: (folio: string) => void;
+}) {
+  const openers = useContext(OpenerContext);
+  const sports = sections.filter((s) => s.code !== "A");
+  const closed = teams.filter((t) => t.seasonState === "complete");
+  const waiting = teams
+    .filter((t) => t.seasonState !== "complete" && openers.has(t.fav.key))
+    .sort((a, b) => openers.get(a.fav.key)!.iso.localeCompare(openers.get(b.fav.key)!.iso));
+  const tables = teams
+    .filter((t) => t.seasonState !== "complete" && (t.detail?.division?.length ?? 0) > 1)
+    .slice(0, 2);
+  return (
+    <aside className="wsj-rail">
+      {sports.length ? (
+        <section className="wsj-rail-block ink">
+          <h3>Inside Today</h3>
+          <ul className="wsj-index">
+            {sports.map((s, i) => (
+              <li key={s.code} {...(i >= 5 ? { "data-tt-flow": "" } : i >= 4 ? { "data-tt-trim": 12 + i } : {})}>
+                <button type="button" onClick={() => onTurn(s.folio)}>
+                  <span className="code">{s.code}</span>
+                  <span className="t">
+                    <strong>{s.title}</strong>
+                    <em>
+                      {s.stories
+                        ? `${s.stories} ${s.stories === 1 ? "story" : "stories"}`
+                        : "Standings & schedule"}{" "}
+                      · {s.pages} pp.
+                    </em>
+                  </span>
+                  <span className="f">{s.folio}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {tonight.length || bracket.length ? (
+        <section className="wsj-rail-block">
+          <h3>
+            <span className="wsj-live-dot" aria-hidden="true" />
+            {tonight.length ? "Live" : "Postseason"}
+          </h3>
+          <ul className="wsj-rail-list">
+            {tonight.map((g) => (
+              <li key={g.id}>
+                <ExternalOrLink href={g.href} className="wsj-a">
+                  <strong>
+                    {g.away.short} at {g.home.short}
+                  </strong>
+                </ExternalOrLink>{" "}
+                <span className="wsj-ref">{g.live ? g.statusDetail : faceOff(g.startedAt)}</span>
+              </li>
+            ))}
+            {bracket
+              .filter((g) => !tonight.some((live) => live.id === g.id))
+              .map((g) => (
+                <li key={g.id}>
+                  <ExternalOrLink href={g.href} className="wsj-a">
+                    <strong>
+                      {g.away.short} at {g.home.short}
+                    </strong>
+                  </ExternalOrLink>{" "}
+                  <span className="wsj-ref">
+                    {[g.round, g.series, bracketWhen(g)].filter(Boolean).join(" · ")}
+                  </span>
+                </li>
+              ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {comingUp.length ? (
+        <section className="wsj-rail-block">
+          <h3>Coming Up</h3>
+          <ul className="wsj-upcoming">
+            {comingUp.map((g, i) => (
+              <li key={g.id} style={tint(g.color)} {...(i >= 4 ? { "data-tt-flow": "" } : { "data-tt-tr
