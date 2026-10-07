@@ -1,0 +1,266 @@
+list.map((item, i) => (
+                <li key={item.id} data-tt-trim={24 + i}>
+                  <MoStory item={item} size="sm" />
+                </li>
+              ))}
+            </ol>
+          </section>
+          {page.listen.length ? (
+            <section className="tt-mo-listen">
+              <h4>Listen &amp; watch</h4>
+              <ul>
+                {page.listen.map((item) => (
+                  <li key={item.id}>
+                    <a href={item.url} target="_blank" rel="noreferrer" className="wsj-a">
+                      <b>{item.source}</b>
+                      <span>{item.headline}</span>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+        </aside>
+      </div>
+      {more ? <TurnBar onTurn={onTurn} folio={more} label="More Missouri news" /> : null}
+    </div>
+  );
+}
+
+/** Section A's window on the statehouse: the Missouri Scout's latest. */
+function ScoutBand({ item, onTurn, deskFolio }: { item: MoItem; onTurn: (folio: string) => void; deskFolio: string | null }) {
+  const open = useReader();
+  const card = moCard(item);
+  const dek = item.dek ? cleanDek(item.dek.length > 420 ? item.dek.slice(0, 420) : item.dek) : null;
+  return (
+    <section
+      className={cn("tt-scout", item.photo && "has-photo")}
+      data-tt-keys={storyReadKeys({ id: item.id, headline: item.headline, wrapHref: item.url }).join("|")}
+      data-tt-title={item.headline}
+    >
+      <div className="tt-scout-flag">
+        <span>From the</span>
+        <strong>Missouri Scout</strong>
+        <em>{moWhen(item.when) || "Latest"}</em>
+      </div>
+      {item.photo ? <img className="tt-scout-photo" src={item.photo} alt="" loading="lazy" /> : null}
+      <div className="tt-scout-copy">
+        <h3 className="wsj-hl md">
+          <HeadlineSave card={card}>
+            <button type="button" className="wsj-a wsj-story-link" onClick={() => open({ card })}>
+              {item.headline}
+            </button>
+          </HeadlineSave>
+        </h3>
+        {dek ? <p>{dek}</p> : null}
+        <p className="tt-scout-links">
+          <button type="button" className="wsj-jump-btn" onClick={() => open({ card })}>
+            Read the update <span aria-hidden="true">→</span>
+          </button>
+          {deskFolio ? (
+            <button type="button" className="wsj-jump-btn" onClick={() => onTurn(deskFolio)}>
+              Missouri news, page {deskFolio} <span aria-hidden="true">→</span>
+            </button>
+          ) : null}
+        </p>
+      </div>
+    </section>
+  );
+}
+
+/* ───────────────────────── pager ───────────────────────── */
+
+/** Folios this close to the one in view stay painted and get their art fetched ahead of the swipe. */
+const NEAR_PAGES = 2;
+const NO_STORIES: GameWrapCard[] = [];
+
+/** The folio in view. Only near-page consumers read it, so turning a page doesn't re-render the edition. */
+const PagerIndexContext = createContext(0);
+/** How far back from A1 the idle fill has painted. 1 = A1 only. */
+const FolioHydrateContext = createContext(1);
+
+/** Stable pager identity so later folio inserts (#350) do not remount A1. */
+function folioSlotKey(page: { kind: string; folio: string } & Record<string, unknown>): string {
+  switch (page.kind) {
+    case "favorites-front":
+      return "a-front";
+    case "favorites-clubs":
+      return `a-clubs-${String(page.weatherPart ?? "all")}-${String(page.clubOffset ?? 0)}`;
+    case "favorites-form":
+      return `a-form-${String(page.sectionPage ?? page.folio)}`;
+    case "favorites-watch":
+      return "a-watch";
+    case "favorites-day":
+      return "a-day";
+    case "favorites-beez":
+      return "a-beez";
+    case "favorites-races":
+      return `a-races-${String(page.sectionPage ?? 0)}`;
+    case "favorites-continue": {
+      const jumps = page.jumps as { card?: { id?: string } }[] | undefined;
+      return `a-cont-${jumps?.[0]?.card?.id ?? page.folio}`;
+    }
+    case "favorites-inside": {
+      const primary = page.primary as { id?: string } | undefined;
+      return `a-in-${primary?.id ?? page.folio}`;
+    }
+    case "sport-front":
+      return `s-${String(page.path)}-${String(page.focus)}-${String(page.sectionPage ?? 0)}`;
+    case "sport-inside": {
+      const primary = page.primary as { id?: string } | undefined;
+      return `s-in-${primary?.id ?? page.folio}`;
+    }
+    case "national":
+      return `n-${String(page.sectionPage ?? page.folio)}`;
+    case "missouri":
+      return `m-${String(page.sectionPage ?? page.folio)}`;
+    default:
+      return page.folio;
+  }
+}
+
+const MemoSportFront = memo(SportFront);
+
+function NearSportFront({ index, ...props }: Omit<Parameters<typeof SportFront>[0], "active"> & { index: number }) {
+  const current = useContext(PagerIndexContext);
+  return <MemoSportFront {...props} active={Math.abs(index - current) <= 1} />;
+}
+
+const FolioBody = memo(function FolioBody({ render }: { render: () => ReactNode }) {
+  return render();
+});
+
+/** A1 prints immediately. The rest fill backward through the folio, or as soon as you turn to them. */
+function FolioSlot({
+  index,
+  folio,
+  kind,
+  render,
+}: {
+  index: number;
+  folio: string;
+  kind: string;
+  render: () => ReactNode;
+}) {
+  const current = useContext(PagerIndexContext);
+  const hydrate = useContext(FolioHydrateContext);
+  const front = kind === "favorites-front" || index === 0;
+  const near = front || index < hydrate || Math.abs(index - current) <= NEAR_PAGES;
+  const [shown, setShown] = useState(front);
+  useEffect(() => {
+    if (near) setShown(true);
+  }, [near]);
+  return (
+    <section className="wsj-page" aria-label={`Page ${folio}`} {...(near ? { "data-near": "" } : {})}>
+      <div className="wsj-fit">
+        <FittedSheet folio={folio} ready={shown}>{shown ? <FolioBody render={render} /> : null}</FittedSheet>
+      </div>
+    </section>
+  );
+}
+
+function prefetchNearArt(pager: HTMLElement, index: number) {
+  const sheets = pager.children;
+  for (let i = 0; i < sheets.length; i++) {
+    if (Math.abs(i - index) > NEAR_PAGES) continue;
+    const sheet = sheets[i] as HTMLElement;
+    for (const img of sheet.querySelectorAll("img")) prefetchSrc(img.currentSrc || img.src);
+  }
+}
+
+/** Fetch the rest of the edition's art in idle time, a few at a time, so far folios open already printed. */
+function warmEdition(pager: HTMLElement, cap = 4): () => void {
+  const conn = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
+  if (conn?.saveData || /(^|-)2g$/.test(conn?.effectiveType ?? "")) return () => {};
+  const hasIdle = typeof window.requestIdleCallback === "function";
+  const idle = (cb: () => void) => (hasIdle ? window.requestIdleCallback(cb, { timeout: 2_000 }) : window.setTimeout(cb, 200));
+  const cancelIdle = (id: number) => (hasIdle ? window.cancelIdleCallback(id) : window.clearTimeout(id));
+  let stopped = false;
+  let inflight = 0;
+  let handle = 0;
+  const seen = new Set<string>();
+  const pump = () => {
+    handle = 0;
+    if (stopped) return;
+    for (const img of pager.querySelectorAll<HTMLImageElement>("img[src]")) {
+      if (inflight >= cap) break;
+      const src = img.currentSrc || img.src;
+      if (!src || seen.has(src) || img.complete) continue;
+      seen.add(src);
+      prefetchSrc(src);
+      inflight++;
+      window.setTimeout(() => {
+        inflight--;
+        schedule();
+      }, 800);
+    }
+  };
+  const schedule = () => {
+    if (!stopped && !handle) handle = idle(pump);
+  };
+  schedule();
+  return () => {
+    stopped = true;
+    if (handle) cancelIdle(handle);
+  };
+}
+
+/* ───────────────────────── page ───────────────────────── */
+
+function openingCandidateId(): string {
+  if (typeof window === "undefined") return pressEdition().id;
+  const asked = new URLSearchParams(window.location.search).get("edition");
+  return asked && parsePressId(asked) ? asked : pressEdition().id;
+}
+
+const openingPressId = openingCandidateId();
+const openingIssuePromise: Promise<PrintedIssue | null> =
+  typeof indexedDB === "undefined" ? Promise.resolve(null) : readLocalIssue(openingPressId);
+
+function asStoredSchedule(value: unknown): DaySchedule | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as DaySchedule;
+  return typeof row.date === "string" && Array.isArray(row.events) ? row : null;
+}
+
+function asStoredNational(value: unknown): NationalDesk | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as NationalDesk;
+  if (typeof row.issueId === "string" && Array.isArray(row.stories) && row.stories.length) return row;
+  return asNationalDesk(value as Parameters<typeof asNationalDesk>[0]);
+}
+
+function asStoredBeez(value: unknown): BeezDesk | null {
+  return asBeezDesk(value);
+}
+
+export default function DailyNewspaperPage() {
+  return (
+    <Suspense fallback={<TimesHoldShell />}>
+      <NewspaperDesk />
+    </Suspense>
+  );
+}
+
+function NewspaperDesk() {
+  const opened = use(openingIssuePromise);
+  const queryClient = useQueryClient();
+  const [params, setParams] = useSearchParams();
+  const nationalSample = import.meta.env.DEV && params.get("national_sample") === "1";
+  const racesSample = import.meta.env.DEV && params.get("races_sample") === "1";
+  const askedEdition = parsePressId(params.get("edition") ?? "")?.id ?? null;
+  const seeded = useRef<string | null>(null);
+  if (opened && seeded.current !== opened.id) {
+    for (const q of opened.queries) queryClient.setQueryData(q.key, q.data);
+    seeded.current = opened.id;
+  }
+  const { user } = useAuth();
+  const [clockPress, setClockPress] = useState(() => pressEdition());
+  const [recent, setRecent] = useState<FiledIssueMeta[] | null>(null);
+  const [viewId, setViewId] = useState(() => askedEdition ?? pressEdition().id);
+  const viewing = parsePressId(viewId) ?? clockPress;
+  const day = viewing.day;
+  const pressId = viewId;
+  const press = viewing;
+  const latestId = recent?.[0]?.id ?? clockPress.id;
+  const [docP
