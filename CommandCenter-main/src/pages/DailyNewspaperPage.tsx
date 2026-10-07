@@ -5571,11 +5571,9 @@ function NewspaperDesk() {
   const [pageIndex, setPageIndex] = useState(0);
   const [fillFor, setFillFor] = useState(pressId);
   const [filled, setFilled] = useState<ReadonlySet<number>>(() => new Set([0]));
-  const [armedFor, setArmedFor] = useState<string | null>(null);
   if (fillFor !== pressId) {
     setFillFor(pressId);
     setFilled(new Set([0]));
-    setArmedFor(null);
   }
   const filledRef = useRef(filled);
   filledRef.current = filled;
@@ -7237,13 +7235,12 @@ function NewspaperDesk() {
 
   const revealFront = pages.find((p) => p.kind === "favorites-front");
   const revealLead = revealFront?.kind === "favorites-front" ? revealFront.lead : null;
-  if (docPhase !== "boot" && revealLead && armedFor !== pressId) setArmedFor(pressId);
+  const revealLeadId = revealLead?.id ?? null;
 
   useLayoutEffect(() => {
-    // Arm once per edition. Rebuilding the folio used to cancel this effect
-    // on every pages identity, so the 7s cap never fired and the cover stayed
-    // up while A1 was replaced underneath it.
-    if (armedFor !== pressId || docPhase === "boot" || revealFor.current === pressId) return;
+    // Keyed on the lead id, not the pages array. A new book used to cancel
+    // this effect before the 7s cap, so the cover never came off.
+    if (docPhase === "boot" || !revealLeadId || revealFor.current === pressId) return;
     let cancel = false;
     const cap = window.setTimeout(() => {
       if (cancel) return;
@@ -7261,7 +7258,7 @@ function NewspaperDesk() {
       cancel = true;
       window.clearTimeout(cap);
     };
-  }, [armedFor, pressId, docPhase]);
+  }, [docPhase, pressId, revealLeadId]);
 
   // A story that sat on the sheet counts as read. The next press leaves it out.
   useEffect(() => {

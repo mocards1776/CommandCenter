@@ -36,9 +36,11 @@ export function aboveFoldImages(root: ParentNode, pages = ATF_PAGES): HTMLImageE
 }
 
 export async function decodeImage(img: HTMLImageElement): Promise<void> {
-  if (img.complete && img.naturalWidth) {
+  // A finished image (including a broken one) will not fire load again.
+  // Waiting here held the cover for the whole cap.
+  if (img.complete) {
     try {
-      await img.decode();
+      if (img.naturalWidth) await img.decode();
     } catch {
       /* a broken file still occupies its box */
     }
