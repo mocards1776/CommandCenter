@@ -2,6 +2,21 @@
 
 ---
 
+## Times press: morning extract-file hop + stuck recovery — October 7, 2026
+
+- Stage-14 extract-file takes **6 cards per hop** (was a `mo=20` loop under
+  the 1,200 ms wall budget). Live `2026-10-06-evening` hit HTTP 546 at
+  `extractFileCursor=100` of 283.
+- A repeated hop signature no longer 500s forever. The host advances the
+  cursor (copies skipped cards onto `fresh`) and continues. After 3 skips it
+  leaves extract-file, same as the overnight ops recovery.
+- Finalize is idempotent: `WHERE status = 'printing'`, and an already-array
+  `queries` is left alone so a double done-hop cannot wipe desks to `[]`.
+- Rebuild `compose.bundle.js` and replace `private.press_bundle`. Redeploy
+  `newspaper-press`. `--tt-page-w` / Sports App functions unchanged.
+
+---
+
 ## Finals Telegram: two-page album for favorite games — October 7, 2026
 
 - `@FinalsAndStats_bot` still sends one `sendPhoto` scoreboard card for

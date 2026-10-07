@@ -35,6 +35,10 @@ type PressModule = {
   slimPrintedQuery: (query: PrintedQuery) => PrintedQuery;
   checkpointBag: (bag: Record<string, unknown>) => Record<string, unknown>;
   hopSignature?: (bag: Record<string, unknown> | null) => string;
+  advanceStuckBag?: (
+    bag: Record<string, unknown> | null,
+    opts?: { skipRemaining?: boolean },
+  ) => Record<string, unknown>;
   pressStep: (
     args: {
       pressId: string;
@@ -160,6 +164,64 @@ function askEditor(url: string, key: string) {
   };
 }
 
+/**
+ * Host-side fallback if an older press_bundle lacks advanceStuckBag.
+ * newspaper_issues.status only allows printing|ready — skip forward instead
+ * of writing a failed status, and never 500 the same hop forever.
+ */
+const STUCK_HOP_SKIP_MAX = 3;
+const STUCK_EXTRACT_FILE_SKIP = 20;
+
+function advanceStuckBagLocal(
+  bag: Record<string, unknown> | null,
+  opts?: { skipRemaining?: boolean },
+): Record<string, unknown> {
+  const state: Record<string, unknown> = { ...(bag ?? { stage: 0 }) };
+  const stage = typeof state.stage === "number" ? state.stage : 0;
+  state.stage = stage;
+  if (stage === 14 && typeof state.extractFileCursor === "number") {
+    const raw = Array.isArray(state.raw) ? (state.raw as unknown[]) : [];
+    const from = state.extractFileCursor;
+    const to = opts?.skipRemaining ? raw.length : Math.min(from + STUCK_EXTRACT_FILE_SKIP, raw.length);
+    const skipped = raw.slice(from, to);
+    const fresh = Array.isArray(state.fresh) ? (state.fresh as unknown[]) : [];
+    state.fresh = [...fresh, ...skipped];
+    if (!raw.length || to >= raw.length) {
+      delete state.raw;
+      delete state.extracts;
+      delete state.extractUrls;
+      delete state.extractCursor;
+      delete state.extractFileCursor;
+      state.stage = 15;
+    } else {
+      state.extractFileCursor = to;
+    }
+    return state;
+  }
+  if (typeof state.extractCursor === "number") {
+    state.extractCursor = (state.extractCursor as number) + 4;
+    return state;
+  }
+  for (const [key, step] of [
+    ["tagCursor", 20],
+    ["cleanCursor", 20],
+    ["dedupeCursor", 20],
+    ["storyCursor", 20],
+    ["enrichCursor", 2],
+    ["wrapCursor", 1],
+    ["restCursor", 1],
+    ["leagueCursor", 1],
+    ["wireCursor", 1],
+  ] as const) {
+    if (typeof state[key] === "number") {
+      state[key] = (state[key] as number) + step;
+      return state;
+    }
+  }
+  state.stage = stage + 1;
+  return state;
+}
+
 let loading: Promise<PressModule> | null = null;
 
 function loadPress(): Promise<PressModule> {
@@ -207,6 +269,7 @@ Deno.serve(async (req) => {
   const hopSignature =
     loaded.hopSignature ??
     ((next: Record<string, unknown> | null) => String(next?.stage ?? 0));
+  const advanceStuck = loaded.advanceStuckBag ?? advanceStuckBagLocal;
   const press = pressEdition();
   let continued = false;
   try {
@@ -255,9 +318,24 @@ Deno.serve(async (req) => {
     checkpoint === true && savedBag && typeof savedBag === "object" && !Array.isArray(savedBag)
       ? (savedBag as Record<string, unknown>)
       : null;
-  const bagStage = typeof bag?.stage === "number" ? bag.stage : 0;
-  const priorAttempt = (row?.hopAttempt ?? row?.queries?.hopAttempt) as { sig?: string } | null;
+  const priorAttempt = (row?.hopAttempt ?? row?.queries?.hopAttempt) as {
+    sig?: string;
+    skips?: number;
+  } | null;
   const hopSig = hopSignature(bag);
+  let workingBag = bag;
+  let stuckSkips = 0;
+  if (priorAttempt?.sig && priorAttempt.sig === hopSig) {
+    stuckSkips = (typeof priorAttempt.skips === "number" ? priorAttempt.skips : 0) + 1;
+    const skipRemaining = stuckSkips >= STUCK_HOP_SKIP_MAX;
+    workingBag = checkpointBag(advanceStuck(bag, { skipRemaining }));
+    console.error(
+      `[newspaper-press] STUCK HOP SKIP: ${hopSig} → ${hopSignature(workingBag)} skips=${stuckSkips}` +
+        (skipRemaining ? " (left stage / skipped remaining extract-file)" : " (advanced cursor)"),
+    );
+  }
+  const bagStage = typeof workingBag?.stage === "number" ? workingBag.stage : 0;
+  const runSig = hopSignature(workingBag);
 
   try {
     const { data: desk } = await supabase
@@ -283,14 +361,14 @@ Deno.serve(async (req) => {
     let carried: unknown[] = [];
     let carriedMissouri: unknown[] = [];
     // Only the Missouri desk (8) and story file (15) need yesterday's paper.
-    if (prevId && (bagStage === 8 || (bagStage === 15 && !Array.isArray(bag?.filed)))) {
+    if (prevId && (bagStage === 8 || (bagStage === 15 && !Array.isArray(workingBag?.filed)))) {
       const { data: prev } = await supabase
         .from("newspaper_issues")
         .select(bagStage === 8 ? "queries" : "stories")
         .eq("id", prevId)
         .eq("status", "ready")
         .maybeSingle();
-      if (bagStage === 15 && !Array.isArray(bag?.filed) && Array.isArray(prev?.stories)) carried = prev.stories;
+      if (bagStage === 15 && !Array.isArray(workingBag?.filed) && Array.isArray(prev?.stories)) carried = prev.stories;
       if (bagStage === 8) {
         const queries = Array.isArray(prev?.queries) ? prev.queries : [];
         for (const query of queries) {
@@ -303,15 +381,6 @@ Deno.serve(async (req) => {
     }
     const dbUrl = Deno.env.get("SUPABASE_DB_URL");
     if (!dbUrl) throw new Error("Missing database URL");
-    if (priorAttempt?.sig && priorAttempt.sig === hopSig) {
-      console.error(
-        `[newspaper-press] STUCK HOP: stage/cursor ${hopSig} already failed (likely 546 CPU Time exceeded). Not re-running the same work.`,
-      );
-      return Response.json(
-        { ok: false, error: `stuck hop ${hopSig}`, stuck: true, stage: bagStage, cursor: hopSig },
-        { status: 500 },
-      );
-    }
     {
       const pool = new Pool(dbUrl, 1);
       const connection = await pool.connect();
@@ -319,15 +388,23 @@ Deno.serve(async (req) => {
         await connection.queryObject(
           `update public.newspaper_issues
               set queries = jsonb_set(
-                coalesce(
-                  case when jsonb_typeof(queries) = 'object' then queries else null end,
-                  jsonb_build_object('checkpoint', true, 'bag', $1::jsonb, 'desks', '[]'::jsonb)
+                jsonb_set(
+                  coalesce(
+                    case when jsonb_typeof(queries) = 'object' then queries else null end,
+                    jsonb_build_object('checkpoint', true, 'desks', '[]'::jsonb)
+                  ),
+                  '{bag}',
+                  $1::jsonb
                 ),
                 '{hopAttempt}',
                 $2::jsonb
               )
             where id = $3`,
-          [JSON.stringify(bag ?? { stage: 0 }), JSON.stringify({ sig: hopSig, at: new Date().toISOString() }), press.id],
+          [
+            JSON.stringify(workingBag ?? { stage: 0 }),
+            JSON.stringify({ sig: runSig, at: new Date().toISOString(), skips: stuckSkips }),
+            press.id,
+          ],
         );
       } finally {
         connection.release();
@@ -350,7 +427,7 @@ Deno.serve(async (req) => {
         // loud log — if the trimmed request still exceeds EDITOR_REQUEST_MAX_BYTES.
         editor: Deno.env.get("NEWSPAPER_EDITOR") === "off" ? undefined : askEditor(url, key),
       },
-      bag,
+      workingBag,
     );
     const hopMs = Date.now() - hopStarted;
     const flush = (step.flush ?? []).map(slimPrintedQuery);
@@ -411,6 +488,25 @@ Deno.serve(async (req) => {
         stories: storyFlush.length,
       });
     }
+    {
+      const { data: latest } = await supabase
+        .from("newspaper_issues")
+        .select("status, queries, stories")
+        .eq("id", press.id)
+        .maybeSingle();
+      if (latest?.status === "ready") {
+        const queryCount = Array.isArray(latest.queries) ? latest.queries.length : 0;
+        const storyCount = Array.isArray(latest.stories) ? latest.stories.length : 0;
+        console.info(`[newspaper-press] hop stage=done already ready id=${press.id} queries=${queryCount}`);
+        return Response.json({
+          ok: true,
+          id: press.id,
+          skipped: true,
+          stories: storyCount,
+          queries: queryCount,
+        });
+      }
+    }
     console.info(
       `[newspaper-press] hop stage=done cursor=${hopSignature({ stage: 19 })} bagBytes=0 elapsedMs=${hopMs}`,
     );
@@ -422,20 +518,40 @@ Deno.serve(async (req) => {
             set version = $1,
                 status = 'ready',
                 stories = coalesce(stories, '[]'::jsonb) || $2::jsonb,
-                queries = coalesce(
-                  case
-                    when jsonb_typeof(queries) = 'object' then queries->'desks'
-                    else '[]'::jsonb
-                  end,
-                  '[]'::jsonb
-                ) || $3::jsonb,
+                queries = case
+                  when jsonb_typeof(queries) = 'array' and jsonb_array_length(queries) > 0 then queries
+                  else coalesce(
+                    case
+                      when jsonb_typeof(queries) = 'object' then queries->'desks'
+                      else '[]'::jsonb
+                    end,
+                    '[]'::jsonb
+                  ) || $3::jsonb
+                end,
                 printed_at = now()
           where id = $4
+            and status = 'printing'
           returning jsonb_array_length(queries) as n, jsonb_array_length(stories) as ns`,
         [ISSUE_VERSION, JSON.stringify(storyFlush ?? []), JSON.stringify(flush), press.id],
       );
-      const queryCount = filed.rows[0]?.n ?? flush.length;
-      const storyCount = filed.rows[0]?.ns ?? storyFlush.length;
+      if (!filed.rows[0]) {
+        const { data: latest } = await supabase
+          .from("newspaper_issues")
+          .select("queries, stories")
+          .eq("id", press.id)
+          .maybeSingle();
+        const queryCount = Array.isArray(latest?.queries) ? latest.queries.length : flush.length;
+        const storyCount = Array.isArray(latest?.stories) ? latest.stories.length : storyFlush.length;
+        return Response.json({
+          ok: true,
+          id: press.id,
+          skipped: true,
+          stories: storyCount,
+          queries: queryCount,
+        });
+      }
+      const queryCount = filed.rows[0].n ?? flush.length;
+      const storyCount = filed.rows[0].ns ?? storyFlush.length;
       return Response.json({ ok: true, id: press.id, stories: storyCount, queries: queryCount });
     } finally {
       connection.release();

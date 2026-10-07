@@ -573,8 +573,9 @@ function recordHop(stage: number, bag: Record<string, unknown>, started: number)
     const hopStart = Date.now();
     let progressed = false;
     while (at < raw.length && !(progressed && Date.now() - hopStart >= HOP_BUDGET_MS)) {
-      fresh.push(...raw.slice(at, at + 20).map((c) => ({ ...c })));
-      at += 20;
+      // Stage-14 extract-file is one EXTRACT_FILE_PER_HOP=6 slice per hop.
+      fresh.push(...raw.slice(at, at + 6).map((c) => ({ ...c })));
+      at += 6;
       progressed = true;
     }
     recordHop(14, { stage: 14, extractFileCursor: at, raw, fresh }, hopStart);
