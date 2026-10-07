@@ -1,0 +1,266 @@
+ion={edition} />
+        ) : page.focus === "teams" ? (
+          <StandingsDesk
+            page={page}
+            standings={offStandings}
+            leagueClubs={leagueClubs}
+            board={page.offseason ? null : board}
+            edition={edition}
+            onTurn={onTurn}
+          />
+        ) : page.focus === "leaders" ? (
+          <LeadersDesk groups={leaders} />
+        ) : page.focus === "schedule" ? (
+          <ScheduleDesk page={page} board={board} slate={slate} edition={edition} standings={standings} heisman={heisman} />
+        ) : page.focus === "playoffs" ? (
+          <PlayoffDesk tree={playoffs} />
+        ) : page.focus === "players" ? (
+          <PlayersDesk nights={nights} newsDay={newsDay} />
+        ) : page.focus === "coaches" ? (
+          <CoachesDesk tiles={coaches} />
+        ) : page.clubs.length ? (
+          <>
+            <ClubFormGrid clubs={page.clubs} sheets={sheets} />
+            {leagueClubs.length ? (
+              <section className="wsj-form-league">
+                <h3 className="wsj-band-title">Around the league</h3>
+                <LeagueFormGrid clubs={leagueClubs} />
+              </section>
+            ) : null}
+          </>
+        ) : (
+          <LeagueFormGrid clubs={leagueClubs} />
+        )}
+      </div>
+      {turn ? <TurnBar onTurn={onTurn} folio={turn.folio} label={turn.label} /> : null}
+    </div>
+  );
+}
+
+function nightWhen(night: PlayerNight, newsDay: string): string {
+  if (!night.day) return "No games logged this season";
+  if (night.day === newsDay) return "Last night";
+  const d = new Date(`${night.day}T12:00:00Z`);
+  return `Last game · ${d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" })}`;
+}
+
+/** Every followed or tagged player in the section, with the line from his last game. */
+function PlayersDesk({ nights, newsDay }: { nights: PlayerNight[]; newsDay: string }) {
+  if (!nights.length) return <p className="wsj-empty">Pulling your players’ game logs…</p>;
+  const ranked = rankNights(nights, newsDay);
+  const played = ranked.filter((n) => n.day === newsDay);
+  const rest = ranked.filter((n) => n.day !== newsDay);
+  const card = (n: PlayerNight, big: boolean) => {
+    const href = playerPageHref(n.player.path, n.player.id);
+    return (
+      <article key={`${n.player.path}-${n.player.id}`} className={cn("tt-pl", big && "big", n.day === newsDay && "played")}>
+        <header>
+          <span className="tt-pl-face">
+            {n.headshot ? <img src={n.headshot} alt="" loading="lazy" /> : null}
+          </span>
+          <span className="tt-pl-id">
+            <em>
+              {[n.player.position, n.player.team].filter(Boolean).join(" · ")}
+              {n.player.source === "tagged" ? " · Tagged" : ""}
+            </em>
+            <strong>
+              <PlayerName name={n.player.name} href={href} />
+            </strong>
+            <span>{nightWhen(n, newsDay)}</span>
+          </span>
+        </header>
+        {n.opponent ? (
+          <p className="tt-pl-opp">
+            {n.opponentLogo ? <img src={n.opponentLogo} alt="" loading="lazy" /> : null}
+            <span>
+              {n.homeAway ?? "vs"} {n.opponent}
+            </span>
+            {n.result ? <b className={cn(/^W/.test(n.result) ? "w" : /^L/.test(n.result) ? "l" : "")}>{n.result}</b> : null}
+          </p>
+        ) : null}
+        {n.line ? <p className="tt-pl-line">{n.line}</p> : null}
+        {n.cells.length ? (
+          <dl className="tt-pl-cells">
+            {n.cells.map((c) => (
+              <div key={c.label}>
+                <dd>{c.value}</dd>
+                <dt>{c.label}</dt>
+              </div>
+            ))}
+          </dl>
+        ) : null}
+      </article>
+    );
+  };
+  return (
+    <div className="tt-players">
+      {played.length ? (
+        <section>
+          <h3 className="wsj-band-title">
+            Last night <em>{played.length} played</em>
+          </h3>
+          <div className="tt-pl-grid big" style={{ ["--cols" as string]: String(balancedCols(played.length, [3, 2, 4])) }}>
+            {played.map((n) => card(n, true))}
+          </div>
+        </section>
+      ) : (
+        <p className="wsj-empty">None of your players saw action last night. Their latest lines follow.</p>
+      )}
+      {rest.length ? (
+        <section>
+          <h3 className="wsj-band-title">
+            {played.length ? "The rest of your list" : "Their last outings"} <em>{rest.length}</em>
+          </h3>
+          <div
+            className={cn("tt-pl-grid", !played.length && "big")}
+            style={{
+              ["--cols" as string]: String(
+                played.length ? balancedCols(rest.length, [4, 3, 5, 2]) : balancedCols(rest.length, [2, 3]),
+              ),
+            }}
+          >
+            {rest.map((n) => card(n, !played.length))}
+          </div>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
+function lastGameLine(tile: FavoriteCoachTile): string | null {
+  const g = tile.lastGame;
+  if (!g) return null;
+  const bits = [
+    g.result,
+    g.score,
+    g.homeAway && g.opponent ? `${g.homeAway} ${g.opponent}` : g.opponent,
+    g.date,
+  ].filter(Boolean);
+  return bits.length ? bits.join(" · ") : null;
+}
+
+function nextGameLine(tile: FavoriteCoachTile): string | null {
+  const g = tile.nextGame;
+  if (!g) return null;
+  const match = g.homeAway && g.opponent ? `${g.homeAway} ${g.opponent}` : g.opponent;
+  const bits = [match, g.kickoff, g.tv, g.line].filter(Boolean);
+  return bits.length ? bits.join(" · ") : null;
+}
+
+/** Weekly desk: one tile per favorite coach. Mizzou runs wide when he is on the list. */
+function CoachesDesk({ tiles }: { tiles: FavoriteCoachTile[] }) {
+  if (!tiles.length) return <p className="wsj-empty">No favorite coaches on file this week.</p>;
+  return (
+    <div className="tt-coaches" style={{ ["--cols" as string]: "2" }}>
+      {tiles.map((tile) => {
+        const last = lastGameLine(tile);
+        const next = nextGameLine(tile);
+        const stat =
+          tile.pointsForAvg || tile.pointsAgainstAvg
+            ? [tile.pointsForAvg ? `${tile.pointsForAvg} PF` : null, tile.pointsAgainstAvg ? `${tile.pointsAgainstAvg} PA` : null]
+                .filter(Boolean)
+                .join(" · ")
+            : null;
+        return (
+          <article
+            key={`${tile.leaguePath}-${tile.coachId}`}
+            className={cn("tt-coach", tile.featured && "featured")}
+            style={tile.teamColor ? tint(tile.teamColor) : undefined}
+          >
+            <header>
+              <CoachShot tile={tile} />
+              <span className="tt-coach-id">
+                <em>
+                  {[tile.teamName, tile.rank != null ? `#${tile.rank}` : null, tile.standing].filter(Boolean).join(" · ")}
+                </em>
+                <strong>{tile.name}</strong>
+                <span>
+                  {[tile.record, tile.conferenceRecord ? `${tile.conferenceRecord} conf` : null].filter(Boolean).join(" · ") ||
+                    "Record not posted"}
+                </span>
+              </span>
+            </header>
+            <div className="tt-coach-body">
+              <div className="tt-coach-story">
+                {last ? (
+                  <p className={cn("tt-coach-last", tile.lastGame?.result === "W" && "w", tile.lastGame?.result === "L" && "l")}>
+                    {tile.lastGame?.opponentLogo ? <img src={tile.lastGame.opponentLogo} alt="" /> : null}
+                    <span>{last}</span>
+                  </p>
+                ) : null}
+                {tile.lastGame?.summary ? <p className="tt-coach-sum">{tile.lastGame.summary}</p> : null}
+                {next ? (
+                  <p className="tt-coach-next">
+                    <b>Next</b> {next}
+                  </p>
+                ) : null}
+                {stat ? <p className="tt-coach-stat">{stat}</p> : null}
+                {tile.featured ? null : <CoachFacts tile={tile} />}
+              </div>
+              {tile.featured ? (
+                <aside className="tt-coach-aside">
+                  <div className="tt-coach-lead">
+                    <CoachLeadMark tile={tile} />
+                    <CoachSeasonStrip tile={tile} />
+                  </div>
+                  <CoachFacts tile={tile} />
+                </aside>
+              ) : null}
+            </div>
+            <CoachSlate tile={tile} />
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+function CoachShot({ tile }: { tile: FavoriteCoachTile }) {
+  const photo = tile.headshot;
+  const logo = tile.teamLogo;
+  if (!photo && !logo) return null;
+  return (
+    <span className="tt-coach-shot">
+      <img className={photo ? "portrait" : "portrait logo-only"} src={photo || logo || ""} alt="" />
+      {photo && logo ? (
+        <span className="tt-coach-badge">
+          <img src={logo} alt="" />
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+function CoachLeadMark({ tile }: { tile: FavoriteCoachTile }) {
+  if (!tile.teamLogo) return null;
+  return (
+    <span className="tt-coach-mark">
+      <img src={tile.teamLogo} alt="" />
+    </span>
+  );
+}
+
+function CoachSeasonStrip({ tile }: { tile: FavoriteCoachTile }) {
+  const chips = tile.seasonStrip ?? [];
+  if (!chips.length) return null;
+  return (
+    <div className="tt-coach-strip">
+      <b>{tile.seasonYear ?? "Season"}</b>
+      {chips.map((chip) => (
+        <i key={chip.id} className={chip.result === "W" ? "w" : chip.result === "L" ? "l" : undefined}>
+          {chip.result}
+          {chip.opponentRank != null ? ` #${chip.opponentRank}` : ""} {chip.opponent}
+        </i>
+      ))}
+    </div>
+  );
+}
+
+function CoachSlate({ tile }: { tile: FavoriteCoachTile }) {
+  const games = tile.slate ?? [];
+  if (!games.length) return null;
+  const recent = games.filter((g) => g.kind === "final");
+  const upcoming = games.filter((g) => g.kind === "upcoming");
+  const cols = recent.length && upcoming.length;
+  return (
+    <div className={cols ? "tt-coach-slate" : "tt-coach-slate 
