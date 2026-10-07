@@ -224,6 +224,7 @@ async function captureSheet(page, index, pngPath) {
     if (!box || box.h < 2) continue;
     const slice = `${pngPath}.${slices.length}.png`;
     await page.screenshot({
+      path: slice,
       animations: "disabled",
       type: "png",
       clip: { x: box.x, y: box.y, width: box.w, height: box.h },
