@@ -1,0 +1,261 @@
+                <StandingsTable key={group.name} group={group} mine={mine} />
+                ))}
+              </div>
+            ) : null}
+            {otherScores.length ? (
+              <section className="tt-front-rail" aria-label="Recent results" data-tt-flow="">
+                <h3 className="wsj-band-title">Recent results</h3>
+                <ScoreStrip
+                  games={otherScores.slice(0, 8)}
+                  onOpen={(g) => {
+                    const card = stampBoardCard(g, page.clubs);
+                    if (card) open({ card, game: g });
+                  }}
+                />
+              </section>
+            ) : null}
+            {fixtures.length ? (
+              <section className="tt-front-fixtures" aria-label="Upcoming fixtures" data-tt-flow="">
+                <h3 className="wsj-band-title">Upcoming fixtures</h3>
+                <ul className="tt-fixture-dates">
+                  {fixtures.slice(0, 8).map((g) => (
+                    <li key={g.id}>
+                      <time dateTime={g.startIso ?? undefined}>
+                        {(g.startIso && formatFixtureWhen(g.startIso)) || g.status}
+                      </time>
+                      <b>
+                        {g.away.abbrev} at {g.home.abbrev}
+                      </b>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
+          </>
+        ) : null}
+        {!cfb && !mlb && printableLeaders.length ? (
+          <section className="tt-lleaders tt-front-leaders" aria-label="League leaders" data-tt-flow="">
+            <h3 className="wsj-band-title">Leaders</h3>
+            <div className="tt-lleaders-grid">
+              {printableLeaders.map((group) => (
+                <div key={group.category} className="tt-lleaders-cat">
+                  <h4>{leaderCategoryLabel(group.category)}</h4>
+                  <ol>
+                    {group.rows.slice(0, 5).map((row) => (
+                      <li key={`${group.category}-${row.name}`}>
+                        {row.headshot ? <img src={row.headshot} alt="" /> : <span className="tt-lleaders-ph" />}
+                        <span className="tt-lleaders-who">
+                          <strong>{row.name}</strong>
+                          <em>{row.team}</em>
+                        </span>
+                        <span className="tt-lleaders-val">
+                          <b>{row.line}</b>
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
+      </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** League news desk: last night's board, then the stories with their art. */
+function SportNewsDesk({
+  page,
+  board,
+  leagueClubs,
+  edition,
+  onTurn,
+}: {
+  page: SportFrontPage;
+  board: SectionBoard | null;
+  leagueClubs: LeagueClub[];
+  edition: string;
+  onTurn: (folio: string) => void;
+}) {
+  const open = useReader();
+  const strips = stripFor(page.path, board, edition);
+  const football = page.path.startsWith("football/");
+  const finals = football ? [...(board?.results ?? []), ...(board?.prior ?? [])] : board?.results ?? [];
+  const recent = page.path.startsWith("soccer/") || football ? [...finals].reverse() : finals;
+  const gameById = new Map<string, BoxGame>();
+  // Recaps of games your clubs played run in Section A; the league desk takes the rest.
+  const newsContinue = (page.newsSlice?.offset ?? 0) > 0;
+  const recapCards = newsContinue || page.path === "baseball/mlb"
+    ? []
+    : recent
+    .filter((g) => !involvesClub(g, page.clubs))
+    .map((g) => {
+      const card = boxStoryCard(g);
+      if (card) gameById.set(card.id, g);
+      return card;
+    })
+    .filter((c): c is GameWrapCard => Boolean(c && (c.photo || (c.body?.length ?? 0) > 300)));
+  // The wire's rewrite of a game the box already carries is the same story twice.
+  const covered = recent.filter((g) => g.recap);
+  const retold = (card: GameWrapCard) => {
+    const t = squash(card.teamName);
+    const head = squash(card.headline);
+    return covered.some((g) => {
+      const [a, b] = [squash(g.away.short), squash(g.home.short)];
+      const isA = Boolean(t && a && (t.includes(a) || a.includes(t)));
+      const isB = Boolean(t && b && (t.includes(b) || b.includes(t)));
+      if (!isA && !isB) return false;
+      const other = isA ? b : a;
+      return head.includes(other) || /\d+-\d+/.test(card.headline);
+    });
+  };
+  const stories = dedupeByHead([
+    ...recapCards,
+    ...page.articles.map((a) => a.card).filter((c) => !retold(c)),
+  ]);
+  const folios = Object.fromEntries(page.articles.map((a) => [a.card.id, a.folio]));
+  const withArt = stories.filter((c) => c.photo);
+  const lead = withArt[0] ?? stories[0] ?? null;
+  const seconds = stories.filter((c) => c !== lead && c.photo).slice(0, newsContinue ? 2 : 1);
+  const briefs = stories.filter((c) => c !== lead && !seconds.includes(c)).slice(0, newsContinue ? 4 : 3);
+  const crestFor = (card: GameWrapCard) =>
+    leagueClubs.find((c) => c.short && card.teamName?.toLowerCase().includes(c.short.toLowerCase()))?.logo ?? null;
+
+  const showStrip = !page.path.includes("college-football");
+  return (
+    <div className="wsj-sport-news">
+      {showStrip && strips.map((strip) =>
+        strip.games.length ? (
+          <section className="tt-strip-wrap" key={strip.title}>
+            <h3 className="wsj-band-title">
+              {strip.title}
+              <button type="button" className="tt-band-link" onClick={() => onTurn(deskFolio(page, "recaps", `${page.section}2`))}>
+                Box scores, page {deskFolio(page, "recaps", `${page.section}2`)} →
+              </button>
+            </h3>
+            <ScoreStrip
+              games={strip.games}
+              onOpen={(g) => {
+                const card = boxStoryCard(g);
+                if (card) open({ card, game: g });
+                else onTurn(deskFolio(page, "recaps", `${page.section}2`));
+              }}
+            />
+          </section>
+        ) : null,
+      )}
+      {lead ? (
+        <div className={cn("wsj-sport-lead-grid", seconds.length ? "with-side" : "solo")}>
+          <Story
+            className="lead"
+            card={lead}
+            text={splitStoryCopy(cardCopy(lead), seconds.length ? 1500 : 1000).teaser}
+            size="xl"
+            cols={2}
+            art="top"
+            drop
+            readOn
+            game={gameById.get(lead.id) ?? null}
+            jump={folios[lead.id] && folios[lead.id] !== page.folio ? folios[lead.id] : undefined}
+            onTurn={onTurn}
+          />
+          {seconds.length ? (
+            <div className="wsj-sport-seconds" data-tt-flow="">
+              {seconds.map((card, i) => (
+                <Story
+                  key={card.id}
+                  card={card}
+                  text={recapDek(card, 2)}
+                  size="md"
+                  art="top"
+                  readOn
+                  game={gameById.get(card.id) ?? null}
+                  trim={20 + i}
+                />
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <p className="wsj-empty">The league wire is quiet. Scores, tables and the slate follow.</p>
+      )}
+      <BriefGrid
+        cards={briefs}
+        title={briefs.length ? "Around the league" : undefined}
+        folios={folios}
+        here={page.folio}
+        onTurn={onTurn}
+        crestFor={crestFor}
+      />
+    </div>
+  );
+}
+
+function dedupeByHead(cards: GameWrapCard[]): GameWrapCard[] {
+  const seen = new Set<string>();
+  return cards.filter((c) => {
+    const k = squash(c.headline).slice(0, 40);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
+/** The final as a graphic: each club in its colors, the score set big. */
+function ScoreHero({ game, size = "lg" }: { game: BoxGame; size?: "lg" | "md" }) {
+  return (
+    <div className={cn("tt-hero", size)}>
+      {[game.away, game.home].map((side, i) => (
+        <div
+          key={i}
+          className={cn("tt-hero-side", side.winner && "won", game.final && !side.winner && "lost")}
+          style={tint(hexColor(side.color) ?? "#1f2a44")}
+        >
+          {side.logo ? <img className="tt-hero-ghost" src={side.logo} alt="" aria-hidden="true" /> : null}
+          <span className="tt-hero-disc">
+            <TeamLogo src={side.logo} size="lg" />
+          </span>
+          <span className="tt-hero-id">
+            <em>{i === 0 ? "Away" : "Home"}</em>
+            <strong>{side.short}</strong>
+            {side.record ? <i>{side.record}</i> : null}
+          </span>
+          <b className="tt-hero-score">{side.score ?? "–"}</b>
+        </div>
+      ))}
+      <span className="tt-hero-state">{gameClock(game)}</span>
+    </div>
+  );
+}
+
+type Star = { person: BoxPerson; label: string; team: string | null; game: BoxGame };
+
+/** The night's best lines, one from each game before anyone gets a second. */
+function starsOf(games: BoxGame[], max = 8): Star[] {
+  const lists = games.map((g) => [
+    ...g.decisions
+      .filter((d) => d.label !== "L")
+      .map((d) => ({ person: d.person, label: d.label === "W" ? "Winner" : "Save", team: null, game: g })),
+    ...g.leaders.map((l) => ({ person: l as BoxPerson, label: l.label, team: l.team, game: g })),
+  ]);
+  const out: Star[] = [];
+  const seen = new Set<string>();
+  for (let round = 0; out.length < max && lists.some((l) => l.length > round); round++) {
+    for (const list of lists) {
+      const star = list[round];
+      if (!star || !star.person.headshot || seen.has(star.person.name) || out.length >= max) continue;
+      seen.add(star.person.name);
+      out.push(star);
+    }
+  }
+  return out;
+}
+
+function StarsBand({ games, title = "Stars of the night" }: { games: BoxGame[]; title?: string }) {
+  const stars = starsOf(games);
+  if (stars.length < 2) return null;
+  return (
+    <section className="tt-stars-wrap">
+   
