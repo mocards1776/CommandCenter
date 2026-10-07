@@ -15,11 +15,30 @@ POST /functions/v1/competitive-telegram
 | --- | --- | --- |
 | **Insert** (true new rows) | `{ action: "send", race_slug, buy_ids }` only | Full new row spend + GRP via `rowsToJustIn` |
 | **Revision** (increase on an existing buy) | Same `buy_ids`, **plus** `just_in` | **Delta only** — the spend/GRP *increase*, never the full revised totals |
+| **Daily recap** (6:04pm CT, today's inserts) | Same `buy_ids`, **plus** `recap: true` | Full row spend + GRP (same as insert) |
 
 `planCompetitiveSend` prefers `body.just_in` (`parseJustInPayload`) and skips
 `fetchBuysByIds` for Just In when `just_in` is present. Race / DMA pies /
 affiliation totals still come from live Almanac `competitive_buys` for the
 `race_slug` (or from payload `buyers` / `totals` if Almanac keys are unset).
+
+### Edited-buy guard
+
+Almanac `competitive_buys` has `created_at` and `updated_at`. When `just_in`
+is omitted, the send fetches those rows and **refuses with 409** if any row's
+`updated_at` is more than **5 minutes** after `created_at`. The error names
+the edited `buy_ids` and tells the caller to pass the change amounts in
+`just_in`. That is how a hand-fired revision (no `just_in`) fails loudly
+instead of posting the revised row's full totals.
+
+A same-load insert that is patched within that 5-minute window still counts
+as new (full amounts). Rows with no timestamps cannot be classified and are
+treated as inserts.
+
+The 6:04pm CT recap re-sends today's inserts as `buy_ids` only. Those rows
+may get `source_label` (or similar) hours later, which bumps `updated_at`.
+Pass `"recap": true` to skip the guard. Do not use `recap` on a real
+spend/GRP revision — that path still needs `just_in` deltas.
 
 ### Revision example (MSCC Nexstar)
 

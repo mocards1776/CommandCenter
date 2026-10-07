@@ -9,6 +9,7 @@
  *   POST { "action": "send", "race_slug": "mo-sd30", "buy_ids": ["…"] }
  *   Just In = those rows' full spend + GRP (rowsToJustIn). Same
  *   sponsor|market|media across stations collapses to "{market} DMA".
+ *   A same-load patch within FRESH_INSERT_WINDOW_MS still counts as new.
  *
  * Revisions (increase on an existing buy) — buy_ids + just_in deltas:
  *   POST { "action": "send", "race_slug", "buy_ids", "just_in": [{
@@ -18,6 +19,11 @@
  *   (e.g. MSCC Nexstar +$6,450 / ~47 GRP, not $17.6k / 134 GRP).
  *   parseJustInPayload wins; fetchBuysByIds is skipped for Just In.
  *   Almanac may send one already-aggregated DMA tile.
+ *   buy_ids only + updated_at past the insert window → 409 (do not post
+ *   full totals as if they were the change).
+ *
+ * Daily recap — today's inserts, buy_ids only, skip the edited-buy guard:
+ *   POST { "action": "send", "race_slug", "buy_ids", "recap": true }
  *
  * On `just_in` without `color`, pass `side: "gop"` (or affiliation / MSCC
  * sponsor) or an explicit red `color`. GOP PAC / MSCC tiles are red-family,
@@ -35,6 +41,8 @@ import {
 import {
   almanacCredentials,
   buyersFromTotals,
+  editedBuyIds,
+  editedBuysRefuseError,
   MAX_BUY_IDS,
   parseBuyersPayload,
   parseBuyIds,
@@ -68,6 +76,7 @@ export async function planCompetitiveSend(
   }
 
   const payloadJustIn = parseJustInPayload(body.just_in);
+  const recap = body.recap === true;
   const payloadBuyers = parseBuyersPayload(body.buyers);
   const totalBuyers = buyersFromTotals(body.totals);
   const creds = almanacCredentials(opts.env);
@@ -84,7 +93,15 @@ export async function planCompetitiveSend(
       justIn.length ? Promise.resolve([]) : client.fetchBuysByIds(buyIds),
       buyers.length ? Promise.resolve([]) : client.fetchRaceBuys(raceSlug),
     ]);
-    if (!justIn.length) justIn = rowsToJustIn(batch.filter((row) => !row.race_slug || row.race_slug === raceSlug));
+    if (!justIn.length) {
+      if (!recap) {
+        const edited = editedBuyIds(batch);
+        if (edited.length) {
+          return { ok: false, error: editedBuysRefuseError(edited), status: 409 };
+        }
+      }
+      justIn = rowsToJustIn(batch.filter((row) => !row.race_slug || row.race_slug === raceSlug));
+    }
     if (!buyers.length) buyers = rowsToBuyers(raceRows);
     source = "almanac";
   }
