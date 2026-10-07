@@ -98,6 +98,115 @@ export function zoneInsetPct(
   };
 }
 
+/**
+ * Minimum center-to-center gap between two pitch dots, as a fraction of the
+ * plot box width. The dot is 18px on a 15.5rem plot (20px on 17–18rem), so
+ * this is about one dot diameter at every breakpoint.
+ */
+export const DOT_MIN_SEP = 0.074;
+
+export type DotPoint = { leftPct: number; topPct: number };
+
+/**
+ * Nudge overlapping pitch dots apart so every number stays readable.
+ *
+ * Simple pairwise collision relaxation in a square space (x and y both in plot
+ * widths, so a 20px gap is the same horizontally and vertically). Each dot
+ * stays within `maxShift` of its true location and inside the plot edge pad.
+ * Exactly coincident dots split vertically (the earlier pitch moves up); a
+ * larger stack fans out around the true spot.
+ * Deterministic and input order is preserved, so the latest pitch keeps the
+ * highest z-index.
+ */
+export function relaxPitchDots<T extends DotPoint>(
+  points: readonly T[],
+  opts: {
+    /** Plot box width ÷ height. */
+    aspect: number;
+    minSep?: number;
+    maxShift?: number;
+    edgePad?: number;
+    iterations?: number;
+  },
+): Array<T & { shifted: boolean }> {
+  const aspect = Number.isFinite(opts.aspect) && opts.aspect > 0 ? opts.aspect : 1;
+  const minSep = opts.minSep ?? DOT_MIN_SEP;
+  const maxShift = opts.maxShift ?? minSep;
+  const pad = Math.min(Math.max(opts.edgePad ?? PLOT_EDGE_PAD, 0), 0.45);
+  const iterations = opts.iterations ?? 80;
+
+  const ox = points.map((p) => p.leftPct / 100);
+  const oy = points.map((p) => p.topPct / 100 / aspect);
+  const x = [...ox];
+  const y = [...oy];
+  const minX = pad;
+  const maxX = 1 - pad;
+  const minY = pad / aspect;
+  const maxY = (1 - pad) / aspect;
+  const eps = 1e-6;
+
+  // Pre-split exact stacks onto a tiny regular polygon (first pitch on top,
+  // i.e. up) so relaxation fans them out evenly instead of along one line.
+  const stackOf = x.map((_, k) => {
+    for (let m = 0; m < k; m++) if (Math.abs(ox[m] - ox[k]) < eps && Math.abs(oy[m] - oy[k]) < eps) return m;
+    return k;
+  });
+  const stacks = new Map<number, number[]>();
+  stackOf.forEach((root, k) => stacks.set(root, [...(stacks.get(root) ?? []), k]));
+  for (const members of stacks.values()) {
+    if (members.length < 2) continue;
+    members.forEach((k, m) => {
+      const a = -Math.PI / 2 + (2 * Math.PI * m) / members.length;
+      x[k] += Math.cos(a) * 1e-4;
+      y[k] += Math.sin(a) * 1e-4;
+    });
+  }
+
+  for (let it = 0; it < iterations; it++) {
+    let moved = false;
+    for (let i = 0; i < x.length; i++) {
+      for (let j = i + 1; j < x.length; j++) {
+        let dx = x[j] - x[i];
+        let dy = y[j] - y[i];
+        const d = Math.hypot(dx, dy);
+        if (d >= minSep - eps) continue;
+        if (d < eps) {
+          dx = 0;
+          dy = 1;
+        } else {
+          dx /= d;
+          dy /= d;
+        }
+        const push = (minSep - d) / 2;
+        x[i] -= dx * push;
+        y[i] -= dy * push;
+        x[j] += dx * push;
+        y[j] += dy * push;
+        moved = true;
+      }
+    }
+    for (let k = 0; k < x.length; k++) {
+      let sx = x[k] - ox[k];
+      let sy = y[k] - oy[k];
+      const s = Math.hypot(sx, sy);
+      if (s > maxShift) {
+        sx *= maxShift / s;
+        sy *= maxShift / s;
+      }
+      x[k] = Math.min(Math.max(ox[k] + sx, minX), maxX);
+      y[k] = Math.min(Math.max(oy[k] + sy, minY), maxY);
+    }
+    if (!moved) break;
+  }
+
+  const round = (n: number) => Math.round(n * 1000) / 10;
+  return points.map((p, k) => {
+    const leftPct = x[k] === ox[k] ? p.leftPct : round(x[k]);
+    const topPct = y[k] === oy[k] ? p.topPct : round(y[k] * aspect);
+    return { ...p, leftPct, topPct, shifted: leftPct !== p.leftPct || topPct !== p.topPct };
+  });
+}
+
 export type PitchResult = "ball" | "called" | "swinging" | "foul" | "inplay" | "other";
 
 /**

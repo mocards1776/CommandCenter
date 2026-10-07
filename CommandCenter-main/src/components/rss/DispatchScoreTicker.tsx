@@ -155,7 +155,7 @@ function TeamRow({
 }) {
   return (
     <div className={cn("flex items-center gap-1.5", muted && "opacity-45")}>
-      <TeamMark teamId={side.teamId} size="xs" />
+      <TeamMark teamId={side.teamId} size="xs" surface="light" />
       <span
         className={cn(
           "min-w-0 flex-1 truncate text-[12px] font-semibold tracking-wide text-[#111]",

@@ -10,6 +10,7 @@ import {
   pitchResultStyle,
   pitchTypeCode,
   pitchZonePosition,
+  relaxPitchDots,
   zoneInsetPct,
 } from "@/lib/mlb-pitch-zone";
 import { cn } from "@/lib/utils";
@@ -28,9 +29,15 @@ function pitchTitle(p: MlbPitchPlot): string {
     .join(" · ");
 }
 
-function PitchDot({ pitch, latest }: { pitch: MlbPitchPlot; latest: boolean }) {
-  const pos = pitchZonePosition(pitch);
-  if (!pos) return null;
+function PitchDot({
+  pitch,
+  pos,
+  latest,
+}: {
+  pitch: MlbPitchPlot;
+  pos: { leftPct: number; topPct: number };
+  latest: boolean;
+}) {
   const style = pitchResultStyle(pitchResultFromPlot(pitch));
   return (
     <span
@@ -133,9 +140,16 @@ export default function MlbPitchZone({
 }) {
   const hasPitches = pitches.length > 0;
   const inset = zoneInsetPct();
-  const located = pitches.filter((p) => Number.isFinite(p.pX) && Number.isFinite(p.pZ));
   const latestNumber = pitches[pitches.length - 1]?.number;
   const aspect = (1 + 2 * PLOT_MARGIN_X) / ((1 + 2 * PLOT_MARGIN_Y) * ZONE_ASPECT);
+  // True plate spots, then nudge overlapping dots apart so every number reads.
+  const dots = relaxPitchDots(
+    pitches.flatMap((p) => {
+      const pos = pitchZonePosition(p);
+      return pos ? [{ leftPct: pos.leftPct, topPct: pos.topPct, pitch: p }] : [];
+    }),
+    { aspect },
+  );
 
   return (
     <div className="flex max-w-full flex-col items-center justify-center gap-x-5 gap-y-3 lg:flex-row">
@@ -159,8 +173,13 @@ export default function MlbPitchZone({
               <div className="pointer-events-none absolute inset-0 z-[2] rounded-[2px] border border-white/55" />
             ) : null}
           </div>
-          {located.map((p) => (
-            <PitchDot key={p.number} pitch={p} latest={p.number === latestNumber} />
+          {dots.map((d) => (
+            <PitchDot
+              key={d.pitch.number}
+              pitch={d.pitch}
+              pos={d}
+              latest={d.pitch.number === latestNumber}
+            />
           ))}
         </div>
         {hasPitches ? <PitchLegend /> : null}

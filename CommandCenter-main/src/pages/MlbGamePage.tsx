@@ -32,7 +32,6 @@ import {
   formatGameDuration,
   mlbAbbrevsMatch,
   mlbHeadshot,
-  mlbTeamLogo,
   parseEspnRecapHtml,
   playerWatchKind,
   prospectRankLabels,
@@ -1759,21 +1758,23 @@ function LeaderSide({
         align === "right" && "flex-row-reverse text-right",
       )}
     >
-      <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-full bg-[#dfe6f2] ring-1 ring-white/15">
-        <img
-          src={mlbHeadshot(side.id, 213)}
-          alt=""
-          className="absolute inset-0 h-full w-full object-cover object-[center_15%]"
-        />
+      <div className="relative h-11 w-11 shrink-0">
+        <div className="absolute inset-0 overflow-hidden rounded-full bg-[#dfe6f2] ring-1 ring-white/15">
+          <img
+            src={mlbHeadshot(side.id, 213)}
+            alt=""
+            className="absolute inset-0 h-full w-full object-cover object-[center_15%]"
+          />
+        </div>
         {teamId ? (
-          <span
+          <TeamMark
+            teamId={teamId}
+            size="xs"
             className={cn(
-              "absolute -bottom-0.5 h-5 w-5 overflow-hidden rounded-full bg-white p-0.5 ring-1 ring-black/10",
-              align === "right" ? "-left-0.5" : "-right-0.5",
+              "absolute -bottom-1 drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)]",
+              align === "right" ? "-left-1" : "-right-1",
             )}
-          >
-            <img src={mlbTeamLogo(teamId)} alt="" className="h-full w-full object-contain" />
-          </span>
+          />
         ) : null}
       </div>
       <div className="min-w-0">

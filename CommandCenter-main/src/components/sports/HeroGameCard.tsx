@@ -339,7 +339,7 @@ function HeroSide({
         <TeamMark
           teamId={side.teamId}
           size="xl"
-          className="relative shadow-[0_10px_30px_rgba(0,0,0,0.45)]"
+          className="relative drop-shadow-[0_10px_24px_rgba(0,0,0,0.5)]"
         />
       </Link>
       <div
