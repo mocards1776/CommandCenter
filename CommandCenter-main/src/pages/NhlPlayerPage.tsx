@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ExternalLink, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { EspnPlayerHero, type HeroStatBox } from "@/components/sports/EspnPlayerHero";
+import { SeasonKeyStats } from "@/components/sports/SeasonKeyStats";
 import { useSwipeBack } from "@/hooks/useSwipeBack";
 import { useAuth } from "@/lib/auth-context";
 import {
@@ -128,25 +129,12 @@ export default function NhlPlayerPage() {
           )}
 
           {p.seasonStats.length > 0 && (
-            <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
-              <div className="border-b border-white/[0.06] bg-white/[0.02] px-4 py-2.5">
-                <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8b93a7]">
-                  {p.seasonLabel ? `${p.seasonLabel} key stats` : "Season key stats"}
-                </h2>
-              </div>
-              <div className="grid grid-cols-2 divide-x divide-white/[0.06] sm:grid-cols-4">
-                {p.seasonStats.slice(0, 8).map((s) => (
-                  <div key={s.label} className="border-b border-white/[0.05] px-3 py-4 text-center">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
-                      {s.label}
-                    </p>
-                    <p className="numeral text-cream mt-1 text-[26px] leading-none sm:text-[28px]">
-                      {s.value}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </section>
+            <SeasonKeyStats
+              title={p.seasonLabel ? `${p.seasonLabel} key stats` : "Season key stats"}
+              stats={p.seasonStats.slice(0, 8)}
+              teamLogo={p.teamLogo}
+              accent={accent}
+            />
           )}
 
           {splits.length > 0 && (activeSplit?.categories?.length ?? 0) > 0 && (
