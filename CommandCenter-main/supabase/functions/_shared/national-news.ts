@@ -314,13 +314,12 @@ export function cleanExtractedCopy(text: string): string {
   raw = stripNationalPromos(raw);
   const cut = raw.search(EXTRACT_BOILER);
   if (cut >= 40) raw = raw.slice(0, cut).trim();
-  raw = raw
-    .replace(/^(?:Advertisement|Sponsored|Skip (?:to )?content)\s+/i, "")
-    // "Hegseth ‘s" — a space before a tick, including a left quote used as an apostrophe.
-    .replace(/(\w)\s+([’‘'`])/g, "$1$2")
-    .replace(/(\w)['‘]/g, "$1’")
-    .replace(/\s{2,}/g, " ")
-    .trim();
+  raw = tidyNationalTicks(
+    raw
+      .replace(/^(?:Advertisement|Sponsored|Skip (?:to )?content)\s+/i, "")
+      .replace(/\s{2,}/g, " ")
+      .trim(),
+  );
   return raw;
 }
 

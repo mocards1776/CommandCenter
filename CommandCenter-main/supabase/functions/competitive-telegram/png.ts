@@ -1,6 +1,7 @@
 /**
- * Rasterize the competitive SVG. Fonts and resvg prefer the sports-finals
- * vendor directory (already in the repo); CDN is the isolate fallback.
+ * Rasterize the competitive SVG. Fonts and resvg prefer this function's
+ * vendor directory (deployed with the isolate); sports-finals/vendor is
+ * the local-repo fallback; CDN is last.
  */
 import { initWasm, Resvg } from "npm:@resvg/resvg-wasm@2.6.2";
 
@@ -10,13 +11,16 @@ const FONT_URLS = {
   "Inter-700.ttf": "https://cdn.jsdelivr.net/fontsource/fonts/inter@5.2.8/latin-700-normal.ttf",
 } as const;
 
+/** Native card is 1080 wide; 900 still reads cleanly and keeps isolate RAM down. */
+export const PNG_FIT_TO_WIDTH = 900;
+
 let ready: Promise<void> | null = null;
 let fonts: Uint8Array[] = [];
 
 async function loadBytes(name: string, remote: string): Promise<Uint8Array> {
   const locals = [
-    new URL(`../sports-finals/vendor/${name}`, import.meta.url),
     new URL(`./vendor/${name}`, import.meta.url),
+    new URL(`../sports-finals/vendor/${name}`, import.meta.url),
   ];
   for (const href of locals) {
     try {
@@ -58,6 +62,7 @@ export async function rasterizeSvg(svg: string): Promise<Uint8Array> {
       defaultFontFamily: "Inter",
       sansSerifFamily: "Inter",
     },
+    fitTo: { mode: "width", value: PNG_FIT_TO_WIDTH },
     textRendering: 1,
     shapeRendering: 2,
     background: "#EFE8DC",

@@ -1,6 +1,6 @@
 /**
- * Full-size PNG → JPEG for Telegram sendPhoto. Never resizes: the raster
- * stays 1080×1350 so type and bars are not downscaled before upload.
+ * PNG → JPEG for Telegram sendPhoto. Does not resize further; png.ts already
+ * rasterizes at fitTo width 900 (native SVG is 1080×1350).
  *
  * Same helper as sports-finals/telegram-jpeg.ts.
  */
