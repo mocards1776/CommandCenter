@@ -14,6 +14,7 @@ import {
   barWidth,
   displayMedia,
   formatGrp,
+  formatJustInNote,
   formatSpendExact,
   formatSpendShort,
   landscapeBuyers,
@@ -214,7 +215,17 @@ function justInHero(buys: readonly JustInBuy[], y: number): string {
         anchor: "middle",
       }),
     );
-    parts.push(text(buy.station, cx, tileY + 214, { size: 13, fill: FAINT, anchor: "middle", weight: 700, spacing: 1.2 }));
+    const note = formatJustInNote(buy);
+    if (note) {
+      parts.push(fittedLines(note, cx, tileY + 214, colW - 28, {
+        maxSize: 13,
+        minSize: 10,
+        fill: MUTED,
+        anchor: "middle",
+        weight: 400,
+        baseline: tileY + 214,
+      }));
+    }
   });
   return parts.join("");
 }

@@ -62,12 +62,20 @@ Row was $11,150 / ~87 GRP and is now $17,600 / 134 GRP. Just In must show
 }
 ```
 
-### DMA tiles
+### Station-group tiles
 
-Same `sponsor|market|media` across stations collapses to one tile labeled
-`{market} DMA`. Almanac may send that already aggregated as a single `just_in`
-tile (`station: "Springfield DMA"`). Inserts without `just_in` still aggregate
-the same way from fetched rows.
+Same sponsor + station group across stations collapses to one Just In tile.
+The tile sums that group's spend + GRP. A note under the dollar amount reads
+`<Station group> · <call signs> added` (e.g. `Gray Media · KSPR added` or
+`Gray Media · KYTV, KSPR added`). Group name prefers Almanac
+`station_groups.name` when `stations.station_group_id` is set; otherwise
+`stations.owner_group`. No group → `KSPR added`.
+
+If one send's `buy_ids` cover two groups for the same sponsor (Gray and
+Nexstar), show one tile per group. Do not collapse those into a DMA tile.
+
+The caption Just In line uses the same group + call signs in parentheses:
+`…for 25.3 GRP (Gray Media · KSPR)`.
 
 ## Colors
 
@@ -101,12 +109,17 @@ Long PAC names wrap to two lines or step the font down — no ellipsis.
 
 ## Caption: this week vs race to date
 
-Almanac weeks run **Tuesday–Monday**. The card header date is that Tuesday
-(week of Oct 6, 2026 → Mon Oct 12). Caption sponsor lines are **this week
+Almanac weeks run **Tuesday–Monday**. Caption sponsor lines are **this week
 only**, labeled `This week (Oct 6–12):`. Each buy's spend and GRP are split
 across weeks with Almanac's flight-weighting helper (`week.ts`, same 18%
 weekday / 5% weekend shares as `thompsonalmanac` `flight-weighting-shared.ts`).
-Sponsors with $0 this week are omitted.
+Sponsors with $0 this week are omitted. A this-week line with spend but
+GRP 0 / null never prints `0 GRP`: radio-only sponsors show
+`Legio XIII PAC $16,941 (radio)`; otherwise just the spend.
+
+The card header date is the **day the update is sent** in America/Chicago
+(e.g. a Tuesday-week card sent on October 7 shows `October 7, 2026`). Daily
+`recap: true` uses that same send date.
 
 The last line is race-to-date Dem / GOP / race spend plus DMA GRP, labeled
 `Race to date`. Image race tiles and pies stay race-to-date; only the names

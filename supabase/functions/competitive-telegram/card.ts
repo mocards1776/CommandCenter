@@ -17,6 +17,8 @@ export type BuyerRow = {
   cpp: number;
   color: string;
   side: Affiliation;
+  /** Caption only: true when every this-week row for this sponsor is radio. */
+  radioOnly?: boolean;
 };
 
 export type AffiliationSlice = {
@@ -35,7 +37,12 @@ export type JustInBuy = {
   amount: number;
   market: string;
   media: string;
+  /** Primary / first call sign. Prefer `stations` + `stationGroup` for the note. */
   station: string;
+  /** Call signs in this station group, spend-desc then alpha. */
+  stations?: string[];
+  /** Almanac station_groups.name, else stations.owner_group. */
+  stationGroup?: string;
   grp: number;
   color: string;
   flightStart?: string;
@@ -95,6 +102,8 @@ export const SD30_SAMPLE_JUST_IN: readonly JustInBuy[] = [
     market: "Springfield",
     media: "TV",
     station: "KYTV",
+    stations: ["KYTV"],
+    stationGroup: "Gray Media",
     grp: 274.8,
     color: GOP_PAC,
     flightStart: "2026-10-05",
@@ -106,6 +115,8 @@ export const SD30_SAMPLE_JUST_IN: readonly JustInBuy[] = [
     market: "Springfield",
     media: "TV",
     station: "KYTV",
+    stations: ["KYTV"],
+    stationGroup: "Gray Media",
     grp: 358.9,
     color: DEM_CANDIDATE,
     flightStart: "2026-10-06",
@@ -144,10 +155,11 @@ export function formatCpp(cpp: number): string {
 }
 
 export const SAMPLE_AS_OF = "2026-10-06";
+export const CHICAGO_TZ = "America/Chicago";
 
 const SHORT_MONTH = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-/** Almanac media-buy week is Tuesday–Monday. Header date is that Tuesday. */
+/** Almanac media-buy week is Tuesday–Monday. Caption "This week" uses this window. */
 export function almanacWeekBounds(asOf = SAMPLE_AS_OF): { start: string; end: string } {
   const [y, m, d] = asOf.split("-").map(Number);
   const date = new Date(Date.UTC(y!, m! - 1, d));
@@ -174,6 +186,20 @@ export function inBroadcastWeek(flightStart: string | undefined, asOf = SAMPLE_A
   return inAlmanacWeek(flightStart, asOf);
 }
 
+/** YYYY-MM-DD for `now` in America/Chicago — the day the update is sent. */
+export function chicagoToday(now = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: CHICAGO_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const y = parts.find((part) => part.type === "year")?.value;
+  const m = parts.find((part) => part.type === "month")?.value;
+  const d = parts.find((part) => part.type === "day")?.value;
+  return `${y}-${m}-${d}`;
+}
+
 function ymd(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
@@ -195,9 +221,50 @@ export function displayMedia(media: string): string {
   return media || "TV";
 }
 
-/** "Missouri Senate Campaign Committee added $47,440 in Springfield TV for 274.8 GRP" */
+/** Call signs for the Just In note — drop leftover "{market} DMA" labels. */
+export function justInCallSigns(buy: Pick<JustInBuy, "station" | "stations">): string[] {
+  const raw = buy.stations?.length ? buy.stations : buy.station ? [buy.station] : [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of raw) {
+    const call = String(value ?? "").trim();
+    if (!call || /DMA$/i.test(call) || seen.has(call)) continue;
+    seen.add(call);
+    out.push(call);
+  }
+  return out;
+}
+
+/** Card note: `Gray Media · KSPR added` or `KSPR added` when no group. */
+export function formatJustInNote(buy: JustInBuy): string {
+  const calls = justInCallSigns(buy).join(", ");
+  const group = String(buy.stationGroup ?? "").trim();
+  if (group && calls) return `${group} · ${calls} added`;
+  if (calls) return `${calls} added`;
+  return "";
+}
+
+/** Caption parenthetical: `Gray Media · KSPR` (no trailing "added"). */
+export function formatJustInCaptionNote(buy: JustInBuy): string {
+  const calls = justInCallSigns(buy).join(", ");
+  const group = String(buy.stationGroup ?? "").trim();
+  if (group && calls) return `${group} · ${calls}`;
+  return calls || group;
+}
+
+/** "Missouri Senate Campaign Committee added $47,440 in Springfield TV for 274.8 GRP (Gray Media · KYTV)" */
 export function formatJustInLine(buy: JustInBuy): string {
-  return `${buy.sponsor} added ${formatSpendExact(buy.amount)} in ${buy.market} ${displayMedia(buy.media)} for ${formatGrp(buy.grp)} GRP`;
+  const base = `${buy.sponsor} added ${formatSpendExact(buy.amount)} in ${buy.market} ${displayMedia(buy.media)} for ${formatGrp(buy.grp)} GRP`;
+  const note = formatJustInCaptionNote(buy);
+  return note ? `${base} (${note})` : base;
+}
+
+/** Caption "This week" line. Never prints `0 GRP`. */
+export function formatWeekBuyerLine(row: BuyerRow): string {
+  const spend = formatSpendExact(row.spend);
+  if (row.grp > 0) return `${row.name} ${spend} / ${formatGrp(row.grp)} GRP`;
+  if (row.radioOnly) return `${row.name} ${spend} (radio)`;
+  return `${row.name} ${spend}`;
 }
 
 export const SD30_CAPTION_WHATS_NEW = SD30_SAMPLE_JUST_IN.map(formatJustInLine).join("; ");
@@ -253,7 +320,7 @@ export function buildCompetitiveCard(opts: {
     race: meta.race,
     title: meta.title,
     market: opts.market || meta.market,
-    dateLabel: formatDateLabel(week.start),
+    dateLabel: formatDateLabel(asOf),
     justInTitle: "Just in",
     buyers: opts.buyers.map((row) => ({ ...row })),
     weekBuyers: (opts.weekBuyers ?? []).filter((row) => row.spend > 0 || row.grp > 0).map((row) => ({ ...row })),
@@ -277,6 +344,7 @@ export const SD30_SAMPLE_WEEK_BUYERS: readonly BuyerRow[] = [
   { id: "forward-week", name: "Forward PAC", spend: 121287, grp: 735, cpp: 0, color: DEM_PAC, side: "dem" },
   { id: "stinnett-week", name: "Stinnett", spend: 37878, grp: 507, cpp: 0, color: GOP_CANDIDATE, side: "gop" },
   { id: "mscc-week", name: "Missouri Senate Campaign Committee", spend: 45908, grp: 279, cpp: 0, color: GOP_PAC, side: "gop" },
+  { id: "legio-week", name: "Legio XIII PAC", spend: 16941, grp: 0, cpp: 0, color: GOP_PAC, side: "gop", radioOnly: true },
 ];
 
 export function sd30SampleCard(logoData: string | null = null): CompetitiveCard {
@@ -308,6 +376,8 @@ export const SD8_SAMPLE_JUST_IN: readonly JustInBuy[] = [
     market: "Kansas City",
     media: "TV",
     station: "WDAF",
+    stations: ["WDAF"],
+    stationGroup: "Nexstar Media Group",
     grp: 28.2,
     color: DEM_CANDIDATE,
     flightStart: "2026-10-06",
@@ -330,6 +400,64 @@ export function sd8SampleCard(logoData: string | null = null): CompetitiveCard {
     asOf: SAMPLE_AS_OF,
     logoData,
     market: "Kansas City",
+  });
+}
+
+/** Live Oct 7 MSCC KSPR revision Josh marked up: +$3,570 / +25.3 GRP. */
+export const SD30_KSPR_REVISION_JUST_IN: readonly JustInBuy[] = [
+  {
+    id: "a9bb199c-240f-42a7-84f6-3533aaf8451d",
+    sponsor: "Missouri Senate Campaign Committee",
+    amount: 3570,
+    market: "Springfield",
+    media: "TV",
+    station: "KSPR",
+    stations: ["KSPR"],
+    stationGroup: "Gray Media",
+    grp: 25.3,
+    color: GOP_PAC,
+    flightStart: "2026-10-05",
+  },
+];
+
+export function sd30KsprRevisionCard(logoData: string | null = null): CompetitiveCard {
+  return buildCompetitiveCard({
+    slug: "mo-sd30",
+    justIn: SD30_KSPR_REVISION_JUST_IN.map((row) => ({ ...row })),
+    buyers: SD30_SAMPLE_BUYERS.map((row) => ({ ...row })),
+    weekBuyers: SD30_SAMPLE_WEEK_BUYERS.map((row) => ({ ...row })),
+    asOf: "2026-10-07",
+    logoData,
+    market: "Springfield",
+  });
+}
+
+/** One Gray tile listing KYTV + KSPR when the same send covers both. */
+export const SD30_GRAY_TWO_STATION_JUST_IN: readonly JustInBuy[] = [
+  {
+    id: "mscc-gray",
+    sponsor: "Missouri Senate Campaign Committee",
+    amount: 51010,
+    market: "Springfield",
+    media: "TV",
+    station: "KYTV",
+    stations: ["KYTV", "KSPR"],
+    stationGroup: "Gray Media",
+    grp: 300.1,
+    color: GOP_PAC,
+    flightStart: "2026-10-05",
+  },
+];
+
+export function sd30GrayTwoStationCard(logoData: string | null = null): CompetitiveCard {
+  return buildCompetitiveCard({
+    slug: "mo-sd30",
+    justIn: SD30_GRAY_TWO_STATION_JUST_IN.map((row) => ({ ...row })),
+    buyers: SD30_SAMPLE_BUYERS.map((row) => ({ ...row })),
+    weekBuyers: SD30_SAMPLE_WEEK_BUYERS.map((row) => ({ ...row })),
+    asOf: "2026-10-07",
+    logoData,
+    market: "Springfield",
   });
 }
 
@@ -384,9 +512,7 @@ export function competitiveCaption(card: CompetitiveCard): string {
     ...card.justIn.map(formatJustInLine),
     "",
     card.weekLabel,
-    ...card.weekBuyers.map(
-      (row) => `${row.name} ${formatSpendExact(row.spend)} / ${formatGrp(row.grp)} GRP`,
-    ),
+    ...card.weekBuyers.map(formatWeekBuyerLine),
     "",
     `Race to date: Dem ${formatSpendExact(dem!.spend)} / GOP ${formatSpendExact(gop!.spend)}; race ${formatSpendExact(race)}; DMA GRP: Dem ${formatGrp(dem!.grp)} / GOP ${formatGrp(gop!.grp)}`,
   ];

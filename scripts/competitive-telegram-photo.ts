@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import { initWasm, Resvg } from "@resvg/resvg-wasm";
 import jpeg from "jpeg-js";
 import { decode as decodePng } from "fast-png";
-import { competitiveCaption, loadTciLogoDataUri, sd30SampleCard, sd8SampleCard } from "../supabase/functions/competitive-telegram/card.ts";
+import { competitiveCaption, loadTciLogoDataUri, sd30GrayTwoStationCard, sd30KsprRevisionCard, sd30SampleCard, sd8SampleCard } from "../supabase/functions/competitive-telegram/card.ts";
 import { renderCompetitiveSvg } from "../supabase/functions/competitive-telegram/svg.ts";
 import { TELEGRAM_JPEG_QUALITY } from "../supabase/functions/competitive-telegram/telegram.ts";
 
@@ -80,9 +80,23 @@ async function rasterize(svg: string): Promise<Uint8Array> {
 }
 
 const slug = arg("slug") || "mo-sd30";
-const outPath = path.resolve(arg("out") || path.join(previewDir, slug === "mo-sd8" ? "sample-sd8.jpg" : "sample-sd30.jpg"));
+const preview = arg("preview");
 const logo = await loadTciLogoDataUri();
-const card = slug === "mo-sd8" ? sd8SampleCard(logo) : sd30SampleCard(logo);
+const card = preview === "kspr"
+  ? sd30KsprRevisionCard(logo)
+  : preview === "gray-two"
+    ? sd30GrayTwoStationCard(logo)
+    : slug === "mo-sd8"
+      ? sd8SampleCard(logo)
+      : sd30SampleCard(logo);
+const defaultName = preview === "kspr"
+  ? "sd30-kspr-revision.jpg"
+  : preview === "gray-two"
+    ? "sd30-gray-two-station.jpg"
+    : slug === "mo-sd8"
+      ? "sample-sd8.jpg"
+      : "sample-sd30.jpg";
+const outPath = path.resolve(arg("out") || path.join(previewDir, defaultName));
 const svg = renderCompetitiveSvg(card);
 const png = await rasterize(svg);
 const jpegBytes = pngToJpeg(png, TELEGRAM_JPEG_QUALITY);

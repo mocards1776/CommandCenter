@@ -14,6 +14,7 @@ import {
   barWidth,
   displayMedia,
   formatGrp,
+  formatJustInNote,
   formatSpendExact,
   formatSpendShort,
   landscapeBuyers,
@@ -73,6 +74,93 @@ function text(
   return `<text x="${x}" y="${y}" fill="${opts.fill}" font-size="${opts.size}" font-weight="${weight}" font-family="Inter" text-anchor="${anchor}"${spacing}>${esc(value)}</text>`;
 }
 
+/** Inter bold advance — conservative so PAC names never clip the glass tile. */
+export function estimateTextWidth(value: string, size: number, weight = 700): number {
+  const em = weight >= 700 ? 0.64 : 0.58;
+  let width = 0;
+  for (const ch of value) {
+    if (ch === " ") width += size * 0.28;
+    else if ("ilI.,'’".includes(ch)) width += size * 0.3;
+    else if ("mwMW@".includes(ch)) width += size * 0.88;
+    else width += size * em;
+  }
+  return width;
+}
+
+export function wrapTwoLines(value: string, maxWidth: number, size: number, weight = 700): string[] {
+  if (estimateTextWidth(value, size, weight) <= maxWidth) return [value];
+  const words = value.split(/\s+/).filter(Boolean);
+  if (words.length < 2) return [value];
+  let best = 1;
+  let bestScore = Infinity;
+  for (let i = 1; i < words.length; i++) {
+    const a = words.slice(0, i).join(" ");
+    const b = words.slice(i).join(" ");
+    const score = Math.max(estimateTextWidth(a, size, weight), estimateTextWidth(b, size, weight));
+    if (score < bestScore) {
+      bestScore = score;
+      best = i;
+    }
+  }
+  return [words.slice(0, best).join(" "), words.slice(best).join(" ")];
+}
+
+export function fitName(
+  value: string,
+  maxWidth: number,
+  maxSize: number,
+  minSize: number,
+  weight = 700,
+): { lines: string[]; size: number } {
+  const words = value.trim().split(/\s+/).filter(Boolean).length;
+  const readable = Math.max(minSize, Math.min(maxSize, words >= 3 ? 19 : 16));
+  for (let size = maxSize; size >= readable; size--) {
+    if (estimateTextWidth(value, size, weight) <= maxWidth) {
+      return { lines: [value], size };
+    }
+  }
+  for (let size = maxSize; size >= minSize; size--) {
+    const lines = wrapTwoLines(value, maxWidth, size, weight);
+    if (lines.length === 2 && lines.every((line) => estimateTextWidth(line, size, weight) <= maxWidth)) {
+      return { lines, size };
+    }
+  }
+  for (let size = readable - 1; size >= minSize; size--) {
+    if (estimateTextWidth(value, size, weight) <= maxWidth) {
+      return { lines: [value], size };
+    }
+  }
+  return { lines: wrapTwoLines(value, maxWidth, minSize, weight), size: minSize };
+}
+
+function fittedLines(
+  value: string,
+  x: number,
+  y: number,
+  maxWidth: number,
+  opts: {
+    maxSize: number;
+    minSize: number;
+    fill: string;
+    anchor?: "start" | "middle" | "end";
+    weight?: number;
+    /** Shift the block so a 2-line name stays on the same baseline as a 1-line name. */
+    baseline?: number;
+  },
+): string {
+  const weight = opts.weight ?? 700;
+  const fit = fitName(value, maxWidth, opts.maxSize, opts.minSize, weight);
+  const baseline = opts.baseline ?? y;
+  if (fit.lines.length === 1) {
+    return text(fit.lines[0]!, x, baseline, { size: fit.size, fill: opts.fill, anchor: opts.anchor, weight });
+  }
+  const gap = fit.size + 3;
+  return [
+    text(fit.lines[0]!, x, baseline - gap / 2, { size: fit.size, fill: opts.fill, anchor: opts.anchor, weight }),
+    text(fit.lines[1]!, x, baseline + gap / 2, { size: fit.size, fill: opts.fill, anchor: opts.anchor, weight }),
+  ].join("");
+}
+
 function glassPanel(x: number, y: number, w: number, h: number, rx = 26): string {
   return [
     `<rect filter="url(#glassDepth)" x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" fill="rgba(255,255,255,0.34)" stroke="rgba(255,255,255,0.7)" stroke-width="1.25"/>`,
@@ -110,7 +198,14 @@ function justInHero(buys: readonly JustInBuy[], y: number): string {
     const cx = x + colW / 2;
     parts.push(glassPanel(x, tileY, colW, colH, 28));
     parts.push(`<circle cx="${cx}" cy="${tileY + 36}" r="8" fill="${buy.color}"/>`);
-    parts.push(text(buy.sponsor, cx, tileY + 72, { size: 20, fill: INK, anchor: "middle", weight: 700 }));
+    parts.push(fittedLines(buy.sponsor, cx, tileY + 72, colW - 36, {
+      maxSize: 20,
+      minSize: 12,
+      fill: INK,
+      anchor: "middle",
+      weight: 700,
+      baseline: tileY + 72,
+    }));
     parts.push(text("added", cx, tileY + 98, { size: 14, fill: MUTED, anchor: "middle" }));
     parts.push(text(formatSpendExact(buy.amount), cx, tileY + 150, { size: 40, fill: INK, anchor: "middle", weight: 700 }));
     parts.push(
@@ -120,7 +215,17 @@ function justInHero(buys: readonly JustInBuy[], y: number): string {
         anchor: "middle",
       }),
     );
-    parts.push(text(buy.station, cx, tileY + 214, { size: 13, fill: FAINT, anchor: "middle", weight: 700, spacing: 1.2 }));
+    const note = formatJustInNote(buy);
+    if (note) {
+      parts.push(fittedLines(note, cx, tileY + 214, colW - 28, {
+        maxSize: 13,
+        minSize: 10,
+        fill: MUTED,
+        anchor: "middle",
+        weight: 400,
+        baseline: tileY + 214,
+      }));
+    }
   });
   return parts.join("");
 }
@@ -131,11 +236,20 @@ function buyerTile(row: BuyerRow, x: number, y: number, w: number, h: number, sp
   const spendW = barWidth(row.spend, spendMax, track);
   const grpW = barWidth(row.grp, grpMax, track);
   const barY = y + h - 42;
+  const grpLabel = `${formatGrp(row.grp)} GRP`;
+  const grpWpx = estimateTextWidth(grpLabel, 15, 700);
+  const nameWidth = Math.max(120, track - grpWpx - 14);
   return [
     glassPanel(x, y, w, h, 22),
     `<rect x="${x + 18}" y="${y + 10}" width="${w - 36}" height="4" rx="2" fill="${row.color}" opacity="0.85"/>`,
-    text(row.name, x + pad, y + 48, { size: 22, fill: INK, weight: 700 }),
-    text(`${formatGrp(row.grp)} GRP`, x + w - pad, y + 48, { size: 15, fill: MUTED, anchor: "end", weight: 700 }),
+    fittedLines(row.name, x + pad, y + 48, nameWidth, {
+      maxSize: 22,
+      minSize: 13,
+      fill: INK,
+      weight: 700,
+      baseline: y + 48,
+    }),
+    text(grpLabel, x + w - pad, y + 48, { size: 15, fill: MUTED, anchor: "end", weight: 700 }),
     text(formatSpendShort(row.spend), x + pad, y + 86, { size: 26, fill: INK, weight: 700 }),
     `<rect x="${x + pad}" y="${barY}" width="${track}" height="12" rx="6" fill="${TRACK}"/>`,
     `<rect x="${x + pad}" y="${barY}" width="${spendW}" height="12" rx="6" fill="${row.color}"/>`,
@@ -214,6 +328,45 @@ function affiliationPies(slices: readonly AffiliationSlice[], y: number): string
   return parts.join("");
 }
 
+/**
+ * Footer affiliation labels. PAC names stay full; wrap to two lines and
+ * shorten only the candidate last name if the column is still tight.
+ */
+function footerParties(label: string, cx: number, y: number, maxWidth: number): string {
+  if (!label) return "";
+  const plus = label.indexOf(" + ");
+  const oneLine = estimateTextWidth(label, 12, 400) <= maxWidth * 0.92 && label.length <= 26;
+  if (oneLine) {
+    return text(label, cx, y, { size: 12, fill: MUTED, anchor: "middle" });
+  }
+  if (plus > 0) {
+    let left = label.slice(0, plus);
+    const right = label.slice(plus + 3);
+    if (estimateTextWidth(`${left} +`, 11, 400) > maxWidth) {
+      left = `${left.slice(0, Math.min(4, left.length))}.`;
+    }
+    return [
+      text(`${left} +`, cx, y - 7, { size: 11, fill: MUTED, anchor: "middle" }),
+      fittedLines(right, cx, y + 8, maxWidth, {
+        maxSize: 11,
+        minSize: 8,
+        fill: MUTED,
+        anchor: "middle",
+        weight: 400,
+        baseline: y + 8,
+      }),
+    ].join("");
+  }
+  return fittedLines(label, cx, y, maxWidth, {
+    maxSize: 12,
+    minSize: 8,
+    fill: MUTED,
+    anchor: "middle",
+    weight: 400,
+    baseline: y,
+  });
+}
+
 function spendTotalsStrip(slices: readonly AffiliationSlice[], race: number, y: number): string {
   const x = 40;
   const w = W - 80;
@@ -223,10 +376,10 @@ function spendTotalsStrip(slices: readonly AffiliationSlice[], race: number, y: 
   return [
     glassPanel(x, y, w, h, 22),
     text("DEM", x + third * 0.5, y + 26, { size: 11, fill: FAINT, anchor: "middle", weight: 700, spacing: 1.4 }),
-    text(dem?.parties ?? "", x + third * 0.5, y + 44, { size: 12, fill: MUTED, anchor: "middle" }),
+    footerParties(dem?.parties ?? "", x + third * 0.5, y + 44, third - 20),
     text(formatSpendExact(dem?.spend ?? 0), x + third * 0.5, y + 72, { size: 20, fill: DEM_CANDIDATE, anchor: "middle", weight: 700 }),
     text("GOP", x + third * 1.5, y + 26, { size: 11, fill: FAINT, anchor: "middle", weight: 700, spacing: 1.4 }),
-    text(gop?.parties ?? "", x + third * 1.5, y + 44, { size: 12, fill: MUTED, anchor: "middle" }),
+    footerParties(gop?.parties ?? "", x + third * 1.5, y + 44, third - 20),
     text(formatSpendExact(gop?.spend ?? 0), x + third * 1.5, y + 72, { size: 20, fill: GOP_CANDIDATE, anchor: "middle", weight: 700 }),
     text("RACE", x + third * 2.5, y + 26, { size: 11, fill: FAINT, anchor: "middle", weight: 700, spacing: 1.4 }),
     text("both sides", x + third * 2.5, y + 44, { size: 12, fill: MUTED, anchor: "middle" }),

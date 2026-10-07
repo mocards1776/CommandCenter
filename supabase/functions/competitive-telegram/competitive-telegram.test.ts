@@ -15,6 +15,8 @@ import {
   buildCompetitiveCard,
   competitiveCaption,
   formatJustInLine,
+  formatJustInNote,
+  formatWeekBuyerLine,
   formatCpp,
   formatGrp,
   formatSpendExact,
@@ -24,6 +26,7 @@ import {
   DEM_CANDIDATE,
   GOP_CANDIDATE,
   GOP_PAC,
+  DEM_PAC,
   loadTciLogoDataUri,
   affiliationTotals,
   almanacWeekBounds,
@@ -51,6 +54,7 @@ import {
   rowsToBuyers,
   rowsToJustIn,
   rowsToWeekBuyers,
+  stationGroupName,
   type AlmanacBuyRow,
 } from "./almanac.ts";
 import { allocateFlightByWeek, canonicalWeekOf, weekSliceOfFlight } from "./week.ts";
@@ -175,6 +179,8 @@ assert.match(svg, /3,409\.2/);
 assert.match(svg, /<path d="M/);
 assert.match(svg, /SD-30/);
 assert.match(svg, /October 6, 2026/);
+assert.match(svg, /Gray Media · KYTV added/);
+assert.doesNotMatch(svg, /letter-spacing="1.2">KYTV</);
 assert.match(svg, /Springfield/);
 
 const track = 948;
@@ -205,14 +211,19 @@ assert.match(caption, /Stinnett \$37,878 \/ 507 GRP/);
 assert.match(caption, /Missouri Senate Campaign Committee \$45,908 \/ 279 GRP/);
 assert.doesNotMatch(caption, /This week[\s\S]*?\$453,350/);
 assert.doesNotMatch(caption, /Just in[\s\S]*?CPP/);
-assert.ok(caption.includes("Missouri Senate Campaign Committee added $47,440 in Springfield TV for 274.8 GRP"));
-assert.ok(caption.includes("Betsy Fogle added $32,300 in Springfield TV for 358.9 GRP"));
+assert.ok(caption.includes("Missouri Senate Campaign Committee added $47,440 in Springfield TV for 274.8 GRP (Gray Media · KYTV)"));
+assert.ok(caption.includes("Betsy Fogle added $32,300 in Springfield TV for 358.9 GRP (Gray Media · KYTV)"));
 assert.ok(SD30_CAPTION_WHATS_NEW.includes("$47,440"));
 assert.doesNotMatch(SD30_CAPTION_WHATS_NEW, /\$70,420|CPP/);
 assert.equal(
   formatJustInLine(SD30_SAMPLE_JUST_IN[0]!),
-  "Missouri Senate Campaign Committee added $47,440 in Springfield TV for 274.8 GRP",
+  "Missouri Senate Campaign Committee added $47,440 in Springfield TV for 274.8 GRP (Gray Media · KYTV)",
 );
+assert.equal(formatJustInNote(SD30_SAMPLE_JUST_IN[0]!), "Gray Media · KYTV added");
+assert.match(caption, /Legio XIII PAC \$16,941 \(radio\)/);
+assert.doesNotMatch(caption, /0 GRP/);
+assert.equal(formatWeekBuyerLine({ id: "x", name: "Legio XIII PAC", spend: 16941, grp: 0, cpp: 0, color: GOP_PAC, side: "gop", radioOnly: true }), "Legio XIII PAC $16,941 (radio)");
+assert.equal(formatWeekBuyerLine({ id: "y", name: "Cable PAC", spend: 1000, grp: 0, cpp: 0, color: DEM_PAC, side: "dem" }), "Cable PAC $1,000");
 assert.doesNotMatch(formatJustInLine(SD30_SAMPLE_JUST_IN[0]!), /CPP/);
 assert.match(caption, /Race to date: Dem \$616,095 \/ GOP \$372,880; race \$988,975/);
 assert.match(caption, /DMA GRP: Dem 5,854\.4 \/ GOP 3,409\.2/);
@@ -303,6 +314,8 @@ function almanacRow(partial: Partial<AlmanacBuyRow> & Pick<AlmanacBuyRow, "id" |
     sponsorType: "candidate",
     flightStart: "2026-10-06",
     flightEnd: "2026-10-12",
+    ownerGroup: partial.ownerGroup,
+    stationGroup: partial.stationGroup,
     ...partial,
   };
 }
@@ -371,6 +384,7 @@ function almanacRow(partial: Partial<AlmanacBuyRow> & Pick<AlmanacBuyRow, "id" |
       affiliation: "Betsy Fogle",
       station: "KYTV",
       market: "Springfield",
+      ownerGroup: "Gray Media",
     }),
     almanacRow({
       id: "fogle-kspr",
@@ -380,23 +394,27 @@ function almanacRow(partial: Partial<AlmanacBuyRow> & Pick<AlmanacBuyRow, "id" |
       affiliation: "Betsy Fogle",
       station: "KSPR",
       market: "Springfield",
+      ownerGroup: "Gray Media",
     }),
   ];
   const just = rowsToJustIn(multi);
   assert.equal(just.length, 1);
   assert.equal(just[0]!.amount, 32300);
   assert.equal(just[0]!.grp, 358.9);
-  assert.equal(just[0]!.station, "Springfield DMA");
+  assert.equal(just[0]!.station, "KYTV");
+  assert.deepEqual(just[0]!.stations, ["KYTV", "KSPR"]);
+  assert.equal(just[0]!.stationGroup, "Gray Media");
   assert.equal(just[0]!.sponsor, "Betsy Fogle");
-  const dmaSvg = renderCompetitiveSvg(buildCompetitiveCard({
+  assert.equal(formatJustInNote(just[0]!), "Gray Media · KYTV, KSPR added");
+  const graySvg = renderCompetitiveSvg(buildCompetitiveCard({
     slug: "mo-sd30",
     justIn: just,
     buyers: SD30_SAMPLE_BUYERS.map((row) => ({ ...row })),
     asOf: SAMPLE_AS_OF,
     market: "Springfield",
   }));
-  assert.match(dmaSvg, /Springfield DMA/);
-  assert.doesNotMatch(dmaSvg, />KYTV<|>KSPR</);
+  assert.match(graySvg, /Gray Media · KYTV, KSPR added/);
+  assert.doesNotMatch(graySvg, /Springfield DMA/);
 
   const single = rowsToJustIn([
     almanacRow({
@@ -407,10 +425,54 @@ function almanacRow(partial: Partial<AlmanacBuyRow> & Pick<AlmanacBuyRow, "id" |
       affiliation: "Betsy Fogle",
       station: "KYTV",
       market: "Springfield",
+      ownerGroup: "Gray Media",
     }),
   ]);
   assert.equal(single.length, 1);
   assert.equal(single[0]!.station, "KYTV");
+  assert.equal(formatJustInNote(single[0]!), "Gray Media · KYTV added");
+
+  const splitGroups = rowsToJustIn([
+    almanacRow({
+      id: "mscc-gray",
+      sponsor: "Missouri Senate Campaign Committee",
+      spend: 3570,
+      grp: 25.3,
+      affiliation: "Melanie Stinnett",
+      sponsorType: "pac",
+      station: "KSPR",
+      ownerGroup: "Gray Media",
+    }),
+    almanacRow({
+      id: "mscc-nexstar",
+      sponsor: "Missouri Senate Campaign Committee",
+      spend: 6450,
+      grp: 47,
+      affiliation: "Melanie Stinnett",
+      sponsorType: "pac",
+      station: "KOLR",
+      ownerGroup: "Nexstar Media Group",
+    }),
+  ]);
+  assert.equal(splitGroups.length, 2);
+  assert.equal(splitGroups[0]!.stationGroup, "Nexstar Media Group");
+  assert.equal(splitGroups[1]!.stationGroup, "Gray Media");
+  assert.equal(formatJustInNote(splitGroups[1]!), "Gray Media · KSPR added");
+  assert.equal(stationGroupName({ stationGroup: "Gray Springfield", ownerGroup: "Gray Media" }), "Gray Springfield");
+  assert.equal(stationGroupName({ ownerGroup: "Gray Media" }), "Gray Media");
+
+  const noGroup = rowsToJustIn([
+    almanacRow({
+      id: "lone",
+      sponsor: "Missouri Senate Campaign Committee",
+      spend: 3570,
+      grp: 25.3,
+      affiliation: "Melanie Stinnett",
+      sponsorType: "pac",
+      station: "KSPR",
+    }),
+  ]);
+  assert.equal(formatJustInNote(noGroup[0]!), "KSPR added");
 }
 
 {
@@ -519,6 +581,7 @@ function almanacRow(partial: Partial<AlmanacBuyRow> & Pick<AlmanacBuyRow, "id" |
     affiliation: "Melanie Stinnett",
     sponsorType: "pac",
     station: "KSPR",
+    ownerGroup: "Gray Media",
   });
   let fetchedBatchIds: string[] | null = null;
   const plan = await planCompetitiveSend(
@@ -532,7 +595,7 @@ function almanacRow(partial: Partial<AlmanacBuyRow> & Pick<AlmanacBuyRow, "id" |
         grp: 47,
         market: "Springfield",
         media: "TV",
-        station: "Springfield DMA",
+        station: "KSPR",
         side: "gop",
       }],
     },
@@ -556,19 +619,21 @@ function almanacRow(partial: Partial<AlmanacBuyRow> & Pick<AlmanacBuyRow, "id" |
   assert.equal(plan.card.justIn.length, 1);
   assert.equal(plan.card.justIn[0]!.amount, 6450);
   assert.equal(plan.card.justIn[0]!.grp, 47);
-  assert.equal(plan.card.justIn[0]!.station, "Springfield DMA");
+  assert.equal(plan.card.justIn[0]!.station, "KSPR");
+  assert.equal(plan.card.justIn[0]!.stationGroup, "Gray Media");
   assert.equal(plan.card.justIn[0]!.color, GOP_PAC);
   const sendSvg = renderCompetitiveSvg(plan.card);
   const sendCaption = competitiveCaption(plan.card);
   assert.match(sendSvg, /\$6,450/);
   assert.match(sendSvg, /47 GRP/);
-  assert.match(sendSvg, /Springfield DMA/);
+  assert.match(sendSvg, /Gray Media · KSPR added/);
+  assert.doesNotMatch(sendSvg, /Springfield DMA/);
   assert.match(sendSvg, /#FF6B63/);
   const justInBlock = sendSvg.match(/JUST IN[\s\S]*?RACE/)?.[0] ?? "";
   assert.match(justInBlock, /\$6,450/);
   assert.doesNotMatch(justInBlock, /\$17,600/);
   assert.doesNotMatch(formatJustInLine(plan.card.justIn[0]!), /\$17,600|134 GRP/);
-  assert.ok(sendCaption.includes("Missouri Senate Campaign Committee added $6,450 in Springfield TV for 47 GRP"));
+  assert.ok(sendCaption.includes("Missouri Senate Campaign Committee added $6,450 in Springfield TV for 47 GRP (Gray Media · KSPR)"));
   assert.equal(rowsToBuyers([revisedFull])[0]!.color, GOP_PAC);
   assert.equal(rowsToBuyers([revisedFull])[0]!.side, "gop");
 }
@@ -628,7 +693,11 @@ function almanacRow(partial: Partial<AlmanacBuyRow> & Pick<AlmanacBuyRow, "id" |
     grp35: 134,
     created_at: "2026-10-01T18:35:46.645Z",
     updated_at: "2026-10-07T17:56:48.931Z",
+    stations: { call_sign: "KSPR", market: "Springfield", owner_group: "Gray Media" },
   }, "mo-sd30");
+  assert.equal(mapped.ownerGroup, "Gray Media");
+  assert.equal(mapped.stationGroup, "Gray Media");
+  assert.equal(mapped.station, "KSPR");
   assert.equal(mapped.createdAt, "2026-10-01T18:35:46.645Z");
   assert.equal(mapped.updatedAt, "2026-10-07T17:56:48.931Z");
   assert.equal(isEditedBuy(mapped), true);
@@ -758,7 +827,7 @@ function almanacRow(partial: Partial<AlmanacBuyRow> & Pick<AlmanacBuyRow, "id" |
   });
   let fetched = false;
   const plan = await planCompetitiveSend(
-    { action: "send", race_slug: "mo-sd30", buy_ids: ["mscc-recap"], recap: true },
+    { action: "send", race_slug: "mo-sd30", buy_ids: ["mscc-recap"], recap: true, asOf: "2026-10-07" },
     {
       env: emptyEnv,
       almanac: {
@@ -779,7 +848,9 @@ function almanacRow(partial: Partial<AlmanacBuyRow> & Pick<AlmanacBuyRow, "id" |
   if (!plan.ok || plan.skipped) throw new Error("expected recap to skip edited-buy guard");
   assert.equal(plan.card.justIn[0]!.amount, 17600);
   assert.equal(plan.card.justIn[0]!.grp, 134);
+  assert.equal(plan.card.dateLabel, "October 7, 2026");
   const recapSvg = renderCompetitiveSvg(plan.card);
+  assert.match(recapSvg, /October 7, 2026/);
   assert.match(recapSvg, /\$17,600/);
   assert.match(recapSvg, /134 GRP/);
 }
@@ -885,7 +956,7 @@ function almanacRow(partial: Partial<AlmanacBuyRow> & Pick<AlmanacBuyRow, "id" |
   );
   assert.equal(plan.ok, true);
   if (!plan.ok || plan.skipped) throw new Error("expected weekly caption card");
-  assert.equal(plan.card.dateLabel, "October 6, 2026");
+  assert.equal(plan.card.dateLabel, "October 7, 2026");
   const weekCaption = competitiveCaption(plan.card);
   assert.match(weekCaption, /This week \(Oct 6–12\):/);
   assert.match(weekCaption, /Senate Democratic Campaign Committee \$/);
@@ -919,7 +990,7 @@ function almanacRow(partial: Partial<AlmanacBuyRow> & Pick<AlmanacBuyRow, "id" |
   assert.match(sd8Svg, /Ingle/);
   assert.doesNotMatch(sd8Svg, />Alliance<|>SDCC<|>WOTP</);
   assert.match(sd8Caption, /This week \(Oct 6–12\):/);
-  assert.match(sd8Caption, /Keri Ingle added \$7,080 in Kansas City TV for 28\.2 GRP/);
+  assert.match(sd8Caption, /Keri Ingle added \$7,080 in Kansas City TV for 28\.2 GRP \(Nexstar Media Group · WDAF\)/);
   assert.match(sd8Caption, /Race to date:/);
 }
 
