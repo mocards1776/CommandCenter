@@ -1,0 +1,274 @@
+)}</b>}
+                </span>
+                <span className="tt-files-copy">
+                  <strong>
+                    <PlayerName name={f.name} href={f.href} />
+                  </strong>
+                  <em>{[f.position, f.team].filter(Boolean).join(" · ")}</em>
+                  {f.line ? (
+                    <span>
+                      {f.lineNote ? <i>{f.lineNote}: </i> : null}
+                      {f.line}
+                    </span>
+                  ) : null}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+    </aside>
+  );
+}
+
+function initials(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join("");
+}
+
+/** Destination of a front-page jump — the rest of the article. */
+function ContinuePage({
+  jumps,
+  continuedFrom,
+  teams,
+  notebooks,
+  onTurn,
+}: {
+  jumps: { card: GameWrapCard; rest: string }[];
+  continuedFrom: string;
+  teams: TeamInfobox[];
+  notebooks: TeamInfobox[];
+  onTurn: (folio: string) => void;
+}) {
+  const lookup = useContext(GameLookup);
+  return (
+    <div className="wsj-continue">
+      {jumps.map(({ card, rest }, i) => {
+        const game = isSingleGameRecap(card) ? lookup(card) : null;
+        return (
+          <div key={card.id} className="wsj-inside-story">
+            <p className="wsj-continued-from">
+              <button type="button" className="wsj-jump-btn" onClick={() => onTurn(continuedFrom)}>
+                <span aria-hidden="true">←</span> Continued from page {continuedFrom}
+              </button>
+            </p>
+            <Story
+              className={i === 0 ? "primary" : "secondary"}
+              card={card}
+              team={teamForCard(teams, card)}
+              text={rest}
+              size={i === 0 ? "xl" : "lg"}
+              cols={rest.length > 1400 ? 3 : rest.length > 500 ? 2 : 1}
+              art="none"
+              dress
+              readOn={false}
+              game={game}
+              inset={game ? null : <StoryNames card={card} />}
+            />
+            {game || (isSingleGameRecap(card) && card.recapGame) ? (
+              <RecapBox card={card} game={game ?? null} compact />
+            ) : null}
+          </div>
+        );
+      })}
+      {notebooks.map((team) => (
+        <StatPoster key={team.fav.key} team={team} layout="band" />
+      ))}
+    </div>
+  );
+}
+
+/** Linescore, decisions and the agate under a club story. */
+function GameBox({ game, agate = true }: { game: BoxGame; agate?: boolean }) {
+  return (
+    <section className="tt-gamebox">
+      <header>
+        <b>{gameClock(game)}</b>
+        <span>{[game.round, game.series, game.venue].filter(Boolean).join(" · ")}</span>
+      </header>
+      <div className="tt-gamebox-top">
+        <Linescore game={game} />
+        <div className="tt-gamebox-names">
+          <Decisions game={game} faces />
+          <Leaders game={game} max={3} />
+          <Goals game={game} />
+        </div>
+      </div>
+      {agate && game.path === "baseball/mlb" ? <MlbAgate game={game} /> : null}
+    </section>
+  );
+}
+
+/* ───────────────────────── sport section front ───────────────────────── */
+
+type SportFrontPage = Extract<EditionPage, { kind: "sport-front" }>;
+
+const FOCUS_TITLES: Record<SportFrontPage["focus"], string> = {
+  front: "Section Front",
+  news: "News",
+  recaps: "Recaps",
+  teams: "Standings",
+  leaders: "League Leaders",
+  schedule: "Schedule",
+  playoffs: "Playoffs",
+  form: "Club Form",
+  players: "Your Players",
+  opener: "Countdown to Opening Night",
+  coaches: "Favorite Coaches",
+};
+
+const TURN_LABELS: Record<SportFrontPage["focus"], string> = {
+  front: "The section front",
+  news: "League news",
+  recaps: "Recaps",
+  teams: "The standings",
+  leaders: "League leaders",
+  schedule: "The schedule",
+  playoffs: "The playoff bracket",
+  form: "Club form",
+  players: "Your players — last night’s lines",
+  opener: "Countdown to opening night",
+  coaches: "Favorite coaches",
+};
+
+/** Offseason desk: days to each followed club's first game, then what follows it. */
+function OpenerDesk({ page, onTurn }: { page: SportFrontPage; onTurn: (folio: string) => void }) {
+  const openers = useContext(OpenerContext);
+  const index = page.articles.filter((a) => a.card.headline).slice(0, rowsFor(page.clubs.length));
+  const rows = page.clubs
+    .map((club) => ({ club, opener: openers.get(club.key) ?? null }))
+    .sort((a, b) => (a.opener?.iso ?? "9").localeCompare(b.opener?.iso ?? "9"));
+  if (!rows.length) return <p className="wsj-empty">No followed clubs in this section.</p>;
+  return (
+    <div
+      className={cn("tt-open-grid", rows.length === 1 && "single")}
+      style={{ ["--cols" as string]: String(Math.min(3, rows.length)) }}
+    >
+      {rows.map(({ club, opener }) => {
+        // A league that has rolled its tables over prints 0-0 everywhere; that isn't last season.
+        const played = !blankRecord(club.record);
+        const stats = played ? club.stats.filter((s) => !zeroStat(s.value)) : [];
+        const table = club.division.some((r) => !blankRecord(r.record)) ? tableWindow(club.division, 6) : [];
+        return (
+          <article key={club.key} className="tt-open" style={tint(club.color ?? null)}>
+            <header>
+              {club.logo ? <img src={club.logo} alt="" aria-hidden="true" /> : null}
+              <h4>{club.shortName}</h4>
+              {played ? <span>Last season {club.record}</span> : null}
+            </header>
+            {opener ? (
+              <Countdown opener={opener} logo={club.logo} color={club.color} variant="card" />
+            ) : (
+              <p className="wsj-empty">Opening date not yet posted.</p>
+            )}
+            <div className="tt-open-body">
+              {opener && opener.slate.length > 1 ? (
+                <section>
+                  <h5 className="tt-open-h">The first {opener.slate.length} games</h5>
+                  <ol className="tt-open-slate">
+                    {opener.slate.map((g) => (
+                      <li key={g.iso + g.opponentShort} className={g.home ? "home" : "away"}>
+                        <b>{openerDay(g)}</b>
+                        <span>
+                          {g.opponentLogo ? <img src={g.opponentLogo} alt="" aria-hidden="true" /> : null}
+                          {openerMatchup(g)}
+                        </span>
+                        <em>{openerTime(g)}</em>
+                      </li>
+                    ))}
+                  </ol>
+                </section>
+              ) : null}
+              {stats.length || table.length || club.leaders.length ? (
+                <div className="tt-open-side">
+                  {stats.length ? (
+                    <section>
+                      <h5 className="tt-open-h">Last season{club.standing ? ` · ${club.standing}` : ""}</h5>
+                      <dl className="tt-open-stats">
+                        {stats.slice(0, 4).map((s) => (
+                          <div key={s.label}>
+                            <dd>{s.value}</dd>
+                            <dt>
+                              {s.label}
+                              <StatRank stat={s} />
+                            </dt>
+                          </div>
+                        ))}
+                      </dl>
+                    </section>
+                  ) : null}
+                  {table.length ? (
+                    <table className="tt-open-table">
+                      <tbody>
+                        {table.map((r) => (
+                          <tr key={r.team} className={cn(r.me && "me")}>
+                            <td>{r.rank}</td>
+                            <th scope="row">
+                              <span>
+                                {r.logo ? <img src={r.logo} alt="" aria-hidden="true" /> : null}
+                                {r.team}
+                              </span>
+                            </th>
+                            <td>{r.record}</td>
+                            <td>{r.gb}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : null}
+                  {club.leaders.length ? (
+                    <ul className="tt-open-leaders">
+                      {club.leaders.slice(0, 3).map((l) => (
+                        <li key={`${l.name}-${l.line}`}>
+                          <strong>{l.name}</strong>
+                          <span>{l.line}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          </article>
+        );
+      })}
+      {index.length ? (
+        <section className="tt-open-index">
+          <h3 className="wsj-band-title">In this section</h3>
+          <ol>
+            {index.map(({ card, folio }) => (
+              <li key={card.id}>
+                <Kicker card={card} />
+                <h4>
+                  <HeadlineSave card={card}>
+                    <StoryLink card={card}>{card.headline}</StoryLink>
+                  </HeadlineSave>
+                </h4>
+                {card.dek ? <p>{card.dek}</p> : null}
+                <ReadOn card={card} label="Click for full story" />
+              </li>
+            ))}
+          </ol>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
+/** One followed club leaves room on the page for the section's headlines. */
+function rowsFor(clubs: number): number {
+  return clubs <= 1 ? 6 : clubs === 2 ? 3 : 0;
+}
+
+/** Slim countdown band across an offseason section front. */
+function OpenerBand({ page }: { page: SportFrontPage }) {
+  const openers = useContext(OpenerContext);
+  const rows = page.clubs
+    .map((club) => ({ club, opener: openers.get(club.key) ?? null }))
+    .filter((r): r is { club: ClubDesk; opener: Opener } => Boolean(r.opener))
+    .sort((a, b) => a.opener.iso.localeCompare(b.opener.iso));
+  if (!row
