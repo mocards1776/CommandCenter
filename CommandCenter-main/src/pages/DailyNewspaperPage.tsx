@@ -7233,14 +7233,14 @@ function NewspaperDesk() {
     if (el) prefetchNearArt(el, pageIndex);
   }, [pageIndex, sheets]);
 
-  const revealFront = pages.find((p) => p.kind === "favorites-front");
-  const revealLead = revealFront?.kind === "favorites-front" ? revealFront.lead : null;
-  const revealLeadId = revealLead?.id ?? null;
+  const revealFront = pages.some((p) => p.kind === "favorites-front");
 
   useLayoutEffect(() => {
-    // Keyed on the lead id, not the pages array. A new book used to cancel
-    // this effect before the 7s cap, so the cover never came off.
-    if (docPhase === "boot" || !revealLeadId || revealFor.current === pressId) return;
+    // The front page can show its story from the news pool while the lead
+    // slot is still empty, so this keys on the page existing — not lead id,
+    // and not the pages array. A new book used to cancel the cap, and a
+    // render-phase arm flag never reached this effect, so the cover stayed up.
+    if (docPhase === "boot" || !revealFront || revealFor.current === pressId) return;
     let cancel = false;
     const cap = window.setTimeout(() => {
       if (cancel) return;
@@ -7258,7 +7258,7 @@ function NewspaperDesk() {
       cancel = true;
       window.clearTimeout(cap);
     };
-  }, [docPhase, pressId, revealLeadId]);
+  }, [docPhase, pressId, revealFront]);
 
   // A story that sat on the sheet counts as read. The next press leaves it out.
   useEffect(() => {
