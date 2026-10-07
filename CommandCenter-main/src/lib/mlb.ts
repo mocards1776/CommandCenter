@@ -3,7 +3,15 @@
 import { supabase } from "./supabase";
 import { formatSportsDateLong } from "./utils";
 import { parseEspnBroadcasts, type GameBroadcast } from "./game-broadcasts";
-import { mlbPostseasonHeat } from "./mlb-playoff-heat";
+import {
+  mlbEliminationHeat,
+  mlbInningIsExtras,
+  mlbInningIsLate,
+  mlbInningNumber,
+  mlbLiveMarginHeat,
+  mlbMarginHeat,
+  mlbPostseasonHeat,
+} from "./mlb-playoff-heat";
 import { mergeSeriesLines, seriesLineFromEspn, seriesLineFromMlb } from "./playoff-series";
 
 const MLB = "https://statsapi.mlb.com/api/v1";
@@ -4001,32 +4009,20 @@ export function scoreGameInterest(g: MlbScoreGame): MlbGameInterest {
     reasons.push("Cardinals");
   }
 
-  if (diff != null) {
-    if (diff === 0) {
-      score += 28;
-      reasons.push("Tied");
-    } else if (diff === 1) {
-      score += 24;
-      reasons.push("One-run game");
-    } else if (diff === 2) {
-      score += 14;
-      reasons.push("Within two");
-    } else if (diff <= 3) {
-      score += 8;
-      reasons.push("Tight");
-    } else if (diff >= 7) {
-      score -= 16;
-      reasons.push("Blowout");
-    } else if (diff >= 5) {
-      score -= 8;
-    }
+  const inning = mlbInningNumber(g.inning);
+  const extras = mlbInningIsExtras(g.inning, inning);
+  let blowout = false;
+  if (diff != null && (g.live || g.final)) {
+    const margin = g.live ? mlbLiveMarginHeat(diff, inning, extras) : mlbMarginHeat(diff, 1);
+    score += margin.points;
+    blowout = margin.blowout;
+    if (margin.reason) reasons.push(margin.reason);
   }
 
-  const inn = (g.inning ?? "").toLowerCase();
-  if (/extra|10th|11th|12th|13th|14th|15th/.test(inn)) {
+  if (extras) {
     score += 32;
     reasons.push("Extras");
-  } else if (/\b(7th|8th|9th)\b/.test(inn) || /mid\s*7|top\s*7|bot\s*7|end\s*7|mid\s*8|top\s*8|bot\s*8|end\s*8|mid\s*9|top\s*9|bot\s*9|end\s*9/.test(inn)) {
+  } else if (mlbInningIsLate(g.inning, inning)) {
     score += 18;
     reasons.push("Late innings");
   }
@@ -4066,7 +4062,19 @@ export function scoreGameInterest(g: MlbScoreGame): MlbGameInterest {
     reasons.push(postseason.reason);
   }
 
-  return { score: Math.max(0, score), reasons: reasons.slice(0, 4) };
+  const elimination = mlbEliminationHeat({
+    seriesLine: g.seriesLine,
+    live: g.live,
+    final: g.final,
+    inning,
+    blowout,
+  });
+  if (elimination) {
+    score += elimination.points;
+    reasons.push(elimination.reason);
+  }
+
+  return { score: Math.max(0, score), reasons: reasons.slice(0, 6) };
 }
 
 export type MlbScoredGame = MlbScoreGame & MlbGameInterest;

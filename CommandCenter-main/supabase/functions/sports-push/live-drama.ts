@@ -20,8 +20,9 @@ import { latePeriodChip } from "./late-close.ts";
  * two points are the live-base gap, not extra heat, so a bare one-run is
  * lifted onto 68. Do not close that gap with series weight or Cardinals.
  *
- * A 0–0 opening is the start of the game, not a cross. Scoreless games stay
- * under the line until they are late or in extras/overtime.
+ * A 0–0 opening is the start of the game, not a cross. Early MLB ties and
+ * one-run games stay under the line; the close-game credit scales by inning
+ * the same way the RUWT ranker does. Full credit is 7th+ / extras.
  *
  * `hot` here is only the heat line. Heat alerts also require the close-and-late
  * gate in late-close.ts. That gate does not change this score.
@@ -154,33 +155,56 @@ function detail(input: LiveDramaInput): string {
   return `${input.detail ?? ""}`.toLowerCase();
 }
 
+/** Same inning ladder as mlbCloseGameScale in mlb-playoff-heat.ts. */
+function mlbInningNumber(text: string, period: number | null | undefined): number | null {
+  if (typeof period === "number" && Number.isFinite(period) && period >= 1) return period;
+  if (/\bextra/.test(text)) return 10;
+  const match = text.match(/\b(\d+)(?:st|nd|rd|th)\b/);
+  if (!match) return null;
+  const inning = Number(match[1]);
+  return Number.isFinite(inning) && inning >= 1 ? inning : null;
+}
+
+function mlbCloseGameScale(inning: number | null, extras: boolean): number {
+  if (extras || (inning != null && inning >= 10)) return 1;
+  if (inning == null) return 0.15;
+  if (inning >= 7) return 1;
+  if (inning === 6) return 0.65;
+  if (inning === 5) return 0.45;
+  if (inning === 4) return 0.3;
+  return 0.15;
+}
+
 function scoreMlb(input: LiveDramaInput): { score: number; reasons: string[] } {
   let score = 42;
   const reasons = ["Live"];
-  const { diff, total, scoreless } = nums(input);
+  const { diff, total } = nums(input);
   const text = detail(input);
-  const extras = /extra|10th|11th|12th|13th|14th|15th|16th|17th|18th/.test(text);
+  const inning = mlbInningNumber(text, input.period);
+  const extras = (inning != null && inning >= 10) || /extra|10th|11th|12th|13th|14th|15th|16th|17th|18th/.test(text);
   const late =
-    /\b(7th|8th|9th)\b/.test(text) ||
-    /mid\s*7|top\s*7|bot\s*7|end\s*7|mid\s*8|top\s*8|bot\s*8|end\s*8|mid\s*9|top\s*9|bot\s*9|end\s*9/.test(
-      text,
-    );
-  const opening = scoreless && !extras && !late;
+    !extras &&
+    ((inning != null && inning >= 7) ||
+      /\b(7th|8th|9th)\b/.test(text) ||
+      /mid\s*7|top\s*7|bot\s*7|end\s*7|mid\s*8|top\s*8|bot\s*8|end\s*8|mid\s*9|top\s*9|bot\s*9|end\s*9/.test(
+        text,
+      ));
+  const scale = mlbCloseGameScale(inning, extras);
 
-  if (diff != null && !opening) {
+  if (diff != null) {
     if (diff === 0) {
-      score += 28;
+      score += Math.round(28 * scale);
       reasons.push("Tied");
     } else if (diff === 1) {
-      score += 24;
+      score += Math.round(24 * scale);
       reasons.push("One-run game");
     } else if (diff === 2) {
-      score += 14;
+      score += Math.round(14 * scale);
       reasons.push("Within two");
     } else if (diff <= 3) {
-      score += 8;
+      score += Math.round(8 * scale);
       reasons.push("Tight");
-    } else if (diff >= 7) {
+    } else if (diff >= 6) {
       score -= 16;
       reasons.push("Blowout");
     } else if (diff >= 5) {
@@ -196,15 +220,16 @@ function scoreMlb(input: LiveDramaInput): { score: number; reasons: string[] } {
     reasons.push("Late innings");
   }
 
-  if (total != null && !opening && total >= 12) {
+  if (total != null && total >= 12) {
     score += 12;
     reasons.push("Slugfest");
-  } else if (total != null && !opening && total >= 9) {
+  } else if (total != null && total >= 9) {
     score += 6;
     reasons.push("High scoring");
   }
 
   // Bare one-run (66) matches a one-score game in another sport (68).
+  // After the inning scale, only a full-credit one-run without late/extras hits 66.
   if (reasons.includes("One-run game") && score === 66) score += MLB_ONE_RUN_LINE_GAP;
 
   return { score, reasons };

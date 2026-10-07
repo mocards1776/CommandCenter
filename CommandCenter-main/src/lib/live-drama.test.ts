@@ -96,11 +96,19 @@ const cfbLate = drama({ sport: "cfb", awayScore: 24, homeScore: 17, detail: "0:2
 assert(cfbLate.hot && cfbLate.why.includes("One-score game") && cfbLate.why.includes("Closing seconds"), cfbLate.why);
 
 const mlbOne = drama({ sport: "mlb", awayScore: 1, homeScore: 0, detail: "Top 3rd" });
-assert(mlbOne.hot && mlbOne.score === 68 && mlbOne.why === "One-run game", `${mlbOne.score} ${mlbOne.why}`);
-assert(!FORBIDDEN.test(mlbOne.why), "one-run why must be drama, not Cardinals or playoffs");
+assert(!mlbOne.hot && mlbOne.score === 46, `early one-run is ${mlbOne.score}`);
+assert(mlbOne.reasons.includes("One-run game"), mlbOne.reasons.join(" · "));
+assert(mlbOne.score < ONE_SCORE_HEAT_LINE, "an early one-run stays under the heat line");
+assert(!mlbOne.reasons.some((r) => FORBIDDEN.test(r)), "one-run reasons stay drama-only");
 
 const mlbOpen = drama({ sport: "mlb", awayScore: 0, homeScore: 0, detail: "Top 1st" });
-assert(!mlbOpen.hot && mlbOpen.score === 42, `first pitch 0-0 is not heat (${mlbOpen.score})`);
+assert(!mlbOpen.hot && mlbOpen.score === 46, `first pitch 0-0 is not heat (${mlbOpen.score})`);
+assert(mlbOpen.reasons.includes("Tied"), "the 1st-inning tie still shows Tied");
+assert(mlbOpen.score < ONE_SCORE_HEAT_LINE, "an early tie does not cross the heat line");
+
+const mlbLateTie = drama({ sport: "mlb", awayScore: 3, homeScore: 3, detail: "Top 8th" });
+assert(mlbLateTie.hot && mlbLateTie.score === 88, `T8 tie is ${mlbLateTie.score}`);
+assert(mlbLateTie.why.includes("Tied") && mlbLateTie.why.includes("Late innings"), mlbLateTie.why);
 
 const mlbLateBlow = drama({ sport: "mlb", awayScore: 8, homeScore: 0, detail: "Bot 8th" });
 assert(
