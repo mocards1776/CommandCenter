@@ -1,0 +1,277 @@
+   <h3 className="wsj-band-title">{title}</h3>
+      <ul className="tt-stars" style={{ ["--cols" as string]: String(balancedCols(stars.length, [4, 3, 5, 2])) }}>
+        {stars.map((s) => (
+          <li key={`${s.game.id}-${s.person.name}`}>
+            <Face person={s.person} size="lg" />
+            <span>
+              <em>
+                {s.label}
+                {s.team ? ` · ${s.team}` : ` · ${s.game.away.abbrev}–${s.game.home.abbrev}`}
+              </em>
+              <strong>
+                <PlayerName name={s.person.name} href={s.person.id ? playerPageHref(s.game.path, s.person.id) : null} />
+              </strong>
+              {s.person.line ? <i>{s.person.line}</i> : null}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function WrapPlayers({ card }: { card: GameWrapCard }) {
+  const files = useContext(SubjectsContext)[card.id] ?? [];
+  const stats = card.stats.slice(0, 6);
+  const leaders = card.leaders.slice(0, 4);
+  if (!files.length && !stats.length && !leaders.length) return null;
+  return (
+    <aside className="wsj-story-facts" aria-label="The box">
+      {stats.length ? (
+        <dl>
+          {stats.map((s) => (
+            <div key={`${s.label}-${s.value}`}>
+              <dd>{s.value}</dd>
+              <dt>{s.label}</dt>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+      {files.length || leaders.length ? (
+        <section className="tt-files">
+          <h4 className="tt-files-h">The box</h4>
+          <ul>
+            {files.length
+              ? files.slice(0, 4).map((f) => (
+                  <li key={f.href}>
+                    <span className="tt-files-face">
+                      {f.headshot ? <img src={f.headshot} alt="" loading="lazy" /> : <b>{initials(f.name)}</b>}
+                    </span>
+                    <span className="tt-files-copy">
+                      <strong>
+                        <PlayerName name={f.name} href={f.href} />
+                      </strong>
+                      <em>{[f.position, f.team].filter(Boolean).join(" · ")}</em>
+                      {f.line ? <span>{f.line}</span> : null}
+                    </span>
+                  </li>
+                ))
+              : leaders.map((l) => (
+                  <li key={`${l.name}-${l.line}`}>
+                    <span className="tt-files-face">
+                      <b>{initials(l.name)}</b>
+                    </span>
+                    <span className="tt-files-copy">
+                      <strong>
+                        <PlayerName name={l.name} href={l.href} />
+                      </strong>
+                      <span>{l.line}</span>
+                    </span>
+                  </li>
+                ))}
+          </ul>
+        </section>
+      ) : null}
+    </aside>
+  );
+}
+
+function WrapBrief({
+  card,
+  trim,
+  path,
+  flow,
+}: {
+  card: GameWrapCard;
+  trim?: number;
+  path?: string;
+  flow?: boolean;
+}) {
+  const lookup = useContext(GameLookup);
+  const game = isSingleGameRecap(card) ? lookup(card) : null;
+  const copy = wrapBriefCopy(card, 4);
+  const recap =
+    isSingleGameRecap(card) &&
+    Boolean((card.scoreLine && /\d/.test(card.scoreLine)) || card.recapGame || game);
+  const brief = recap && recapIsScoreOnly(copy) ? "" : recap ? recapBodyForPage(copy) : copy;
+  return (
+    <article
+      className="tt-wrap-brief"
+      data-tt-keys={storyReadKeys(card).join("|")}
+      data-tt-title={card.headline}
+      {...(trim != null ? { "data-tt-trim": trim } : {})}
+      {...(flow ? { "data-tt-flow": "" } : {})}
+    >
+      <Kicker card={card} />
+      <h3 className="wsj-hl sm">
+        <HeadlineSave card={card}>
+          <StoryLink card={card} game={game}>{card.headline}</StoryLink>
+        </HeadlineSave>
+      </h3>
+      {recap ? <RecapChrome card={card} game={game} compact /> : <ScoreBug card={card} />}
+      {brief ? (
+        <FitCopy cid={`${card.id}:wrap`} full={brief} className="tt-wrap-copy">
+          {brief}
+        </FitCopy>
+      ) : null}
+      {recap ? null : <WrapPlayers card={card} />}
+      {card.related?.length ? (
+        <ul className="tt-wrap-related">
+          {card.related
+            .filter((item) => !path || relatedFitsSection(item, path))
+            .map((item) => (
+            <li key={item.id}>
+              <em>{item.source || "Related"}</em>
+              {item.headline}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </article>
+  );
+}
+
+function wrapColumnWeight(card: GameWrapCard): number {
+  return 90 + Math.min(420, Math.floor((card.body?.length ?? 0) / 8)) + (card.photo ? 160 : 0);
+}
+
+function balanceWrapColumns(cards: GameWrapCard[], n = 3): GameWrapCard[][] {
+  const cols = Array.from({ length: n }, () => [] as GameWrapCard[]);
+  const weights = Array.from({ length: n }, () => 0);
+  for (const card of cards) {
+    let i = 0;
+    for (let c = 1; c < n; c++) if ((weights[c] ?? 0) < (weights[i] ?? 0)) i = c;
+    cols[i]!.push(card);
+    weights[i] = (weights[i] ?? 0) + wrapColumnWeight(card);
+  }
+  return cols;
+}
+
+function WrapFlow({ cards, path }: { cards: GameWrapCard[]; path: string }) {
+  if (!cards.length) return null;
+  const shown: GameWrapCard[] = [];
+  const notes: NonNullable<GameWrapCard["related"]> = [];
+  for (const card of cards) {
+    if (!storyFitsSection(card, path)) continue;
+    if (shown.some((prev) => prev.id === card.id || sameGameStory(prev, card))) continue;
+    for (const item of card.related ?? []) {
+      if (path && !relatedFitsSection(item, path)) continue;
+      if (notes.some((n) => n.id === item.id || n.headline === item.headline)) continue;
+      notes.push(item);
+    }
+    shown.push({ ...card, related: undefined });
+    if (shown.length >= 6) break;
+  }
+  const cols = balanceWrapColumns(shown, 3);
+  const colNotes = cols.map(() => [] as typeof notes);
+  const weights = cols.map((col) => col.reduce((sum, card) => sum + wrapColumnWeight(card), 0));
+  for (const note of notes) {
+    let i = 0;
+    for (let c = 1; c < weights.length; c++) if ((weights[c] ?? 0) < (weights[i] ?? 0)) i = c;
+    colNotes[i]!.push(note);
+    weights[i] = (weights[i] ?? 0) + 40;
+  }
+  return (
+    <div className="tt-wrap-flow">
+      {cols.map((col, i) => (
+        <div key={i} className="tt-wrap-col">
+          {col.map((card, j) => (
+            <WrapBrief key={card.id} card={card} path={path} trim={45 + i * 10 + j} flow={j > 1} />
+          ))}
+          {colNotes[i]!.length ? (
+            <ul className="tt-wrap-related" data-tt-flow="">
+              {colNotes[i]!.map((item) => (
+                <li key={item.id}>
+                  <em>{item.source || "Related"}</em>
+                  {item.headline}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Box scores: the best game set large with its recap, the rest in agate. */
+function ScoresDesk({
+  page,
+  board,
+  active,
+  edition,
+}: {
+  page: SportFrontPage;
+  board: SectionBoard | null;
+  active: boolean;
+  edition: string;
+}) {
+  const open = useReader();
+  const filedWraps = page.articles
+    .map((a) => a.card)
+    .filter((c) => storyFitsSection(c, page.path) && (isGameWrap(c) || isRecapStory(c) || Boolean(c.scoreLine)));
+  const football = page.path.startsWith("football/");
+  const college = page.path.includes("college-football");
+  const flip = football || page.path.startsWith("soccer/");
+  const current = flip ? [...(board?.results ?? [])].reverse() : board?.results ?? [];
+  const prior = football && !college ? [...(board?.prior ?? [])].reverse() : [];
+  const games = current.length ? current : prior;
+  const boardWraps = college
+    ? games.flatMap((g) => {
+        const card = boxStoryCard(g);
+        if (!card || !storyFitsSection(card, page.path)) return [];
+        if (filedWraps.some((prev) => prev.id === card.id || sameGameStory(prev, card))) return [];
+        return [card];
+      }).slice(0, Math.max(0, 6 - filedWraps.length))
+    : [];
+  const wrapCards = [...filedWraps, ...boardWraps];
+  if (!board && !wrapCards.length) return <p className="wsj-empty">Setting the box scores…</p>;
+  const behind = current.length ? prior : [];
+  if (!games.length && !wrapCards.length) {
+    return (
+      <p className="wsj-empty">
+        No finals on the board — the schedule is on page {deskFolio(page, "schedule", `${page.section}4`)}.
+      </p>
+    );
+  }
+  if (!games.length) {
+    return (
+      <div className="tt-scores">
+        <WrapFlow cards={wrapCards} path={page.path} />
+      </div>
+    );
+  }
+  const collegeSplit = college ? finalsSplit(games, edition) : null;
+  const featuredPool = collegeSplit?.yesterday.length ? collegeSplit.yesterday : games;
+  const featured =
+    featuredPool.find((g) => g.recap?.photo && !involvesClub(g, page.clubs)) ??
+    featuredPool.find((g) => g.recap) ??
+    featuredPool[0]!;
+  const rest = collegeSplit ? [] : wrapCards.length ? games : games.filter((g) => g !== featured);
+  const yesterdayRest = collegeSplit?.yesterday.filter((g) => g !== featured) ?? [];
+  const weekRest = collegeSplit?.rest.filter((g) => g.final && g !== featured) ?? [];
+  const card = boxStoryCard(featured);
+  const isMlb = page.path === "baseball/mlb";
+  const photo = featured.recap?.photo ?? null;
+  const sparse = games.length < 7;
+  const ahead = college
+    ? []
+    : (board?.slate ?? []).filter((g) => !g.final && !g.live).slice(0, sparse ? 6 : 0);
+  const restTitle = football
+    ? current.length
+      ? `${board?.weekLabel ?? "This week"} results`
+      : `${board?.priorLabel ?? "Last week"} results`
+    : isMlb
+      ? "Box scores"
+      : "Results";
+  return (
+    <div className="tt-scores">
+      {wrapCards.length ? <WrapFlow cards={wrapCards} path={page.path} /> : null}
+      {!wrapCards.length ? (
+      <article
+        className={cn("tt-feature", !photo && "graphic")}
+        {...(card
+          ? {
+              "data-tt-keys": storyReadKeys(card).join("|"),
+              "data-tt-title": card.headline,
+   
