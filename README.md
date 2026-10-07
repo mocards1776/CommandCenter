@@ -410,6 +410,15 @@ supabase functions deploy newspaper-editor --project-ref esdgrgulaxnewmhjuyzh --
 # The press worker runs the bundle stored in private.press_bundle, so after a
 # bundle rebuild (node scripts/bundle-newspaper-press.mjs) replace those rows
 # and redeploy newspaper-press.
+#
+# Times press stability (stage-14 extract-file + stuck-hop + finalize):
+# both ships are required — newspaper-press index.ts is the hop host;
+# compose.bundle.js is pressStep. Deploy one without the other and morning
+# can still 546 on mo=20 or 500 the same hop forever.
+#   cd CommandCenter-main && node scripts/bundle-newspaper-press.mjs
+#   supabase functions deploy newspaper-press --project-ref esdgrgulaxnewmhjuyzh --no-verify-jwt
+# Then replace private.press_bundle (base64 of compose.bundle.js, ordered by seq).
+# Do not hand-edit compose.bundle.js.
 ```
 
 Kill switch: `supabase secrets set NEWSPAPER_EDITOR=off` makes the press skip

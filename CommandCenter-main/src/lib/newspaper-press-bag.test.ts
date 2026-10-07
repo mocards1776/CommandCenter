@@ -2,6 +2,7 @@
  * Run with: node --experimental-strip-types src/lib/newspaper-press-bag.test.ts
  */
 import {
+  advanceStuckBag,
   checkpointBag,
   deadBagKeys,
   DROP_AFTER_BOARD_DESKS,
@@ -9,6 +10,9 @@ import {
   DROP_AFTER_GATHER,
   dropBagKeys,
   hopSignature,
+  mergeFinalizeQueries,
+  STUCK_EXTRACT_FILE_SKIP,
+  STUCK_HOP_SKIP_MAX,
 } from "./newspaper-press-bag.ts";
 
 function assert(cond: unknown, msg: string) {
@@ -49,6 +53,38 @@ assert(
   "different merge cursors get different signatures",
 );
 assert(hopSignature(null) === "0", "empty bag is stage 0");
+
+const stuckFile = {
+  stage: 14,
+  extractFileCursor: 100,
+  extractCursor: 20,
+  raw: Array.from({ length: 283 }, (_, i) => ({ id: `s${i}` })),
+  fresh: Array.from({ length: 100 }, (_, i) => ({ id: `f${i}` })),
+};
+const skipped = advanceStuckBag(stuckFile);
+assert(skipped.extractFileCursor === 100 + STUCK_EXTRACT_FILE_SKIP, "stuck extract-file advances past the fat slice");
+assert((skipped.fresh as unknown[]).length === 120, "skipped cards still land on fresh without the transform");
+assert(
+  hopSignature(skipped) !== hopSignature(stuckFile),
+  "skip changes the hop signature so cron will not 500 the same cursor",
+);
+const dumped = advanceStuckBag(stuckFile, { skipRemaining: true });
+assert(dumped.stage === 15, "after max skips, extract-file is left behind");
+assert(!("extractFileCursor" in dumped), "extract-file cursors drop when the stage is left");
+assert((dumped.fresh as unknown[]).length === 283, "remaining raw copies onto fresh");
+assert(STUCK_HOP_SKIP_MAX === 3, "three stuck hops dump the rest of extract-file");
+
+const desks = [{ key: ["tt-missouri"], data: { items: [1] } }];
+const flush = [{ key: ["tt-editor"], data: {} }];
+assert(
+  mergeFinalizeQueries({ checkpoint: true, bag: {}, desks }, flush).length === 2,
+  "first finalize concatenates desks + flush",
+);
+assert(
+  JSON.stringify(mergeFinalizeQueries(desks, [])) === JSON.stringify(desks),
+  "second finalize leaves an already-array queries alone",
+);
+assert(mergeFinalizeQueries([], flush).length === 1, "empty array still takes the flush");
 
 const afterFile = dropBagKeys({ ...fat }, DROP_AFTER_FILE_DESKS);
 assert(afterFile.weather === undefined && afterFile.teamCards, "file-desk drop keeps story sources");

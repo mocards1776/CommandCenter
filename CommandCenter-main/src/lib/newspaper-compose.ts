@@ -64,7 +64,7 @@ import {
   hopSignature,
 } from "./newspaper-press-bag";
 
-export { checkpointBag, hopSignature } from "./newspaper-press-bag";
+export { advanceStuckBag, checkpointBag, hopSignature, mergeFinalizeQueries } from "./newspaper-press-bag";
 
 /** Soft ceiling for CPU work in one isolate. Edge kills the hop at ~2,000 ms. */
 export const HOP_BUDGET_MS = 1_200;
@@ -288,6 +288,12 @@ export type PressStep =
 const WRAP_ENRICH_PER_HOP = 2;
 /** Stories appended via SQL jsonb || so no hop stringifies the whole edition. */
 const STORY_FLUSH_PER_HOP = 20;
+/**
+ * Stage-14 extract-file only. Live `mo=20` + `Bv=1200` hit HTTP 546
+ * (WORKER_RESOURCE_LIMIT) at extractFileCursor=100 of 283. One small
+ * slice per hop — wall budget does not protect CPU on this transform.
+ */
+export const EXTRACT_FILE_PER_HOP = 6;
 /** Favorite tagging / recap chrome per time-budgeted slice. */
 const TAG_BATCH = 20;
 
@@ -772,18 +778,14 @@ export async function pressStep(
       return pause();
     }
     const queue = state.raw ?? [];
-    const started = Date.now();
-    let fileAt = state.extractFileCursor;
-    let progressed = false;
-    while (fileAt < queue.length && !overBudget(started, progressed)) {
-      const slice = queue.slice(fileAt, fileAt + STORY_FLUSH_PER_HOP);
+    const fileAt = state.extractFileCursor;
+    const slice = queue.slice(fileAt, fileAt + EXTRACT_FILE_PER_HOP);
+    if (slice.length) {
       const filed = fileExtracts(slice, extractUrls.length ? extracts : undefined);
       state.fresh = [...(state.fresh ?? []), ...filed];
-      fileAt += slice.length;
-      progressed = true;
+      state.extractFileCursor = fileAt + slice.length;
+      if (state.extractFileCursor < queue.length) return pause();
     }
-    state.extractFileCursor = fileAt;
-    if (fileAt < queue.length) return pause();
     dropBagKeys(state, ["raw", "extracts", "extractUrls", "extractCursor", "extractFileCursor"]);
     state.stage = 15;
     return pause();
