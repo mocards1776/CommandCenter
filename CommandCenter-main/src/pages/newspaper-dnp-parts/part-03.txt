@@ -7,7 +7,7 @@ function pullQuote(paras: string[]): string | null {
   const quotes = [...body.matchAll(/[“"]([^”"]{50,180})[”"]/g)].map((m) => m[1]!.trim());
   if (quotes.length) return `“${quotes.sort((a, b) => b.length - a.length)[0]!.replace(/[,.]$/, "")}.”`;
   const lines = body
-    .split(/(?<=[.!?])\s+(?=[A-Z“"])/) 
+    .split(/(?<=[.!?])\s+(?=[A-Z“"])/)
     .map((t) => t.trim())
     .filter((t) => t.length > 70 && t.length < 170 && !/^(but|and|so|he|she|it|they)\b/i.test(t));
   return lines[Math.floor(lines.length / 2)] ?? null;
@@ -262,7 +262,7 @@ function artFor(card: GameWrapCard, text: string): { art: ArtMode; cols: 1 | 2 |
   return { art: "side", cols: len > 700 ? 2 : 1 };
 }
 
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━ briefs ━━━━━━━━━━━━━━━━━━━━━━━━━ */
+/* ───────────────────────── briefs ───────────────────────── */
 
 function Brief({
   card,
