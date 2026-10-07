@@ -1,0 +1,303 @@
+one"}>
+      {recent.length ? (
+        <div>
+          <b>Recent</b>
+          <ol className={cols ? undefined : "flat"}>
+            {recent.map((g) => (
+              <li key={g.id} className={g.result === "W" ? "w" : g.result === "L" ? "l" : undefined}>
+                {slateLine(g)}
+              </li>
+            ))}
+          </ol>
+        </div>
+      ) : null}
+      {upcoming.length ? (
+        <div>
+          <b>Upcoming</b>
+          <ol className={cols ? undefined : "flat"}>
+            {upcoming.map((g) => (
+              <li key={g.id}>{slateLine(g)}</li>
+            ))}
+          </ol>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function CoachFacts({ tile }: { tile: FavoriteCoachTile }) {
+  const bits = coachFactLines(tile);
+  if (!bits.length && !tile.sourceLabel && !tile.statusNote) return null;
+  return (
+    <>
+      {bits.length ? (
+        <ul className="tt-coach-facts">
+          {bits.map((bit) => (
+            <li key={bit}>{bit}</li>
+          ))}
+        </ul>
+      ) : null}
+      {tile.statusNote ? <p className="tt-coach-status">{tile.statusNote}</p> : null}
+      {tile.sourceLabel ? (
+        <p className="tt-coach-src">
+          {tile.sourceUrl ? (
+            <a href={tile.sourceUrl} target="_blank" rel="noreferrer">
+              Salary: {tile.sourceLabel}
+            </a>
+          ) : (
+            `Salary: ${tile.sourceLabel}`
+          )}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
+function LeagueFormGrid({ clubs }: { clubs: LeagueClub[] }) {
+  const groups = new Map<string, LeagueClub[]>();
+  for (const club of clubs) {
+    const key = club.group || "League";
+    const list = groups.get(key) ?? [];
+    list.push(club);
+    groups.set(key, list);
+  }
+  return (
+    <div className="wsj-team-groups">
+      {[...groups.entries()].map(([group, rows]) => (
+        <div key={group} className="wsj-team-group">
+          {group && group !== "League" ? <p className="wsj-team-group-label">{group}</p> : null}
+          <div className="wsj-league-form-grid">
+            {rows.map((club) => (
+              <div key={club.id} className={cn("wsj-league-form-card", club.favorite && "me")}>
+                <TeamLogo src={club.logo} size="md" />
+                <div>
+                  <strong>{club.abbrev}</strong>
+                  <em>
+                    {club.record || "—"}
+                    {club.rank ? ` · ${club.rank}` : ""}
+                  </em>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PlayoffDesk({ tree, compact }: { tree: MlbPlayoffTree | null; compact?: boolean }) {
+  if (!tree || !tree.rounds.some((r) => r.series.length)) {
+    return <p className="wsj-empty">Postseason bracket isn’t published yet.</p>;
+  }
+  return <PlayoffBracket tree={fillMlbPlayoffPlaceholders(tree)} compact={compact} />;
+}
+
+function ClubFormGrid({
+  clubs,
+  sheets = {},
+  columns,
+}: {
+  clubs: ClubDesk[];
+  sheets?: Record<string, ClubSheet>;
+  columns?: number;
+}) {
+  if (!clubs.length) return <p className="wsj-empty">No clubs filed in this section yet.</p>;
+  const thin = clubs.filter((club) => clubFormIsThin(club));
+  const full = clubs.filter((club) => !clubFormIsThin(club));
+  const wide = full.length <= 2 && columns == null;
+  const cols = columns ?? (wide ? 1 : balancedCols(full.length, [3, 2, 4]));
+  return (
+    <>
+    {thin.length ? (
+      <ul className="wsj-form-soon">
+        {thin.map((club) => (
+          <li key={club.key} style={tint(club.color)}>
+            <TeamLogo src={club.logo} size="sm" />
+            <strong>{club.shortName}</strong>
+            <em>
+              {club.upcoming[0]
+                ? `${club.upcoming[0].label}${club.upcoming[0].when ? ` · ${club.upcoming[0].when}` : ""}`
+                : "Season opens soon"}
+            </em>
+          </li>
+        ))}
+      </ul>
+    ) : null}
+    {full.length ? (
+    <div
+      className={cn("wsj-form-grid", wide && "wide")}
+      style={{ ["--cols" as string]: String(cols) }}
+    >
+      {full.map((club, i) => {
+        const sheet = sheets[club.key];
+        const stats = sheet?.stats.length ? sheet.stats : club.stats;
+        const leaders = sheet?.leaders.length
+          ? sheet.leaders.map((l) => ({
+              key: `${l.category}-${l.id}`,
+              label: l.category,
+              name: l.name,
+              line: l.line,
+              headshot: l.headshot,
+              href: club.leaguePath ? playerPageHref(club.leaguePath, l.id) : null,
+            }))
+          : club.leaders.map((l) => ({
+              key: l.name,
+              label: null,
+              name: l.name,
+              line: l.line,
+              headshot: null,
+              href: l.href && l.href.startsWith("/") ? l.href : null,
+            }));
+        return (
+          <article key={club.key} className="wsj-form-card" style={tint(club.color)} {...(i > 1 ? { "data-tt-flow": "" } : {})}>
+            <header className="wsj-club-card-head">
+              <span className="wsj-disc">
+                <TeamLogo src={club.logo} size="md" />
+              </span>
+              <span className="wsj-club-card-id">
+                <em>{club.standing || "—"}</em>
+                <strong>{club.shortName}</strong>
+              </span>
+              <b>{club.record || "—"}</b>
+            </header>
+            {club.odds ? <p className="wsj-club-odds">Playoff odds {club.odds}</p> : null}
+            <div className="wsj-form-card-body">
+              {stats.length ? (
+                <section className="wsj-form-sec stats">
+                  <h4>{sheet?.season ? `${sheet.season} by the numbers` : "By the numbers"}</h4>
+                  <dl className="wsj-form-stats" style={{ ["--stat-cols" as string]: String(formStatColumns(Math.min(stats.length, 6))) }}>
+                    {stats.filter(printableFormStat).slice(0, 6).map((s) => (
+                      <div key={`${s.label}-${s.value}`}>
+                        <dd>{s.value}</dd>
+                        <dt>
+                          {s.label}
+                          <StatRank stat={s} />
+                        </dt>
+                      </div>
+                    ))}
+                  </dl>
+                </section>
+              ) : null}
+              {leaders.length ? (
+                <section className="wsj-form-sec leaders">
+                  <h4>Team leaders</h4>
+                  <ul className="wsj-form-leaders">
+                    {leaders.slice(0, 4).map((l) => (
+                      <li key={l.key}>
+                        {l.headshot ? <img src={l.headshot} alt="" loading="lazy" className="tt-face md" /> : null}
+                        <span>
+                          {l.label ? <em>{l.label}</em> : null}
+                          <strong>
+                            <PlayerName name={l.name} href={l.href} />
+                          </strong>
+                          <i>{l.line}</i>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
+              {club.division.length ? (
+                <AgateBox
+                  color={club.color}
+                  title={tableTitle(club.standing)}
+                  rows={club.division.map((row) => ({
+                    left: (
+                      <span className="wsj-club-inline">
+                        <TeamLogo src={row.logo} size="xs" />
+                        <span>
+                          {row.rank} {row.team}
+                        </span>
+                      </span>
+                    ),
+                    right: row.gb && row.gb !== "-" && row.gb !== "0" ? `${row.record} · ${row.gb} GB` : row.record,
+                    me: row.me,
+                  }))}
+                />
+              ) : null}
+              {club.upcoming.length ? (
+                <AgateBox
+                  color={club.color}
+                  title="Next up"
+                  rows={club.upcoming.map((game) => ({ left: game.label, right: game.when || "TBD" }))}
+                />
+              ) : (
+                <p className="wsj-brief-dek">Nothing left on the calendar.</p>
+              )}
+            </div>
+          </article>
+        );
+      })}
+    </div>
+    ) : null}
+    </>
+  );
+}
+
+/* ───────────────────────── National News ───────────────────────── */
+
+type NationalEditionPage = Extract<EditionPage, { kind: "national" }>;
+
+function natWhen(iso: string | null): string {
+  if (!iso) return "";
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return "";
+  return new Date(t).toLocaleString("en-US", {
+    timeZone: "America/Chicago",
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function natDate(day: string): string {
+  return new Date(`${day}T12:00:00`).toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function NatDropText({ text }: { text: string }) {
+  const { letter, rest } = nationalDropParts(text);
+  if (!letter) return <>{rest}</>;
+  return (
+    <>
+      <span className="tt-nat-drop">{letter}</span>
+      {rest}
+    </>
+  );
+}
+
+function natCard(story: NationalStory): GameWrapCard {
+  return nationalStoryCard(story);
+}
+
+function NatSummary({
+  story,
+  cols,
+  drop,
+  size,
+  ended,
+}: {
+  story: NationalStory;
+  cols: 1 | 2 | 3;
+  drop?: boolean;
+  size: NationalStorySize;
+  ended?: boolean;
+}) {
+  const paras = nationalPageCopy(story, size);
+  if (!paras.length) return null;
+  /* Shared `.wsj-prose.drop` + CSS columns parks ::first-letter in column 2.
+     National leads set a real drop span in a two-column grid instead. */
+  if (drop && cols > 1) {
+    const { left, right } = nationalLeadColumns(paras);
+    return (
+      <div className={cn("tt-nat-lead-cols", ended && "ended")}>
+        <div className="tt-nat-lead-col">
+          {left.map((p, i) => (
+            <p key={i}>{i === 0 ? <NatDr
