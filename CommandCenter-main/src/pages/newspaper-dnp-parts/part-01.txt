@@ -1,0 +1,284 @@
+lor: string | null | undefined): string | null {
+  const c = (color ?? "").replace(/^#/, "").trim();
+  return /^[0-9a-f]{6}$/i.test(c) ? `#${c}` : null;
+}
+
+function teamColor(team: TeamInfobox | null | undefined): string | null {
+  return hexColor(team?.snap.color) ?? hexColor(team?.fav.color);
+}
+
+/** Ink that reads on a panel of `color` — gold and yellow clubs take black. */
+function inkOn(color: string): string {
+  const n = Number.parseInt(color.slice(1), 16);
+  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => {
+    const s = v / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r! + 0.7152 * g! + 0.0722 * b! > 0.36 ? "#14161b" : "#ffffff";
+}
+
+function tint(color: string | null | undefined): CSSProperties | undefined {
+  if (!color) return undefined;
+  return { ["--tt-team" as string]: color, ["--tt-on" as string]: inkOn(color) } as CSSProperties;
+}
+
+function squash(text: string | null | undefined): string {
+  return (text ?? "").replace(/[^a-z0-9]+/gi, "").toLowerCase();
+}
+
+function gameState(status: string | null | undefined): string | null {
+  if (!status) return null;
+  if (/^(story|headlinenews|media|preview|recap|news)$/i.test(status.trim())) return null;
+  return status;
+}
+
+function cardCopy(card: GameWrapCard): string {
+  const body = cleanStoryCopy(card.body).text;
+  if (body.length >= 40) return body;
+  const bits: string[] = [];
+  const dek = cleanStoryCopy(card.dek).text;
+  if (dek) bits.push(dek);
+  if (card.scoreLine) bits.push(`${card.status || "Final"}: ${card.scoreLine}.`);
+  if (card.leaders.length) {
+    bits.push(
+      `Names: ${card.leaders
+        .slice(0, 5)
+        .map((l) => `${l.name} (${l.line})`)
+        .join("; ")}.`,
+    );
+  }
+  return bits.join(" ").trim();
+}
+
+/** Copy that says more than the headline already does. */
+function substantive(card: GameWrapCard, text: string): string {
+  const t = squash(text);
+  if (!t || t === squash(card.headline)) return "";
+  return text;
+}
+
+function a1PointerLine(card: GameWrapCard): string {
+  const hed = card.headline.replace(/^No\.\s*\d+\s+/i, "").replace(/\s+/g, " ").trim();
+  const short = hed.split(/ to |,| — | – /)[0]?.replace(/\s+\d+\s*[–-]\s*\d+\s*$/, "").trim() || hed;
+  return card.favoriteKey === "cfb-mizzou" ? short.replace(/^Missouri\b/i, "Mizzou") : short;
+}
+
+function recapDek(card: GameWrapCard, sentences = 1): string {
+  const raw = recapBodyForPage(tidy((card.body || card.dek || "").replace(/\s+/g, " ")));
+  if (!raw || squash(raw) === squash(card.headline)) return "";
+  const parts = raw.split(/(?<=[.!?])\s(?=["“A-Z0-9])/).slice(0, sentences);
+  const out = parts.join(" ");
+  return truncateAtSentence(out, 260);
+}
+
+function dekFor(card: GameWrapCard, copy: string): string | null {
+  const bracket = [card.round, card.series].filter(Boolean).join(" · ");
+  if (bracket) return bracket;
+  const dek = card.dek ? tidy(card.dek) : "";
+  if (!dek) return null;
+  const d = squash(dek);
+  if (d === squash(card.headline)) return null;
+  if (squash(copy).startsWith(d.slice(0, 48))) return null;
+  return dek;
+}
+
+function kickerOf(card: GameWrapCard): string {
+  if (card.wrapKind === "box" || card.caption === "Times box wrap") return "Times box wrap";
+  const bits = [card.sportLabel];
+  if (card.round) bits.push(card.round);
+  else if (card.postseason) bits.push("Postseason");
+  if (card.sec && card.leaguePath === "football/college-football") bits.push("SEC");
+  if (card.teamName && squash(card.teamName) !== squash(card.sportLabel)) bits.push(card.teamName);
+  return bits.join(" · ");
+}
+
+function blankRecord(r: string | null | undefined): boolean {
+  return !r || /^0-0(-0)?$/.test(r.trim());
+}
+
+function zeroStat(value: string): boolean {
+  return /^[+\-]?0(\.0+)?$/.test(value.trim());
+}
+
+function clubRecord(team: TeamInfobox | null | undefined): string | null {
+  if (!team) return null;
+  const row = team.detail?.division?.find((r) => r.isMe);
+  return row?.record || team.snap.record || null;
+}
+
+function tableWindow<T extends { me: boolean }>(rows: T[], size = 8): T[] {
+  if (rows.length <= size) return rows;
+  const me = rows.findIndex((row) => row.me);
+  const start = me < 0 ? 0 : Math.max(0, Math.min(me - Math.floor(size / 2), rows.length - size));
+  return rows.slice(start, start + size);
+}
+
+function tableTitle(standing: string | null): string {
+  const place = standing?.match(/\bin\s+(.+)$/i)?.[1]?.trim();
+  return place || "Table";
+}
+
+function teamLeaders(team: TeamInfobox | null | undefined) {
+  return [...(team?.detail?.hittingLeaders ?? []), ...(team?.detail?.pitchingLeaders ?? [])].map(
+    (l) => ({ name: l.name, line: l.line }),
+  );
+}
+
+function teamForCard(teams: TeamInfobox[], card: GameWrapCard): TeamInfobox | null {
+  return teams.find((t) => t.fav.key === card.favoriteKey) ?? null;
+}
+
+/**
+ * Column count that leaves the fewest empty cells in the last row; the
+ * earliest option wins ties, so pass the preferred count first.
+ */
+function balancedCols(n: number, options: number[]): number {
+  if (n <= 0) return options[0] ?? 1;
+  let best = options[0] ?? 1;
+  let bestEmpty = Infinity;
+  for (const c of options) {
+    if (c > n) continue;
+    const empty = (c - (n % c)) % c;
+    if (empty < bestEmpty) {
+      best = c;
+      bestEmpty = empty;
+    }
+  }
+  return bestEmpty === Infinity ? Math.max(1, n) : best;
+}
+
+/** How many leading cards take a double cell so the grid's last row closes. */
+function doubleWide(n: number, cols: number): number {
+  if (cols < 2) return 0;
+  const empty = (cols - (n % cols)) % cols;
+  return Math.min(empty, n);
+}
+
+function daysUntilIso(iso: string | null | undefined): number | null {
+  if (!iso) return null;
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return null;
+  return Math.ceil((t - Date.now()) / 86_400_000);
+}
+
+const OpenerContext = createContext<Map<string, Opener>>(new Map());
+
+function useOpener(key: string | null | undefined): Opener | null {
+  const openers = useContext(OpenerContext);
+  return key ? (openers.get(key) ?? null) : null;
+}
+
+/** Days to a club's first game, set big; `line` is the one-row rail version. */
+function Countdown({
+  opener,
+  name,
+  logo,
+  color,
+  variant = "card",
+}: {
+  opener: Opener;
+  name?: string;
+  logo?: string | null;
+  color?: string | null;
+  variant?: "card" | "line" | "poster";
+}) {
+  const days = daysUntil(opener.iso, Date.now(), opener.timeValid);
+  const big = days <= 0 ? "Today" : days === 1 ? "1" : String(days);
+  const unit = days <= 0 ? "" : days === 1 ? "day" : "days";
+  return (
+    <div className={cn("tt-count", variant)} style={tint(color ?? null)}>
+      <p className="tt-count-num">
+        <b>{big}</b>
+        {unit ? <span>{unit}</span> : null}
+      </p>
+      <div className="tt-count-copy">
+        <em>
+          {name ? `${name} · ` : ""}
+          {opener.billing}
+        </em>
+        <strong>
+          {logo ? <img src={logo} alt="" aria-hidden="true" /> : null}
+          {openerMatchup(opener)}
+          {opener.opponentLogo ? <img src={opener.opponentLogo} alt="" aria-hidden="true" /> : null}
+        </strong>
+        <span>
+          {openerDate(opener)}
+          {opener.venue && variant !== "line" ? ` · ${opener.venue}` : ""}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/** Clubs with no slate, or next tip more than six weeks out, print compact. */
+function clubIsOffseason(team: TeamInfobox, opener?: Opener | null): boolean {
+  if (opener && daysUntil(opener.iso, Date.now(), opener.timeValid) > 7) return true;
+  const hasSlate = Boolean(team.snap.nextGame) || (team.detail?.upcoming?.length ?? 0) > 0;
+  if (hasSlate) {
+    const soon =
+      team.detail?.upcoming?.find((g) => g.startIso)?.startIso ??
+      team.detail?.upcoming?.[0]?.startIso ??
+      null;
+    const days = daysUntilIso(soon);
+    // Only shelve when we know the wait is long — missing ISO keeps the full card.
+    return days != null && days > 45;
+  }
+  return team.seasonState === "complete" || team.seasonState === "upcoming";
+}
+
+function clubCountdown(team: TeamInfobox): string {
+  const next = team.detail?.upcoming?.[0] ?? null;
+  const chip = team.snap.nextGame;
+  const days = daysUntilIso(next?.startIso);
+  if (days != null && days > 0) {
+    const label = next?.label || chip?.label || "next tip";
+    if (days === 1) return `Opens tomorrow · ${label}`;
+    if (days < 14) return `${days} days · ${label}`;
+    if (days < 60) return `${Math.round(days / 7)} weeks · ${label}`;
+    return `${Math.round(days / 30)} months · ${label}`;
+  }
+  if (chip) return `Next ${chip.label}${chip.when ? ` · ${chip.when}` : ""}`;
+  if (next) return `Next ${next.label}${next.when ? ` · ${next.when}` : ""}`;
+  return "Offseason";
+}
+
+function nextLine(team: TeamInfobox): string {
+  if (team.seasonState === "complete") return "Season complete";
+  const chip = team.snap.nextGame;
+  if (chip) return `${chip.label}${chip.when ? ` · ${chip.when}` : ""}`;
+  const next = team.detail?.upcoming?.[0];
+  if (next) return `${next.label}${next.when ? ` · ${next.when}` : ""}`;
+  return team.snap.standing || "Offseason";
+}
+
+/**
+ * "7 PM" out of an ISO stamp, in the reader's own zone. hour12 is forced
+ * because a 24-hour locale would print a bare "19" once the :00 is dropped.
+ */
+function faceOff(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const t = d.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+  return t.replace(":00 ", " ");
+}
+
+function sameHead(a: string, b: string): boolean {
+  return a.replace(/\s+/g, " ").trim().toLowerCase() === b.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function pageLabel(page: EditionPage): string {
+  switch (page.kind) {
+    case "sport-front":
+      return {
+        front: "",
+        news: "News",
+        recaps: "Recaps",
+        teams: "Standings",
+        leaders: "Leaders",
+        schedule: "Schedule",
+        playoffs: "Playoff
