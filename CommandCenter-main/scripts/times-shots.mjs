@@ -256,6 +256,13 @@ async function logout(session) {
 }
 
 async function main() {
+  // Flat pages for the iPad. Does not claim or send a Telegram alert.
+  //   node scripts/times-shots.mjs --flat --issue 2026-10-07-evening
+  if (flag("flat")) {
+    const { printFlatEdition } = await import("./times-flat-print.mjs");
+    await printFlatEdition();
+    return;
+  }
   if (flag("peek")) {
     const peek = await call({ action: "peek", ...(asked ? { issue_id: asked } : {}) });
     // Workflow gate: only install a browser when an edition is waiting.

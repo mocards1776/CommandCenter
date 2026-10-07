@@ -1,0 +1,46 @@
+name: Print flat Times pages
+
+# Prints one filed edition to the times-flat bucket. Does not run the press
+# and does not send a Telegram alert.
+#
+# Local (no GitHub secret required):
+#   node CommandCenter-main/scripts/times-shots.mjs --flat --issue 2026-10-07-evening
+#
+# Dispatch: set the issue_id input. The job needs the TIMES_FLAT_SESSION
+# secret (the same JSON the browser stores for the Supabase session) and
+# TIMES_SUPABASE_ANON_KEY. Without those, run the local command.
+on:
+  workflow_dispatch:
+    inputs:
+      issue_id:
+        description: Edition id to print, for example 2026-10-07-evening
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  print:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install WebKit
+        run: |
+          mkdir -p "$RUNNER_TEMP/flat-print"
+          cd "$RUNNER_TEMP/flat-print"
+          npm init -y > /dev/null
+          npm i --no-audit --no-fund playwright@1.56.1
+          npx playwright install --with-deps webkit
+      - name: Print edition
+        env:
+          ISSUE_ID: ${{ github.event.inputs.issue_id }}
+          TIMES_SESSION_JSON: ${{ secrets.TIMES_FLAT_SESSION }}
+          TIMES_SUPABASE_ANON_KEY: ${{ secrets.TIMES_SUPABASE_ANON_KEY }}
+          TIMES_SUPABASE_URL: https://esdgrgulaxnewmhjuyzh.supabase.co
+          NODE_PATH: ${{ runner.temp }}/flat-print/node_modules
+        run: node CommandCenter-main/scripts/times-shots.mjs --flat --issue "$ISSUE_ID"

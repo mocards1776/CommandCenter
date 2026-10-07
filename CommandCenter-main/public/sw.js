@@ -146,6 +146,14 @@ self.addEventListener("fetch", (event) => {
   } catch {
     return;
   }
+  // Printed Times pages live on Supabase Storage. Cache those images only;
+  // every other Supabase call stays uncached.
+  if (url.hostname.endsWith(".supabase.co") && url.pathname.includes("/storage/v1/object/public/times-flat/")) {
+    if (req.destination === "image" || /\.webp(?:$|\?)/i.test(url.pathname)) {
+      event.respondWith(cacheFirst(req, IMAGES));
+    }
+    return;
+  }
   if (url.pathname.startsWith("/api/") || url.hostname.includes("supabase.co")) return;
 
   if (req.mode === "navigate" && isTimesNavigation(url)) {
