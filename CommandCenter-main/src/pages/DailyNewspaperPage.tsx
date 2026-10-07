@@ -59,7 +59,7 @@ import {
   type StandGroup,
 } from "@/lib/newspaper-box";
 import { cleanStoryCopy, proseParas, tidy, truncateAtSentence } from "@/lib/newspaper-copy";
-import { applyScaledFitBox, pageFit, prefetchSrc, sheetNeedsTransformFit } from "@/lib/newspaper-fit";
+import { applyScaledFitBox, fitMeasureNeeded, pageFit, prefetchSrc, sheetNeedsTransformFit } from "@/lib/newspaper-fit";
 import { FitCopy, FittedSheet } from "@/components/newspaper/FittedSheet";
 import { TimesCommitBoundary } from "@/components/newspaper/TimesCommitBoundary";
 import { recapBodyForPage, recapDropLead, recapIsScoreOnly, recapPhotoKind, recapShouldDropCap, splitApDateline } from "@/lib/newspaper-recap";
@@ -138,7 +138,7 @@ import {
   askRemoteEditor,
   listRecentIssues,
   readRemoteIssue,
-  readRemoteIssueShell,
+  readRemoteIssueFrontFirst,
   readRemoteQueries,
   readRemoteStories,
   subscribeReadyIssues,
@@ -153,6 +153,7 @@ import {
   queryDeskName,
   splitQueries,
 } from "@/lib/newspaper-payload";
+import { frontPrefixLength, yieldToPaint } from "@/lib/newspaper-front-load";
 import {
   cacheTimesShell,
   collectEditionImageUrls,
@@ -229,7 +230,6 @@ import {
   essentialsFromDesks,
   a1ComingUp,
   isA1Muted,
-  isFavoriteGameResult,
   isFavoriteStory,
   isGameWrap,
   isRecapStory,
@@ -4967,6 +4967,8 @@ const NO_STORIES: GameWrapCard[] = [];
 
 /** The folio in view. Only near-page consumers read it, so turning a page doesn't re-render the edition. */
 const PagerIndexContext = createContext(0);
+/** Folios already filled after A1. A1 is in the set from the start. */
+const FolioFillContext = createContext<ReadonlySet<number>>(new Set([0]));
 
 const MemoSportFront = memo(SportFront);
 
@@ -4979,8 +4981,23 @@ const FolioBody = memo(function FolioBody({ render }: { render: () => ReactNode 
   return render();
 });
 
-/** The first two folios print immediately. The rest set in idle time, or as soon as you turn to them. */
-function FolioSlot({
+function FolioGate({ index, onShow }: { index: number; onShow: () => void }) {
+  const current = useContext(PagerIndexContext);
+  const filled = useContext(FolioFillContext);
+  const want =
+    index === 0 || filled.has(index) || (current !== 0 && Math.abs(index - current) <= NEAR_PAGES);
+  useLayoutEffect(() => {
+    if (want) onShow();
+  }, [want, onShow]);
+  return null;
+}
+
+/**
+ * A1 mounts with the first paint. Later folios fill backward in idle time,
+ * or immediately when the reader turns to them. Once shown, the body stays
+ * mounted — a pager-index change must not remount it.
+ */
+const FolioSlot = memo(function FolioSlot({
   index,
   folio,
   kind,
@@ -4991,29 +5008,17 @@ function FolioSlot({
   kind: string;
   render: () => ReactNode;
 }) {
-  const current = useContext(PagerIndexContext);
-  // Fronts, races, Day Ahead, and B/C desks stay painted so jumps land on
-  // real copy. Club/form insides and sport desks mount when nearby.
-  const essential =
-    kind === "favorites-front" ||
-    kind === "favorites-races" ||
-    kind === "favorites-day" ||
-    kind === "national" ||
-    kind === "missouri" ||
-    /^(MLB|NFL|CFB|NHL|EPL|EFL|NBA|CBB)1$/.test(folio);
-  const near = essential || index < 3 || Math.abs(index - current) <= NEAR_PAGES;
-  const [shown, setShown] = useState(essential || index < 3);
-  useEffect(() => {
-    if (near) setShown(true);
-  }, [near]);
+  const [shown, setShown] = useState(index === 0);
+  const show = useCallback(() => setShown(true), []);
   return (
-    <section className="wsj-page" aria-label={`Page ${folio}`} {...(near ? { "data-near": "" } : {})}>
+    <section className="wsj-page" aria-label={`Page ${folio}`} data-kind={kind} data-folio={folio}>
+      <FolioGate index={index} onShow={show} />
       <div className="wsj-fit">
         <FittedSheet>{shown ? <FolioBody render={render} /> : null}</FittedSheet>
       </div>
     </section>
   );
-}
+});
 
 function prefetchNearArt(pager: HTMLElement, index: number) {
   const sheets = pager.children;
@@ -5303,6 +5308,7 @@ function NewspaperDesk() {
         issue: PrintedIssue,
         extra: { dayAhead: DaySchedule | null; national: NationalDesk | null; beez: BeezDesk | null },
         desks: "light" | "all",
+        opts?: { persist?: boolean },
       ) => {
         seedQueries(issue.queries, desks);
         // A1's lead is last night's favorite result. It lives on tt-board.
@@ -5321,8 +5327,28 @@ function NewspaperDesk() {
         });
         setDocPhase("document");
         loadedRef.current = issue.id;
-        void writeLocalIssue({ ...issue, companions: extra }, cacheUserRef.current);
-        void prefetchEditionImages(collectEditionImageUrls({ ...issue, companions: extra }));
+        if (opts?.persist !== false) {
+          void writeLocalIssue({ ...issue, companions: extra }, cacheUserRef.current);
+          void prefetchEditionImages(collectEditionImageUrls({ ...issue, companions: extra }));
+        }
+      };
+
+      const emptyCompanions = { dayAhead: null, national: null, beez: null };
+
+      /** A1 from the story prefix, then the rest of the folio after a paint. */
+      const paintFrontFirst = async (
+        issue: PrintedIssue,
+        extra: { dayAhead: DaySchedule | null; national: NationalDesk | null; beez: BeezDesk | null },
+      ) => {
+        const n = frontPrefixLength(issue.stories);
+        if (n < issue.stories.length) {
+          apply({ ...issue, stories: issue.stories.slice(0, n), queries: [] }, extra, "light", { persist: false });
+          await yieldToPaint();
+          if (stale) return;
+          startTransition(() => apply(issue, extra, "light"));
+          return;
+        }
+        apply(issue, extra, "light");
       };
 
       const loadCompanions = (cached?: {
@@ -5381,15 +5407,12 @@ function NewspaperDesk() {
         const cachedDay = asStoredSchedule(local.companions?.dayAhead);
         const cachedNat = asStoredNational(local.companions?.national);
         const cachedBeez = asStoredBeez(local.companions?.beez);
-        apply(
-          local,
-          {
-            dayAhead: cachedDay,
-            national: cachedNat,
-            beez: cachedBeez,
-          },
-          "all",
-        );
+        await paintFrontFirst(local, {
+          dayAhead: cachedDay,
+          national: cachedNat,
+          beez: cachedBeez,
+        });
+        if (stale) return;
         void loadCompanions({
           dayAhead: cachedDay,
           national: cachedNat,
@@ -5421,25 +5444,52 @@ function NewspaperDesk() {
               });
             })
             .catch(() => {});
+        } else {
+          finishDesks(local, {
+            dayAhead: cachedDay,
+            national: cachedNat,
+            beez: cachedBeez,
+          });
         }
         return;
       }
 
-      const queriesP = readRemoteQueries(pressId).catch(() => null);
-      const shellP = readRemoteIssueShell(pressId).catch(() => null);
+      let paintedFront = false;
+      const shellP = readRemoteIssueFrontFirst(pressId, (partial) => {
+        if (stale || paintedFront || !isIssueWithinLookback(partial)) return;
+        paintedFront = true;
+        apply(partial, emptyCompanions, "light", { persist: false });
+      }).catch(() => null);
       let shell = await withDeadline(shellP, SHELL_WAIT_MS, null);
       if (!shell) shell = await shellP;
       if (stale) return;
-      if (shell?.id === pressId && isIssueWithinLookback(shell)) {
+      const opened = shell;
+      if (opened?.id === pressId && isIssueWithinLookback(opened)) {
+        if (!paintedFront) {
+          apply(opened, emptyCompanions, "light", { persist: false });
+        } else {
+          startTransition(() => {
+            setLockedCopy({ id: opened.id, stories: opened.stories as GameWrapCard[] });
+          });
+        }
+        const queriesP = readRemoteQueries(pressId).catch(() => null);
         const [dayAhead, national, beez] = await loadCompanions();
-        if (stale) return;
-        apply(shell, { dayAhead, national, beez }, "light");
-        void queriesP.then(async (queries) => {
-          if (loadedRef.current !== pressId || !queries) return;
-          const filled = await attachLiveDesks({ ...shell, queries: mergeQueries(shell.queries, queries) });
-          if (loadedRef.current !== pressId) return;
-          finishDesks(filled, { dayAhead, national, beez });
+        if (stale || loadedRef.current !== pressId) return;
+        setCompanions({
+          id: opened.id,
+          dayAhead,
+          national,
+          beez,
+          printedAt: opened.printedAt,
         });
+        const queries = await queriesP;
+        if (loadedRef.current !== pressId) return;
+        const filled = await attachLiveDesks({
+          ...opened,
+          queries: mergeQueries(opened.queries, queries ?? []),
+        });
+        if (loadedRef.current !== pressId) return;
+        finishDesks(filled, { dayAhead, national, beez });
         return;
       }
 
@@ -5504,6 +5554,14 @@ function NewspaperDesk() {
 
   const pagerRef = useRef<HTMLDivElement>(null);
   const [pageIndex, setPageIndex] = useState(0);
+  const [fillFor, setFillFor] = useState(pressId);
+  const [filled, setFilled] = useState<ReadonlySet<number>>(() => new Set([0]));
+  if (fillFor !== pressId) {
+    setFillFor(pressId);
+    setFilled(new Set([0]));
+  }
+  const filledRef = useRef(filled);
+  filledRef.current = filled;
   const pageIndexRef = useRef(0);
   pageIndexRef.current = pageIndex;
   const restoringRef = useRef(false);
@@ -5516,6 +5574,10 @@ function NewspaperDesk() {
   useLayoutEffect(() => {
     const el = pagerRef.current;
     if (!el) return;
+    // Probed once. Calling this on every image/font used to append a DOM node
+    // and force layout. Width fit stays min(1, w / --tt-page-w).
+    const transformFit = sheetNeedsTransformFit();
+    const measured = new WeakMap<HTMLElement, { layoutH: number; fit: number }>();
     const apply = () => {
       const w = el.clientWidth;
       const h = el.clientHeight;
@@ -5531,14 +5593,18 @@ function NewspaperDesk() {
       el.dataset.fit = "1";
       // iPad: CSS zoom + sticky desyncs the columns (rail jumps, left goes white).
       // Keep the same fit math; switch that device to a height-corrected scale wrapper.
-      const useTransform = fit < 1 && sheetNeedsTransformFit();
+      const useTransform = fit < 1 && transformFit;
       el.classList.toggle("tt-fit-scaled", fit < 1);
       el.classList.toggle("tt-fit-transform", useTransform);
       for (const page of el.querySelectorAll<HTMLElement>(".wsj-page")) {
         const fitBox = page.querySelector<HTMLElement>(".wsj-fit");
         const sheet = page.querySelector<HTMLElement>(".wsj-sheet");
-        if (!fitBox || !sheet) continue;
+        if (!fitBox || !sheet || sheet.childElementCount === 0) continue;
+        const layoutH = sheet.offsetHeight;
+        const prev = measured.get(sheet);
+        if (!fitMeasureNeeded(prev?.layoutH ?? 0, layoutH, prev?.fit ?? -1, fit)) continue;
         applyScaledFitBox(fitBox, sheet, pageW, fit, useTransform);
+        measured.set(sheet, { layoutH: sheet.offsetHeight, fit });
       }
     };
     let raf = 0;
@@ -5550,27 +5616,56 @@ function NewspaperDesk() {
       });
     };
     apply();
-    const ro = new ResizeObserver(schedule);
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const node = entry.target;
+        if (!(node instanceof HTMLElement)) continue;
+        if (node === el) {
+          schedule();
+          return;
+        }
+        const prev = measured.get(node);
+        const layoutH = node.offsetHeight;
+        if (!prev || prev.layoutH !== layoutH) {
+          schedule();
+          return;
+        }
+      }
+    });
     ro.observe(el);
     const seen = new Set<Element>();
-    const watchSheets = () => {
-      for (const sheet of el.querySelectorAll(".wsj-sheet")) {
-        if (seen.has(sheet)) continue;
-        seen.add(sheet);
-        ro.observe(sheet);
+    const watchNewSheets = (records: MutationRecord[]) => {
+      let added = false;
+      for (const rec of records) {
+        for (const node of rec.addedNodes) {
+          if (!(node instanceof Element)) continue;
+          const sheets = node.classList.contains("wsj-sheet")
+            ? [node]
+            : [...node.querySelectorAll(".wsj-sheet")];
+          for (const sheet of sheets) {
+            if (seen.has(sheet)) continue;
+            seen.add(sheet);
+            ro.observe(sheet);
+            added = true;
+          }
+        }
       }
-      schedule();
+      if (added) schedule();
     };
-    watchSheets();
-    const mo = new MutationObserver(watchSheets);
+    for (const sheet of el.querySelectorAll(".wsj-sheet")) {
+      seen.add(sheet);
+      ro.observe(sheet);
+    }
+    const mo = new MutationObserver(watchNewSheets);
     mo.observe(el, { childList: true, subtree: true });
-    el.addEventListener("load", schedule, true);
-    void document.fonts?.ready.then(schedule);
+    // Image load and font ready used to remeasure even when the sheet height
+    // did not change, clearing transform for a frame. ResizeObserver covers a
+    // real height change; apply() then skips an unchanged layout height.
+    void document.fonts?.ready.then(() => schedule());
     return () => {
       if (raf) cancelAnimationFrame(raf);
       ro.disconnect();
       mo.disconnect();
-      el.removeEventListener("load", schedule, true);
     };
   }, [docPhase]);
 
@@ -6650,6 +6745,47 @@ function NewspaperDesk() {
   const pages = edition.pages;
   const pagesRef = useRef(pages);
   pagesRef.current = pages;
+
+  // After A1 is up, mount the rest of the book from the back so the front
+  // stays put and the inside folios fill in idle slices.
+  useEffect(() => {
+    if (!revealed || pages.length <= 1) return;
+    let cancelled = false;
+    let cursor = pages.length - 1;
+    let cancelPump = () => {};
+    const pump = () => {
+      if (cancelled) return;
+      const have = filledRef.current;
+      const batch: number[] = [];
+      while (cursor >= 1 && batch.length < 4) {
+        if (!have.has(cursor)) batch.push(cursor);
+        cursor--;
+      }
+      if (batch.length) {
+        setFilled((prev) => {
+          const next = new Set(prev);
+          for (const index of batch) next.add(index);
+          return next;
+        });
+      }
+      if (cursor >= 1) schedulePump();
+    };
+    const schedulePump = () => {
+      const idle = window.requestIdleCallback?.bind(window);
+      if (idle) {
+        const id = idle(() => pump(), { timeout: 500 });
+        cancelPump = () => window.cancelIdleCallback(id);
+      } else {
+        const id = window.setTimeout(pump, 16);
+        cancelPump = () => window.clearTimeout(id);
+      }
+    };
+    schedulePump();
+    return () => {
+      cancelled = true;
+      cancelPump();
+    };
+  }, [revealed, pages.length, pressId]);
   useEffect(() => {
     const page = pages[pageIndex];
     const names = heavyDesksForPage(page);
@@ -7074,31 +7210,18 @@ function NewspaperDesk() {
   }, [pageIndex, sheets]);
 
   useLayoutEffect(() => {
-    // Hold the navy chrome until A1 has its lead and the favorite boards have
-    // settled, so a cold iPad does not print the empty clubs fallback.
+    // A1's lead is enough to drop the cover. Boards and the rest of the folio
+    // fill in behind it; waiting on them held the paper for the whole file.
     if (docPhase === "boot" || !sheets || revealFor.current === pressId) return;
     const front = pages.find((p) => p.kind === "favorites-front");
     const haveLead = front?.kind === "favorites-front" && Boolean(front.lead);
-    const leadIsResult =
-      front?.kind === "favorites-front" && Boolean(front.lead && isFavoriteGameResult(front.lead));
-    const haveResult = stories.some((card) => isFavoriteGameResult(card));
-    const boardsReady = leadBoardPaths.length === 0 || leadBoardQ.isFetched;
-    const playoffsReady = !sportPaths.includes("baseball/mlb") || mlbPlayoffsQ.isFetched;
-    const copyReady = haveLead && boardsReady && playoffsReady && (leadIsResult || !haveResult);
+    if (!haveLead) return;
     let cancel = false;
     const cap = window.setTimeout(() => {
       if (cancel) return;
-      // Never drop the cover onto an empty A1. Keep holding until the front has a lead.
-      if (!haveLead) return;
       revealFor.current = pressId;
       setRevealed(true);
-    }, copyReady ? 7_000 : 22_000);
-    if (!copyReady) {
-      return () => {
-        cancel = true;
-        window.clearTimeout(cap);
-      };
-    }
+    }, 7_000);
     void (async () => {
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       await waitForPrintedReveal(pagerRef.current);
@@ -7110,21 +7233,7 @@ function NewspaperDesk() {
       cancel = true;
       window.clearTimeout(cap);
     };
-  }, [
-    docPhase,
-    pressReady,
-    pressId,
-    lockedCopy?.id,
-    companions?.id,
-    sheets,
-    recent,
-    pages,
-    sportPaths,
-    leadBoardPaths,
-    leadBoardQ.isFetched,
-    mlbPlayoffsQ.isFetched,
-    stories,
-  ]);
+  }, [docPhase, pressId, sheets, pages]);
 
   // A story that sat on the sheet counts as read. The next press leaves it out.
   useEffect(() => {
@@ -7193,7 +7302,11 @@ function NewspaperDesk() {
   const sectionIdx = edition.sections.findIndex((s) => s.code === current?.section);
 
   return (
-    <div className="newspaper-root wsj-shell" data-times-ready={revealed ? "1" : "0"}>
+    <div
+      className="newspaper-root wsj-shell"
+      data-times-ready={revealed ? "1" : "0"}
+      data-times-folios={pages.length > 0 && filled.size >= pages.length ? "1" : "0"}
+    >
       <GameLookup.Provider value={findGame}>
       <OpenerContext.Provider value={openers}>
       <SubjectsContext.Provider value={storyFiles}>
@@ -7282,6 +7395,7 @@ function NewspaperDesk() {
         </div>
       </div>
 
+      <FolioFillContext.Provider value={filled}>
       <PagerIndexContext.Provider value={pageIndex}>
         <TimesCommitBoundary>
         <div className="tt-spread">
@@ -7310,6 +7424,7 @@ function NewspaperDesk() {
         </div>
         </TimesCommitBoundary>
       </PagerIndexContext.Provider>
+      </FolioFillContext.Provider>
       {savedOpen ? <SavedDrawer onClose={() => setSavedOpen(false)} /> : null}
       </ReaderProvider>
       </SavedProvider>

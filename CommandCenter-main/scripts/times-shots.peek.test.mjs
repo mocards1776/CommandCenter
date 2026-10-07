@@ -18,18 +18,18 @@ assert.doesNotMatch(
   /if \(!asked\) \{\s*const peek = await call\(\{ action: "peek" \}\);\s*if \(flag\("peek"\)\)/,
   "old peek-inside-!asked path would skip --peek --issue and claim instead",
 );
-assert.match(src, /const PHONE = \{ width: 430, height: 932 \}/, "phone canvas is 430×932");
-assert.match(
-  src,
-  /clip: \{ x: 0, y: 0, width: PHONE\.width, height: PHONE\.height \}/,
-  "every phone shot is hard-clipped to the set size",
-);
-assert.doesNotMatch(src, /Math\.max\(PHONE\.height/, "viewport must not grow with card height");
-assert.match(src, /\["weather", "day", "watch"\]/, "weather / day / watch stay phone cards");
-assert.match(src, /\/newspaper\?solo=1/, "front shot opens the printed paper Josh reads");
-assert.match(src, /const IPAD = \{ width: 768, height: 1024 \}/, "front captures the iPad viewport");
+assert.match(src, /const IPAD13 = \{ width: 1032, height: 1376 \}/, "alert window is iPad Pro 13\" portrait");
+assert.doesNotMatch(src, /430/, "no phone-fit canvas remains on the alert path");
+assert.doesNotMatch(src, /fitA1ToPhone/, "A1 is not refit onto a second size");
+assert.doesNotMatch(src, /phone-card/, "alert shots are paper sheets, not phone cards");
+assert.match(src, /favorites-front/, "front shot is the printed A1 sheet");
+assert.match(src, /favorites-clubs/, "weather shot is the iPad clubs sheet");
+assert.match(src, /favorites-day/, "day shot is the iPad day sheet");
+assert.match(src, /favorites-watch/, "watch shot is the iPad watch sheet");
+assert.match(src, /\/newspaper\?solo=1/, "shots open the printed paper Josh reads");
 assert.match(src, /data-times-ready/, "front waits for the revealed A1");
-assert.match(src, /fitA1ToPhone/, "iPad A1 is fitted onto the locked phone canvas");
+assert.match(src, /data-times-folios/, "inside sheets wait until the folio has filled");
+assert.match(src, /sheet\.screenshot/, "height follows the sheet; stories are not clipped");
 assert.doesNotMatch(src, /sample=/, "production runner never passes the Day Ahead / front fixtures");
 
 const editorPrompt = readFileSync(new URL("../../supabase/functions/newspaper-editor/index.ts", import.meta.url), "utf8");

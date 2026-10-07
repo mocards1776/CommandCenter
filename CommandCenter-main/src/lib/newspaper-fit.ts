@@ -32,6 +32,19 @@ export function pageFit(viewportW: number, pageW = 1032): number {
   return Math.min(1, viewportW / pageW);
 }
 
+/**
+ * Whether the iPad scale wrapper must be rewritten.
+ * An unchanged layout height must not clear `transform` (that flash was the
+ * sheet disappearing). A remount that collapses the sheet under 80px must
+ * not lock the wrapper shut either.
+ */
+export function fitMeasureNeeded(prevLayoutH: number, layoutH: number, prevFit: number, fit: number): boolean {
+  if (!(layoutH > 0)) return false;
+  if (prevLayoutH > 80 && layoutH < 80) return false;
+  if (prevLayoutH === layoutH && prevFit === fit) return false;
+  return true;
+}
+
 /** Visual box of a scaled 1032-wide sheet. Wrapper height must match this or iOS leaves a white void. */
 export function scaledFitBox(pageW: number, sheetH: number, fit: number): { width: number; height: number } {
   const f = fit > 0 ? fit : 1;

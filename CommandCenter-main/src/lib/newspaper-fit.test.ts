@@ -6,6 +6,7 @@ import {
   HARD_PAGE_H,
   SOFT_PAGE_H,
   hideCssForPlan,
+  fitMeasureNeeded,
   pageFit,
   plansEqual,
   scaledFitBox,
@@ -22,6 +23,10 @@ assert(SOFT_PAGE_H === 1480, "soft pack target stays 1480");
 assert(HARD_PAGE_H === 1650, "hard pack cap stays 1650");
 assert(pageFit(768, 1032) === 768 / 1032, "iPad 768 fit is width-only min(1, w/1032)");
 assert(pageFit(1032, 1032) === 1, "13-inch portrait is true size");
+assert(!fitMeasureNeeded(1008, 1008, 768 / 1032, 768 / 1032), "unchanged iPad sheet height does not clear transform");
+assert(!fitMeasureNeeded(1008, 40, 1, 1), "an empty remount must not lock the wrapper shut");
+assert(fitMeasureNeeded(1008, 1400, 1, 1), "a taller sheet still remeasures");
+assert(fitMeasureNeeded(0, 1008, -1, 1), "the first real height is measured");
 assert(pageFit(1400, 1032) === 1, "wider screens do not upscale");
 assert(sheetLayoutHeight({ offsetHeight: 800, scrollHeight: 2929 }) === 2929, "wrapper tracks the full sheet, not a stale clip");
 assert(scaledFitBox(1032, 1600, 768 / 1032).width === 768, "transform wrapper width is the visual sheet");
