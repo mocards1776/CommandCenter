@@ -17,6 +17,7 @@ import PlayerHeadshot from "@/components/sports/PlayerHeadshot";
 import { toMlbBoxMomentSnapshot } from "@/lib/game-moment-sources";
 import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
 import TeamMark from "@/components/sports/TeamMark";
+import MlbTeamLogo from "@/components/sports/MlbTeamLogo";
 import { TeamFormChips, TeamStandingLine } from "@/components/sports/TeamFormChips";
 import { fetchMlbTeamForm, type TeamFormStrip } from "@/lib/team-form";
 import {
@@ -1323,45 +1324,45 @@ function EspnTeam({
     <Link
       to={teamPagePath(side.teamId)}
       className={cn(
-        "flex min-w-0 flex-[1.1] flex-col items-center gap-1.5 transition hover:opacity-90 sm:gap-2.5 md:max-w-none",
-        align === "left" ? "sm:items-start" : "sm:items-end",
+        "flex min-w-0 flex-[1.1] flex-col items-center gap-1 text-center transition hover:opacity-90 sm:gap-3",
+        align === "left" ? "sm:flex-row sm:items-center sm:text-left" : "sm:flex-row-reverse sm:items-center sm:text-right",
       )}
     >
-      <TeamMark
-        teamId={side.teamId}
-        size="md"
-        className={cn(
-          "shadow-[0_8px_28px_rgba(0,0,0,0.45)] sm:!h-16 sm:!w-16 sm:!p-2",
-          winner && "ring-2 ring-white/35",
-          loser && "opacity-40",
-        )}
-      />
+      {side.teamId > 0 ? (
+        <MlbTeamLogo
+          teamId={side.teamId}
+          className={cn("h-14 w-14 sm:h-20 sm:w-20", loser && "opacity-40")}
+        />
+      ) : null}
       <div
         className={cn(
-          "w-full min-w-0 max-w-full text-center",
+          "w-full min-w-0 max-w-full text-center sm:w-auto",
           align === "left" ? "sm:text-left" : "sm:text-right",
         )}
       >
         <p
           className={cn(
-            "truncate text-[17px] font-bold tracking-wide sm:text-[22px]",
-            winner ? "text-white" : loser ? "text-white/40" : "text-white",
+            "truncate text-[15px] font-semibold leading-tight sm:text-[22px]",
+            loser ? "text-white/40" : winner ? "text-white" : "text-cream",
           )}
         >
           {side.abbrev}
         </p>
-        {side.record ? (
+        {side.name ? (
           <p
             className={cn(
-              "numeral mt-0.5 truncate text-[12px] font-medium sm:mt-1 sm:text-[13px]",
-              loser ? "text-white/35" : "text-white/70",
+              "line-clamp-2 text-[10.5px] leading-tight sm:text-[12px] sm:leading-snug",
+              loser ? "text-white/30" : "text-chalk-dim",
             )}
           >
+            {side.name}
+          </p>
+        ) : null}
+        {side.record ? (
+          <p className={cn("numeral text-[11px]", loser ? "text-white/30" : "text-chalk-dim")}>
             {side.record}
           </p>
-        ) : (
-          <p className="mt-0.5 truncate text-[10px] text-[#8b93a7] sm:mt-1 sm:text-[11px]">{side.name}</p>
-        )}
+        ) : null}
         <TeamStandingLine standing={form?.standing} />
         {showForm ? (
           <TeamFormChips
