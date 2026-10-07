@@ -173,12 +173,89 @@ function pngSize(buf) {
   return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
 }
 
-async function encodeWebp(pngPath, webpPath, lossless) {
-  if (lossless) {
-    await ffmpeg(["-y", "-i", pngPath, "-c:v", "libwebp", "-lossless", "1", "-compression_level", "6", webpPath]);
-  } else {
-    await ffmpeg(["-y", "-i", pngPath, "-c:v", "libwebp", "-q:v", "95", webpPath]);
+async function encodeWebp(pngPath, webpPath) {
+  await ffmpeg(["-y", "-i", pngPath, "-c:v", "libwebp", "-lossless", "1", "-compression_level", "6", webpPath]);
+}
+
+async function rawSize(file) {
+  const { width, height } = pngSize(await readFile(file));
+  return { width, height };
+}
+
+/** Scroll the folio and stack viewport clips. One element shot drops everything below the screen. */
+async function captureSheet(page, index, pngPath) {
+  const geom = await page.evaluate((i) => {
+    const leaf = document.querySelectorAll(".wsj-page")[i];
+    const sheet = leaf?.querySelector(".wsj-sheet");
+    if (!leaf || !sheet) return null;
+    return { h: sheet.offsetHeight, w: sheet.offsetWidth, view: leaf.clientHeight };
+  }, index);
+  if (!geom || geom.h < 40) return null;
+  await page.setViewportSize({ width: IPAD13.width, height: IPAD13.height });
+  const step = Math.max(500, geom.view - 80);
+  const slices = [];
+  for (let y = 0; y < geom.h; y += step) {
+    await page.evaluate(
+      ({ i, y }) => {
+        const leaf = document.querySelectorAll(".wsj-page")[i];
+        if (leaf) leaf.scrollTop = y;
+      },
+      { i: index, y },
+    );
+    await page.waitForTimeout(40);
+    const box = await page.evaluate((i) => {
+      const leaf = document.querySelectorAll(".wsj-page")[i];
+      const sheet = leaf?.querySelector(".wsj-sheet");
+      if (!leaf || !sheet) return null;
+      const s = sheet.getBoundingClientRect();
+      const p = leaf.getBoundingClientRect();
+      const top = Math.max(s.top, p.top, 0);
+      const bottom = Math.min(s.bottom, p.bottom, window.innerHeight);
+      const left = Math.max(s.left, 0);
+      const right = Math.min(s.right, window.innerWidth);
+      return {
+        x: left,
+        y: top,
+        w: Math.max(1, right - left),
+        h: Math.max(1, bottom - top),
+        scroll: leaf.scrollTop,
+      };
+    }, index);
+    if (!box || box.h < 2) continue;
+    const slice = `${pngPath}.${slices.length}.png`;
+    await page.screenshot({
+      animations: "disabled",
+      type: "png",
+      clip: { x: box.x, y: box.y, width: box.w, height: box.h },
+      timeout: 15_000,
+    });
+    slices.push({ slice, y: box.scroll });
+    if (box.scroll + box.h >= geom.h - 2) break;
   }
+  if (!slices.length) return null;
+  const first = await rawSize(slices[0].slice);
+  const scale = first.width / geom.w;
+  const outW = first.width;
+  const outH = Math.max(first.height, Math.round(geom.h * scale));
+  const canvas = Buffer.alloc(outW * outH * 4, 255);
+  for (const part of slices) {
+    const raw = `${part.slice}.raw`;
+    const { width, height } = await rawSize(part.slice);
+    await ffmpeg(["-y", "-i", part.slice, "-f", "rawvideo", "-pix_fmt", "rgba", raw]);
+    const pixels = await readFile(raw);
+    const destY = Math.round(part.y * scale);
+    const rowBytes = width * 4;
+    for (let row = 0; row < height && destY + row < outH; row++) {
+      pixels.copy(canvas, ((destY + row) * outW + 0) * 4, row * rowBytes, row * rowBytes + Math.min(rowBytes, outW * 4));
+    }
+    await unlink(raw).catch(() => {});
+    await unlink(part.slice).catch(() => {});
+  }
+  const rawOut = `${pngPath}.raw`;
+  await writeFile(rawOut, canvas);
+  await ffmpeg(["-y", "-f", "rawvideo", "-pix_fmt", "rgba", "-s", `${outW}x${outH}`, "-i", rawOut, pngPath]);
+  await unlink(rawOut).catch(() => {});
+  return { width: outW, height: outH, cssWidth: geom.w, cssHeight: geom.h };
 }
 
 function authHeaders(config, token, extra = {}) {
@@ -317,7 +394,7 @@ async function waitQuiet(page, index) {
   let last = -1;
   let quiet = Date.now();
   const start = Date.now();
-  while (Date.now() - start < 8_000) {
+  while (Date.now() - start < 2_000) {
     const h = await page.evaluate(
       (i) => document.querySelectorAll(".wsj-page")[i]?.querySelector(".wsj-sheet")?.offsetHeight || 0,
       index,
@@ -478,21 +555,17 @@ export async function printFlatEdition() {
       let quiet = Date.now();
       const start = Date.now();
       while (Date.now() - start < 45_000) {
-        const snap = await page.evaluate(() => {
-          const n = document.querySelectorAll(".wsj-page").length;
-          const h = document.querySelector(".wsj-page .wsj-sheet")?.offsetHeight || 0;
-          return `${n}:${h}`;
-        });
+        const snap = await page.evaluate(() => String(document.querySelectorAll(".wsj-page").length));
         if (snap !== last) {
           last = snap;
           quiet = Date.now();
-          log("settling", snap);
+          log("settling", snap, "folios");
         }
-        const n = Number(snap.split(":")[0]);
+        const n = Number(snap);
         if (n > 3 && Date.now() - quiet > 8_000) break;
         await page.waitForTimeout(400);
       }
-      folioCount = Number(last.split(":")[0]) || 0;
+      folioCount = Number(last) || 0;
     }
     log("folio count settled", folioCount);
     const leaves = await page.evaluate(() =>
@@ -504,70 +577,17 @@ export async function printFlatEdition() {
     if (!leaves.length) throw new Error("no folios");
     log("folios", leaves.length);
 
-    let lossless = true;
     for (let i = 0; i < leaves.length; i++) {
       const leaf = leaves[i];
       await primePage(page, i);
-      const sheet = page.locator(".wsj-page").nth(i).locator(".wsj-sheet");
-      // boundingBox is clipped to the viewport. offsetHeight is the paper.
-      // WebKit element shots leave anything outside the viewport transparent.
-      const full = await page.evaluate((i) => {
-        const node = document.querySelectorAll(".wsj-page")[i]?.querySelector(".wsj-sheet");
-        if (!node) return null;
-        return { w: node.offsetWidth, h: node.offsetHeight };
-      }, i);
-      if (full && full.h > 40) {
-        const viewH = Math.min(16_000, Math.ceil(full.h + 200));
-        await page.setViewportSize({ width: IPAD13.width, height: Math.max(IPAD13.height, viewH) });
-        await page.evaluate((i) => {
-          const pager = document.querySelector(".newspaper-edition");
-          const leaf = pager?.querySelectorAll(".wsj-page")[i];
-          if (pager) pager.scrollTo({ left: i * pager.clientWidth, behavior: "instant" });
-          if (leaf) leaf.scrollTop = 0;
-          window.scrollTo(0, 0);
-        }, i);
-        await page.waitForTimeout(250);
-      }
-      let box = await sheet.boundingBox();
-      if (!full || full.h < 40 || !box) {
+      const pngPath = path.join(outDir, `${leaf.folio}.png`);
+      const webpPath = path.join(outDir, `${leaf.folio}.webp`);
+      const shot = await captureSheet(page, i, pngPath);
+      if (!shot) {
         log("skip", leaf.folio, "no sheet");
         continue;
       }
-      const need = Math.ceil(box.y + box.height + 40);
-      if (need > (page.viewportSize()?.height || 0)) {
-        await page.setViewportSize({ width: IPAD13.width, height: Math.min(16_000, Math.max(IPAD13.height, need)) });
-        await page.waitForTimeout(100);
-        box = (await sheet.boundingBox()) || box;
-      }
-      const vp = page.viewportSize() || IPAD13;
-      const clip = {
-        x: Math.max(0, Math.min(box.x, vp.width - 1)),
-        y: Math.max(0, Math.min(box.y, vp.height - 1)),
-        width: Math.max(1, Math.min(box.width, vp.width - Math.max(0, box.x))),
-        height: Math.max(1, Math.min(box.height, vp.height - Math.max(0, box.y))),
-      };
-      // Locator screenshots wait for the sheet to stop moving. Live desks keep
-      // nudging layout, so clip the viewport instead.
-      const png = await page.screenshot({ animations: "disabled", type: "png", clip, timeout: 20_000 });
-      const px = pngSize(png);
-      const pngPath = path.join(outDir, `${leaf.folio}.png`);
-      const webpPath = path.join(outDir, `${leaf.folio}.webp`);
-      await writeFile(pngPath, png);
-      if (i === 0) {
-        const lossPath = path.join(outDir, `${leaf.folio}.lossless.webp`);
-        await encodeWebp(pngPath, lossPath, true);
-        const { size } = await import("node:fs/promises").then((fs) => fs.stat(lossPath));
-        lossless = size <= 1_500_000;
-        log("A1 lossless", size, "bytes;", lossless ? "using lossless" : "using webp q=95");
-        if (lossless) {
-          await writeFile(webpPath, await readFile(lossPath));
-        } else {
-          await encodeWebp(pngPath, webpPath, false);
-        }
-        await unlink(lossPath).catch(() => {});
-      } else {
-        await encodeWebp(pngPath, webpPath, lossless);
-      }
+      await encodeWebp(pngPath, webpPath);
       const webp = await readFile(webpPath);
       const spots = await hotspots(page, i);
       shots.push({
@@ -577,13 +597,13 @@ export async function printFlatEdition() {
         section: (/^([A-Z]+)/.exec(leaf.folio) || [])[1] || leaf.folio,
         file: webpPath,
         bytes: webp.length,
-        width: px.width,
-        height: px.height,
-        cssWidth: full.w,
-        cssHeight: full.h,
+        width: shot.width,
+        height: shot.height,
+        cssWidth: shot.cssWidth,
+        cssHeight: shot.cssHeight,
         hotspots: spots,
       });
-      log(leaf.folio, `${px.width}x${px.height}px`, `${webp.length} bytes`, `${spots.length} links`, `css ${full.w}x${full.h}`);
+      log(leaf.folio, `${shot.width}x${shot.height}px`, `${webp.length} bytes`, `${spots.length} links`, `css ${shot.cssWidth}x${shot.cssHeight}`);
       if (i !== 0) await unlink(pngPath).catch(() => {});
     }
     await page.close();
