@@ -1,0 +1,301 @@
+eturn city ? `${city} — ${split.body}` : p;
+}
+
+/** The story's own words, pulled out large: a quotation if it has one, else a strong line. */
+function pullQuote(paras: string[]): string | null {
+  const body = paras.slice(1).join(" ");
+  const quotes = [...body.matchAll(/[“"]([^”"]{50,180})[”"]/g)].map((m) => m[1]!.trim());
+  if (quotes.length) return `“${quotes.sort((a, b) => b.length - a.length)[0]!.replace(/[,.]$/, "")}.”`;
+  const lines = body
+    .split(/(?<=[.!?])\s+(?=[A-Z“"])/) 
+    .map((t) => t.trim())
+    .filter((t) => t.length > 70 && t.length < 170 && !/^(but|and|so|he|she|it|they)\b/i.test(t));
+  return lines[Math.floor(lines.length / 2)] ?? null;
+}
+
+/** A paragraph's opening words, split off to be set as a bold small-caps run-in. */
+function runIn(text: string): [string, string] {
+  const words = text.split(/\s+/);
+  const n = Math.min(4, Math.max(1, words.length - 1));
+  return [words.slice(0, n).join(" "), words.slice(n).join(" ")];
+}
+
+function Cut({ card, shape = "wide" }: { card: GameWrapCard; shape?: "wide" | "tall" | "square" }) {
+  const [measured, setMeasured] = useState<number | null>(null);
+  if (!card.photo) return null;
+  const caption =
+    card.caption && squash(card.caption) !== squash(card.teamName) ? card.caption : null;
+  const native = typeof card.photoWidth === "number" && card.photoWidth > 0 ? card.photoWidth : measured;
+  const kind = recapPhotoKind(card.photo, native);
+  return (
+    <figure
+      className={cn("wsj-cut", shape, kind === "fit" && "fit", card.photoStyle === "cutout" && "cutout")}
+      style={native && kind === "fit" ? { maxWidth: native } : undefined}
+    >
+      <img
+        src={card.photo}
+        alt=""
+        loading="lazy"
+        onLoad={(e) => {
+          const w = e.currentTarget.naturalWidth;
+          if (w > 0) setMeasured((prev) => (prev && prev <= w ? prev : w));
+        }}
+      />
+      {caption ? <figcaption>{caption}</figcaption> : null}
+    </figure>
+  );
+}
+
+/** The club's place in its league for one stat line, set under the label. */
+function StatRank({ stat }: { stat: { rank?: string | null; rankIn?: string | null } }) {
+  if (!stat.rank) return null;
+  return (
+    <span className="tt-stat-rank">
+      {stat.rank}
+      {stat.rankIn ? <i> in {stat.rankIn}</i> : null}
+    </span>
+  );
+}
+
+/**
+ * The club's numbers, set as a team-colored poster. It stands in for the
+ * photograph when the wire sends none, so it prints once per page at most.
+ */
+function StatPoster({
+  team,
+  card,
+  layout = "block",
+}: {
+  team: TeamInfobox | null;
+  card?: GameWrapCard | null;
+  layout?: "block" | "band";
+}) {
+  const logo = team?.snap.logo || team?.detail?.logo || null;
+  const stats = (card?.teamStats.length ? card.teamStats : team?.teamStats ?? [])
+    .filter((s) => !zeroStat(String(s.value)))
+    .slice(0, layout === "band" ? 8 : 6);
+  const leaders = (card?.leaders.length ? card.leaders : teamLeaders(team)).slice(
+    0,
+    layout === "band" ? 5 : 4,
+  );
+  const opener = useOpener(team?.fav.key);
+  if (!team && !stats.length) return null;
+  const name = team?.snap.shortName || team?.fav.shortName || card?.teamName || "";
+  const record = clubRecord(team);
+  return (
+    <figure className={cn("wsj-poster", layout, opener && "counting")} style={tint(teamColor(team))}>
+      {logo ? <img className="wsj-poster-mark" src={logo} alt="" aria-hidden="true" /> : null}
+      <div className="wsj-poster-id">
+        {logo ? (
+          <span className="wsj-poster-disc">
+            <img src={logo} alt="" />
+          </span>
+        ) : null}
+        <div>
+          <span className="wsj-poster-lg">
+            {team?.fav.league}
+            {team?.seasonState === "complete" ? " · Season complete" : ""}
+          </span>
+          <strong>{name}</strong>
+          <em>
+            {record || "—"}
+            {team?.snap.standing ? ` · ${team.snap.standing}` : ""}
+          </em>
+        </div>
+      </div>
+      {stats.length ? (
+        <dl className="wsj-poster-stats">
+          {stats.map((s) => (
+            <div key={`${s.label}-${s.value}`}>
+              <dd>{s.value}</dd>
+              <dt>
+                {s.label}
+                <StatRank stat={s} />
+              </dt>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+      {leaders.length ? (
+        <ul className="wsj-poster-names">
+          {leaders.map((l) => (
+            <li key={l.name}>
+              <strong>{l.name}</strong>
+              <span>{l.line}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {opener ? <Countdown opener={opener} variant="poster" /> : null}
+    </figure>
+  );
+}
+
+type ArtMode = "top" | "side" | "none";
+
+/** Photo when the wire has one; the club poster when asked; otherwise type only. */
+function Story({
+  card,
+  team,
+  text,
+  size,
+  cols = 1,
+  art = "top",
+  poster,
+  drop,
+  jump,
+  onTurn,
+  max,
+  className,
+  readOn,
+  game,
+  dress,
+  inset,
+  trim,
+  chrome,
+  compactBox,
+}: {
+  card: GameWrapCard;
+  team?: TeamInfobox | null;
+  text?: string;
+  size: "xl" | "lg" | "md" | "sm";
+  cols?: 1 | 2 | 3;
+  art?: ArtMode;
+  /** The club poster stands in for a missing photo; "band" sets it full width over the story. */
+  poster?: boolean | "band";
+  drop?: boolean;
+  jump?: string;
+  onTurn?: (folio: string) => void;
+  max?: number;
+  className?: string;
+  /**
+   * Offer the whole story in the reader. Defaults to on when this page sets only
+   * part of the copy; a page that sets all of it ends on an end mark instead.
+   */
+  readOn?: boolean;
+  game?: BoxGame | null;
+  dress?: boolean;
+  /** Set into the story's columns (see `Prose`); after the copy when there is none. */
+  inset?: ReactNode;
+  /** Higher drops first when the folio runs past the 1040×1480 canvas. */
+  trim?: number;
+  /** False skips the recap box when a banner already carries the score. */
+  chrome?: boolean;
+  compactBox?: boolean;
+}) {
+  const full = cardCopy(card);
+  const copy = substantive(card, text ?? full);
+  const recap =
+    isSingleGameRecap(card) &&
+    Boolean((card.scoreLine && /\d/.test(card.scoreLine)) || card.recapGame || game);
+  const storyCopy = recap ? recapBodyForPage(copy) : copy;
+  const partial = readOn ?? Boolean(jump || (storyCopy && storyCopy.length < full.length * 0.9));
+  const dek = dekFor(card, storyCopy);
+  const useDrop = Boolean(drop && storyCopy && recapShouldDropCap(storyCopy));
+  const photoKind = recapPhotoKind(card.photo, card.photoWidth);
+  const narrowArt =
+    photoKind === "fit" || (Boolean(card.photo) && isNarrowStoryImage(card.photo));
+  const artNode =
+    art === "none"
+      ? null
+      : card.photo
+        ? recap
+          ? <RecapPhoto url={card.photo} width={card.photoWidth} caption={card.caption} />
+          : <Cut card={card} shape={art === "side" && copy.length > 450 ? "square" : "wide"} />
+        : poster
+          ? <StatPoster team={team ?? null} card={card} layout={poster === "band" ? "band" : "block"} />
+          : null;
+  const artMode =
+    !artNode ? "none" : narrowArt && !className?.includes("lead") ? "side" : art;
+  return (
+    <article
+      className={cn(
+        "wsj-story",
+        artNode ? `art-${artMode}` : "art-none",
+        artNode && !copy && !dek && "bare",
+        className,
+      )}
+      style={tint(teamColor(team))}
+      data-tt-keys={storyReadKeys(card).join("|")}
+      data-tt-title={card.headline}
+      {...(className?.includes("lead") ? { "data-tt-lead": "" } : {})}
+      {...(trim != null ? { "data-tt-trim": trim } : {})}
+    >
+      {artNode ? <div className="wsj-story-art">{artNode}</div> : null}
+      <div className="wsj-story-copy">
+        <Headline card={card} size={size} game={game} />
+        {dek && (!recap || chrome === false) ? (
+          <FitCopy cid={`${card.id}:dek`} full={dek} className="wsj-dek">
+            {dek}
+          </FitCopy>
+        ) : null}
+        {recap ? null : <ScoreBug card={card} />}
+        <Byline card={card} />
+        {recap && chrome !== false ? <RecapChrome card={card} game={game ?? null} compact={compactBox} /> : null}
+        {storyCopy ? (
+          <Prose
+            card={card}
+            text={storyCopy}
+            cols={cols}
+            drop={useDrop}
+            max={max}
+            dress={dress}
+            color={teamColor(team)}
+            inset={inset}
+            ended={!partial}
+          />
+        ) : (
+          inset
+        )}
+        {(storyCopy || jump) && partial ? <ReadOn card={card} game={game} label="Click for full story" /> : null}
+      </div>
+    </article>
+  );
+}
+
+/** Wide photo for long copy; photo beside the type when the copy is short. */
+function artFor(card: GameWrapCard, text: string): { art: ArtMode; cols: 1 | 2 | 3 } {
+  const len = text.length;
+  if (!card.photo) return { art: "top", cols: len > 1400 ? 3 : len > 500 ? 2 : 1 };
+  if (isNarrowStoryImage(card.photo)) return { art: "side", cols: len > 700 ? 2 : 1 };
+  if (len > 1400) return { art: "top", cols: 3 };
+  return { art: "side", cols: len > 700 ? 2 : 1 };
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━ briefs ━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+function Brief({
+  card,
+  featured,
+  folio,
+  onTurn,
+  crest,
+  color,
+  trim,
+}: {
+  card: GameWrapCard;
+  featured?: boolean;
+  folio?: string;
+  onTurn?: (folio: string) => void;
+  crest?: string | null;
+  color?: string | null;
+  trim?: number;
+}) {
+  const dek = recapDek(card, featured ? 2 : 1);
+  return (
+    <article
+      className={cn("wsj-brief", featured && "featured", (card.photo || crest) && "has-art")}
+      style={tint(color)}
+      data-tt-keys={storyReadKeys(card).join("|")}
+      data-tt-title={card.headline}
+      {...(trim != null ? { "data-tt-trim": trim } : {})}
+    >
+      {card.photo ? (
+        <img className="wsj-brief-photo" src={card.photo} alt="" loading="lazy" />
+      ) : crest ? (
+        <span className="wsj-brief-crest">
+          <img src={crest} alt="" loading="lazy" />
+        </span>
+      ) : null}
+      <div className="wsj-brief-copy">
+        <Kicker card={ca
