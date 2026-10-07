@@ -1,1 +1,1 @@
-FILE_TOO_LARGE_PLACEHOLDER_SEE_LOCAL_/home/ubuntu/CommandCenter/CommandCenter-main/src/pages/DailyNewspaperPage.tsx
+FILE_CONTENT_MUST_BE_READ_FROM_/home/ubuntu/CommandCenter/CommandCenter-main/src/pages/DailyNewspaperPage.tsx
