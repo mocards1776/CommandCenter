@@ -1,0 +1,355 @@
+import {
+  createContext,
+  Fragment,
+  memo,
+  startTransition,
+  Suspense,
+  use,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Bookmark, ChevronLeft, ChevronRight, Share } from "lucide-react";
+import { useAuth } from "@/lib/auth-context";
+import {
+  editionCovers,
+  editionDateline,
+  editionIssue,
+  editionNewsDay,
+  fileEditionStories,
+  fileMissouriItems,
+  missouriItemInEdition,
+  msUntilNextPress,
+  parsePressId,
+  pressEdition,
+  previousPressId,
+  isDeskPress,
+  romanNumeral,
+  splitStoryCopy,
+  storyReadKeys,
+} from "@/lib/newspaper";
+import { fetchLeagueArticles, fetchTeamArticles } from "@/lib/newspaper-news";
+import {
+  applyTableStandings,
+  boxStoryCard,
+  fetchCfbApPoll,
+  fetchLeagueLeaders,
+  fetchSectionBoard,
+  formatFixtureWhen,
+  gameClock,
+  gameMatchesRecap,
+  fetchSectionStandings,
+  leaderCategoryLabel,
+  leaderGroupHasValidData,
+  rankStandings,
+  sportScoreBands,
+  type BoxGame,
+  type BoxPerson,
+  type CfbPollRow,
+  type LeagueLeaderGroup,
+  type SectionBoard,
+  type StandGroup,
+} from "@/lib/newspaper-box";
+import { cleanStoryCopy, proseParas, tidy, truncateAtSentence } from "@/lib/newspaper-copy";
+import { applyScaledFitBox, pageFit, prefetchSrc, sheetNeedsTransformFit } from "@/lib/newspaper-fit";
+import { FitCopy, FittedSheet } from "@/components/newspaper/FittedSheet";
+import { TimesCommitBoundary } from "@/components/newspaper/TimesCommitBoundary";
+import { recapBodyForPage, recapDropLead, recapIsScoreOnly, recapPhotoKind, recapShouldDropCap, splitApDateline } from "@/lib/newspaper-recap";
+import {
+  Face,
+  MatchupCard,
+  ScoreCard,
+  ScoreMast,
+  ScoreStrip,
+  StandingsTable,
+  Decisions,
+  Goals,
+  Leaders,
+  Linescore,
+  MlbAgate,
+  SlateLine,
+  DeskSnap,
+} from "@/components/newspaper/BoxScore";
+import { RecapBox, RecapChrome, RecapPhoto } from "@/components/newspaper/GameRecap";
+import { clubFormIsThin, clubOpensLabel, clubTickerRecord, formStatColumns, frontPageLeftover, groupByDay, planSchedulePages, printableFormStat } from "@/lib/newspaper-page";
+import { ReaderProvider } from "@/components/newspaper/PaperReader";
+import { useReader } from "@/components/newspaper/reader-context";
+import { CfbFill, CfbScheduleDesk } from "@/components/newspaper/CfbScheduleDesk";
+import { HeadlineSave } from "@/components/newspaper/SaveMark";
+import { SavedDrawer } from "@/components/newspaper/SavedDrawer";
+import { SavedProvider } from "@/components/newspaper/saved-context";
+import { fetchHeismanOdds, type HeismanBoard } from "@/lib/newspaper-heisman";
+import { PlayoffBracket } from "@/components/newspaper/PlayoffBracket";
+import { NamedText, PlayerName, PlayerPopProvider } from "@/components/newspaper/PlayerPop";
+import { fetchClubSheet, type ClubSheet } from "@/lib/newspaper-clubsheet";
+import { enrichMissouriItems, fetchMissouriDesk, fetchMissouriScout } from "@/lib/newspaper-missouri-fetch";
+import type { MoItem } from "@/lib/newspaper-missouri";
+import { nameIndex, type Person } from "@/lib/newspaper-people";
+import { fetchPlayerFiles, imageLoads, storySubjects, type PlayerFile } from "@/lib/newspaper-subjects";
+import { fetchMarshfieldWeather, type MarshfieldWeather } from "@/lib/newspaper-weather";
+import { WeatherReport, WeatherStrip } from "@/components/newspaper/WeatherReport";
+import { storySource } from "@/lib/newspaper-source";
+import {
+  daysUntil,
+  fetchOpener,
+  openerDate,
+  openerDay,
+  openerMatchup,
+  openerTime,
+  type Opener,
+} from "@/lib/newspaper-openers";
+import {
+  fetchPlayerNights,
+  playerPageHref,
+  playerPath,
+  rankNights,
+  type FollowedPlayer,
+  type PlayerNight,
+} from "@/lib/newspaper-players";
+import { listFavoritePlayers } from "@/lib/favorite-players";
+import {
+  asFavoriteCoachDesk,
+  coachFactLines,
+  fetchFavoriteCoachDesk,
+  printsFavoriteCoaches,
+  slateLine,
+  type FavoriteCoachTile,
+} from "@/lib/newspaper-favorite-coaches";
+import { fetchTaggedPlayerIds } from "@/lib/sports-player-tags";
+import { fileExtracts, gatherStories, sportPathsOf, urlsToExtract } from "@/lib/newspaper-compose";
+import {
+  ISSUE_VERSION,
+  listLocalIssues,
+  peekProofIssue,
+  readCacheUserId,
+  readLocalIssue,
+  writeLocalIssue,
+  type PrintedIssue,
+} from "@/lib/newspaper-issue";
+import {
+  askRemoteEditor,
+  listRecentIssues,
+  readRemoteIssue,
+  readRemoteIssueShell,
+  readRemoteQueries,
+  readRemoteStories,
+  subscribeReadyIssues,
+  writeDesk,
+  writeRemoteIssue,
+} from "@/lib/newspaper-issue-remote";
+import {
+  heavyDesksForPage,
+  heavyDesksForReader,
+  isHeavyDesk,
+  mergeQueries,
+  queryDeskName,
+  splitQueries,
+} from "@/lib/newspaper-payload";
+import {
+  cacheTimesShell,
+  collectEditionImageUrls,
+  prefetchEditionImages,
+  prefetchFiledEdition,
+  postTimesPrecache,
+  registerTimesWorker,
+  timesShellUrlsFromPerformance,
+} from "@/lib/newspaper-offline";
+import {
+  backEditionNote,
+  editionFolioLine,
+  editionPickerLabel,
+  filterRecentFiledIssues,
+  isIssueWithinLookback,
+  uniqueEditionStand,
+  type FiledIssueMeta,
+} from "@/lib/newspaper-editions";
+import {
+  COMPANION_WAIT_MS,
+  ISSUE_POLL_MS,
+  queryNamed,
+  SHELL_WAIT_MS,
+  waitForPrintedReveal,
+  withDeadline,
+} from "@/lib/newspaper-document";
+import { ElectionEar } from "@/components/newspaper/ElectionEar";
+import { electionEar } from "@/lib/newspaper-election";
+import { TimesHold, TimesHoldShell } from "@/components/newspaper/TimesHold";
+import { clearEditorStamps, editEdition } from "@/lib/newspaper-editor";
+import { fetchWatchList, WATCH_PAGE_GAMES } from "@/lib/newspaper-watch";
+import WatchGuide from "@/components/newspaper/WatchGuide";
+import DayAhead from "@/components/newspaper/DayAhead";
+import { insertDayAhead, scheduleDateFor, type DaySchedule } from "@/lib/newspaper-day-ahead";
+import { fetchDaySchedule } from "@/lib/newspaper-day-ahead-fetch";
+import BeezPage from "@/components/newspaper/BeezPage";
+import { asBeezDesk, insertBeez, type BeezDesk } from "@/lib/newspaper-beez";
+import { readTimesBeez } from "@/lib/newspaper-beez-fetch";
+import RacesPage from "@/components/newspaper/RacesPage";
+import { insertRaceBriefs, sampleRaceBriefs, type RaceBriefsDesk } from "@/lib/newspaper-races";
+import { fetchRaceBriefs } from "@/lib/newspaper-races-fetch";
+import {
+  asNationalDesk,
+  sampleNationalDesk,
+  nationalDropParts,
+  nationalLeadColumns,
+  nationalPageCopy,
+  nationalPhotoSize,
+  nationalStoryHasMore,
+  nationalStorySize,
+  type NationalDesk,
+  type NationalPhotoSize,
+  type NationalStory,
+  type NationalStorySize,
+} from "@/lib/newspaper-national";
+import { readTimesNationalNews } from "@/lib/newspaper-national-fetch";
+import {
+  buildGameWrapCards,
+  buildTeamInfoboxes,
+  collectWrapFeeds,
+  enrichWrapBodies,
+  leaguePathFromEspn,
+  playerHref,
+  storyMatchesFavorite,
+  wrapFeedsForFavorites,
+  type GameWrapCard,
+  type MatchedWrap,
+  type TeamInfobox,
+} from "@/lib/newspaper-sports";
+import { isNarrowStoryImage } from "@/lib/newspaper-images";
+import {
+  buildEdition,
+  dropEmptyFolios,
+  essentialsFromDesks,
+  a1ComingUp,
+  isA1Muted,
+  isFavoriteGameResult,
+  isFavoriteStory,
+  isGameWrap,
+  isRecapStory,
+  isSingleGameRecap,
+  missouriStoryCard,
+  nationalStoryCard,
+  paginateEditionDesks,
+  pickFrontUnderLead,
+  sortComingUp,
+  sportInSeason,
+  storyBodyForJump,
+  type ClubDesk,
+  type EditionPage,
+  type EditionSection,
+} from "@/lib/newspaper-sections";
+import {
+  favoriteKeyForGame,
+  alreadyOnSectionA,
+  groupSportRecaps,
+  lastMatchCardFromChip,
+  orderSportSectionFront,
+  preferFrontCard,
+  relatedFitsSection,
+  sameGameStory,
+  storyFitsSection,
+  wrapBriefCopy,
+} from "@/lib/newspaper-sport-desk";
+import {
+  enrichWireStories,
+  espnTeamLogo,
+  fetchLeagueClubs,
+  fetchLeagueSlate,
+  fetchNewspaperWire,
+  postseasonRailGames,
+  markFavoriteClubs,
+  type LeagueClub,
+  type LeagueSlateGame,
+  type WireGame,
+} from "@/lib/newspaper-wire";
+import { fetchMlbPeopleByIds, fetchMlbPlayoffTree, type MlbPlayoffTree } from "@/lib/mlb";
+import { fillMlbPlayoffPlaceholders } from "@/lib/newspaper-playoff-tree";
+import { fetchRssArticle, fetchRssFeed, fetchRssReads, markRssReadMany, type RssArticle } from "@/lib/rss";
+import {
+  DEFAULT_FAVORITES,
+  fetchTeamDetail,
+  fetchTeamSnapshot,
+  loadSportsLayout,
+  visibleFavorites,
+  type SportsFavorite,
+  type TeamDetail,
+  type TeamSnapshot,
+} from "@/lib/sports";
+import { cn } from "@/lib/utils";
+import { fetchYesterdayRecap } from "@/lib/yesterday-recap";
+
+/** How many stories get a full ESPN story pull rather than the wire stub. */
+const DEEP_STORIES = 48;
+
+type ComingUp = {
+  id: string;
+  team: string;
+  label: string;
+  when: string | null;
+  startIso?: string | null;
+  favoriteKey?: string | null;
+  logo: string | null;
+  color: string | null;
+};
+
+function ExternalOrLink({
+  href,
+  className,
+  style,
+  children,
+}: {
+  href: string;
+  className?: string;
+  style?: CSSProperties;
+  children: ReactNode;
+}) {
+  if (href.startsWith("http")) {
+    return (
+      <a href={href} target="_blank" rel="noreferrer" className={className} style={style}>
+        {children}
+      </a>
+    );
+  }
+  return (
+    <Link to={href} className={className} style={style}>
+      {children}
+    </Link>
+  );
+}
+
+function TeamLogo({
+  src,
+  alt,
+  size = "md",
+}: {
+  src: string | null | undefined;
+  alt?: string;
+  size?: "xs" | "sm" | "md" | "lg" | "xl";
+}) {
+  if (!src) {
+    return <span className={cn("wsj-logo", size, "empty")} aria-hidden="true" />;
+  }
+  return (
+    <img
+      src={src}
+      alt={alt ?? ""}
+      className={cn("wsj-logo", size)}
+      loading="lazy"
+      decoding="async"
+      onError={(e) => {
+        (e.currentTarget as HTMLImageElement).style.visibility = "hidden";
+      }}
+    />
+  );
+}
+
+/* ───────────────────────── color + copy helpers ───────────────────────── */
+
+function hexColor(co
