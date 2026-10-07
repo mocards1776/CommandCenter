@@ -1,0 +1,278 @@
+         }
+          : {})}
+      >
+        {photo ? (
+          <figure className="tt-feature-photo">
+            <img src={photo} alt="" loading="lazy" />
+            <figcaption>
+              {featured.away.name} at {featured.home.name}
+              {featured.venue ? `, ${featured.venue}` : ""}.
+            </figcaption>
+          </figure>
+        ) : (
+          <ScoreHero game={featured} />
+        )}
+        <div className="tt-feature-copy">
+          <p className="wsj-kicker">
+            {[featured.league, featured.round, featured.series].filter(Boolean).join(" · ") || "Game of the night"}
+          </p>
+          <h2 className="wsj-hl lg">
+            {card ? (
+              <HeadlineSave card={card}>
+                <button type="button" className="wsj-a wsj-story-link" onClick={() => open({ card, game: featured })}>
+                  {card.headline}
+                </button>
+              </HeadlineSave>
+            ) : (
+              `${featured.away.short} ${featured.away.score ?? ""}, ${featured.home.short} ${featured.home.score ?? ""}`
+            )}
+          </h2>
+          {featured.recap?.blurb ? (
+            <FitCopy cid={`${card?.id ?? featured.id}:dek`} full={featured.recap.blurb} className="wsj-dek">
+              <NamedText text={featured.recap.blurb} />
+            </FitCopy>
+          ) : null}
+          {photo ? <ScoreHero game={featured} size="md" /> : null}
+          <Linescore game={featured} />
+          <Decisions game={featured} faces />
+          <Leaders game={featured} max={4} />
+          <Goals game={featured} />
+          {card ? (
+            <p className="wsj-jump">
+              <button type="button" className="wsj-jump-btn" onClick={() => open({ card, game: featured })}>
+                {featured.recap ? "Click for full story" : "Box score"} <span aria-hidden="true">→</span>
+              </button>
+            </p>
+          ) : null}
+        </div>
+      </article>
+      ) : null}
+      {isMlb && !wrapCards.length ? <MlbAgate game={featured} enabled={active} /> : null}
+      {[
+        { title: collegeSplit?.title ?? "", rows: yesterdayRest, count: collegeSplit?.yesterday.length ?? 0 },
+        { title: "Rest of the week", rows: weekRest, count: weekRest.length, flow: true },
+      ].map((band) =>
+        band.rows.length ? (
+          <section className="tt-results" key={band.title} {...(band.flow ? { "data-tt-flow": "" } : {})}>
+            <h3 className="wsj-band-title">
+              {band.title} <em>{band.count} {band.count === 1 ? "game" : "games"}</em>
+            </h3>
+            <div
+              className="tt-score-grid"
+              style={{ ["--cols" as string]: String(balancedCols(band.rows.length, [3, 2, 4])) }}
+            >
+              {band.rows.map((g, i) => (
+                <div key={g.id} data-tt-trim={50 + i}>
+                  <ScoreCard
+                    game={g}
+                    onOpen={(game) => {
+                      const c = boxStoryCard(game);
+                      if (c) open({ card: c, game });
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null,
+      )}
+      {rest.length ? (
+        <section className="tt-results" data-tt-flow="">
+          <h3 className="wsj-band-title">
+            {restTitle} <em>{games.length} {games.length === 1 ? "game" : "games"}</em>
+          </h3>
+          <div
+            className={cn("tt-score-grid", isMlb && "agate", sparse && "roomy")}
+            style={{ ["--cols" as string]: String(isMlb ? 2 : balancedCols(rest.length, [3, 2, 4])) }}
+          >
+            {rest.map((g, i) => (
+              <div key={g.id} data-tt-trim={50 + i}>
+                <ScoreCard
+                  game={g}
+                  agate={isMlb}
+                  agateEnabled={active}
+                  onOpen={(game) => {
+                    const c = boxStoryCard(game);
+                    if (c) open({ card: c, game });
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+      {sparse ? <StarsBand games={games} /> : null}
+      {behind.length ? (
+        <section className="tt-strip-wrap" data-tt-flow="">
+          <h3 className="wsj-band-title">{board?.priorLabel ?? "Last week"} finals</h3>
+          <ScoreStrip
+            games={behind}
+            onOpen={(g) => {
+              const c = boxStoryCard(g);
+              if (c) open({ card: c, game: g });
+            }}
+          />
+        </section>
+      ) : null}
+      {ahead.length ? (
+        <section className="tt-ahead" data-tt-flow="">
+          <h3 className="wsj-band-title">Up next</h3>
+          <div className="tt-matchups" style={{ ["--cols" as string]: String(balancedCols(ahead.length, [3, 2, 4])) }}>
+            {ahead.map((g, i) => (
+              <div key={g.id} data-tt-trim={60 + i}>
+                <MatchupCard game={g} />
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
+function dayHeading(day: string, edition: string): string {
+  if (day === edition) return "Today";
+  const d = new Date(`${day}T12:00:00Z`);
+  const t = new Date(`${edition}T12:00:00Z`);
+  const diff = Math.round((d.getTime() - t.getTime()) / 86_400_000);
+  if (diff === 1) return "Tomorrow";
+  return d.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric", timeZone: "UTC" });
+}
+
+function ScheduleDesk({
+  page,
+  board,
+  slate,
+  edition,
+  standings,
+  heisman,
+}: {
+  page: SportFrontPage;
+  board: SectionBoard | null;
+  slate: LeagueSlateGame[];
+  edition: string;
+  standings: StandGroup[];
+  heisman?: HeismanBoard | null;
+}) {
+  const college = page.path.includes("college-football");
+  const pollQ = useQuery({
+    queryKey: ["tt-cfb-ap-poll", edition],
+    queryFn: fetchCfbApPoll,
+    staleTime: 30 * 60_000,
+    enabled: college,
+  });
+  const games = board?.slate ?? [];
+  const nfl = page.path === "football/nfl";
+  if (college) {
+    return (
+      <CfbScheduleDesk
+        board={board}
+        edition={edition}
+        standings={standings}
+        poll={pollQ.data ?? []}
+        heisman={heisman}
+      />
+    );
+  }
+  if (games.length) {
+    const days = new Map<string, BoxGame[]>();
+    for (const g of games) {
+      const list = days.get(g.day) ?? [];
+      list.push(g);
+      days.set(g.day, list);
+    }
+    const mlb = page.path === "baseball/mlb";
+    if (nfl) {
+      const pages = planSchedulePages(games);
+      const pack = pages[0] ?? games;
+      const finals = (board?.week ?? board?.results ?? []).filter((g) => g.final);
+      return (
+        <div className="tt-schedule tt-schedule-fill tt-slate-desk">
+          {pages.length > 1 ? (
+            <p className="wsj-band-title">
+              This week <em>folio 1 of {pages.length}</em>
+            </p>
+          ) : null}
+          {groupByDay(pack).map(([day, list]) => (
+            <section key={day} className={list.length >= 6 ? "tt-slate-heavy" : undefined}>
+              <h3 className="wsj-band-title">
+                {dayHeading(day, edition)} <em>{list.length} {list.length === 1 ? "game" : "games"}</em>
+              </h3>
+              <div className="tt-slate-list">
+                {list.map((g) => (
+                  <SlateLine key={g.id} game={g} clockOnly />
+                ))}
+              </div>
+            </section>
+          ))}
+          <div className="tt-slate-fill">
+            <DeskSnap tables={standings} />
+            {finals.length ? (
+              <section aria-label="Last week">
+                <h3 className="wsj-band-title">
+                  Finals <em>{finals.length} games</em>
+                </h3>
+                <ScoreStrip games={finals} />
+              </section>
+            ) : null}
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="tt-schedule tt-schedule-fill">
+        {[...days.entries()].map(([day, list]) => (
+          <section key={day}>
+            <h3 className="wsj-band-title">
+              {dayHeading(day, edition)} <em>{list.length} {list.length === 1 ? "game" : "games"}</em>
+            </h3>
+            <div
+              className="tt-matchups"
+              style={{ ["--cols" as string]: String(mlb ? 2 : balancedCols(list.length, [2, 3, 2])) }}
+            >
+              {list.map((g) => (
+                <MatchupCard key={g.id} game={g} />
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+    );
+  }
+  if (slate.length) {
+    return (
+      <div className="wsj-slate-board">
+        {slate.map((game) => (
+          <article key={game.id} className={cn("wsj-slate-card", game.live && "live")}>
+            <div className="wsj-slate-card-top">
+              <span>{game.round || game.venue || "Today"}</span>
+              <strong>{game.live ? game.status : game.when || game.status}</strong>
+            </div>
+            {[game.away, game.home].map((side, i) => (
+              <div key={i} className="wsj-slate-row">
+                <TeamLogo src={side.logo} size="sm" />
+                <div>
+                  <strong>{side.abbrev}</strong>
+                  {side.record ? <em>{side.record}</em> : null}
+                </div>
+                <span className="score">{side.score ?? ""}</span>
+              </div>
+            ))}
+          </article>
+        ))}
+      </div>
+    );
+  }
+  const clubs = page.clubs.filter((c) => c.upcoming.length);
+  if (!clubs.length) return <p className="wsj-empty">Nothing on the league calendar this week.</p>;
+  return (
+    <div className="wsj-schedule-grid">
+      {clubs.map((club) => (
+        <div key={club.key} className="wsj-schedule-col" style={tint(club.color)}>
+          <p className="wsj-schedule-head">
+            <TeamLogo src={club.logo} size="md" />
+            <strong>{club.shortName}</strong>
+            <em>{club.record || ""}</em>
+          </p>
+          <ul className="wsj-club-slate">
+            {club.upc
