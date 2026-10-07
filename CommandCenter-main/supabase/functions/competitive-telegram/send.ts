@@ -2,11 +2,27 @@
  * Send-on-update hook for Almanac load batches.
  *
  * Almanac calls this once per finished load — never per row, never from a
- * competitive_buys INSERT trigger:
+ * competitive_buys INSERT trigger. buy_ids are always required for a send.
+ * Empty buy_ids → skip (200).
  *
- *   POST { "action": "send", "race_slug": "mo-sd30", "buy_ids": ["…", "…"] }
+ * Inserts (true new rows) — buy_ids only:
+ *   POST { "action": "send", "race_slug": "mo-sd30", "buy_ids": ["…"] }
+ *   Just In = those rows' full spend + GRP (rowsToJustIn). Same
+ *   sponsor|market|media across stations collapses to "{market} DMA".
  *
- * Empty buy_ids → skip (200). Just In is those rows (spend + GRP only).
+ * Revisions (increase on an existing buy) — buy_ids + just_in deltas:
+ *   POST { "action": "send", "race_slug", "buy_ids", "just_in": [{
+ *     sponsor, amount, grp, market, media, station, side
+ *   }] }
+ *   `amount` / `grp` are the *increase*, never the full revised row totals
+ *   (e.g. MSCC Nexstar +$6,450 / ~47 GRP, not $17.6k / 134 GRP).
+ *   parseJustInPayload wins; fetchBuysByIds is skipped for Just In.
+ *   Almanac may send one already-aggregated DMA tile.
+ *
+ * On `just_in` without `color`, pass `side: "gop"` (or affiliation / MSCC
+ * sponsor) or an explicit red `color`. GOP PAC / MSCC tiles are red-family,
+ * never indigo and never Dem blue.
+ *
  * Race / DMA pies / affiliation totals are live Almanac competitive_buys
  * for the race_slug when ALMANAC_* keys are set; otherwise pass `buyers`
  * or `totals` on the payload.

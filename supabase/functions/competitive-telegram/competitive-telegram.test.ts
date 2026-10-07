@@ -19,6 +19,9 @@ import {
   formatSpendExact,
   formatSpendShort,
   SD30_SAMPLE_JUST_IN,
+  DEM_CANDIDATE,
+  GOP_CANDIDATE,
+  GOP_PAC,
   loadTciLogoDataUri,
   affiliationTotals,
   broadcastWeekBounds,
@@ -28,7 +31,15 @@ import {
   raceSpendTotal,
   sd30SampleCard,
 } from "./card.ts";
-import { MAX_BUY_IDS, parseBuyIds, rowsToBuyers, rowsToJustIn, type AlmanacBuyRow } from "./almanac.ts";
+import {
+  MAX_BUY_IDS,
+  colorForSponsor,
+  parseBuyIds,
+  parseJustInPayload,
+  rowsToBuyers,
+  rowsToJustIn,
+  type AlmanacBuyRow,
+} from "./almanac.ts";
 import { planCompetitiveSend } from "./send.ts";
 import {
   COMPETITIVE_ALERT_HEIGHT,
@@ -77,6 +88,11 @@ assert.ok(GLASS_SHADOW_STD_DEVIATION <= 10, "glass shadow stays isolate-safe");
 }
 assert.match(svg, />added</, "Just In says added for net-new load-batch buys");
 assert.doesNotMatch(svg, />updated</);
+assert.equal(GOP_PAC, "#FF6B63", "GOP PAC / MSCC is red-family, not indigo");
+assert.equal(SD30_SAMPLE_JUST_IN[0]!.color, GOP_PAC);
+assert.equal(SD30_SAMPLE_BUYERS[3]!.color, GOP_PAC);
+assert.match(svg, /#FF6B63/);
+assert.doesNotMatch(svg, /#5E5CE6/i, "MSCC must not use the old indigo PAC");
 
 const fogle = SD30_SAMPLE_BUYERS[0]!;
 const stinnett = SD30_SAMPLE_BUYERS[1]!;
@@ -317,6 +333,7 @@ function almanacRow(partial: Partial<AlmanacBuyRow> & Pick<AlmanacBuyRow, "id" |
   assert.match(sendCaption, /DMA spend: Dem \$/);
   assert.equal(plan.buy_ids.length, 2);
   assert.equal(rowsToJustIn(batch).length, 2);
+  assert.equal(rowsToJustIn(batch).find((row) => row.sponsor === "MSCC")?.color, GOP_PAC);
 }
 
 {
@@ -448,6 +465,126 @@ function almanacRow(partial: Partial<AlmanacBuyRow> & Pick<AlmanacBuyRow, "id" |
   );
   assert.equal(payloadOnly.ok, true);
   assert.equal(payloadOnly.ok && !payloadOnly.skipped && payloadOnly.source, "payload");
+}
+
+{
+  assert.equal(colorForSponsor({ sponsor: "MSCC", affiliation: "", sponsorType: "" }), GOP_PAC);
+  assert.equal(colorForSponsor({ affiliation: "Melanie Stinnett", sponsorType: "pac" }), GOP_PAC);
+  assert.equal(colorForSponsor({ side: "gop", sponsorType: "pac" }), GOP_PAC);
+  assert.equal(colorForSponsor({ side: "gop", sponsor: "Stinnett" }), GOP_CANDIDATE);
+  assert.equal(colorForSponsor({ sponsor: "Betsy Fogle" }), DEM_CANDIDATE);
+  const inferred = parseJustInPayload([
+    { sponsor: "MSCC", amount: 6450, grp: 47, market: "Springfield", media: "TV", station: "KYTV" },
+    { sponsor: "MSCC", amount: 6450, grp: 47, market: "Springfield", media: "TV", side: "gop" },
+  ]);
+  assert.equal(inferred.length, 2);
+  assert.equal(inferred[0]!.color, GOP_PAC);
+  assert.equal(inferred[1]!.color, GOP_PAC);
+  assert.notEqual(inferred[0]!.color, DEM_CANDIDATE);
+}
+
+{
+  const revisedFull = almanacRow({
+    id: "mscc-nexstar",
+    sponsor: "Missouri Senate Campaign Committee",
+    spend: 17600,
+    grp: 134,
+    affiliation: "Melanie Stinnett",
+    sponsorType: "pac",
+    station: "KSPR",
+  });
+  let fetchedBatchIds: string[] | null = null;
+  const plan = await planCompetitiveSend(
+    {
+      action: "send",
+      race_slug: "mo-sd30",
+      buy_ids: ["mscc-nexstar"],
+      just_in: [{
+        sponsor: "MSCC",
+        amount: 6450,
+        grp: 47,
+        market: "Springfield",
+        media: "TV",
+        station: "Springfield DMA",
+        side: "gop",
+      }],
+    },
+    {
+      env: emptyEnv,
+      almanac: {
+        fetchBuysByIds: async (ids) => {
+          fetchedBatchIds = ids;
+          return [revisedFull];
+        },
+        fetchRaceBuys: async () => [
+          revisedFull,
+          almanacRow({ id: "fogle", sponsor: "Fogle for Missouri", spend: 453350, grp: 4873.5, affiliation: "Betsy Fogle" }),
+        ],
+      },
+    },
+  );
+  assert.equal(plan.ok, true);
+  if (!plan.ok || plan.skipped) throw new Error("expected revision-delta Just In card");
+  assert.equal(fetchedBatchIds, null, "just_in skips fetchBuysByIds");
+  assert.equal(plan.card.justIn.length, 1);
+  assert.equal(plan.card.justIn[0]!.amount, 6450);
+  assert.equal(plan.card.justIn[0]!.grp, 47);
+  assert.equal(plan.card.justIn[0]!.station, "Springfield DMA");
+  assert.equal(plan.card.justIn[0]!.color, GOP_PAC);
+  const sendSvg = renderCompetitiveSvg(plan.card);
+  const sendCaption = competitiveCaption(plan.card);
+  assert.match(sendSvg, /\$6,450/);
+  assert.match(sendSvg, /47 GRP/);
+  assert.match(sendSvg, /Springfield DMA/);
+  assert.match(sendSvg, /#FF6B63/);
+  const justInBlock = sendSvg.match(/JUST IN[\s\S]*?RACE/)?.[0] ?? "";
+  assert.match(justInBlock, /\$6,450/);
+  assert.doesNotMatch(justInBlock, /\$17,600/);
+  assert.doesNotMatch(formatJustInLine(plan.card.justIn[0]!), /\$17,600|134 GRP/);
+  assert.ok(sendCaption.includes("MSCC added $6,450 in Springfield TV for 47 GRP"));
+  assert.equal(rowsToBuyers([revisedFull])[0]!.color, GOP_PAC);
+  assert.equal(rowsToBuyers([revisedFull])[0]!.side, "gop");
+}
+
+{
+  const insert = [
+    almanacRow({
+      id: "mscc-new",
+      sponsor: "Missouri Senate Campaign Committee",
+      spend: 17600,
+      grp: 134,
+      affiliation: "Melanie Stinnett",
+      sponsorType: "pac",
+      station: "KYTV",
+    }),
+  ];
+  let fetched = false;
+  const plan = await planCompetitiveSend(
+    { action: "send", race_slug: "mo-sd30", buy_ids: ["mscc-new"] },
+    {
+      env: emptyEnv,
+      almanac: {
+        fetchBuysByIds: async (ids) => {
+          fetched = true;
+          assert.deepEqual(ids, ["mscc-new"]);
+          return insert;
+        },
+        fetchRaceBuys: async () => [
+          ...insert,
+          almanacRow({ id: "fogle", sponsor: "Fogle for Missouri", spend: 453350, grp: 4873.5, affiliation: "Betsy Fogle" }),
+        ],
+      },
+    },
+  );
+  assert.equal(fetched, true, "inserts without just_in fetch full rows");
+  assert.equal(plan.ok, true);
+  if (!plan.ok || plan.skipped) throw new Error("expected insert full-amount Just In");
+  assert.equal(plan.card.justIn[0]!.amount, 17600);
+  assert.equal(plan.card.justIn[0]!.grp, 134);
+  assert.equal(plan.card.justIn[0]!.color, GOP_PAC);
+  const insertSvg = renderCompetitiveSvg(plan.card);
+  assert.match(insertSvg, /\$17,600/);
+  assert.match(insertSvg, /134 GRP/);
 }
 
 console.log("competitive-telegram tests ok");

@@ -41,6 +41,13 @@ export type JustInBuy = {
   flightStart?: string;
 };
 
+/** Party colors. GOP PAC / MSCC stay in the red family — never indigo. */
+export const DEM_CANDIDATE = "#0A84FF";
+export const DEM_PAC = "#64D2FF";
+export const GOP_CANDIDATE = "#FF3B30";
+/** Distinct from candidate red, still clearly red (not #5E5CE6 purple). */
+export const GOP_PAC = "#FF6B63";
+
 export type AheadItem = {
   text: string;
   line: string;
@@ -66,10 +73,10 @@ export type CompetitiveCard = {
 
 /** Springfield SD-30 snapshot Josh reviewed (Oct 6, 2026). */
 export const SD30_SAMPLE_BUYERS: readonly BuyerRow[] = [
-  { id: "fogle", name: "Fogle", spend: 453350, grp: 4873.5, cpp: 93, color: "#0A84FF", side: "dem" },
-  { id: "stinnett", name: "Stinnett", spend: 253570, grp: 2766.6, cpp: 92, color: "#FF3B30", side: "gop" },
-  { id: "forward", name: "Forward", spend: 162745, grp: 980.9, cpp: 166, color: "#64D2FF", side: "dem" },
-  { id: "mscc", name: "MSCC", spend: 119310, grp: 642.6, cpp: 186, color: "#5E5CE6", side: "gop" },
+  { id: "fogle", name: "Fogle", spend: 453350, grp: 4873.5, cpp: 93, color: DEM_CANDIDATE, side: "dem" },
+  { id: "stinnett", name: "Stinnett", spend: 253570, grp: 2766.6, cpp: 92, color: GOP_CANDIDATE, side: "gop" },
+  { id: "forward", name: "Forward", spend: 162745, grp: 980.9, cpp: 166, color: DEM_PAC, side: "dem" },
+  { id: "mscc", name: "MSCC", spend: 119310, grp: 642.6, cpp: 186, color: GOP_PAC, side: "gop" },
 ];
 
 /**
@@ -86,7 +93,7 @@ export const SD30_SAMPLE_JUST_IN: readonly JustInBuy[] = [
     media: "TV",
     station: "KYTV",
     grp: 274.8,
-    color: "#5E5CE6",
+    color: GOP_PAC,
     flightStart: "2026-10-05",
   },
   {
@@ -97,7 +104,7 @@ export const SD30_SAMPLE_JUST_IN: readonly JustInBuy[] = [
     media: "TV",
     station: "KYTV",
     grp: 358.9,
-    color: "#0A84FF",
+    color: DEM_CANDIDATE,
     flightStart: "2026-10-06",
   },
 ];
@@ -264,8 +271,8 @@ export function affiliationTotals(buyers: readonly BuyerRow[]): AffiliationSlice
       .map((row) => row.name)
       .join(" + ");
   return [
-    { id: "dem", label: "Dem", parties: parties("dem"), spend: dem.spend, grp: dem.grp, color: "#0A84FF" },
-    { id: "gop", label: "GOP", parties: parties("gop"), spend: gop.spend, grp: gop.grp, color: "#FF3B30" },
+    { id: "dem", label: "Dem", parties: parties("dem"), spend: dem.spend, grp: dem.grp, color: DEM_CANDIDATE },
+    { id: "gop", label: "GOP", parties: parties("gop"), spend: gop.spend, grp: gop.grp, color: GOP_CANDIDATE },
   ];
 }
 
