@@ -58,8 +58,14 @@ export function FittedSheet({
     if (!el) return;
     let cancel = false;
     let raf = 0;
+    let lastH = -1;
     const measure = () => {
-      if (cancel || !el.isConnected) return;
+      if (cancel || !el.isConnected || el.childElementCount === 0) return;
+      const h = el.offsetHeight;
+      // Same layout height: do not clone the sheet or rewrite the fit plan.
+      // A children-identity rerun was doing that on every folio turn.
+      if (h === lastH && h > 0) return;
+      lastH = h;
       const next = planSheetFit(el);
       setPlan((prev) => (plansEqual(prev, next) ? prev : next));
     };
@@ -72,14 +78,17 @@ export function FittedSheet({
     };
     measure();
     void document.fonts?.ready.then(() => schedule());
-    const ro = new ResizeObserver(schedule);
+    const ro = new ResizeObserver(() => {
+      if (el.offsetHeight === lastH) return;
+      schedule();
+    });
     ro.observe(el);
     return () => {
       cancel = true;
       if (raf) cancelAnimationFrame(raf);
       ro.disconnect();
     };
-  }, [children]);
+  }, []);
 
   const hideCss = hideCssForPlan(sheetId, plan);
 
