@@ -22,6 +22,8 @@ import {
   formatSpendExact,
   formatSpendShort,
   formatWeekCaptionLabel,
+  electionWeekNumber,
+  formatElectionWeekLabel,
   SD30_SAMPLE_JUST_IN,
   DEM_CANDIDATE,
   GOP_CANDIDATE,
@@ -179,6 +181,7 @@ assert.match(svg, /3,409\.2/);
 assert.match(svg, /<path d="M/);
 assert.match(svg, /SD-30/);
 assert.match(svg, /October 6, 2026/);
+assert.match(svg, /October 6, 2026  ·  Springfield  ·  Week 4/);
 assert.match(svg, /Gray Media · KYTV added/);
 assert.doesNotMatch(svg, /letter-spacing="1.2">KYTV</);
 assert.match(svg, /Springfield/);
@@ -204,7 +207,7 @@ assert.equal(barWidth(980.9, 4873.5, track), Math.round((980.9 / 4873.5) * track
 assert.equal(barWidth(642.6, 4873.5, track), Math.round((642.6 / 4873.5) * track));
 
 const caption = competitiveCaption(card);
-assert.match(caption, /This week \(Oct 6–12\):/);
+assert.match(caption, /This week · Week 4 \(Oct 6–12\):/);
 assert.match(caption, /Fogle \$54,036 \/ 648 GRP/);
 assert.match(caption, /Forward PAC \$121,287 \/ 735 GRP/);
 assert.match(caption, /Stinnett \$37,878 \/ 507 GRP/);
@@ -237,7 +240,16 @@ assert.doesNotMatch(caption, /DMA spend:/);
   assert.equal(inAlmanacWeek("2026-10-06", "2026-10-06"), true);
   assert.equal(inAlmanacWeek("2026-10-12", "2026-10-06"), true);
   assert.equal(inBroadcastWeek("2026-09-29", "2026-10-06"), false);
-  assert.equal(formatWeekCaptionLabel("2026-10-06", "2026-10-12"), "This week (Oct 6–12):");
+  assert.equal(formatWeekCaptionLabel("2026-10-06", "2026-10-12"), "This week · Week 4 (Oct 6–12):");
+  assert.equal(electionWeekNumber("2026-10-06"), 4);
+  assert.equal(electionWeekNumber("2026-10-13"), 3);
+  assert.equal(electionWeekNumber("2026-10-20"), 2);
+  assert.equal(electionWeekNumber("2026-10-27"), 1);
+  assert.equal(electionWeekNumber("2026-11-03"), 0);
+  assert.equal(formatElectionWeekLabel("2026-10-06"), "Week 4");
+  assert.equal(formatElectionWeekLabel("2026-11-03"), "Week 0 (Election Day)");
+  assert.equal(formatElectionWeekLabel("2026-11-10"), "Week 0 (Election Day)");
+  assert.equal(formatWeekCaptionLabel("2026-11-03", "2026-11-09"), "This week · Week 0 (Election Day):");
   assert.equal(SD30_SAMPLE_WEEK_BUYERS[0]!.name, "Fogle");
 }
 
@@ -367,7 +379,7 @@ function almanacRow(partial: Partial<AlmanacBuyRow> & Pick<AlmanacBuyRow, "id" |
   assert.match(sendSvg, /358\.9 GRP/);
   assert.doesNotMatch(sendSvg, /\$70,420|CPP/);
   assert.doesNotMatch(sendCaption, /Just in[\s\S]*?CPP/);
-  assert.match(sendCaption, /This week \(Oct 6–12\):/);
+  assert.match(sendCaption, /This week · Week 4 \(Oct 6–12\):/);
   assert.match(sendCaption, /Race to date: Dem \$/);
   assert.equal(plan.buy_ids.length, 2);
   assert.equal(rowsToJustIn(batch).length, 2);
@@ -850,7 +862,7 @@ function almanacRow(partial: Partial<AlmanacBuyRow> & Pick<AlmanacBuyRow, "id" |
   assert.equal(plan.card.justIn[0]!.grp, 134);
   assert.equal(plan.card.dateLabel, "October 7, 2026");
   const recapSvg = renderCompetitiveSvg(plan.card);
-  assert.match(recapSvg, /October 7, 2026/);
+  assert.match(recapSvg, /October 7, 2026  ·  Springfield  ·  Week 4/);
   assert.match(recapSvg, /\$17,600/);
   assert.match(recapSvg, /134 GRP/);
 }
@@ -957,8 +969,9 @@ function almanacRow(partial: Partial<AlmanacBuyRow> & Pick<AlmanacBuyRow, "id" |
   assert.equal(plan.ok, true);
   if (!plan.ok || plan.skipped) throw new Error("expected weekly caption card");
   assert.equal(plan.card.dateLabel, "October 7, 2026");
+  assert.equal(plan.card.weekNumberLabel, "Week 4");
   const weekCaption = competitiveCaption(plan.card);
-  assert.match(weekCaption, /This week \(Oct 6–12\):/);
+  assert.match(weekCaption, /This week · Week 4 \(Oct 6–12\):/);
   assert.match(weekCaption, /Senate Democratic Campaign Committee \$/);
   assert.match(weekCaption, /Missouri Alliance PAC \$/);
   assert.match(weekCaption, /Patterson \$/);
@@ -989,7 +1002,7 @@ function almanacRow(partial: Partial<AlmanacBuyRow> & Pick<AlmanacBuyRow, "id" |
   assert.match(sd8Svg, /Patterson/);
   assert.match(sd8Svg, /Ingle/);
   assert.doesNotMatch(sd8Svg, />Alliance<|>SDCC<|>WOTP</);
-  assert.match(sd8Caption, /This week \(Oct 6–12\):/);
+  assert.match(sd8Caption, /This week · Week 4 \(Oct 6–12\):/);
   assert.match(sd8Caption, /Keri Ingle added \$7,080 in Kansas City TV for 28\.2 GRP \(Nexstar Media Group · WDAF\)/);
   assert.match(sd8Caption, /Race to date:/);
 }

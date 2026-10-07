@@ -68,6 +68,8 @@ export type CompetitiveCard = {
   title: string;
   market: string;
   dateLabel: string;
+  /** `Week 4` or `Week 0 (Election Day)` — header + caption. */
+  weekNumberLabel: string;
   justInTitle: string;
   buyers: BuyerRow[];
   /** This-week (Tue–Mon) sponsor totals for the caption. Image tiles stay race-to-date. */
@@ -156,6 +158,8 @@ export function formatCpp(cpp: number): string {
 
 export const SAMPLE_AS_OF = "2026-10-06";
 export const CHICAGO_TZ = "America/Chicago";
+/** Almanac Tuesday week of election day — Week 0. */
+export const ELECTION_DAY = "2026-11-03";
 
 const SHORT_MONTH = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -204,13 +208,40 @@ function ymd(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
-/** "This week (Oct 6–12):" */
-export function formatWeekCaptionLabel(start: string, end: string): string {
+function utcDate(iso: string): Date {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y!, m! - 1, d));
+}
+
+function daysBetween(start: string, end: string): number {
+  return Math.round((utcDate(end).getTime() - utcDate(start).getTime()) / 86_400_000);
+}
+
+/** `floor((election_date - week_start_date) / 7)` on Almanac Tuesday weeks. */
+export function electionWeekNumber(weekStart: string, electionDay = ELECTION_DAY): number {
+  return Math.floor(daysBetween(weekStart, electionDay) / 7);
+}
+
+/** `Week 4`, or `Week 0 (Election Day)` from Nov 3 onward. */
+export function formatElectionWeekLabel(weekStart: string, electionDay = ELECTION_DAY): string {
+  const n = electionWeekNumber(weekStart, electionDay);
+  if (n <= 0) return "Week 0 (Election Day)";
+  return `Week ${n}`;
+}
+
+function formatWeekRange(start: string, end: string): string {
   const [, sm, sd] = start.split("-").map(Number);
   const [, em, ed] = end.split("-").map(Number);
   const a = `${SHORT_MONTH[(sm ?? 1) - 1]} ${sd}`;
   const b = sm === em ? String(ed) : `${SHORT_MONTH[(em ?? 1) - 1]} ${ed}`;
-  return `This week (${a}–${b}):`;
+  return `${a}–${b}`;
+}
+
+/** "This week · Week 4 (Oct 6–12):" */
+export function formatWeekCaptionLabel(start: string, end: string): string {
+  const week = formatElectionWeekLabel(start);
+  if (week === "Week 0 (Election Day)") return `This week · ${week}:`;
+  return `This week · ${week} (${formatWeekRange(start, end)}):`;
 }
 
 export function displayMedia(media: string): string {
@@ -321,6 +352,7 @@ export function buildCompetitiveCard(opts: {
     title: meta.title,
     market: opts.market || meta.market,
     dateLabel: formatDateLabel(asOf),
+    weekNumberLabel: formatElectionWeekLabel(week.start),
     justInTitle: "Just in",
     buyers: opts.buyers.map((row) => ({ ...row })),
     weekBuyers: (opts.weekBuyers ?? []).filter((row) => row.spend > 0 || row.grp > 0).map((row) => ({ ...row })),

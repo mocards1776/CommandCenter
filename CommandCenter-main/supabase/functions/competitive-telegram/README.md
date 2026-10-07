@@ -110,7 +110,10 @@ Long PAC names wrap to two lines or step the font down — no ellipsis.
 ## Caption: this week vs race to date
 
 Almanac weeks run **Tuesday–Monday**. Caption sponsor lines are **this week
-only**, labeled `This week (Oct 6–12):`. Each buy's spend and GRP are split
+only**, labeled `This week · Week 4 (Oct 6–12):`. Week *N* is
+`floor((election_date − week_start) / 7)` with election day Tue Nov 3, 2026
+as Week 0 (`Week 0 (Election Day)` from that Tuesday on). The header line
+repeats it: `October 7, 2026 · Springfield · Week 4`. Each buy's spend and GRP are split
 across weeks with Almanac's flight-weighting helper (`week.ts`, same 18%
 weekday / 5% weekend shares as `thompsonalmanac` `flight-weighting-shared.ts`).
 Sponsors with $0 this week are omitted. A this-week line with spend but

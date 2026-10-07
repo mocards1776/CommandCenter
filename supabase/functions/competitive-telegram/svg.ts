@@ -430,7 +430,7 @@ export function renderCompetitiveSvg(card: CompetitiveCard): string {
   ${logoMark(card)}
   ${text(card.kicker, CX, 108, { size: 12, fill: BRAND, anchor: "middle", weight: 700, spacing: 2.8 })}
   ${text(card.title, CX, 158, { size: 48, fill: INK, anchor: "middle", weight: 700 })}
-  ${text(`${card.dateLabel}  ·  ${card.market}`, CX, 190, { size: 16, fill: MUTED, anchor: "middle" })}
+  ${text(`${card.dateLabel}  ·  ${card.market}  ·  ${card.weekNumberLabel}`, CX, 190, { size: 16, fill: MUTED, anchor: "middle" })}
   ${justInHero(card.justIn, heroY)}
   ${raceGrid(card.buyers, raceY)}
   ${affiliationPies(sides, dmaY)}
