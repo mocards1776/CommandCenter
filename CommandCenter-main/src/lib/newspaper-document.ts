@@ -35,10 +35,54 @@ export function aboveFoldImages(root: ParentNode, pages = ATF_PAGES): HTMLImageE
   });
 }
 
+const primedSrc = new WeakMap<HTMLImageElement, string>();
+
+/**
+ * Make a folio image fetch and decode before it scrolls into view.
+ * A lazy image can sit at complete with naturalWidth 0 and no request,
+ * which is the blank box a swipe reveals. Eager plus decode() paints the bitmap
+ * while the folio is still the neighbor.
+ */
+export function primeFolioImage(img: HTMLImageElement): Promise<void> {
+  const src = img.getAttribute("src") || img.currentSrc || "";
+  if (!src || src.startsWith("data:")) return Promise.resolve();
+  if (img.loading !== "eager") img.loading = "eager";
+  if (img.naturalWidth > 0) return decodeImage(img);
+
+  const wait = () =>
+    new Promise<void>((resolve) => {
+      const finish = () => {
+        img.removeEventListener("load", finish);
+        img.removeEventListener("error", finish);
+        void decodeImage(img).then(resolve);
+      };
+      if (img.complete && img.naturalWidth > 0) {
+        finish();
+        return;
+      }
+      img.addEventListener("load", finish);
+      img.addEventListener("error", finish);
+      if (img.complete && img.naturalWidth === 0) {
+        // Listener is on before the restart, including a synchronous cache hit.
+        if (primedSrc.get(img) !== src) {
+          primedSrc.set(img, src);
+          img.removeAttribute("src");
+          img.src = src;
+        }
+        if (img.complete) finish();
+      }
+    });
+
+  if (!img.complete) return decodeImage(img);
+  return wait();
+}
+
 export async function decodeImage(img: HTMLImageElement): Promise<void> {
-  if (img.complete && img.naturalWidth) {
+  // A finished image (including a broken one) will not fire load again.
+  // Waiting here held the cover for the whole cap.
+  if (img.complete) {
     try {
-      await img.decode();
+      if (img.naturalWidth) await img.decode();
     } catch {
       /* a broken file still occupies its box */
     }

@@ -303,10 +303,11 @@ export function hideCssForPlan(sheetId: string, plan: SheetFitPlan): string {
   return plan.hide.map((path) => `${root} > ${path}{display:none!important}`).join("");
 }
 
-/** Prefetch art without touching React-owned <img> nodes. */
+/** Prefetch art without touching React-owned <img> nodes, and decode it so the bitmap is ready. */
 export function prefetchSrc(src: string | null | undefined): void {
   if (!src || src.startsWith("data:")) return;
   const img = new Image();
   img.decoding = "async";
   img.src = src;
+  void img.decode().catch(() => undefined);
 }
