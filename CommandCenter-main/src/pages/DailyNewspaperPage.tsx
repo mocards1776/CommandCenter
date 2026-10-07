@@ -7246,10 +7246,13 @@ function NewspaperDesk() {
       if (cancel) return;
       revealFor.current = pressId;
       setRevealed(true);
-    }, 7_000);
+    }, 4_000);
     void (async () => {
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-      await waitForPrintedReveal(pagerRef.current);
+      // Layout has already settled by the time the lead photo decodes.
+      // The 7s cap was spent on a logo that never fires load, which held a
+      // finished A1 under the cover.
+      await waitForPrintedReveal(pagerRef.current, 1_500);
       if (cancel) return;
       revealFor.current = pressId;
       setRevealed(true);
