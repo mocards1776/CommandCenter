@@ -36,6 +36,22 @@ assert(isLateAndClose("nhl", game({ awayScore: 2, homeScore: 2, detail: "3:11 - 
 assert(isLateAndClose("nhl", game({ awayScore: 3, homeScore: 2, detail: "Shootout", period: 5 })), "NHL 1-goal in the shootout");
 assert(!isLateAndClose("nhl", game({ awayScore: 3, homeScore: 1, detail: "4:10 - 3rd", period: 3 })), "NHL 2-goal in the 3rd");
 assert(!isLateAndClose("nhl", game({ awayScore: 1, homeScore: 0, detail: "Live", period: null })), "NHL unknown period");
+assert(
+  !isLateAndClose("nhl", game({ awayScore: 1, homeScore: 2, shortDetail: "8:02 - 1st", period: null })),
+  "NHL 1st only in shortDetail is not late",
+);
+assert(
+  clockWindow("nhl", game({ awayScore: 1, homeScore: 2, shortDetail: "8:02 - 1st", period: null })) === "early",
+  "NHL shortDetail 1st is an early window",
+);
+assert(
+  isLateAndClose("nhl", game({ awayScore: 4, homeScore: 3, detail: "11:58 - 3rd", period: null })),
+  "NHL 3rd only in the detail is late",
+);
+assert(
+  !isLateAndClose("nhl", game({ awayScore: 1, homeScore: 0, detail: "12:00", period: null })),
+  "NHL clock without a period does not alert",
+);
 
 assert(!isLateAndClose("nfl", game({ awayScore: 7, homeScore: 0, detail: "8:00 - 2nd", period: 2 })), "NFL one-score in the 2nd");
 assert(isLateAndClose("nfl", game({ awayScore: 17, homeScore: 24, detail: "2:10 - 4th", period: 4 })), "NFL one-score in the 4th");
@@ -86,17 +102,29 @@ assert(!isLateAndClose("soccer", game({ awayScore: 1, homeScore: 0, detail: "Liv
 
 const earlyNhl = game({ awayScore: 0, homeScore: 1, detail: "1:58 - 1st", period: 1 });
 const lateNhl = game({ awayScore: 0, homeScore: 1, detail: "1:58 - 3rd", period: 3 });
-const stayed = heatCrossHot({
+const cleared = heatCrossHot({
   overLine: true,
   lateAndClose: isLateAndClose("nhl", earlyNhl),
   window: clockWindow("nhl", earlyNhl),
   prevHot: true,
   scoresKnown: true,
 });
-assert(stayed, "a game already hot under the old rule stays hot while it is early");
+assert(!cleared, "a false early-hot flag clears; a 1st-period one-goal is not late");
 assert(
-  crossingAlerts({ phase: "live", hot: true }, { phase: "live", hot: stayed }).length === 0,
-  "staying hot does not ping again",
+  crossingAlerts({ phase: "live", hot: true }, { phase: "live", hot: cleared }).length === 0,
+  "clearing a false early-hot flag does not ping",
+);
+const earlyFresh = heatCrossHot({
+  overLine: true,
+  lateAndClose: false,
+  window: "early",
+  prevHot: false,
+  scoresKnown: true,
+});
+assert(!earlyFresh, "an early one-goal game over the heat line is not hot");
+assert(
+  crossingAlerts({ phase: "live", hot: false }, { phase: "live", hot: earlyFresh }).length === 0,
+  "early one-goal does not raise a heat alert",
 );
 const crossed = heatCrossHot({
   overLine: true,
@@ -119,7 +147,19 @@ const stillHot = heatCrossHot({
 });
 assert(
   crossingAlerts({ phase: "live", hot: true }, { phase: "live", hot: stillHot }).length === 0,
-  "already-hot game that reaches the 3rd does not ping again",
+  "a game already hot in the 3rd does not ping again",
+);
+const becameLate = heatCrossHot({
+  overLine: true,
+  lateAndClose: isLateAndClose("nhl", lateNhl),
+  window: clockWindow("nhl", lateNhl),
+  prevHot: cleared,
+  scoresKnown: true,
+});
+assert(becameLate, "after the early flag clears, a 3rd-period one-goal is hot");
+assert(
+  crossingAlerts({ phase: "live", hot: cleared }, { phase: "live", hot: becameLate }).join() === "heat",
+  "the rising edge fires only when the game is newly late-and-close",
 );
 const dropped = heatCrossHot({
   overLine: false,
@@ -149,6 +189,16 @@ assert(
     scoresKnown: true,
   }),
   "unknown clock does not alert",
+);
+assert(
+  heatCrossHot({
+    overLine: true,
+    lateAndClose: false,
+    window: "unknown",
+    prevHot: true,
+    scoresKnown: true,
+  }),
+  "unknown period holds a previous hot flag so a blip does not flap",
 );
 assert(
   heatCrossHot({

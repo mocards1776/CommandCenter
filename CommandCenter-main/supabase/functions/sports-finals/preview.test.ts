@@ -143,6 +143,36 @@ const blues = scoreNhlRuwtGame(
 assert.equal(blues.score, 12 + Math.round(10 * 4.2), "Blues get default interest, not live heat");
 assert.ok(blues.reasons.includes("Your #1 team"));
 
+const nhlLive = (
+  id: string,
+  away: number,
+  home: number,
+  shortDetail: string,
+) =>
+  scoreNhlRuwtGame({
+    id,
+    live: true,
+    final: false,
+    shortDetail,
+    status: shortDetail,
+    away: { teamId: "1", abbrev: "AWY", score: away },
+    home: { teamId: "2", abbrev: "HME", score: home },
+  });
+const nhlFirstGoal = nhlLive("car-mtl", 4, 3, "11:58 - 1st");
+const nhlThirdGoal = nhlLive("car-mtl-3rd", 4, 3, "11:58 - 3rd");
+const nhlThirdTie = nhlLive("nsh-tor", 4, 4, "4:44 - 3rd");
+const nhlOt = nhlLive("ot", 3, 3, "2:10 - OT");
+assert.equal(nhlFirstGoal.score, 68, "1st one-goal is live 40 + 28");
+assert.ok(nhlFirstGoal.reasons.includes("One-goal game"));
+assert.equal(nhlThirdGoal.score, 76, "3rd one-goal at 11:58 is live 40 + 28 + 8");
+assert.ok(nhlFirstGoal.score < nhlThirdGoal.score);
+assert.equal(nhlThirdTie.score, 88, "3rd tie at 4:44 is live 40 + 32 + 16");
+assert.ok(nhlThirdTie.reasons.includes("Tied"));
+assert.ok(!nhlThirdTie.reasons.includes("One-goal game"));
+assert.ok(nhlThirdTie.score > nhlThirdGoal.score);
+assert.equal(nhlOt.score, 92, "OT tie matches the top late bonus");
+assert.ok(nhlOt.reasons.includes("Overtime"));
+
 const ranked = rankRuwtGames(
   [mlbGame({ id: "100", teamId: 143 }), mlbGame({ id: "200", teamId: 138, oppId: 112 })],
   { teamInterest: { "138": 10 }, watchPlayerIds: new Set(), watchManagerIds: new Set() },
