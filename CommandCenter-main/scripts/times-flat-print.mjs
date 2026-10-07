@@ -145,8 +145,8 @@ async function loadPlaywright() {
   } catch {
     const extra = (process.env.NODE_PATH || "").split(path.delimiter).filter(Boolean);
     const candidates = [
-      ...extra.map((dir) => path.join(dir, "playwright", "index.js")),
-      "/tmp/tt-measure/node_modules/playwright/index.js",
+      ...extra.map((dir) => path.join(dir, "playwright", "index.mjs")),
+      "/tmp/tt-measure/node_modules/playwright/index.mjs",
     ];
     let last = "playwright is not installed";
     for (const file of candidates) {
