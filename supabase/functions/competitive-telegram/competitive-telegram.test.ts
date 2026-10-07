@@ -10,6 +10,7 @@ import {
   SAMPLE_AS_OF,
   SD30_CAPTION_WHATS_NEW,
   SD30_SAMPLE_BUYERS,
+  SD30_SAMPLE_WEEK_BUYERS,
   barWidth,
   buildCompetitiveCard,
   competitiveCaption,
@@ -18,33 +19,42 @@ import {
   formatGrp,
   formatSpendExact,
   formatSpendShort,
+  formatWeekCaptionLabel,
   SD30_SAMPLE_JUST_IN,
   DEM_CANDIDATE,
   GOP_CANDIDATE,
   GOP_PAC,
   loadTciLogoDataUri,
   affiliationTotals,
+  almanacWeekBounds,
   broadcastWeekBounds,
+  inAlmanacWeek,
   inBroadcastWeek,
   maxGrp,
   maxSpend,
   raceSpendTotal,
   sd30SampleCard,
+  sd8SampleCard,
 } from "./card.ts";
 import {
   FRESH_INSERT_WINDOW_MS,
   MAX_BUY_IDS,
   colorForSponsor,
+  displaySponsorName,
   editedBuyIds,
   editedBuysRefuseError,
   isEditedBuy,
+  justInSponsorName,
   mapRestBuy,
   parseBuyIds,
   parseJustInPayload,
   rowsToBuyers,
   rowsToJustIn,
+  rowsToWeekBuyers,
   type AlmanacBuyRow,
 } from "./almanac.ts";
+import { allocateFlightByWeek, canonicalWeekOf, weekSliceOfFlight } from "./week.ts";
+import { estimateTextWidth, fitName } from "./svg.ts";
 import { planCompetitiveSend } from "./send.ts";
 import {
   COMPETITIVE_ALERT_HEIGHT,
@@ -138,7 +148,8 @@ assert.match(svg, /980\.9 GRP/);
 assert.match(svg, /642\.6 GRP/);
 assert.doesNotMatch(svg, /\$93 CPP|\$92 CPP|\$166 CPP|\$186 CPP/);
 assert.match(svg, /JUST IN|Just in/);
-assert.match(svg, /MSCC|Betsy Fogle/);
+assert.match(svg, /Missouri Senate Campaign Committee|Betsy Fogle/);
+assert.doesNotMatch(svg, />MSCC</);
 assert.match(svg, /\$47,440/);
 assert.match(svg, /274\.8 GRP/);
 assert.match(svg, /\$32,300/);
@@ -151,8 +162,9 @@ assert.match(svg, /SPEND/);
 assert.match(svg, />GRP</);
 assert.match(svg, /Dem/);
 assert.match(svg, /GOP/);
-assert.match(svg, /Fogle \+ Forward/);
-assert.match(svg, /Stinnett \+ MSCC/);
+assert.match(svg, /Fogle \+ Forward PAC|Forward PAC/);
+assert.match(svg, /Missouri Senate Campaign Committee/);
+assert.doesNotMatch(svg, /Stinnett \+ MSCC/);
 assert.match(svg, /\$616k/);
 assert.match(svg, /\$373k/);
 assert.match(svg, /\$616,095/);
@@ -186,30 +198,36 @@ assert.equal(barWidth(980.9, 4873.5, track), Math.round((980.9 / 4873.5) * track
 assert.equal(barWidth(642.6, 4873.5, track), Math.round((642.6 / 4873.5) * track));
 
 const caption = competitiveCaption(card);
-assert.match(caption, /\$453,350 \/ 4,873\.5 GRP/);
-assert.match(caption, /\$253,570 \/ 2,766\.6 GRP/);
-assert.match(caption, /\$162,745 \/ 980\.9 GRP/);
-assert.match(caption, /\$119,310 \/ 642\.6 GRP/);
+assert.match(caption, /This week \(Oct 6–12\):/);
+assert.match(caption, /Fogle \$54,036 \/ 648 GRP/);
+assert.match(caption, /Forward PAC \$121,287 \/ 735 GRP/);
+assert.match(caption, /Stinnett \$37,878 \/ 507 GRP/);
+assert.match(caption, /Missouri Senate Campaign Committee \$45,908 \/ 279 GRP/);
+assert.doesNotMatch(caption, /This week[\s\S]*?\$453,350/);
 assert.doesNotMatch(caption, /Just in[\s\S]*?CPP/);
-assert.ok(caption.includes("MSCC added $47,440 in Springfield TV for 274.8 GRP"));
+assert.ok(caption.includes("Missouri Senate Campaign Committee added $47,440 in Springfield TV for 274.8 GRP"));
 assert.ok(caption.includes("Betsy Fogle added $32,300 in Springfield TV for 358.9 GRP"));
 assert.ok(SD30_CAPTION_WHATS_NEW.includes("$47,440"));
 assert.doesNotMatch(SD30_CAPTION_WHATS_NEW, /\$70,420|CPP/);
 assert.equal(
   formatJustInLine(SD30_SAMPLE_JUST_IN[0]!),
-  "MSCC added $47,440 in Springfield TV for 274.8 GRP",
+  "Missouri Senate Campaign Committee added $47,440 in Springfield TV for 274.8 GRP",
 );
 assert.doesNotMatch(formatJustInLine(SD30_SAMPLE_JUST_IN[0]!), /CPP/);
-assert.match(caption, /DMA spend: Dem \$616,095 \/ GOP \$372,880; race \$988,975/);
+assert.match(caption, /Race to date: Dem \$616,095 \/ GOP \$372,880; race \$988,975/);
 assert.match(caption, /DMA GRP: Dem 5,854\.4 \/ GOP 3,409\.2/);
+assert.doesNotMatch(caption, /DMA spend:/);
 {
-  const week = broadcastWeekBounds("2026-10-06");
-  assert.equal(week.start, "2026-10-05");
-  assert.equal(week.end, "2026-10-11");
-  assert.equal(inBroadcastWeek("2026-10-05", "2026-10-06"), true);
-  assert.equal(inBroadcastWeek("2026-10-06", "2026-10-06"), true);
+  const week = almanacWeekBounds("2026-10-06");
+  assert.equal(week.start, "2026-10-06");
+  assert.equal(week.end, "2026-10-12");
+  assert.deepEqual(broadcastWeekBounds("2026-10-07"), week);
+  assert.equal(inAlmanacWeek("2026-10-05", "2026-10-06"), false);
+  assert.equal(inAlmanacWeek("2026-10-06", "2026-10-06"), true);
+  assert.equal(inAlmanacWeek("2026-10-12", "2026-10-06"), true);
   assert.equal(inBroadcastWeek("2026-09-29", "2026-10-06"), false);
-  assert.ok(SD30_SAMPLE_JUST_IN.every((buy) => inBroadcastWeek(buy.flightStart, "2026-10-06")));
+  assert.equal(formatWeekCaptionLabel("2026-10-06", "2026-10-12"), "This week (Oct 6–12):");
+  assert.equal(SD30_SAMPLE_WEEK_BUYERS[0]!.name, "Fogle");
 }
 
 {
@@ -284,6 +302,7 @@ function almanacRow(partial: Partial<AlmanacBuyRow> & Pick<AlmanacBuyRow, "id" |
     market: "Springfield",
     sponsorType: "candidate",
     flightStart: "2026-10-06",
+    flightEnd: "2026-10-12",
     ...partial,
   };
 }
@@ -335,10 +354,11 @@ function almanacRow(partial: Partial<AlmanacBuyRow> & Pick<AlmanacBuyRow, "id" |
   assert.match(sendSvg, /358\.9 GRP/);
   assert.doesNotMatch(sendSvg, /\$70,420|CPP/);
   assert.doesNotMatch(sendCaption, /Just in[\s\S]*?CPP/);
-  assert.match(sendCaption, /DMA spend: Dem \$/);
+  assert.match(sendCaption, /This week \(Oct 6–12\):/);
+  assert.match(sendCaption, /Race to date: Dem \$/);
   assert.equal(plan.buy_ids.length, 2);
   assert.equal(rowsToJustIn(batch).length, 2);
-  assert.equal(rowsToJustIn(batch).find((row) => row.sponsor === "MSCC")?.color, GOP_PAC);
+  assert.equal(rowsToJustIn(batch).find((row) => row.sponsor === "Missouri Senate Campaign Committee")?.color, GOP_PAC);
 }
 
 {
@@ -444,10 +464,11 @@ function almanacRow(partial: Partial<AlmanacBuyRow> & Pick<AlmanacBuyRow, "id" |
   const sendSvg = renderCompetitiveSvg(plan.card);
   assert.match(sendSvg, /\$64,400/);
   assert.match(sendSvg, /\$39,880/);
-  assert.match(sendSvg, /SDCC|Jon Patterson/);
+  assert.match(sendSvg, /Senate Democratic Campaign Committee|Jon Patterson/);
   assert.match(sendSvg, /Kansas City/);
   assert.doesNotMatch(sendSvg, /CPP/);
-  assert.match(sendSvg, /Patterson|Alliance|Ingle|SDCC/);
+  assert.match(sendSvg, /Patterson|Missouri Alliance PAC|Ingle|Senate Democratic Campaign Committee/);
+  assert.doesNotMatch(sendSvg, />Alliance<|>SDCC</);
   const [dem, gop] = affiliationTotals(plan.card.buyers);
   assert.equal(dem!.spend, 707900 + 220490);
   assert.equal(gop!.spend, 462656 + 388125);
@@ -483,6 +504,7 @@ function almanacRow(partial: Partial<AlmanacBuyRow> & Pick<AlmanacBuyRow, "id" |
     { sponsor: "MSCC", amount: 6450, grp: 47, market: "Springfield", media: "TV", side: "gop" },
   ]);
   assert.equal(inferred.length, 2);
+  assert.equal(inferred[0]!.sponsor, "Missouri Senate Campaign Committee");
   assert.equal(inferred[0]!.color, GOP_PAC);
   assert.equal(inferred[1]!.color, GOP_PAC);
   assert.notEqual(inferred[0]!.color, DEM_CANDIDATE);
@@ -546,7 +568,7 @@ function almanacRow(partial: Partial<AlmanacBuyRow> & Pick<AlmanacBuyRow, "id" |
   assert.match(justInBlock, /\$6,450/);
   assert.doesNotMatch(justInBlock, /\$17,600/);
   assert.doesNotMatch(formatJustInLine(plan.card.justIn[0]!), /\$17,600|134 GRP/);
-  assert.ok(sendCaption.includes("MSCC added $6,450 in Springfield TV for 47 GRP"));
+  assert.ok(sendCaption.includes("Missouri Senate Campaign Committee added $6,450 in Springfield TV for 47 GRP"));
   assert.equal(rowsToBuyers([revisedFull])[0]!.color, GOP_PAC);
   assert.equal(rowsToBuyers([revisedFull])[0]!.side, "gop");
 }
@@ -760,6 +782,145 @@ function almanacRow(partial: Partial<AlmanacBuyRow> & Pick<AlmanacBuyRow, "id" |
   const recapSvg = renderCompetitiveSvg(plan.card);
   assert.match(recapSvg, /\$17,600/);
   assert.match(recapSvg, /134 GRP/);
+}
+
+{
+  assert.equal(displaySponsorName("Alliance"), "Missouri Alliance PAC");
+  assert.equal(displaySponsorName("SDCC"), "Senate Democratic Campaign Committee");
+  assert.equal(displaySponsorName("WOTP"), "Will of the People PAC");
+  assert.equal(displaySponsorName("MSCC"), "Missouri Senate Campaign Committee");
+  assert.equal(displaySponsorName("Forward"), "Forward PAC");
+  assert.equal(displaySponsorName("Legio XIII PAC"), "Legio XIII PAC");
+  assert.equal(displaySponsorName("Missouri Alliance PAC"), "Missouri Alliance PAC");
+  assert.equal(displaySponsorName("Keri Ingle for MO SD8"), "Ingle");
+  assert.equal(displaySponsorName("Patterson for Missouri"), "Patterson");
+  assert.equal(justInSponsorName("Alliance"), "Missouri Alliance PAC");
+  assert.equal(justInSponsorName("Fogle for Missouri"), "Betsy Fogle");
+  assert.equal(justInSponsorName("MSCC"), "Missouri Senate Campaign Committee");
+}
+
+{
+  assert.equal(canonicalWeekOf("2026-10-05"), "2026-09-29");
+  assert.equal(canonicalWeekOf("2026-10-06"), "2026-10-06");
+  assert.equal(canonicalWeekOf("2026-10-12"), "2026-10-06");
+  const spend = 79350;
+  const { weeks, problem } = allocateFlightByWeek("2026-10-05", "2026-10-11", { spend, grp: 188.1 });
+  assert.equal(problem, null);
+  assert.deepEqual(weeks.map((row) => row.weekOf), ["2026-09-29", "2026-10-06"]);
+  const monday = Math.round(spend * 18 / 100);
+  assert.equal(weeks[0]!.spend, monday);
+  assert.equal(weeks[1]!.spend, spend - monday);
+  const two = allocateFlightByWeek("2026-09-29", "2026-10-12", { spend: 20000, grp: 200 });
+  assert.deepEqual(two.weeks.map((row) => [row.weekOf, row.spend, row.grp]), [
+    ["2026-09-29", 10000, 100],
+    ["2026-10-06", 10000, 100],
+  ]);
+  const missing = allocateFlightByWeek(null, null, { spend: 100, grp: 1 });
+  assert.equal(missing.problem, "missing");
+  assert.deepEqual(missing.weeks, []);
+  assert.equal(weekSliceOfFlight("2026-10-06", "2026-10-06", { spend: 7080, grp: 28.2 }, "2026-10-06").spend, 7080);
+  assert.equal(weekSliceOfFlight("2026-10-06", "2026-10-06", { spend: 7080, grp: 28.2 }, "2026-09-29").spend, 0);
+}
+
+{
+  const race = [
+    almanacRow({
+      id: "sdcc-wdaf",
+      race_slug: "mo-sd8",
+      sponsor: "Senate Democratic Campaign Committee",
+      spend: 124350,
+      grp: 195.2,
+      affiliation: "Keri Ingle",
+      sponsorType: "pac",
+      flightStart: "2026-09-29",
+      flightEnd: "2026-10-12",
+    }),
+    almanacRow({
+      id: "all-wdaf",
+      race_slug: "mo-sd8",
+      sponsor: "Alliance",
+      spend: 58800,
+      grp: 111.5,
+      affiliation: "Jon Patterson",
+      sponsorType: "pac",
+      flightStart: "2026-10-05",
+      flightEnd: "2026-10-18",
+    }),
+    almanacRow({
+      id: "pat-wdaf",
+      race_slug: "mo-sd8",
+      sponsor: "Patterson for Missouri",
+      spend: 39880,
+      grp: 96.2,
+      affiliation: "Jon Patterson",
+      flightStart: "2026-10-05",
+      flightEnd: "2026-10-11",
+    }),
+    almanacRow({
+      id: "old",
+      race_slug: "mo-sd8",
+      sponsor: "Will of the People PAC",
+      spend: 2572,
+      grp: 0,
+      affiliation: "Keri Ingle",
+      sponsorType: "pac",
+      flightStart: "2026-09-01",
+      flightEnd: "2026-09-07",
+    }),
+  ];
+  const week = rowsToWeekBuyers(race, "2026-10-06");
+  assert.equal(week.some((row) => row.name === "Will of the People PAC"), false);
+  assert.equal(week.find((row) => row.name === "Senate Democratic Campaign Committee")?.spend, weekSliceOfFlight("2026-09-29", "2026-10-12", { spend: 124350, grp: 195.2 }, "2026-10-06").spend);
+  assert.equal(week.find((row) => row.name === "Missouri Alliance PAC")?.spend, weekSliceOfFlight("2026-10-05", "2026-10-18", { spend: 58800, grp: 111.5 }, "2026-10-06").spend);
+  assert.equal(week.find((row) => row.name === "Patterson")?.spend, weekSliceOfFlight("2026-10-05", "2026-10-11", { spend: 39880, grp: 96.2 }, "2026-10-06").spend);
+  const plan = await planCompetitiveSend(
+    { action: "send", race_slug: "mo-sd8", buy_ids: ["sdcc-wdaf"], asOf: "2026-10-07" },
+    {
+      env: emptyEnv,
+      almanac: {
+        fetchBuysByIds: async () => [race[0]!],
+        fetchRaceBuys: async () => race,
+      },
+    },
+  );
+  assert.equal(plan.ok, true);
+  if (!plan.ok || plan.skipped) throw new Error("expected weekly caption card");
+  assert.equal(plan.card.dateLabel, "October 6, 2026");
+  const weekCaption = competitiveCaption(plan.card);
+  assert.match(weekCaption, /This week \(Oct 6–12\):/);
+  assert.match(weekCaption, /Senate Democratic Campaign Committee \$/);
+  assert.match(weekCaption, /Missouri Alliance PAC \$/);
+  assert.match(weekCaption, /Patterson \$/);
+  assert.doesNotMatch(weekCaption, /Will of the People PAC \$/);
+  assert.match(weekCaption, /Race to date:/);
+  const sendSvg = renderCompetitiveSvg(plan.card);
+  assert.match(sendSvg, /Missouri Alliance PAC/);
+  assert.doesNotMatch(sendSvg, />Alliance</);
+}
+
+{
+  const long = fitName("Senate Democratic Campaign Committee", 310, 22, 13);
+  assert.ok(long.lines.length === 1 || long.lines.length === 2);
+  assert.ok(long.lines.every((line) => estimateTextWidth(line, long.size) <= 310 + 1));
+  assert.ok(!long.lines.some((line) => line.includes("…") || line.endsWith("…")));
+  const alliance = fitName("Missouri Alliance PAC", 310, 22, 13);
+  assert.ok(alliance.lines.every((line) => estimateTextWidth(line, alliance.size) <= 310 + 1));
+  const footer = fitName("Patterson + Missouri Alliance PAC", 300, 12, 8, 400);
+  assert.ok(footer.lines.every((line) => estimateTextWidth(line, footer.size, 400) <= 300 + 1));
+}
+
+{
+  const sd8 = sd8SampleCard("data:image/png;base64,aaa");
+  const sd8Svg = renderCompetitiveSvg(sd8);
+  const sd8Caption = competitiveCaption(sd8);
+  assert.match(sd8Svg, /Missouri Alliance PAC/);
+  assert.match(sd8Svg, /Senate Democratic Campaign Committee/);
+  assert.match(sd8Svg, /Patterson/);
+  assert.match(sd8Svg, /Ingle/);
+  assert.doesNotMatch(sd8Svg, />Alliance<|>SDCC<|>WOTP</);
+  assert.match(sd8Caption, /This week \(Oct 6–12\):/);
+  assert.match(sd8Caption, /Keri Ingle added \$7,080 in Kansas City TV for 28\.2 GRP/);
+  assert.match(sd8Caption, /Race to date:/);
 }
 
 console.log("competitive-telegram tests ok");

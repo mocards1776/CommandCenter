@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import { initWasm, Resvg } from "@resvg/resvg-wasm";
 import jpeg from "jpeg-js";
 import { decode as decodePng } from "fast-png";
-import { competitiveCaption, loadTciLogoDataUri, sd30SampleCard } from "../supabase/functions/competitive-telegram/card.ts";
+import { competitiveCaption, loadTciLogoDataUri, sd30SampleCard, sd8SampleCard } from "../supabase/functions/competitive-telegram/card.ts";
 import { renderCompetitiveSvg } from "../supabase/functions/competitive-telegram/svg.ts";
 import { TELEGRAM_JPEG_QUALITY } from "../supabase/functions/competitive-telegram/telegram.ts";
 
@@ -79,9 +79,10 @@ async function rasterize(svg: string): Promise<Uint8Array> {
   }
 }
 
-const outPath = path.resolve(arg("out") || path.join(previewDir, "sample-sd30.jpg"));
+const slug = arg("slug") || "mo-sd30";
+const outPath = path.resolve(arg("out") || path.join(previewDir, slug === "mo-sd8" ? "sample-sd8.jpg" : "sample-sd30.jpg"));
 const logo = await loadTciLogoDataUri();
-const card = sd30SampleCard(logo);
+const card = slug === "mo-sd8" ? sd8SampleCard(logo) : sd30SampleCard(logo);
 const svg = renderCompetitiveSvg(card);
 const png = await rasterize(svg);
 const jpegBytes = pngToJpeg(png, TELEGRAM_JPEG_QUALITY);
