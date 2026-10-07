@@ -486,22 +486,27 @@ export async function printFlatEdition() {
       const leaf = leaves[i];
       await primePage(page, i);
       const sheet = page.locator(".wsj-page").nth(i).locator(".wsj-sheet");
-      let box = await sheet.boundingBox();
-      if (box && box.height > 40) {
-        // WebKit leaves everything below the viewport transparent in an element
-        // shot. Grow the viewport so the whole sheet paints, width unchanged.
-        const viewH = Math.min(16_000, Math.ceil(box.height + 180));
+      // boundingBox is clipped to the viewport. offsetHeight is the paper.
+      // WebKit element shots leave anything outside the viewport transparent.
+      const full = await page.evaluate((i) => {
+        const node = document.querySelectorAll(".wsj-page")[i]?.querySelector(".wsj-sheet");
+        if (!node) return null;
+        return { w: node.offsetWidth, h: node.offsetHeight };
+      }, i);
+      if (full && full.h > 40) {
+        const viewH = Math.min(16_000, Math.ceil(full.h + 200));
         await page.setViewportSize({ width: IPAD13.width, height: Math.max(IPAD13.height, viewH) });
         await page.evaluate((i) => {
           const pager = document.querySelector(".newspaper-edition");
           const leaf = pager?.querySelectorAll(".wsj-page")[i];
           if (pager) pager.scrollTo({ left: i * pager.clientWidth, behavior: "instant" });
           if (leaf) leaf.scrollTop = 0;
+          window.scrollTo(0, 0);
         }, i);
-        await page.waitForTimeout(200);
-        box = await sheet.boundingBox();
+        await page.waitForTimeout(250);
       }
-      if (!box || box.height < 40) {
+      const box = await sheet.boundingBox();
+      if (!full || full.h < 40 || !box) {
         log("skip", leaf.folio, "no sheet");
         continue;
       }
@@ -536,11 +541,11 @@ export async function printFlatEdition() {
         bytes: webp.length,
         width: px.width,
         height: px.height,
-        cssWidth: Math.round(box.width),
-        cssHeight: Math.round(box.height),
+        cssWidth: full.w,
+        cssHeight: full.h,
         hotspots: spots,
       });
-      log(leaf.folio, `${px.width}x${px.height}px`, `${webp.length} bytes`, `${spots.length} links`, `css ${Math.round(box.width)}x${Math.round(box.height)}`);
+      log(leaf.folio, `${px.width}x${px.height}px`, `${webp.length} bytes`, `${spots.length} links`, `css ${full.w}x${full.h}`);
       if (i !== 0) await unlink(pngPath).catch(() => {});
     }
     await page.close();
