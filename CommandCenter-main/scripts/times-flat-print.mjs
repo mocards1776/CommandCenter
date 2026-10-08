@@ -205,19 +205,68 @@ function sliceSpan(slices) {
   return slices.reduce((sum, slice) => sum + (slice.srcBottom - slice.srcTop), 0);
 }
 
-/** Latest y in (start, limit] that does not pass through an atom. */
+/** A cut this close to a glyph edge is the leading, not the letter. */
+const CUT_SLACK = 1.5;
+
+function interiorHit(atoms, cut) {
+  return atoms.some((atom) => atom.top < cut - CUT_SLACK && atom.bottom > cut + CUT_SLACK);
+}
+
+/**
+ * Latest y in (start, limit] that does not pass through an atom.
+ * One atom that spans the whole budget must not hide a gap between the others
+ * (a two-column lead, or the hero sitting above a story).
+ */
 function bestCut(atoms, start, limit) {
   const candidates = [];
   for (const atom of atoms) {
     if (atom.bottom <= start + 0.5 || atom.top >= limit - 0.5) continue;
-    if (atom.top <= start + 0.5 && atom.bottom >= limit - 0.5) return null;
     if (atom.top > start + 8 && atom.top <= limit + 0.5) candidates.push(atom.top);
     if (atom.bottom > start + 8 && atom.bottom <= limit + 0.5) candidates.push(atom.bottom);
   }
   candidates.sort((a, b) => b - a);
   for (const cut of candidates) {
-    const hits = atoms.some((atom) => atom.top < cut - 0.4 && atom.bottom > cut + 0.4);
-    if (!hits) return cut;
+    if (!interiorHit(atoms, cut)) return cut;
+  }
+  return columnGap(atoms, start, limit);
+}
+
+/**
+ * Two columns stagger their line boxes, so a full-width edge of one column
+ * lands inside the other. A row both columns leave empty is still a clean cut.
+ */
+function columnGap(atoms, start, limit) {
+  const placed = atoms.filter(
+    (atom) => Number.isFinite(atom.left) && Number.isFinite(atom.right) && atom.right - atom.left > 1,
+  );
+  if (placed.length < 4) return null;
+  const centers = placed.map((atom) => (atom.left + atom.right) / 2).sort((a, b) => a - b);
+  const mid = centers[Math.floor(centers.length / 2)];
+  const spansBoth = (atom) => atom.left < mid - 8 && atom.right > mid + 8;
+  const wide = placed.filter(spansBoth);
+  const lefts = placed.filter((atom) => !spansBoth(atom) && (atom.left + atom.right) / 2 < mid - 8);
+  const rights = placed.filter((atom) => !spansBoth(atom) && (atom.left + atom.right) / 2 > mid + 8);
+  if (lefts.length < 2 || rights.length < 2) return null;
+  const clear = (y) =>
+    !interiorHit(wide, y) &&
+    !lefts.some((atom) => atom.top < y - CUT_SLACK && atom.bottom > y + CUT_SLACK) &&
+    !rights.some((atom) => atom.top < y - CUT_SLACK && atom.bottom > y + CUT_SLACK);
+  const edges = [];
+  for (const atom of placed) {
+    if (atom.bottom > start + 8 && atom.bottom <= limit + 0.5) edges.push(atom.bottom);
+    if (atom.top > start + 8 && atom.top <= limit + 0.5) edges.push(atom.top);
+  }
+  edges.sort((a, b) => b - a);
+  for (const y of edges) {
+    if (clear(y)) return y;
+  }
+  // No shared gap. The nearest clean row above the block that crosses the
+  // limit, so the page ends on whitespace instead of failing the book.
+  const crossing = placed.filter((atom) => atom.top < limit && atom.bottom > limit - 0.5);
+  const tops = crossing.map((atom) => atom.top).filter((top) => top > start + 8 && top <= limit + 0.5);
+  tops.sort((a, b) => b - a);
+  for (const y of tops) {
+    if (clear(y)) return y;
   }
   return null;
 }
@@ -290,7 +339,11 @@ export function layoutSheet(contentH, pieces, pageH = PAGE_CSS_H) {
       break;
     }
     const cut = bestCut(atoms, y, y + budget);
-    if (cut == null || cut <= y + 4) return { ok: false, reason: `unsplittable at ${Math.round(y)}`, pages };
+    if (cut == null || cut <= y + 4) {
+      const piece = list.find((item) => item.bottom > y + 8 && item.top < y + budget);
+      const sel = piece?.sel ? ` ${piece.sel}` : "";
+      return { ok: false, reason: `unsplittable at ${Math.round(y)}${sel}`, pages };
+    }
     const slices = [];
     if (header) slices.push({ srcTop: header.top, srcBottom: header.bottom });
     slices.push({ srcTop: y, srcBottom: cut });
@@ -593,7 +646,7 @@ async function rawSize(file) {
  * copy those rules removed, measured at 1032 CSS px wide, then one screenshot
  * of that whole sheet. No slice is stitched.
  */
-async function openSheet(page, index) {
+export async function openSheet(page, index) {
   await page.evaluate(async (i) => {
     const leaf = document.querySelectorAll(".wsj-page")[i];
     const sheet = leaf?.querySelector(".wsj-sheet");
@@ -623,7 +676,15 @@ async function openSheet(page, index) {
       unlock(sheet, true);
       for (const el of sheet.querySelectorAll("*")) {
         if (!(el instanceof HTMLElement)) continue;
-        if (el.scrollHeight > el.clientHeight + 2) unlock(el, true);
+        if (el.scrollHeight <= el.clientHeight + 2) continue;
+        const oy = getComputedStyle(el).overflowY;
+        // A scrollport's extra lines are real copy. Grow the box so the
+        // screenshot includes them. Do not invent height from overflow that
+        // is already visible — that is what doubled a packed front.
+        if (oy === "visible") continue;
+        const need = el.scrollHeight;
+        unlock(el, true);
+        el.style.setProperty("min-height", `${need}px`, "important");
       }
       } finally {
         busy = false;
@@ -667,7 +728,7 @@ async function openSheet(page, index) {
   }, index);
 }
 
-async function measureSheet(page, index) {
+export async function measureSheet(page, index) {
   return page.evaluate((i) => {
     const pager = document.querySelector(".newspaper-edition");
     const leaf = document.querySelectorAll(".wsj-page")[i];
@@ -687,21 +748,95 @@ async function measureSheet(page, index) {
       return {
         top: (r.top - sheetRect.top) / zoom,
         bottom: (r.bottom - sheetRect.top) / zoom,
+        left: (r.left - sheetRect.left) / zoom,
         right: (r.right - sheetRect.left) / zoom,
+      };
+    };
+    // Painted right edge. A horizontal scroller, a closed menu, or the fit
+    // clone keeps a layout box past 1032 while its ink stays inside the sheet.
+    const clipsX = (node) => {
+      const ox = getComputedStyle(node).overflowX;
+      return ox === "hidden" || ox === "clip" || ox === "auto" || ox === "scroll";
+    };
+    const paintedRight = (el) => {
+      const box = rel(el);
+      let right = box.right;
+      let node = el.parentElement;
+      while (node && node !== sheet.parentElement) {
+        if (clipsX(node)) right = Math.min(right, rel(node).right);
+        if (node === sheet) break;
+        node = node.parentElement;
+      }
+      return { ...box, right };
+    };
+    const selOf = (el) => {
+      const id = el.id ? `#${el.id}` : "";
+      const cls = [...el.classList].slice(0, 4).join(".");
+      return `${el.tagName.toLowerCase()}${id}${cls ? "." + cls : ""}`;
+    };
+    const width = sheet.offsetWidth;
+    const fixed = [];
+    const contain = (el) => {
+      const menu = el.closest(".tt-editions-menu");
+      const decorative =
+        menu ||
+        el.dataset.ttFitHost != null ||
+        el.dataset.ttFitClone != null ||
+        el.getAttribute("aria-hidden") === "true";
+      if (decorative) {
+        el.style.setProperty("display", "none", "important");
+        return;
+      }
+      // Real text that paints past the sheet wraps inside 1032. An image or
+      // table is left alone so the log can name it instead of shrinking it.
+      const tag = el.tagName;
+      if (tag === "IMG" || tag === "SVG" || tag === "CANVAS" || tag === "TABLE") return;
+      el.style.setProperty("max-width", "100%", "important");
+      el.style.setProperty("min-width", "0", "important");
+      el.style.setProperty("white-space", "normal", "important");
+      el.style.setProperty("overflow-wrap", "anywhere", "important");
+    };
+    for (const el of sheet.querySelectorAll("*")) {
+      if (!(el instanceof HTMLElement)) continue;
+      const box = rel(el);
+      if (box.bottom - box.top <= 1) continue;
+      if (box.right <= width + 1) continue;
+      const painted = paintedRight(el);
+      if (painted.right <= width + 1) continue;
+      fixed.push(
+        `${selOf(el)} right ${Math.round(box.right)} top ${Math.round(box.top)} ${Math.round(box.right - box.left)}x${Math.round(box.bottom - box.top)}`,
+      );
+      contain(el);
+    }
+    const sheetRect2 = sheet.getBoundingClientRect();
+    const rel2 = (el) => {
+      const r = el.getBoundingClientRect();
+      return {
+        top: (r.top - sheetRect2.top) / zoom,
+        bottom: (r.bottom - sheetRect2.top) / zoom,
+        left: (r.left - sheetRect2.left) / zoom,
+        right: (r.right - sheetRect2.left) / zoom,
       };
     };
     let contentH = Math.max(sheet.scrollHeight, sheet.offsetHeight);
     let pastRight = false;
-    const width = sheet.offsetWidth;
+    let pastDetail = "";
     for (const el of sheet.querySelectorAll("*")) {
       if (!(el instanceof HTMLElement)) continue;
-      const box = rel(el);
+      const box = rel2(el);
       if (box.bottom > contentH) contentH = box.bottom;
-      if (el.scrollHeight > el.clientHeight + 2) {
-        const spill = box.top + el.scrollHeight / zoom;
-        if (spill > contentH) contentH = spill;
+      if (box.bottom - box.top <= 1 || box.right <= width + 1) continue;
+      let painted = box.right;
+      let node = el.parentElement;
+      while (node && node !== sheet.parentElement) {
+        if (clipsX(node)) painted = Math.min(painted, rel2(node).right);
+        if (node === sheet) break;
+        node = node.parentElement;
       }
-      if (box.right > width + 1 && box.bottom - box.top > 1) pastRight = true;
+      if (painted <= width + 1) continue;
+      pastRight = true;
+      const detail = `${selOf(el)} right ${Math.round(box.right)} top ${Math.round(box.top)} ${Math.round(box.right - box.left)}x${Math.round(box.bottom - box.top)}`;
+      if (!pastDetail) pastDetail = detail;
     }
     const pieceSel = [
       "article",
@@ -729,19 +864,21 @@ async function measureSheet(page, index) {
     const pageH = 1376;
     const pieces = [];
     for (const el of own) {
-      const box = rel(el);
+      const box = rel2(el);
       if (box.bottom - box.top < 8) continue;
-      const piece = { top: box.top, bottom: box.bottom, atoms: [], header: null };
+      const piece = { top: box.top, bottom: box.bottom, atoms: [], header: null, sel: selOf(el) };
       if (box.bottom - box.top > pageH + 0.5) {
         const thead = el.querySelector("thead");
         if (thead) {
-          const head = rel(thead);
-          piece.header = { top: head.top, bottom: head.bottom };
+          const head = rel2(thead);
+          piece.header = { top: head.top, bottom: head.bottom, left: head.left, right: head.right };
         }
         for (const row of el.querySelectorAll("tr")) {
           if (row.closest("thead")) continue;
-          const rowBox = rel(row);
-          if (rowBox.bottom - rowBox.top > 0.5) piece.atoms.push({ top: rowBox.top, bottom: rowBox.bottom });
+          const rowBox = rel2(row);
+          if (rowBox.bottom - rowBox.top > 0.5) {
+            piece.atoms.push({ top: rowBox.top, bottom: rowBox.bottom, left: rowBox.left, right: rowBox.right });
+          }
         }
         const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
         let node = walker.nextNode();
@@ -752,8 +889,10 @@ async function measureSheet(page, index) {
             for (const r of range.getClientRects()) {
               if (r.height < 1 || r.width < 1) continue;
               piece.atoms.push({
-                top: (r.top - sheetRect.top) / zoom,
-                bottom: (r.bottom - sheetRect.top) / zoom,
+                top: (r.top - sheetRect2.top) / zoom,
+                bottom: (r.bottom - sheetRect2.top) / zoom,
+                left: (r.left - sheetRect2.left) / zoom,
+                right: (r.right - sheetRect2.left) / zoom,
               });
             }
           }
@@ -761,13 +900,22 @@ async function measureSheet(page, index) {
         }
         for (const media of el.querySelectorAll("img, svg, canvas")) {
           if (media.closest("table")) continue;
-          const mediaBox = rel(media);
-          if (mediaBox.bottom - mediaBox.top > 1) piece.atoms.push({ top: mediaBox.top, bottom: mediaBox.bottom });
+          const mediaBox = rel2(media);
+          if (mediaBox.bottom - mediaBox.top > 1) {
+            piece.atoms.push({ top: mediaBox.top, bottom: mediaBox.bottom, left: mediaBox.left, right: mediaBox.right });
+          }
         }
       }
       pieces.push(piece);
     }
     pieces.sort((a, b) => a.top - b.top);
+    // A child a few dozen pixels below the border (the short A4/A6 clip) is
+    // real copy. Stretch the paper so the shot includes it. A front that
+    // merely unpacked is already hundreds of pixels taller; don't pad that.
+    if (contentH > sheet.offsetHeight + 2 && contentH < sheet.offsetHeight + 80) {
+      sheet.style.setProperty("min-height", `${Math.ceil(contentH)}px`, "important");
+      contentH = Math.max(contentH, sheet.offsetHeight);
+    }
     const s = sheet.getBoundingClientRect();
     return {
       x: s.x,
@@ -779,15 +927,24 @@ async function measureSheet(page, index) {
       sheetW: width,
       contentH,
       pastRight,
+      pastDetail,
+      fixed,
       pieces,
     };
   }, index);
 }
 
-async function captureSheet(page, index, pngPath) {
+export async function captureSheet(page, index, pngPath) {
+  const contained = [];
+  const noteFixed = (geom) => {
+    for (const row of geom?.fixed || []) {
+      if (!contained.includes(row)) contained.push(row);
+    }
+  };
   await page.setViewportSize({ width: IPAD13.width, height: IPAD13.height });
   await openSheet(page, index);
   let geom = await measureSheet(page, index);
+  noteFixed(geom);
   if (!geom || geom.contentH < 40 || geom.sheetW < 40) return null;
   const chrome = Math.max(48, geom.viewH - geom.h);
   const viewH = Math.min(16000, Math.max(IPAD13.height, Math.ceil(geom.y + geom.contentH + chrome)));
@@ -795,6 +952,7 @@ async function captureSheet(page, index, pngPath) {
   try {
     await openSheet(page, index);
     geom = await measureSheet(page, index);
+    noteFixed(geom);
     if (!geom || geom.w < 40 || geom.h < 40) return null;
     const need = Math.ceil(geom.y + geom.h + 8);
     if (need > viewH || geom.h + 1 < geom.contentH) {
@@ -802,16 +960,31 @@ async function captureSheet(page, index, pngPath) {
       await page.setViewportSize({ width: IPAD13.width, height: taller });
       await openSheet(page, index);
       geom = await measureSheet(page, index);
+      noteFixed(geom);
       if (!geom) return null;
     }
     const clip = clipSize(geom);
-    const { x, y, width, height } = clip;
+    const { x, y, width } = clip;
+    // A short sheet can still report content below its border (a child that
+    // overflows). Capture that ink when the viewport has room. y is the sheet
+    // top, so the limit is the viewport below y, not the viewport itself.
+    const room = Math.max(0, geom.viewH - y);
+    const height = Math.min(Math.max(clip.height, geom.contentH), room);
     if (width < 40) {
       log("clip offscreen", `x ${Math.round(x)}`, `w ${Math.round(width)}`, `view ${Math.round(geom.viewW)}`);
       return { missing: "offscreen" };
     }
+    if (contained.length) log("contained", contained.slice(0, 4).join(" | "));
     if (height + 2 < geom.contentH) {
-      log("clip short", Math.round(height), "of", Math.round(geom.contentH));
+      log(
+        "clip short",
+        Math.round(height),
+        "of",
+        Math.round(geom.contentH),
+        `y ${Math.round(y)}`,
+        `box ${Math.round(geom.h)}`,
+        `view ${Math.round(geom.viewH)}`,
+      );
       return { missing: "clipped" };
     }
     try {
@@ -846,6 +1019,8 @@ async function captureSheet(page, index, pngPath) {
     pieces: geom.pieces,
     pastBottom: capturedHeight + 1 < geom.contentH,
     pastRight: geom.pastRight,
+    pastDetail: geom.pastDetail || "",
+    fixed: contained,
     buffer: pixels,
     scale,
     blankRatio: blankRatio(pixels, width, height),
@@ -1289,6 +1464,7 @@ export async function printFlatEdition() {
         const sheetVerdict = judgeSheet(shot);
         if (!sheetVerdict.ok) {
           reason = sheetVerdict.reason;
+          if (shot.pastDetail) log("past right", shot.pastDetail);
           shot = { ...shot, reject: sheetVerdict.reason };
           continue;
         }
