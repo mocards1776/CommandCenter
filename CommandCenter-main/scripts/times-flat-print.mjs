@@ -241,7 +241,19 @@ function columnGap(atoms, start, limit) {
   );
   if (placed.length < 4) return null;
   const centers = placed.map((atom) => (atom.left + atom.right) / 2).sort((a, b) => a - b);
-  const mid = centers[Math.floor(centers.length / 2)];
+  // The median of equal columns lands on the first right-column center, so
+  // every right-hand line is classified as wide and the gap is never found.
+  // Split at the middle of the widest space between centers — the gutter.
+  let gap = 0;
+  let mid = null;
+  for (let i = 1; i < centers.length; i++) {
+    const width = centers[i] - centers[i - 1];
+    if (width > gap) {
+      gap = width;
+      mid = (centers[i - 1] + centers[i]) / 2;
+    }
+  }
+  if (!(gap >= 40) || mid == null) return null;
   const spansBoth = (atom) => atom.left < mid - 8 && atom.right > mid + 8;
   const wide = placed.filter(spansBoth);
   const lefts = placed.filter((atom) => !spansBoth(atom) && (atom.left + atom.right) / 2 < mid - 8);

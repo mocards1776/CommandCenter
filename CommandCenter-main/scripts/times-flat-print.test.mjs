@@ -191,6 +191,27 @@ const throughPhoto = withPhoto.pages.some((page) =>
 );
 assert.equal(throughPhoto, false, "a wide photo is not cut");
 
+// 9px is half a line, past CUT_SLACK, so a full-width edge is inside the other
+// column and bestCut cannot take it. The unpositioned box spans the budget, so
+// the only remaining cut is the gutter columnGap finds.
+const halfLine = [];
+for (let top = 166; top + 23 <= 1642; top += 22) {
+  halfLine.push({ top, bottom: top + 14, left: 18, right: 490 });
+  halfLine.push({ top: top + 9, bottom: top + 23, left: 520, right: 1000 });
+}
+const staggered = layoutSheet(
+  1642,
+  [{ top: 166, bottom: 1642, atoms: [{ top: 166, bottom: 1642 }, ...halfLine] }],
+  1376,
+);
+assert.equal(staggered.ok, true, staggered.reason || "a half-line stagger cuts through columnGap");
+for (const line of halfLine) {
+  const cut = staggered.pages.some((page) =>
+    page.slices.some((slice) => slice.srcTop > line.top + 2 && slice.srcTop < line.bottom - 2),
+  );
+  assert.equal(cut, false, "a staggered column line is not cut");
+}
+
 assert.deepEqual(continuationName("A3", 0), { folio: "A3", file: "A3" });
 assert.deepEqual(continuationName("A3", 1), { folio: "A3 cont.", file: "A3-2" });
 assert.deepEqual(continuationName("A3", 2), { folio: "A3 cont. 2", file: "A3-3" });
