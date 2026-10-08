@@ -132,15 +132,19 @@ export function FlatPaper({ onFallback }: { onFallback: () => void }) {
     };
     el.addEventListener("scroll", onScroll, { passive: true });
     el.addEventListener("scrollend", settle);
-    const hash = window.location.hash.replace(/^#/, "");
-    if (hash) {
+    const jumpHash = () => {
+      const hash = window.location.hash.replace(/^#/, "");
+      if (!hash) return;
       const idx = pages.findIndex((p) => p.folio === hash);
-      if (idx > 0) go(idx);
-    }
+      if (idx >= 0) go(idx);
+    };
+    jumpHash();
+    window.addEventListener("hashchange", jumpHash);
     return () => {
       window.clearTimeout(timer);
       el.removeEventListener("scroll", onScroll);
       el.removeEventListener("scrollend", settle);
+      window.removeEventListener("hashchange", jumpHash);
     };
   }, [pages, go]);
 
