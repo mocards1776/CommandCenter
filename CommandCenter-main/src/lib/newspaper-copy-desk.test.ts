@@ -59,7 +59,7 @@ const game = {
   reasons: [],
   printReason: "Sunday night",
   preseason: true,
-} as WatchGame;
+} as unknown as WatchGame;
 assert(watchContext(game) === "Preseason", "preseason still prints without copy");
 const copied = applyWatchWhy([game], parsed)[0]!;
 assert(watchContext(copied) === "A division game with the series tied.", "copy why replaces the print reason");

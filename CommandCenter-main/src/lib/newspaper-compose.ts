@@ -236,6 +236,10 @@ type PressBag = {
   news?: GameWrapCard[];
   weather?: unknown;
   watch?: WatchGame[];
+  /** Hottest games kept for the copy pass after the watch desk is flushed. */
+  watchTop?: WatchGame[];
+  /** Set before the copy call so a failed hop does not call again. */
+  copyDone?: boolean;
   scoutItem?: unknown;
   missouri?: { scout: MoItem | null; items: MoItem[]; listen: MoItem[] } | null;
   openers?: unknown;
@@ -464,7 +468,7 @@ export async function pressStep(
     const takenTitles = [
       ...news.map((card) => card.headline),
       ...(state.athletic ?? []).map((card) => card.headline),
-      ...(state.wraps ?? []).map((wrap) => wrap.item.title),
+      ...((state.wraps ?? []) as { item?: { title?: string } }[]).map((wrap) => wrap.item?.title ?? ""),
     ];
     const power = await fetchPowerMizzou(takenTitles);
     state.news = [...news, ...(state.mlbtrCards ?? []), ...power];
