@@ -4,7 +4,7 @@
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { judgePage, MIN_CSS_HEIGHT, webpSize } from "./times-flat-print.mjs";
+import { findSeam, judgePage, MIN_CSS_HEIGHT, webpSize } from "./times-flat-print.mjs";
 
 const short = judgePage({ cssHeight: 208, blankRatio: 0.24 });
 assert.equal(short.ok, false);
@@ -34,6 +34,56 @@ buf[23] = 57;
 buf[24] = 3;
 assert.deepEqual(webpSize(buf), { width: 2064, height: 3303 });
 assert.equal(webpSize(Buffer.from("nope")), null);
+
+function rgba(width, height, paint) {
+  const buf = Buffer.alloc(width * height * 4, 255);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const [r, g, b] = paint(x, y);
+      const o = (y * width + x) * 4;
+      buf[o] = r;
+      buf[o + 1] = g;
+      buf[o + 2] = b;
+    }
+  }
+  return buf;
+}
+
+const varied = (x, y) => [(x * 17 + y * 3) % 180, (x * 9 + 40) % 200, (y * 13 + x) % 160];
+const seamed = rgba(64, 24, (x, y) => {
+  if (y === 10) return [5, 11, 24];
+  if (y === 11) return [8, 17, 36];
+  return varied(x, y);
+});
+const seam = findSeam(seamed, 64, 24);
+assert.deepEqual(seam, { y: 10, rows: 2 });
+assert.equal(judgePage({ cssHeight: 1650, blankRatio: 0.2, seam }).ok, false);
+assert.match(judgePage({ cssHeight: 1650, blankRatio: 0.2, seam }).reason, /seam y 10/);
+
+const partial = rgba(100, 24, (x, y) => {
+  if (y === 10) return [5, 11, 24];
+  if (y === 11) return [8, 17, 36];
+  if (x % 5 < 2) return [6, 12, 22];
+  return [180, 160, 140];
+});
+assert.deepEqual(findSeam(partial, 100, 24), { y: 10, rows: 2 }, "a photo that is dark in part of the row still has a seam");
+
+assert.equal(findSeam(rgba(64, 24, varied), 64, 24), null);
+assert.equal(
+  findSeam(rgba(64, 24, (x, y) => (y < 2 ? [5, 11, 24] : varied(x, y))), 64, 24),
+  null,
+  "the page's own top edge is not an interior seam",
+);
+assert.equal(
+  findSeam(rgba(64, 24, (x, y) => (y >= 8 && y <= 14 ? [5, 11, 24] : varied(x, y))), 64, 24),
+  null,
+  "a thick dark band is a rule or a photo, not a 1px stitch",
+);
+assert.equal(
+  findSeam(rgba(64, 24, (x, y) => (y === 10 ? (x < 8 ? [5, 11, 24] : varied(x, y)) : varied(x, y))), 64, 24),
+  null,
+  "a dark rule that does not span the sheet is not a seam",
+);
 
 const shots = readFileSync(new URL("./times-shots.mjs", import.meta.url), "utf8");
 assert.match(shots, /loadFlatA1Png/, "telegram send must look for the flat A1");
