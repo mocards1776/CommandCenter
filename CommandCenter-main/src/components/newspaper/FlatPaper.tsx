@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { useSearchParams } from "react-router-dom";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { TimesHoldShell } from "@/components/newspaper/TimesHold";
+import { scaledFitBox, sheetNeedsTransformFit } from "@/lib/newspaper-fit";
 import {
   FLAT_PAGE_H,
   FLAT_PAGE_W,
@@ -45,6 +46,7 @@ export function FlatPaper({ onFallback }: { onFallback: () => void }) {
   const [pageIndex, setPageIndex] = useState(0);
   const [orient, setOrient] = useState<"portrait" | "landscape">(() => (viewportPortrait() ? "portrait" : "landscape"));
   const [fit, setFit] = useState(1);
+  const [useTransform, setUseTransform] = useState(false);
   const [a1Ready, setA1Ready] = useState(false);
   const pagerRef = useRef<HTMLDivElement>(null);
   const indexRef = useRef(0);
@@ -94,6 +96,10 @@ export function FlatPaper({ onFallback }: { onFallback: () => void }) {
   }, []);
 
   const pages = manifest?.pages ?? [];
+
+  useLayoutEffect(() => {
+    setUseTransform(sheetNeedsTransformFit());
+  }, []);
 
   useLayoutEffect(() => {
     const el = pagerRef.current;
@@ -246,6 +252,8 @@ export function FlatPaper({ onFallback }: { onFallback: () => void }) {
 
   const portrait = orient === "portrait";
   const scale = portrait ? 1 : fit;
+  const transformFit = useTransform && !portrait && scale > 0 && scale !== 1;
+  const visual = transformFit ? scaledFitBox(PAGE_W, PAGE_H, scale) : null;
 
   const current = pages[pageIndex];
   const sections: { code: string; index: number }[] = [];
@@ -389,8 +397,21 @@ export function FlatPaper({ onFallback }: { onFallback: () => void }) {
       >
         {pages.map((page, index) => (
           <section key={page.folio} className="wsj-page" aria-label={`Page ${page.folio}`} data-folio={page.folio} data-kind={page.kind}>
-            <div className="tt-flat-sheet" style={{ width: PAGE_W, height: PAGE_H, zoom: scale, flex: "none" }}>
-              <div style={{ position: "relative", width: PAGE_W, height: PAGE_H }}>
+            <div
+              className="tt-flat-sheet"
+              style={
+                visual
+                  ? { width: visual.width, height: visual.height, overflow: "hidden", flex: "none", position: "relative" }
+                  : { width: PAGE_W, height: PAGE_H, zoom: scale, flex: "none" }
+              }
+            >
+              <div
+                style={
+                  visual
+                    ? { position: "relative", width: PAGE_W, height: PAGE_H, transform: `scale(${scale})`, transformOrigin: "top left" }
+                    : { position: "relative", width: PAGE_W, height: PAGE_H }
+                }
+              >
                 <img
                   ref={(node) => {
                     if (node) imgRefs.current.set(index, node);
