@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+  clipSize,
   continuationName,
   findSeam,
   judgePage,
@@ -16,6 +17,13 @@ import {
   remapHotspots,
   webpSize,
 } from "./times-flat-print.mjs";
+
+const parked = clipSize({ x: 2064, y: 61, w: 1032, h: 1406, viewW: 1032, viewH: 8000 });
+assert.ok(parked.width < 40, "a folio to the right of the pager has no clip width");
+assert.equal(Math.round(parked.height), 1406, "that same folio still has its full height");
+const shown = clipSize({ x: 0, y: 61, w: 1032, h: 1406, viewW: 1032, viewH: 8000 });
+assert.ok(shown.width >= 1032);
+assert.equal(Math.round(shown.height), 1406);
 
 const short = judgeSheet({ contentHeight: 208, capturedHeight: 208, blankRatio: 0.24 });
 assert.equal(short.ok, false);
@@ -170,6 +178,14 @@ const mapped = remapHotspots(
 const home = mapped.findIndex((spots) => spots.length === 1);
 assert.ok(home > 0, "the hotspot moves onto the later page");
 assert.ok(mapped[home][0].y < 1 && mapped[home][0].h > 0);
+
+const printer = readFileSync(new URL("./times-flat-print.mjs", import.meta.url), "utf8");
+assert.doesNotMatch(
+  printer,
+  /unlock\(document\.querySelector\("\.newspaper-edition"\)/,
+  "the pager stays a horizontal scrollport",
+);
+assert.match(printer, /stopped after the first 3 sheets failed/, "three dead sheets abort the run");
 
 const shots = readFileSync(new URL("./times-shots.mjs", import.meta.url), "utf8");
 assert.match(shots, /loadFlatA1Png/, "telegram send must look for the flat A1");

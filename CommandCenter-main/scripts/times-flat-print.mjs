@@ -158,6 +158,19 @@ export function webpSize(buf) {
   return { width, height };
 }
 
+/**
+ * Screenshot clip in CSS pixels. A folio that is still parked to the right of
+ * the pager has its full height and almost no width — that is off-screen, not
+ * a short capture.
+ */
+export function clipSize(geom) {
+  const x = Math.max(0, Number(geom?.x) || 0);
+  const y = Math.max(0, Number(geom?.y) || 0);
+  const width = Math.min(Number(geom?.w) || 0, (Number(geom?.viewW) || 0) - x);
+  const height = Math.min(Number(geom?.h) || 0, (Number(geom?.viewH) || 0) - y);
+  return { x, y, width, height };
+}
+
 /** The full sheet, before it is split. A short capture or a stub never publishes. */
 export function judgeSheet(sheet) {
   const content = Number(sheet?.contentHeight) || 0;
@@ -603,13 +616,14 @@ async function openSheet(page, index) {
         if (full != null && node.textContent !== full) node.textContent = full;
       }
       for (const node of sheet.querySelectorAll("[hidden]")) node.hidden = false;
-      unlock(document.querySelector(".newspaper-root"), false);
-      unlock(document.querySelector(".newspaper-edition"), false);
+      // The pager is the horizontal scrollport. overflow:visible on it drops
+      // that scrollport, scrollLeft snaps back to 0, and every later folio
+      // sits past the right edge (clip width 0, height intact).
       unlock(leaf, true);
       unlock(sheet, true);
       for (const el of sheet.querySelectorAll("*")) {
         if (!(el instanceof HTMLElement)) continue;
-        if (el.scrollHeight > el.clientHeight + 2 || el.scrollWidth > el.clientWidth + 2) unlock(el, true);
+        if (el.scrollHeight > el.clientHeight + 2) unlock(el, true);
       }
       } finally {
         busy = false;
@@ -620,7 +634,12 @@ async function openSheet(page, index) {
     window.__ttPrintUnlock.observe(sheet.closest(".wsj-fit-plan") || sheet, { childList: true, subtree: true });
     release();
     const pager = document.querySelector(".newspaper-edition");
-    if (pager) pager.scrollTo({ left: i * pager.clientWidth, behavior: "instant" });
+    if (pager) {
+      pager.style.scrollBehavior = "auto";
+      pager.scrollLeft = i * (pager.clientWidth || 1);
+      const placed = sheet.getBoundingClientRect();
+      if (Math.abs(placed.x) > 1) pager.scrollLeft += placed.x;
+    }
     leaf.scrollTop = 0;
     const imgs = [...sheet.querySelectorAll("img")];
     for (const img of imgs) {
@@ -654,7 +673,12 @@ async function measureSheet(page, index) {
     const leaf = document.querySelectorAll(".wsj-page")[i];
     const sheet = leaf?.querySelector(".wsj-sheet");
     if (!leaf || !sheet) return null;
-    if (pager) pager.scrollTo({ left: i * pager.clientWidth, behavior: "instant" });
+    if (pager) {
+      pager.style.scrollBehavior = "auto";
+      pager.scrollLeft = i * (pager.clientWidth || 1);
+      const placed = sheet.getBoundingClientRect();
+      if (Math.abs(placed.x) > 1) pager.scrollLeft += placed.x;
+    }
     leaf.scrollTop = 0;
     const zoom = Number.parseFloat(getComputedStyle(sheet).zoom || "1") || 1;
     const sheetRect = sheet.getBoundingClientRect();
@@ -780,13 +804,15 @@ async function captureSheet(page, index, pngPath) {
       geom = await measureSheet(page, index);
       if (!geom) return null;
     }
-    const x = Math.max(0, geom.x);
-    const y = Math.max(0, geom.y);
-    const width = Math.min(geom.w, geom.viewW - x);
-    const height = Math.min(geom.h, geom.viewH - y);
-    if (width < 40 || height + 2 < geom.contentH) {
+    const clip = clipSize(geom);
+    const { x, y, width, height } = clip;
+    if (width < 40) {
+      log("clip offscreen", `x ${Math.round(x)}`, `w ${Math.round(width)}`, `view ${Math.round(geom.viewW)}`);
+      return { missing: "offscreen" };
+    }
+    if (height + 2 < geom.contentH) {
       log("clip short", Math.round(height), "of", Math.round(geom.contentH));
-      return null;
+      return { missing: "clipped" };
     }
     try {
       await page.screenshot({
@@ -1230,6 +1256,7 @@ export async function printFlatEdition() {
     const printedAt = new Date().toISOString();
     const version = String(Date.parse(printedAt));
     const report = [];
+    let failedSheets = 0;
     for (let i = 0; i < leaves.length; i++) {
       const leaf = leaves[i];
       const pngPath = path.join(outDir, `${leaf.folio}.png`);
@@ -1254,8 +1281,9 @@ export async function printFlatEdition() {
           ready.ok ? "content" : "shell",
         );
         shot = await captureSheet(page, i, pngPath);
-        if (!shot) {
-          reason = "no sheet";
+        if (!shot || shot.missing) {
+          reason = shot?.missing || "no sheet";
+          shot = null;
           continue;
         }
         const sheetVerdict = judgeSheet(shot);
@@ -1285,6 +1313,11 @@ export async function printFlatEdition() {
           reason: shot?.reject || reason,
         });
         log("HEIGHT", leaf.folio, "FAIL", shot?.reject || reason);
+        failedSheets += 1;
+        if (i === 2 && failedSheets === 3) {
+          const why = report.map((row) => `${row.folio}:${row.reason}`).join(", ");
+          throw new Error(`stopped after the first 3 sheets failed (${why})`);
+        }
         continue;
       }
       log(
