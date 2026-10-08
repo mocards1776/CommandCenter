@@ -8,7 +8,7 @@ import { formatHeatTimestamp, heatAlertCaption, situationLine } from "./copy.ts"
 import { alertReplyMarkup } from "../telegram-markup.ts";
 import { applyHeatSummary, heatStatMagnitude, pickHeatStats } from "./fetch-game.ts";
 import { driveCapsuleSpan, fieldBallPct, footballMarks, layoutPlayDots, spotIsRedZone } from "./field.ts";
-import { mlbHeroNest, runnersShorthand } from "./mlb-hero.ts";
+import { mlbHeroNest, mlbInningLabel, runnersShorthand } from "./mlb-hero.ts";
 import { renderHeatAlertSvg } from "./svg.ts";
 import { parseChatAllowlist, resolveChatTargets } from "./telegram.ts";
 import type { HeatAlertCard } from "./types.ts";
@@ -415,5 +415,68 @@ test("MLB heat SVG fills the score nest and drops the empty black plate", () => 
   assert.match(svg, />CLE 58.4%</);
   assert.match(svg, />Top 4th</);
   assert.doesNotMatch(svg, /fill="#050505"/);
-  assert.equal((svg.match(/>Top 4th</g) || []).length, 1, "inning belongs on the situation bar only");
+  assert.equal((svg.match(/>Top 4th</g) || []).length, 2, "inning on top of the nest and on the situation bar");
+});
+
+const appMlbUiUrl = [
+  new URL("../../../../CommandCenter-main/src/lib/mlb-score-ui.ts", import.meta.url),
+  new URL("../../../../src/lib/mlb-score-ui.ts", import.meta.url),
+].find((url) => existsSync(fileURLToPath(url)));
+if (!appMlbUiUrl) throw new Error("game-page mlb-score-ui module not found");
+const { mlbInningLabel: appInningLabel } = await import(appMlbUiUrl.href);
+
+test("MLB inning label wording matches the app hero", () => {
+  const cases: Array<[string | null, string | null]> = [
+    ["Top 3rd", "Top 3rd"],
+    ["Bot 3rd", "Bottom 3rd"],
+    ["Bottom 3rd", "Bottom 3rd"],
+    ["Mid 3rd", "Mid 3rd"],
+    ["Middle 3rd", "Mid 3rd"],
+    ["Middle of 5th Inning", "Mid 5th"],
+    ["End 3rd", "End 3rd"],
+    ["End of the 7th", "End 7th"],
+    ["Top of the 1st", "Top 1st"],
+    ["Top 10th", "Top 10th"],
+    ["Bot 11th", "Bottom 11th"],
+    ["Top 12th", "Top 12th"],
+    ["  top   2nd ", "Top 2nd"],
+    ["Final", null],
+    ["Final/10", null],
+    ["Warmup", null],
+    ["Delayed", null],
+    ["7:05 PM ET", null],
+    ["", null],
+    [null, null],
+  ];
+  for (const [detail, want] of cases) {
+    assert.equal(mlbInningLabel(detail), want, String(detail));
+    assert.equal(mlbInningLabel(detail), appInningLabel(detail), `app parity: ${detail}`);
+  }
+});
+
+function nestInning(svg: string, label: string): boolean {
+  return svg.includes(`y="128" text-anchor="middle" fill="#f7f4ee" font-family="Libre Franklin" font-size="28" font-weight="700" letter-spacing="0.6">${label}</text>`);
+}
+
+test("MLB heat SVG puts the inning on top of the nest, above outs and count", () => {
+  const top = renderHeatAlertSvg(mlbLive);
+  assert.ok(nestInning(top, "Top 4th"));
+  assert.ok(top.indexOf(">Top 4th<") < top.indexOf(">0 OUTS<"), "inning sits before the outs line");
+  const bottom = renderHeatAlertSvg({ ...mlbLive, detail: "Bot 4th", diamond: { ...mlbLive.diamond!, outs: 1 } });
+  assert.ok(nestInning(bottom, "Bottom 4th"));
+  assert.match(bottom, />1 OUT</);
+  assert.match(bottom, />Bot 4th</, "situation bar keeps the feed copy");
+  assert.ok(nestInning(renderHeatAlertSvg({ ...mlbLive, detail: "Mid 4th" }), "Mid 4th"));
+  assert.ok(nestInning(renderHeatAlertSvg({ ...mlbLive, detail: "Top 10th" }), "Top 10th"));
+});
+
+test("MLB heat SVG drops the inning line on finals, pregame, and break duplicates", () => {
+  const final = renderHeatAlertSvg({ ...mlbLive, live: false, final: true, detail: "Final" });
+  assert.doesNotMatch(final, /y="128"/);
+  const pre = renderHeatAlertSvg({ ...mlbLive, live: false, final: false, detail: "Top 1st", when: "7:10 PM" });
+  assert.doesNotMatch(pre, /y="128"/);
+  const brk = renderHeatAlertSvg({ ...mlbLive, detail: "Middle 4th" });
+  assert.doesNotMatch(brk, /y="128"/, "break slot already names the inning");
+  assert.match(brk, /font-size="68" font-weight="700">Mid 4th</);
+  assert.doesNotMatch(brk, /Barlow Condensed" font-size="\d+" font-weight="700">Middle 4th</);
 });
