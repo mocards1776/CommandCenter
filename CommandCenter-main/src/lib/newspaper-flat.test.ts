@@ -2,6 +2,7 @@ import {
   FLAT_RETENTION_DAYS,
   flatEditionExpired,
   flatKeepFrom,
+  flatEditionAsk,
   flatRequested,
   isFlatManifest,
 } from "./newspaper-flat.ts";
@@ -15,6 +16,8 @@ if (!flatRequested("?flat=1", undefined)) throw new Error("query on");
 if (flatRequested("?flat=0", "1")) throw new Error("query off wins");
 if (!flatRequested("", "1")) throw new Error("env on");
 if (flatRequested("", undefined)) throw new Error("default off");
+if (flatEditionAsk("2026-10-07-evening-test", "today") !== "2026-10-07-evening-test") throw new Error("test edition");
+if (flatEditionAsk("nope", "today") !== "today") throw new Error("bad edition falls back");
 if (!isFlatManifest({ issueId: "2026-10-07-evening", pages: [{ url: "https://example.test/a.webp" }] })) {
   throw new Error("manifest");
 }

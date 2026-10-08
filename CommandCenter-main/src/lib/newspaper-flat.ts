@@ -44,6 +44,12 @@ export type FlatManifest = {
   pages: FlatPage[];
 };
 
+/** Edition id the flat reader should open, including a test publish such as `2026-10-07-evening-test`. */
+export function flatEditionAsk(raw: string | null | undefined, fallback: string): string {
+  if (raw && /^\d{4}-\d{2}-\d{2}-(?:morning|midday|evening)(?:-test)?$/.test(raw)) return raw;
+  return fallback;
+}
+
 export function flatRequested(search: string, envFlag?: string): boolean {
   const q = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search).get("flat");
   if (q === "1" || q === "true") return true;

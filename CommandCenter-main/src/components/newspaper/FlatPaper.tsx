@@ -4,16 +4,18 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { TimesHoldShell } from "@/components/newspaper/TimesHold";
 import { pageFit } from "@/lib/newspaper-fit";
 import {
+  flatEditionAsk,
   flatEditionExpired,
   flatManifestUrl,
   isFlatManifest,
   type FlatManifest,
   type FlatPage,
 } from "@/lib/newspaper-flat";
-import { parsePressId, pressEdition } from "@/lib/newspaper";
+import { pressEdition } from "@/lib/newspaper";
 import { supabase } from "@/lib/supabase";
 
 const PAGE_W = 1032;
+const PAGE_H = 1376;
 
 function sectionOf(folio: string): string {
   const match = /^([A-Z]+)/.exec(folio);
@@ -31,7 +33,7 @@ function chicagoToday(): string {
  */
 export function FlatPaper({ onFallback }: { onFallback: () => void }) {
   const [params, setParams] = useSearchParams();
-  const asked = parsePressId(params.get("edition") ?? "")?.id ?? pressEdition().id;
+  const asked = flatEditionAsk(params.get("edition"), pressEdition().id);
   const [manifest, setManifest] = useState<FlatManifest | null>(null);
   const [editions, setEditions] = useState<string[]>([asked]);
   const [pageIndex, setPageIndex] = useState(0);
@@ -78,7 +80,8 @@ export function FlatPaper({ onFallback }: { onFallback: () => void }) {
       .then(({ data }) => {
         const ids = (data ?? [])
           .map((row) => row.id)
-          .filter((id) => parsePressId(id) && !flatEditionExpired(id, today));
+          .filter((id) => flatEditionAsk(id, "") === id && !flatEditionExpired(id, today));
+        if (!ids.includes(asked)) ids.unshift(asked);
         if (ids.length) setEditions(ids);
       });
   }, []);
@@ -152,7 +155,7 @@ export function FlatPaper({ onFallback }: { onFallback: () => void }) {
     };
     el.addEventListener("scroll", lock, { passive: true });
     const jumpHash = () => {
-      const hash = window.location.hash.replace(/^#/, "");
+      const hash = decodeURIComponent(window.location.hash.replace(/^#/, ""));
       const idx = hash ? pages.findIndex((p) => p.folio === hash) : 0;
       go(idx >= 0 ? idx : 0);
     };
@@ -227,7 +230,7 @@ export function FlatPaper({ onFallback }: { onFallback: () => void }) {
   return (
     <div
       className="newspaper-root wsj-shell"
-      style={{ position: "relative" }}
+      style={{ position: "relative", height: "100%", overflow: "hidden" }}
       data-times-flat="1"
       data-times-ready={a1Ready ? "1" : "0"}
       data-times-issue={manifest.issueId}
@@ -237,6 +240,11 @@ export function FlatPaper({ onFallback }: { onFallback: () => void }) {
           <TimesHoldShell line="Opening the printed edition" />
         </div>
       )}
+      <style>{`
+        [data-times-flat="1"] .wsj-chrome { position: absolute; top: 0; left: 0; right: 0; z-index: 4; }
+        [data-times-flat="1"] .newspaper-edition.wsj-pager { position: absolute; inset: 0; height: auto; overflow: hidden; }
+        [data-times-flat="1"] .wsj-page { overflow: hidden !important; max-height: none; }
+      `}</style>
       <div className="wsj-chrome print:hidden">
         <div className="wsj-chrome-l">
           <strong>Thompson Times</strong>
@@ -321,12 +329,12 @@ export function FlatPaper({ onFallback }: { onFallback: () => void }) {
       <div
         className="newspaper-edition wsj-pager"
         ref={pagerRef}
-        style={{ ["--tt-fit" as string]: String(fit), overflowX: "hidden", scrollBehavior: "auto" }}
+        style={{ ["--tt-fit" as string]: String(fit), overflow: "hidden", scrollBehavior: "auto" }}
       >
         {pages.map((page, index) => (
-          <section key={page.folio} className="wsj-page" aria-label={`Page ${page.folio}`} data-folio={page.folio} data-kind={page.kind}>
-            <div className="tt-flat-sheet" style={{ width: PAGE_W, zoom: fit }}>
-              <div style={{ position: "relative", width: PAGE_W }}>
+          <section key={page.folio} className="wsj-page" aria-label={`Page ${page.folio}`} data-folio={page.folio} data-kind={page.kind} style={{ overflow: "hidden" }}>
+            <div className="tt-flat-sheet" style={{ width: PAGE_W, height: PAGE_H, zoom: fit, overflow: "hidden" }}>
+              <div style={{ position: "relative", width: PAGE_W, height: PAGE_H }}>
                 <img
                   ref={(node) => {
                     if (node) imgRefs.current.set(index, node);
@@ -334,12 +342,12 @@ export function FlatPaper({ onFallback }: { onFallback: () => void }) {
                   }}
                   src={page.url}
                   alt=""
-                  width={page.cssWidth}
-                  height={page.cssHeight}
+                  width={PAGE_W}
+                  height={PAGE_H}
                   decoding="sync"
                   fetchPriority={index === pageIndex || index === pageIndex + 1 || index === pageIndex - 1 ? "high" : "low"}
                   draggable={false}
-                  style={{ display: "block", width: "100%", height: "auto" }}
+                  style={{ display: "block", width: PAGE_W, height: PAGE_H }}
                 />
                 <div style={{ position: "absolute", inset: 0 }}>
                   {page.hotspots.map((spot, i) => {

@@ -4,22 +4,48 @@
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { findSeam, judgePage, MIN_CSS_HEIGHT, webpSize } from "./times-flat-print.mjs";
+import {
+  continuationName,
+  findSeam,
+  judgePage,
+  judgeSheet,
+  layoutSheet,
+  MIN_CSS_HEIGHT,
+  PAGE_DEV_H,
+  PAGE_DEV_W,
+  remapHotspots,
+  webpSize,
+} from "./times-flat-print.mjs";
 
-const short = judgePage({ cssHeight: 208, blankRatio: 0.24 });
+const short = judgeSheet({ contentHeight: 208, capturedHeight: 208, blankRatio: 0.24 });
 assert.equal(short.ok, false);
 assert.match(short.reason, /short 208/);
 
-const real = judgePage({ cssHeight: 615, blankRatio: 0.64 });
+const real = judgeSheet({ contentHeight: 615, capturedHeight: 615, blankRatio: 0.64 });
 assert.equal(real.ok, true);
 
-const blank = judgePage({ cssHeight: 1652, blankRatio: 0.95 });
+const clipped = judgeSheet({ contentHeight: 3641, capturedHeight: 1548, blankRatio: 0.2 });
+assert.equal(clipped.ok, false);
+assert.match(clipped.reason, /clipped 1548<3641/);
+
+const past = judgeSheet({ contentHeight: 1800, capturedHeight: 1800, pastBottom: true, blankRatio: 0.2 });
+assert.equal(past.ok, false);
+assert.match(past.reason, /past bottom/);
+
+const blank = judgeSheet({ contentHeight: 1652, capturedHeight: 1652, blankRatio: 0.95 });
 assert.equal(blank.ok, false);
 assert.match(blank.reason, /blank/);
 
 assert.equal(MIN_CSS_HEIGHT, 480);
-assert.equal(judgePage({ cssHeight: 479, blankRatio: 0.1 }).ok, false);
-assert.equal(judgePage({ cssHeight: 480, blankRatio: 0.9 }).ok, true);
+assert.equal(judgeSheet({ contentHeight: 479, capturedHeight: 479, blankRatio: 0.1 }).ok, false);
+assert.equal(judgeSheet({ contentHeight: 480, capturedHeight: 480, blankRatio: 0.9 }).ok, true);
+
+const screen = { width: PAGE_DEV_W, height: PAGE_DEV_H, blankRatio: 0.2 };
+assert.equal(judgePage(screen).ok, true);
+assert.equal(PAGE_DEV_W, 2064);
+assert.equal(PAGE_DEV_H, 2752);
+assert.equal(judgePage({ width: 2064, height: 3300, blankRatio: 0.2 }).ok, false);
+assert.equal(judgePage({ ...screen, pastEdge: true }).ok, false);
 
 const buf = Buffer.alloc(32);
 buf.write("RIFF", 0);
@@ -57,8 +83,8 @@ const seamed = rgba(64, 24, (x, y) => {
 });
 const seam = findSeam(seamed, 64, 24);
 assert.deepEqual(seam, { y: 10, rows: 2 });
-assert.equal(judgePage({ cssHeight: 1650, blankRatio: 0.2, seam }).ok, false);
-assert.match(judgePage({ cssHeight: 1650, blankRatio: 0.2, seam }).reason, /seam y 10/);
+assert.equal(judgePage({ width: PAGE_DEV_W, height: PAGE_DEV_H, blankRatio: 0.2, seam }).ok, false);
+assert.match(judgePage({ width: PAGE_DEV_W, height: PAGE_DEV_H, blankRatio: 0.2, seam }).reason, /seam y 10/);
 
 const partial = rgba(100, 24, (x, y) => {
   if (y === 10) return [5, 11, 24];
@@ -84,6 +110,66 @@ assert.equal(
   null,
   "a dark rule that does not span the sheet is not a seam",
 );
+
+const fits = layoutSheet(1000, [{ top: 20, bottom: 800 }], 1376);
+assert.equal(fits.ok, true);
+assert.equal(fits.pages.length, 1);
+assert.deepEqual(fits.pages[0].slices, [{ srcTop: 0, srcBottom: 1000 }]);
+
+const split = layoutSheet(
+  2000,
+  [
+    { top: 40, bottom: 700 },
+    { top: 780, bottom: 1900 },
+  ],
+  1376,
+);
+assert.equal(split.ok, true);
+assert.equal(split.pages.length, 2);
+assert.ok(split.pages[0].slices.at(-1).srcBottom <= 780.5, "the first page stops before the story that does not fit");
+assert.ok(split.pages[1].slices[0].srcTop >= 700, "the second page starts at the next piece");
+
+const lines = [];
+for (let top = 40; top < 3000; top += 20) lines.push({ top, bottom: top + 18 });
+const story = layoutSheet(3000, [{ top: 40, bottom: 3000, atoms: lines }], 1376);
+assert.equal(story.ok, true);
+assert.ok(story.pages.length >= 3);
+for (const page of story.pages) {
+  const span = page.slices.reduce((sum, slice) => sum + (slice.srcBottom - slice.srcTop), 0);
+  assert.ok(span <= 1376.5, `page span ${span}`);
+}
+for (const line of lines) {
+  const cut = story.pages.some((page) =>
+    page.slices.some((slice) => slice.srcTop > line.top + 0.5 && slice.srcTop < line.bottom - 0.5),
+  );
+  assert.equal(cut, false, "a text line is not cut");
+}
+
+const rows = [];
+for (let top = 50; top < 2400; top += 28) rows.push({ top, bottom: top + 24 });
+const table = layoutSheet(2400, [{ top: 0, bottom: 2400, header: { top: 0, bottom: 40 }, atoms: rows }], 1376);
+assert.equal(table.ok, true);
+assert.ok(table.pages.length >= 2);
+for (const page of table.pages.slice(1)) {
+  assert.equal(page.slices[0].srcTop, 0);
+  assert.equal(page.slices[0].srcBottom, 40);
+}
+
+const blocked = layoutSheet(2000, [{ top: 10, bottom: 2000 }], 1376);
+assert.equal(blocked.ok, false);
+
+assert.deepEqual(continuationName("A3", 0), { folio: "A3", file: "A3" });
+assert.deepEqual(continuationName("A3", 1), { folio: "A3 cont.", file: "A3-2" });
+assert.deepEqual(continuationName("A3", 2), { folio: "A3 cont. 2", file: "A3-3" });
+
+const mapped = remapHotspots(
+  [{ x: 0.1, y: 0.8, w: 0.2, h: 0.05, href: "/x", folio: "B1", label: "Blues" }],
+  2000,
+  split.pages,
+);
+const home = mapped.findIndex((spots) => spots.length === 1);
+assert.ok(home > 0, "the hotspot moves onto the later page");
+assert.ok(mapped[home][0].y < 1 && mapped[home][0].h > 0);
 
 const shots = readFileSync(new URL("./times-shots.mjs", import.meta.url), "utf8");
 assert.match(shots, /loadFlatA1Png/, "telegram send must look for the flat A1");
