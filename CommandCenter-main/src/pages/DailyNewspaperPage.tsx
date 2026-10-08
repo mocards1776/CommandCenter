@@ -189,6 +189,8 @@ import { clearEditorStamps, editEdition } from "@/lib/newspaper-editor";
 import { fetchWatchList, WATCH_PAGE_GAMES } from "@/lib/newspaper-watch";
 import WatchGuide from "@/components/newspaper/WatchGuide";
 import DayAhead from "@/components/newspaper/DayAhead";
+import { classBoxFor } from "@/lib/newspaper-class";
+import { fetchClassNewsletter } from "@/lib/newspaper-class-fetch";
 import { insertDayAhead, scheduleDateFor, type DaySchedule } from "@/lib/newspaper-day-ahead";
 import { fetchDaySchedule } from "@/lib/newspaper-day-ahead-fetch";
 import BeezPage from "@/components/newspaper/BeezPage";
@@ -6390,6 +6392,15 @@ function NewspaperDesk() {
 
   // Races We're Tracking: one row per race for the edition date (or the newest
   // filing inside two days). No rows: the page is omitted. Client-only.
+  const classQ = useQuery({
+    queryKey: ["tt-class-newsletter", scheduleDate],
+    enabled: Boolean(scheduleDate),
+    queryFn: () => fetchClassNewsletter(scheduleDate!),
+    staleTime: 5 * 60_000,
+    gcTime: 20 * 60 * 60_000,
+    retry: 1,
+  });
+
   const racesQ = useQuery({
     queryKey: ["tt-race-briefs", scheduleDate],
     enabled: Boolean(scheduleDate) && !racesSample,
@@ -7155,7 +7166,13 @@ function NewspaperDesk() {
               ) : page.kind === "favorites-watch" ? (
                 <WatchGuide games={applyWatchWhy(watchQ.data ?? [], timesCopy)} editionLabel={press.label} />
               ) : page.kind === "favorites-day" ? (
-                <DayAhead date={page.date} events={page.events} upcoming={page.upcoming} editionLabel={press.label} />
+                <DayAhead
+                  date={page.date}
+                  events={page.events}
+                  upcoming={page.upcoming}
+                  editionLabel={press.label}
+                  classBox={classBoxFor(classQ.data ?? null, page.date, page.events.map((event) => event.title))}
+                />
               ) : page.kind === "favorites-beez" ? (
                 <BeezPage desk={page.desk} editionLabel={press.label} />
               ) : page.kind === "favorites-races" ? (
@@ -7249,6 +7266,7 @@ function NewspaperDesk() {
       watchQ.data,
       timesCopy,
       frontDeks,
+      classQ.data,
       notebookByFolio,
       leagueClubsQ.data,
       boardQ.data,

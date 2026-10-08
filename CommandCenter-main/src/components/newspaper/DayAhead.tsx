@@ -1,3 +1,4 @@
+import type { ClassBox } from "@/lib/newspaper-class";
 import {
   clockLabel,
   countLine,
@@ -129,17 +130,51 @@ function EmptyDay({ date }: { date: string }) {
   );
 }
 
+function ClassLetter({ box }: { box: ClassBox }) {
+  return (
+    <aside className="tt-class" data-tt-flow="" aria-label="Truman’s Class">
+      <header>
+        <p>Truman’s Class</p>
+        <h3>{box.teacher}</h3>
+      </header>
+      {box.learning.length ? (
+        <ul>
+          {box.learning.map((item) => (
+            <li key={item.subject}>
+              <b>{item.subject}</b>
+              <span>{item.text}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {box.reminders ? <p className="tt-class-remind">{box.reminders}</p> : null}
+      {box.upcoming.length ? (
+        <ol>
+          {box.upcoming.map((item) => (
+            <li key={`${item.date}-${item.text}`}>
+              <b>{item.date.slice(5).replace("-", "/")}</b>
+              <span>{item.text}</span>
+            </li>
+          ))}
+        </ol>
+      ) : null}
+    </aside>
+  );
+}
+
 /** The day's calendar as an hour-by-hour printed timetable. */
 export default function DayAhead({
   date,
   events,
   upcoming = [],
   editionLabel,
+  classBox = null,
 }: {
   date: string;
   events: DayEvent[];
   upcoming?: DayUpcoming[];
   editionLabel: string;
+  classBox?: ClassBox | null;
 }) {
   const day = layoutDay(events);
   const hours: number[] = [];
@@ -158,6 +193,7 @@ export default function DayAhead({
         <p className="tt-day-dek">{longDate(date)} · the schedule as filed this morning</p>
         <p className="tt-day-count">{countLine(day.counts)}</p>
       </header>
+      {classBox ? <ClassLetter box={classBox} /> : null}
 
       {day.allDay.length ? (
         <section className="tt-day-allday" aria-label="All day">
