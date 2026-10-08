@@ -146,6 +146,18 @@ self.addEventListener("fetch", (event) => {
   } catch {
     return;
   }
+  // Printed pages are served from this origin (/times-flat/...), which Vercel
+  // caches in front of Storage. Older manifests still point at Supabase.
+  if (url.origin === self.location.origin && url.pathname.startsWith("/times-flat/") && /\.webp$/i.test(url.pathname)) {
+    event.respondWith(cacheFirst(req, IMAGES));
+    return;
+  }
+  if (url.hostname.endsWith(".supabase.co") && url.pathname.includes("/storage/v1/object/public/times-flat/")) {
+    if (req.destination === "image" || /\.webp(?:$|\?)/i.test(url.pathname)) {
+      event.respondWith(cacheFirst(req, IMAGES));
+    }
+    return;
+  }
   if (url.pathname.startsWith("/api/") || url.hostname.includes("supabase.co")) return;
 
   if (req.mode === "navigate" && isTimesNavigation(url)) {

@@ -182,6 +182,8 @@ import {
 } from "@/lib/newspaper-document";
 import { ElectionEar } from "@/components/newspaper/ElectionEar";
 import { electionEar } from "@/lib/newspaper-election";
+import { FlatPaper } from "@/components/newspaper/FlatPaper";
+import { flatRequested } from "@/lib/newspaper-flat";
 import { TimesHold, TimesHoldShell } from "@/components/newspaper/TimesHold";
 import { clearEditorStamps, editEdition } from "@/lib/newspaper-editor";
 import { fetchWatchList, WATCH_PAGE_GAMES } from "@/lib/newspaper-watch";
@@ -5096,11 +5098,18 @@ function asStoredBeez(value: unknown): BeezDesk | null {
 }
 
 export default function DailyNewspaperPage() {
-  return (
-    <Suspense fallback={<TimesHoldShell />}>
-      <NewspaperDesk />
-    </Suspense>
-  );
+  const [params] = useSearchParams();
+  // Default off. ?flat=1 prints the stored pages; ?flat=0 is the live reader.
+  const [live, setLive] = useState(() => !flatRequested(params.toString(), import.meta.env.VITE_TIMES_FLAT));
+  const showLive = useCallback(() => setLive(true), []);
+  if (!flatRequested(params.toString(), import.meta.env.VITE_TIMES_FLAT) || live) {
+    return (
+      <Suspense fallback={<TimesHoldShell />}>
+        <NewspaperDesk />
+      </Suspense>
+    );
+  }
+  return <FlatPaper onFallback={showLive} />;
 }
 
 function NewspaperDesk() {
@@ -6714,16 +6723,25 @@ function NewspaperDesk() {
   const beezDesk = companions?.id === pressId ? companions.beez : (beezQ.data ?? null);
   const raceDesk: RaceBriefsDesk | null =
     racesSample && scheduleDate ? sampleRaceBriefs(scheduleDate) : (racesQ.data ?? null);
-  const edition = useMemo(
-    () =>
-      dropEmptyFolios(
-        paginateEditionDesks(
-          insertBeez(insertDayAhead(insertRaceBriefs(builtEdition, raceDesk), daySchedule), beezDesk),
-          standingsQ.data ?? {},
-        ),
+  const edition = useMemo(() => {
+    const raw = standingsQ.data ?? {};
+    const counted: Record<string, { length: number }> = {};
+    for (const [path, groups] of Object.entries(raw)) {
+      const teams = builtEdition.pages.find(
+        (p) => p.kind === "sport-front" && p.focus === "teams" && p.path === path,
+      );
+      counted[path] =
+        teams?.kind === "sport-front" && teams.offseason
+          ? offseasonTables(groups, teams, leagueClubsQ.data?.[path] ?? [])
+          : groups;
+    }
+    return dropEmptyFolios(
+      paginateEditionDesks(
+        insertBeez(insertDayAhead(insertRaceBriefs(builtEdition, raceDesk), daySchedule), beezDesk),
+        counted,
       ),
-    [builtEdition, raceDesk, daySchedule, beezDesk, standingsQ.data],
-  );
+    );
+  }, [builtEdition, raceDesk, daySchedule, beezDesk, standingsQ.data, leagueClubsQ.data]);
   const comingUp = useMemo<ComingUp[]>(
     () =>
       sortComingUp(

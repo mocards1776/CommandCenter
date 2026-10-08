@@ -12,9 +12,15 @@ import { alertText, editionTitle, frontFor, replyMarkup } from "../times-telegra
  *            the runner may name an issue_id from workflow_dispatch)
  *   claim  → claim it in public.times_telegram_alerts and mint a short-lived session for
  *            the household desk's user so the runner can open the paper behind the login
+ *   session→ mint that same short-lived session for the flat-page printer. Does not
+ *            claim the alert and does not send Telegram.
+ *   flat-peek → newest ready edition in the window, whether or not the alert was claimed
+ *   hold   → refresh the image claim while the runner waits for the flat manifest,
+ *            so the text alert does not send a second message during that wait
  *   send   → multipart front + optional weather/day/watch PNGs: photo 1 carries
  *            the caption and the web_app "Read the paper" button; the rest follow
  *            in order (weather, The Day Ahead, Best Games). Missing extras are skipped.
+ *            The front file name is kept, so a flat A1 png is not relabeled.
  *   logout → revoke the minted session once the pictures are taken
  *   release→ the runner failed; let times-telegram send the text alert right away
  *
@@ -188,7 +194,8 @@ Deno.serve(async (req) => {
   const action = String(field("action") ?? "");
   const test = caller === "admin" && (field("test") === true || field("test") === "true");
   const askedId = typeof field("issue_id") === "string" ? String(field("issue_id")) : "";
-  if (askedId && caller !== "admin" && action !== "send" && action !== "release" && action !== "peek" && action !== "claim") {
+  const runnerMayName = action === "send" || action === "release" || action === "peek" || action === "claim" || action === "session" || action === "flat-peek" || action === "hold";
+  if (askedId && caller !== "admin" && !runnerMayName) {
     return json({ ok: false, error: "Only admin may name an issue" }, 403);
   }
 
@@ -208,6 +215,56 @@ Deno.serve(async (req) => {
         return json({ ok: true, issue_id: row?.sent_at ? null : askedId });
       }
       return json({ ok: true, issue_id: await pendingIssue(db) });
+    }
+
+    if (action === "flat-peek") {
+      const since = new Date(Date.now() - WINDOW_HOURS * 3_600_000).toISOString();
+      const { data, error } = await db
+        .from("newspaper_issues")
+        .select("id")
+        .eq("status", "ready")
+        .gte("printed_at", since)
+        .order("printed_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      return json({ ok: true, issue_id: (data?.id as string | undefined) ?? null });
+    }
+
+    if (action === "session") {
+      if (!askedId) return json({ ok: false, error: "issue_id required" }, 400);
+      const { data: issue } = await db
+        .from("newspaper_issues")
+        .select("id, status, printed_at")
+        .eq("id", askedId)
+        .eq("status", "ready")
+        .maybeSingle();
+      if (!issue) return json({ ok: false, error: "No ready issue with that id" }, 404);
+      const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
+      if (!anonKey) return json({ ok: false, error: "Missing anon key" }, 500);
+      const { session, layout } = await mintSession(db, url);
+      return json({
+        ok: true,
+        issue_id: askedId,
+        printed_at: issue.printed_at,
+        session,
+        layout,
+        supabase_url: url,
+        supabase_anon_key: anonKey,
+      });
+    }
+
+    if (action === "hold") {
+      if (!askedId) return json({ ok: false, error: "issue_id required" }, 400);
+      if (test) return json({ ok: true, held: true });
+      const { error } = await db
+        .from("times_telegram_alerts")
+        .update({ claimed_at: new Date().toISOString() })
+        .eq("issue_id", askedId)
+        .eq("mode", "image")
+        .is("sent_at", null);
+      if (error) return json({ ok: false, error: error.message }, 500);
+      return json({ ok: true, held: true });
     }
 
     if (action === "claim") {
@@ -253,6 +310,7 @@ Deno.serve(async (req) => {
         .map((name) => [name, form?.get(name)] as const)
         .filter((entry): entry is readonly [typeof extraNames[number], Blob] => entry[1] instanceof Blob && entry[1].size > 0);
       if (!(front instanceof Blob) || !front.size) return json({ ok: false, error: "front image required" }, 400);
+      const frontName = front instanceof File && front.name ? front.name : `${askedId}-front.png`;
       if (front.size > MAX_PHOTO_BYTES || extras.some(([, blob]) => blob.size > MAX_PHOTO_BYTES)) {
         return json({ ok: false, error: "image too large" }, 413);
       }
@@ -284,7 +342,7 @@ Deno.serve(async (req) => {
         extras: Record<string, Awaited<ReturnType<typeof telegramPhoto>>>;
       }[] = [];
       for (const chat of chats) {
-        const first = await telegramPhoto(token, chat, front, `${issue.id}-front.png`, caption, replyMarkup());
+        const first = await telegramPhoto(token, chat, front, frontName, caption, replyMarkup());
         const follow: Record<string, Awaited<ReturnType<typeof telegramPhoto>>> = {};
         if (first.ok) {
           for (const [name, blob] of extras) {
