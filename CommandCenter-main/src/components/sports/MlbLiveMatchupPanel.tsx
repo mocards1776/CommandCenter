@@ -6,6 +6,7 @@ import MlbPitchZone from "@/components/sports/MlbPitchZone";
 import PlayerHeadshot from "@/components/sports/PlayerHeadshot";
 import {
   fetchMlbLiveMatchupExtras,
+  mlbAbbrevsMatch,
   type MlbBoxscore,
   type MlbLivePlayerCard,
   type MlbLiveSituation,
@@ -13,6 +14,8 @@ import {
 import { fetchMlbLivePlay } from "@/lib/mlb-live-pitches";
 import { fetchMlbBatterHeatZones, heatZoneGrid } from "@/lib/mlb-pbp";
 import { mergeLivePitches } from "@/lib/mlb-statcast";
+import { normalizeHand, shortPlayerName } from "@/lib/mlb-batter-box";
+import { mlbGlowColor } from "@/lib/mlb-team-glow";
 import { cn } from "@/lib/utils";
 
 function SideCard({
@@ -126,6 +129,30 @@ export default function MlbLiveMatchupPanel({
     livePlay.data?.pitchHand ??
     (/^L/i.test(pitcher?.hand ?? "") ? "L" : /^R/i.test(pitcher?.hand ?? "") ? "R" : null);
 
+  // Side this PA. batterCard.hand comes from currentPlay.matchup, which can
+  // still be the previous PA while the card is already the next batter — so
+  // only trust a hand that belongs to this batter; otherwise hide (unknown).
+  const livePa = livePlay.data;
+  const batSide = !batter
+    ? null
+    : livePa && livePa.batterId != null
+      ? livePa.batterId === batter.id
+        ? livePa.batSide ?? normalizeHand(batter.hand)
+        : null
+      : normalizeHand(batter.hand);
+  const battingTeam = batter?.teamAbbrev
+    ? [game.away, game.home].find((t) => mlbAbbrevsMatch(t.abbrev, batter.teamAbbrev!))
+    : undefined;
+  const zoneBatter = batter
+    ? {
+        id: batter.id,
+        name: batter.shortName || shortPlayerName(batter.name),
+        batSide,
+        color: battingTeam ? mlbGlowColor(battingTeam.teamId, battingTeam.primaryColor) : null,
+      }
+    : null;
+  const pitcherName = pitcher ? pitcher.shortName || shortPlayerName(pitcher.name) : null;
+
   const vsBits: string[] = [];
   if (extras.data?.vsPitcher && pitcher) {
     const v = extras.data.vsPitcher;
@@ -149,6 +176,8 @@ export default function MlbLiveMatchupPanel({
             pending={zones.isPending && !zones.data}
             pitches={pitches}
             pitchHand={pitchHand}
+            batter={zoneBatter}
+            pitcherName={pitcherName}
           />
           <p className="numeral text-[15px] font-semibold tracking-wide text-cream">
             {situation.balls}-{situation.strikes}
