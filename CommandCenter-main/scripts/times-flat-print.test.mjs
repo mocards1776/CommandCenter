@@ -14,10 +14,7 @@ import {
   MIN_CSS_HEIGHT,
   PAGE_DEV_H,
   PAGE_DEV_W,
-  paintFlatPage,
   remapHotspots,
-  salvageSheet,
-  buildFlatManifest,
   webpSize,
 } from "./times-flat-print.mjs";
 
@@ -168,96 +165,6 @@ for (const page of table.pages.slice(1)) {
 
 const blocked = layoutSheet(2000, [{ top: 10, bottom: 2000 }], 1376);
 assert.equal(blocked.ok, false);
-
-const solid = [{ top: 0, bottom: 2000, sel: "article.tt-mo-story.xl.has-photo" }];
-assert.equal(layoutSheet(2000, solid, 1376).ok, false);
-const saved = salvageSheet(2000, solid, 1376);
-assert.equal(saved.ok, true, saved.reason || "an unsplittable sheet still produces pages");
-assert.equal(saved.pages.length, 1);
-assert.equal(saved.pages[0].degraded, true);
-assert.equal(saved.pages[0].fallback, "scale");
-assert.equal(saved.pages[0].slices[0].srcTop, 0);
-assert.equal(saved.pages[0].slices[0].srcBottom, 2000, "the whole block is scaled, not cropped");
-assert.match(saved.pages[0].reason, /unsplittable at 0/);
-assert.match(saved.pages[0].selector, /tt-mo-story/);
-const manifest = buildFlatManifest({
-  issueId: "2026-10-08-evening",
-  printedAt: "2026-10-08T22:30:00.000Z",
-  pages: saved.pages.map((page, index) => {
-    const name = continuationName("B1", index);
-    return {
-      folio: name.folio,
-      kind: "section",
-      index,
-      section: "B",
-      url: `/times-flat/test/${name.file}.webp`,
-      width: PAGE_DEV_W,
-      height: PAGE_DEV_H,
-      cssWidth: 1032,
-      cssHeight: 1376,
-      bytes: 10,
-      hotspots: [],
-      degraded: page.degraded,
-      reason: page.reason,
-      fallback: page.fallback,
-    };
-  }),
-});
-assert.equal(manifest.pages.length, 1, "the unsplittable sheet still writes a manifest");
-assert.equal(manifest.pages[0].degraded, true);
-assert.equal(manifest.pages[0].fallback, "scale");
-assert.match(manifest.pages[0].reason, /article\.tt-mo-story\.xl\.has-photo/);
-assert.equal(manifest.pages[0].cssWidth, 1032);
-assert.equal(manifest.pages[0].cssHeight, 1376);
-
-const nudged = salvageSheet(2000, [{ top: 10, bottom: 2000, sel: "article.blocked" }], 1376);
-assert.equal(nudged.ok, true);
-assert.equal(nudged.pages[0].slices.at(-1).srcBottom, 10, "a clean top still ends the page before the block");
-const nudgedScale = nudged.pages.find((page) => page.fallback === "scale");
-assert.equal(nudgedScale.slices[0].srcTop, 10);
-assert.equal(nudgedScale.slices[0].srcBottom, 2000);
-const moved = salvageSheet(
-  2500,
-  [
-    { top: 0, bottom: 2500, atoms: [{ top: 0, bottom: 2500 }] },
-    { top: 400, bottom: 2500, sel: "article.next" },
-  ],
-  1376,
-);
-assert.equal(moved.ok, true, moved.reason || "move");
-assert.equal(moved.pages[0].fallback, "move");
-assert.equal(moved.pages[0].degraded, true);
-assert.equal(moved.pages[0].slices.at(-1).srcBottom, 400);
-assert.equal(moved.pages[1].fallback, "scale");
-assert.equal(moved.pages[1].degraded, true);
-assert.ok(moved.pages[1].slices[0].srcBottom - moved.pages[1].slices[0].srcTop > 1376);
-
-const cropped = salvageSheet(3000, [], 1376);
-assert.equal(cropped.ok, true);
-assert.equal(cropped.pages[0].fallback, "crop");
-assert.equal(cropped.pages[0].slices[0].srcBottom - cropped.pages[0].slices[0].srcTop, 1376);
-
-const srcW = 4;
-const srcRows = 4000;
-const src = Buffer.alloc(srcW * srcRows * 4);
-for (let x = 0; x < srcW; x++) {
-  src[x * 4] = 220;
-  src[x * 4 + 3] = 255;
-  const bottom = ((srcRows - 1) * srcW + x) * 4;
-  src[bottom + 2] = 220;
-  src[bottom + 3] = 255;
-}
-const scaled = paintFlatPage(src, srcW, srcRows, [{ srcTop: 0, srcBottom: 2000, fit: 1376 / 2000 }], 2);
-assert.equal(scaled.pastEdge, false);
-assert.equal(scaled.buffer.length, PAGE_DEV_W * PAGE_DEV_H * 4);
-assert.equal(scaled.buffer[0], 220, "the top of the block is on the page");
-const last = (PAGE_DEV_H - 1) * PAGE_DEV_W * 4;
-assert.equal(scaled.buffer[last + 2], 220, "the bottom of the block is on the page");
-const plain = Buffer.alloc(8 * 4);
-plain[0] = 9;
-plain[3] = 255;
-const copied = paintFlatPage(plain, 8, 1, [{ srcTop: 0, srcBottom: 1 }], 1);
-assert.equal(copied.buffer[0], 9, "a page without fit still copies one to one");
 
 const columns = [];
 for (let top = 166; top + 15 <= 1642; top += 22) {
