@@ -6723,16 +6723,25 @@ function NewspaperDesk() {
   const beezDesk = companions?.id === pressId ? companions.beez : (beezQ.data ?? null);
   const raceDesk: RaceBriefsDesk | null =
     racesSample && scheduleDate ? sampleRaceBriefs(scheduleDate) : (racesQ.data ?? null);
-  const edition = useMemo(
-    () =>
-      dropEmptyFolios(
-        paginateEditionDesks(
-          insertBeez(insertDayAhead(insertRaceBriefs(builtEdition, raceDesk), daySchedule), beezDesk),
-          standingsQ.data ?? {},
-        ),
+  const edition = useMemo(() => {
+    const raw = standingsQ.data ?? {};
+    const counted: Record<string, { length: number }> = {};
+    for (const [path, groups] of Object.entries(raw)) {
+      const teams = builtEdition.pages.find(
+        (p) => p.kind === "sport-front" && p.focus === "teams" && p.path === path,
+      );
+      counted[path] =
+        teams?.kind === "sport-front" && teams.offseason
+          ? offseasonTables(groups, teams, leagueClubsQ.data?.[path] ?? [])
+          : groups;
+    }
+    return dropEmptyFolios(
+      paginateEditionDesks(
+        insertBeez(insertDayAhead(insertRaceBriefs(builtEdition, raceDesk), daySchedule), beezDesk),
+        counted,
       ),
-    [builtEdition, raceDesk, daySchedule, beezDesk, standingsQ.data],
-  );
+    );
+  }, [builtEdition, raceDesk, daySchedule, beezDesk, standingsQ.data, leagueClubsQ.data]);
   const comingUp = useMemo<ComingUp[]>(
     () =>
       sortComingUp(

@@ -2408,8 +2408,12 @@ export function paginateEditionDesks(
   for (const page of edition.pages) {
     if (page.kind === "sport-front" && page.focus === "teams") {
       const n = standingsByPath?.[page.path]?.length ?? 0;
+      // A count of 0 is not a folio. Callers pass the tables the desk will
+      // actually draw (offseason desks pass only the followed conferences),
+      // so a slice past that list is never filed as a blank page.
+      if (!n) continue;
       const per = page.path.includes("college-football") ? STAND_TABLES_PER_PAGE_COLLEGE : STAND_TABLES_PER_PAGE_PRO;
-      const slices = planStandingsPages(Math.max(n, 1), per);
+      const slices = planStandingsPages(n, per);
       for (const standSlice of slices) pages.push({ ...page, standSlice });
       continue;
     }
