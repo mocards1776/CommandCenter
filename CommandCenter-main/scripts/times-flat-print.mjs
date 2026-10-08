@@ -240,7 +240,16 @@ function columnGap(atoms, start, limit) {
     (atom) => Number.isFinite(atom.left) && Number.isFinite(atom.right) && atom.right - atom.left > 1,
   );
   if (placed.length < 4) return null;
-  const centers = placed.map((atom) => (atom.left + atom.right) / 2).sort((a, b) => a - b);
+  const contentLeft = Math.min(...placed.map((atom) => atom.left));
+  const contentRight = Math.max(...placed.map((atom) => atom.right));
+  const contentW = contentRight - contentLeft;
+  // A full-width photo or headline has its center in the gutter. That gap is
+  // wider than the space between the columns, so the mid point lands inside
+  // the left column and every left line is treated as spanning. Measure the
+  // gutter from column-width atoms only. Wider atoms stay in `wide` below.
+  const columns = placed.filter((atom) => contentW <= 0 || atom.right - atom.left <= contentW * 0.6);
+  if (columns.length < 4) return null;
+  const centers = columns.map((atom) => (atom.left + atom.right) / 2).sort((a, b) => a - b);
   // The median of equal columns lands on the first right-column center, so
   // every right-hand line is classified as wide and the gap is never found.
   // Split at the middle of the widest space between centers — the gutter.

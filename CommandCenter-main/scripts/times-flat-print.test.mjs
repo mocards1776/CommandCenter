@@ -212,6 +212,38 @@ for (const line of halfLine) {
   assert.equal(cut, false, "a staggered column line is not cut");
 }
 
+// B1: a full-width photo and headline sit between the column centers. Their
+// boxes must not choose the gutter. An unpositioned box blocks bestCut, the
+// 9px stagger blocks a full-width edge, and the page limit falls in the columns.
+const b1Photo = { top: 180, bottom: 520, left: 18, right: 1000 };
+const b1Head = { top: 530, bottom: 570, left: 24, right: 990 };
+const b1Deck = { top: 576, bottom: 608, left: 24, right: 980 };
+const b1Lines = [];
+for (let top = 620; top + 23 <= 1642; top += 22) {
+  const last = top + 45 > 1642;
+  b1Lines.push({ top, bottom: top + 14, left: 18, right: last ? 240 : top % 44 === 0 ? 360 : 490 });
+  b1Lines.push({ top: top + 9, bottom: top + 23, left: last ? 760 : top % 44 === 0 ? 700 : 520, right: 1000 });
+}
+const b1Lead = layoutSheet(
+  1642,
+  [
+    {
+      top: 166,
+      bottom: 1642,
+      sel: "article.tt-mo-story.xl.has-photo",
+      atoms: [{ top: 166, bottom: 1642 }, b1Photo, b1Head, b1Deck, ...b1Lines],
+    },
+  ],
+  1376,
+);
+assert.equal(b1Lead.ok, true, b1Lead.reason || "a photo lead still splits on the column gutter");
+for (const line of [b1Photo, b1Head, b1Deck, ...b1Lines]) {
+  const cut = b1Lead.pages.some((page) =>
+    page.slices.some((slice) => slice.srcTop > line.top + 2 && slice.srcTop < line.bottom - 2),
+  );
+  assert.equal(cut, false, "a photo, headline, or column line is not cut");
+}
+
 assert.deepEqual(continuationName("A3", 0), { folio: "A3", file: "A3" });
 assert.deepEqual(continuationName("A3", 1), { folio: "A3 cont.", file: "A3-2" });
 assert.deepEqual(continuationName("A3", 2), { folio: "A3 cont. 2", file: "A3-3" });
