@@ -38,6 +38,7 @@ import {
   withoutEditorStamps,
 } from "./newspaper.ts";
 import { cleanedBodyLength, cleanStoryCopy, isPeripheralClubStory, killedSource, printHeadline } from "./newspaper-copy.ts";
+import { clubGridRank } from "./newspaper-page.ts";
 import { isMlbtrCard } from "./newspaper-mlbtr.ts";
 import { storySource } from "./newspaper-source.ts";
 import type { GameWrapCard } from "./newspaper-sports";
@@ -1757,9 +1758,17 @@ function favoritePages(
     thirdTeaser: thirdJump.teaser,
   };
 
-  const orderedClubs = [...clubs].sort(
-    (a, b) => favoriteDeskWeight(b.key) - favoriteDeskWeight(a.key),
-  );
+  const seenClub = new Set<string>();
+  const seenName = new Set<string>();
+  const orderedClubs = [...clubs]
+    .sort((a, b) => clubGridRank(a.key) - clubGridRank(b.key) || a.key.localeCompare(b.key))
+    .filter((club) => {
+      const name = club.shortName.trim().toLowerCase();
+      if (seenClub.has(club.key) || seenName.has(name)) return false;
+      seenClub.add(club.key);
+      seenName.add(name);
+      return true;
+    });
   const packed = planOutlookAndForm(orderedClubs.length);
 
   const weatherToday: FavoritesClubsPage = {

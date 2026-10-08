@@ -79,7 +79,7 @@ import {
   DeskSnap,
 } from "@/components/newspaper/BoxScore";
 import { RecapBox, RecapChrome, RecapPhoto } from "@/components/newspaper/GameRecap";
-import { clubFormIsThin, clubOpensLabel, clubTickerRecord, formStatColumns, frontPageLeftover, groupByDay, planSchedulePages, printableFormStat } from "@/lib/newspaper-page";
+import { clubFormIsThin, clubGridFresh, clubOpensLabel, clubsForGrid, clubTickerRecord, formStatColumns, frontPageLeftover, groupByDay, planSchedulePages, printableFormStat } from "@/lib/newspaper-page";
 import { ReaderProvider } from "@/components/newspaper/PaperReader";
 import { useReader } from "@/components/newspaper/reader-context";
 import { CfbFill, CfbScheduleDesk } from "@/components/newspaper/CfbScheduleDesk";
@@ -1910,6 +1910,7 @@ function ClubsDesk({
   const active = allActive.slice(offset, limit != null ? offset + limit : undefined);
   const shelved = offset > 0 ? [] : teams.filter((t) => clubIsOffseason(t, openers.get(t.fav.key)));
   const cols = balancedCols(active.length, [5, 4, 3, 6, 2]);
+  if (!active.length && !shelved.length) return null;
   return (
     <div className="wsj-clubs-desk">
       <header className="wsj-desk-head">
@@ -7012,6 +7013,27 @@ function NewspaperDesk() {
     };
   }, [goPage]);
 
+  const gridTeams = useMemo(() => {
+    const formKeys = new Set(
+      edition.pages.flatMap((page) => (page.kind === "favorites-clubs" ? (page.formClubs ?? []).map((club) => club.key) : [])),
+    );
+    const storyKeys = new Set(stories.flatMap((card) => (card.favoriteKey ? [card.favoriteKey] : [])));
+    return clubsForGrid(
+      teams.map((team) => ({
+        key: team.fav.key,
+        name: team.fav.shortName,
+        fresh: clubGridFresh({
+          hasStory: storyKeys.has(team.fav.key),
+          recent: team.recentLines.length,
+          nextStartIso: team.detail?.upcoming?.[0]?.startIso ?? null,
+          hasNext: Boolean(team.detail?.upcoming?.length || team.snap.nextGame),
+        }),
+        team,
+      })),
+      formKeys,
+    ).map((row) => row.team);
+  }, [edition.pages, stories, teams]);
+
   // Built once per edition/data change, never per page turn: re-rendering 60 folios on every
   // swipe was the slow part. Anything that must follow the folio in view reads PagerIndexContext.
   const sheets = useMemo(
@@ -7084,7 +7106,7 @@ function NewspaperDesk() {
                   />
                   {(page.clubLimit ?? (page.weatherPart === "today" ? 3 : 0)) > 0 ? (
                     <ClubsDesk
-                      teams={teams}
+                      teams={gridTeams}
                       offset={page.clubOffset ?? (page.weatherPart === "today" ? 0 : 3)}
                       limit={page.clubLimit ?? (page.weatherPart === "today" ? 3 : 0)}
                     />
