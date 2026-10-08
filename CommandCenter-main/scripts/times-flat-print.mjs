@@ -159,7 +159,77 @@ export function judgePage(page) {
   if (Number.isFinite(blankRatio) && blankRatio > MAX_BLANK_RATIO) {
     return { ok: false, reason: `blank ${blankRatio.toFixed(2)}` };
   }
+  if (page?.seam) return { ok: false, reason: `seam y ${page.seam.y}` };
   return { ok: true, reason: "ok" };
+}
+
+/**
+ * A stitch seam is a 1 CSS px (1–3 device rows) full-width line: near-uniform,
+ * dark, and different from the rows just outside the run. Photo blacks and
+ * rules that are not uniform across the whole sheet do not match. Edge rows
+ * are ignored. Returns `{ y, rows }` in device pixels, or null.
+ */
+export function findSeam(canvas, width, height) {
+  if (!width || !height || height < 3) return null;
+  const pixels = width * height;
+  if (canvas.length < pixels * 3) return null;
+  const channels = canvas.length >= pixels * 4 ? 4 : 3;
+  const step = Math.max(1, Math.floor(width / 480));
+  const dark = new Uint8Array(height);
+  for (let y = 0; y < height; y++) {
+    let n = 0;
+    let darkN = 0;
+    let min = 255;
+    let max = 0;
+    const row = y * width * channels;
+    for (let x = 0; x < width; x += step) {
+      const o = row + x * channels;
+      const r = canvas[o];
+      const g = canvas[o + 1];
+      const b = canvas[o + 2];
+      const l = (r + g + b) / 3;
+      if (l < min) min = l;
+      if (l > max) max = l;
+      n += 1;
+      if (r < 40 && g < 40 && b < 48) darkN += 1;
+    }
+    if (n && darkN / n >= 0.98 && max - min <= 12 && (min + max) / 2 < 36) dark[y] = 1;
+  }
+  const differs = (a, b) => {
+    let n = 0;
+    let diff = 0;
+    let sumA = 0;
+    let sumB = 0;
+    for (let x = 0; x < width; x += step) {
+      const oa = (a * width + x) * channels;
+      const ob = (b * width + x) * channels;
+      const la = (canvas[oa] + canvas[oa + 1] + canvas[oa + 2]) / 3;
+      const lb = (canvas[ob] + canvas[ob + 1] + canvas[ob + 2]) / 3;
+      n += 1;
+      sumA += la;
+      sumB += lb;
+      if (Math.abs(la - lb) > 24) diff += 1;
+    }
+    // A photo can share the line's darkness in part of the row. The line still
+    // differs when its mean is far from the neighbor and most samples disagree.
+    return n > 0 && Math.abs(sumA - sumB) / n >= 24 && diff / n >= 0.45;
+  };
+  for (let y = 0; y < height; ) {
+    if (!dark[y]) {
+      y += 1;
+      continue;
+    }
+    let end = y;
+    while (end + 1 < height && dark[end + 1]) end += 1;
+    const rows = end - y + 1;
+    const above = y - 1;
+    const below = end + 1;
+    if (rows <= 3 && above >= 0 && below < height && !dark[above] && !dark[below] && differs(y, above) && differs(end, below)) {
+      return { y, rows };
+    }
+    y = end + 1;
+  }
+  return null;
 }
 
 function blankRatio(canvas, width, height) {
@@ -296,89 +366,90 @@ async function rawSize(file) {
   return { width, height };
 }
 
-/** Scroll the folio and stack viewport clips. One element shot drops everything below the screen. */
-async function captureSheet(page, index, pngPath) {
-  const geom = await page.evaluate((i) => {
+/**
+ * One shot of the whole sheet. Slicing the folio and stitching the clips
+ * pasted the last slice's top edge — two device rows of the navy page
+ * background — over the copy, one viewport above the bottom. The viewport
+ * grows until the folio holds the sheet, then the sheet rect is captured
+ * once. Width stays 1032 CSS px so the width-only fit does not change.
+ */
+async function sheetBox(page, index) {
+  return page.evaluate(async (i) => {
+    const pager = document.querySelector(".newspaper-edition");
     const leaf = document.querySelectorAll(".wsj-page")[i];
     const sheet = leaf?.querySelector(".wsj-sheet");
     if (!leaf || !sheet) return null;
-    return { h: sheet.offsetHeight, w: sheet.offsetWidth, view: leaf.clientHeight };
+    if (pager) pager.scrollTo({ left: i * pager.clientWidth, behavior: "instant" });
+    leaf.scrollTop = 0;
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const s = sheet.getBoundingClientRect();
+    return {
+      x: s.x,
+      y: s.y,
+      w: s.width,
+      h: s.height,
+      viewW: window.innerWidth,
+      viewH: window.innerHeight,
+      leafH: leaf.clientHeight,
+      sheetH: sheet.offsetHeight,
+      sheetW: sheet.offsetWidth,
+    };
   }, index);
-  if (!geom || geom.h < 40) return null;
+}
+
+function clipInside(box) {
+  const x = Math.max(0, box.x);
+  const y = Math.max(0, box.y);
+  const width = Math.min(box.w, box.viewW - x);
+  const height = Math.min(box.h, box.viewH - y);
+  const full = width >= box.w - 1 && height >= box.h - 1;
+  return { x, y, width, height, full };
+}
+
+async function captureSheet(page, index, pngPath) {
   await page.setViewportSize({ width: IPAD13.width, height: IPAD13.height });
-  const step = Math.max(500, geom.view - 80);
-  const slices = [];
-  for (let y = 0; y < geom.h; y += step) {
-    await page.evaluate(
-      ({ i, y }) => {
-        const leaf = document.querySelectorAll(".wsj-page")[i];
-        if (leaf) leaf.scrollTop = y;
-      },
-      { i: index, y },
-    );
-    await page.waitForTimeout(40);
-    const box = await page.evaluate((i) => {
-      const leaf = document.querySelectorAll(".wsj-page")[i];
-      const sheet = leaf?.querySelector(".wsj-sheet");
-      if (!leaf || !sheet) return null;
-      const s = sheet.getBoundingClientRect();
-      const p = leaf.getBoundingClientRect();
-      const top = Math.max(s.top, p.top, 0);
-      const bottom = Math.min(s.bottom, p.bottom, window.innerHeight);
-      const left = Math.max(s.left, 0);
-      const right = Math.min(s.right, window.innerWidth);
-      return {
-        x: left,
-        y: top,
-        w: Math.max(1, right - left),
-        h: Math.max(1, bottom - top),
-        scroll: leaf.scrollTop,
-      };
-    }, index);
-    if (!box || box.h < 2) continue;
-    const slice = `${pngPath}.${slices.length}.png`;
+  const geom = await sheetBox(page, index);
+  if (!geom || geom.sheetH < 40 || geom.sheetW < 40) return null;
+  const chrome = Math.max(0, geom.viewH - geom.leafH);
+  const viewH = Math.min(16000, Math.max(IPAD13.height, Math.ceil(geom.sheetH + chrome + 32)));
+  await page.setViewportSize({ width: IPAD13.width, height: viewH });
+  try {
+    let box = await sheetBox(page, index);
+    if (!box || box.w < 40 || box.h < 40) return null;
+    let clip = clipInside(box);
+    if (!clip.full || box.sheetH > box.leafH + 2) {
+      const need = Math.min(16000, Math.ceil(box.y + box.h + chrome + 32));
+      await page.setViewportSize({ width: IPAD13.width, height: Math.max(viewH, need) });
+      box = await sheetBox(page, index);
+      if (!box || box.w < 40 || box.h < 40) return null;
+      clip = clipInside(box);
+    }
+    if (!clip.full || clip.width < 40 || clip.height < 40) return null;
     await page.screenshot({
-      path: slice,
+      path: pngPath,
       animations: "disabled",
       type: "png",
-      clip: { x: box.x, y: box.y, width: box.w, height: box.h },
-      timeout: 15_000,
+      clip: { x: clip.x, y: clip.y, width: clip.width, height: clip.height },
+      timeout: 30_000,
     });
-    slices.push({ slice, y: box.scroll });
-    if (box.scroll + box.h >= geom.h - 2) break;
+  } finally {
+    await page.setViewportSize({ width: IPAD13.width, height: IPAD13.height });
   }
-  if (!slices.length) return null;
-  const first = await rawSize(slices[0].slice);
-  const scale = first.width / geom.w;
-  const outW = first.width;
-  const outH = Math.max(first.height, Math.round(geom.h * scale));
-  const canvas = Buffer.alloc(outW * outH * 4, 255);
-  for (const part of slices) {
-    const raw = `${part.slice}.raw`;
-    const { width, height } = await rawSize(part.slice);
-    await ffmpeg(["-y", "-i", part.slice, "-f", "rawvideo", "-pix_fmt", "rgba", raw]);
-    const pixels = await readFile(raw);
-    const destY = Math.round(part.y * scale);
-    const rowBytes = width * 4;
-    for (let row = 0; row < height && destY + row < outH; row++) {
-      pixels.copy(canvas, ((destY + row) * outW + 0) * 4, row * rowBytes, row * rowBytes + Math.min(rowBytes, outW * 4));
-    }
-    await unlink(raw).catch(() => {});
-    await unlink(part.slice).catch(() => {});
-  }
-  const cropped = cropWhiteTail(canvas, outW, outH);
-  const blank = blankRatio(cropped.buffer, outW, cropped.height);
+  const { width, height } = await rawSize(pngPath);
+  const scale = width / geom.sheetW;
   const rawOut = `${pngPath}.raw`;
-  await writeFile(rawOut, cropped.buffer);
-  await ffmpeg(["-y", "-f", "rawvideo", "-pix_fmt", "rgba", "-s", `${outW}x${cropped.height}`, "-i", rawOut, pngPath]);
+  await ffmpeg(["-y", "-i", pngPath, "-f", "rawvideo", "-pix_fmt", "rgba", rawOut]);
+  const pixels = await readFile(rawOut);
   await unlink(rawOut).catch(() => {});
+  const seam = findSeam(pixels, width, height);
   return {
-    width: outW,
-    height: cropped.height,
-    cssWidth: geom.w,
-    cssHeight: cropped.height / scale,
-    sheetCssHeight: geom.h,
-    blankRatio: blank,
+    width,
+    height,
+    cssWidth: geom.sheetW,
+    cssHeight: height / scale,
+    sheetCssHeight: geom.sheetH,
+    blankRatio: blankRatio(pixels, width, height),
+    seam,
   };
 }
 
