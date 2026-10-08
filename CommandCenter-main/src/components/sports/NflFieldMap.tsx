@@ -1,5 +1,4 @@
 import { useId, useState } from "react";
-import { Link } from "react-router-dom";
 import {
   cfbDriveStatLine,
   liveDriveForField,
@@ -8,6 +7,7 @@ import {
 import type { NflScoreGame } from "@/lib/nfl";
 import { footballMarks } from "@heat/field.ts";
 import LogoPlate from "@/components/sports/LogoPlate";
+import { NflScoreboardCard } from "@/components/sports/ScoreboardCard";
 import { isBreakStatus } from "@/lib/apple-score";
 import { cn } from "@/lib/utils";
 import PossessionFootball from "@/components/sports/PossessionFootball";
@@ -311,7 +311,7 @@ export function NflLiveStrip({ game }: { game: NflScoreGame }) {
   );
 }
 
-/** @deprecated Prefer NflScoreRow — kept as alias for existing imports. */
+/** List row. Same card as the NFL board. */
 export function NflScoreRow({
   game,
   to,
@@ -323,57 +323,12 @@ export function NflScoreRow({
   heat?: number | null;
   reasons?: string[];
 }) {
-  const body = (
-    <>
-      <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0 flex-1 space-y-1.5">
-          {[game.away, game.home].map((side) => (
-            <div key={side.teamId} className="flex items-center gap-2">
-              {side.logo ? <LogoPlate src={side.logo} className="h-6 w-6" /> : null}
-              <span className="text-cream min-w-0 flex-1 truncate text-[13px] font-medium">
-                {side.abbrev}
-              </span>
-              <span className="numeral text-cream text-[18px]">{side.score ?? "—"}</span>
-            </div>
-          ))}
-        </div>
-        <div className="shrink-0 text-right">
-          <p
-            className={cn(
-              "text-[10px] font-semibold uppercase tracking-[0.14em]",
-              game.live ? "text-alert" : "text-chalk-dim",
-            )}
-          >
-            {game.live ? "Live" : game.final ? "Final" : game.whenShort ?? "Upcoming"}
-          </p>
-          <p className="text-chalk-dim mt-1 max-w-[7rem] text-[10px] leading-snug">
-            {game.shortDetail}
-          </p>
-          {heat != null ? (
-            <p className="mt-1.5 inline-flex items-center rounded-sm bg-accent/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-accent">
-              Heat {heat}
-            </p>
-          ) : null}
-        </div>
-      </div>
-      {game.live && game.situation?.downDistanceText && (
-        <p className="text-chalk mt-2 truncate text-[11px]">{game.situation.downDistanceText}</p>
-      )}
-      {reasons && reasons.length > 0 ? (
-        <p className="text-chalk-dim mt-2 truncate text-[10px]">{reasons.join(" · ")}</p>
-      ) : null}
-    </>
+  return (
+    <NflScoreboardCard
+      game={game}
+      to={to}
+      heat={heat}
+      reasons={reasons}
+    />
   );
-
-  if (to) {
-    return (
-      <Link
-        to={to}
-        className="bg-panel block rounded-xl border border-white/[0.08] p-3 transition hover:border-white/15 hover:bg-white/[0.03]"
-      >
-        {body}
-      </Link>
-    );
-  }
-  return <div className="bg-panel rounded-xl border border-white/[0.08] p-3">{body}</div>;
 }
