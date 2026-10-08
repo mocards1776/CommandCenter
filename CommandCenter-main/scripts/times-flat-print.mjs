@@ -20,9 +20,10 @@
  *
  * A sheet is not shot until it has content, its height has held for more than
  * one frame, its images have decoded, and fonts are ready. A short or mostly
- * blank shot is retried. The manifest is uploaded only when every page passes.
- * Otherwise any published manifest for that edition is removed and the reader
- * stays on the live paper.
+ * blank shot is retried. A sheet that still will not split is salvaged — move
+ * the crossing block, else scale that one page into 1032×1376, else hard-crop
+ * at 1376 — and the manifest is published with that page marked degraded.
+ * A missing, clipped, or past-right sheet still removes the manifest.
  *
  * Page images are addressed on the app origin (/times-flat/...) so Vercel's
  * CDN caches them. Storage objects use a year-long immutable cache header.
@@ -340,9 +341,9 @@ export function layoutSheet(contentH, pieces, pageH = PAGE_CSS_H) {
     }
     const cut = bestCut(atoms, y, y + budget);
     if (cut == null || cut <= y + 4) {
-      const piece = list.find((item) => item.bottom > y + 8 && item.top < y + budget);
+      const piece = crossingPiece(list, y, y + budget);
       const sel = piece?.sel ? ` ${piece.sel}` : "";
-      return { ok: false, reason: `unsplittable at ${Math.round(y)}${sel}`, pages };
+      return { ok: false, reason: `unsplittable at ${Math.round(y)}${sel}`, pages, y };
     }
     const slices = [];
     if (header) slices.push({ srcTop: header.top, srcBottom: header.bottom });
@@ -363,6 +364,133 @@ export function layoutSheet(contentH, pieces, pageH = PAGE_CSS_H) {
     }
   }
   return { ok: true, pages };
+}
+
+function crossingPiece(pieces, y, limit) {
+  return (
+    pieces.find((item) => item.top < limit && item.bottom > limit - 0.5) ||
+    pieces.find((item) => item.bottom > y + 8 && item.top < limit) ||
+    null
+  );
+}
+
+/**
+ * Last resort after layoutSheet cannot cut. One bad sheet still publishes.
+ * (a) end this page at the top of the block that crosses the limit and start
+ *     that block on the next page;
+ * (b) if that block alone is taller than a page, scale it uniformly into
+ *     1032×1376 (fit on the slice; the bitmap stays 2064×2752);
+ * (c) if both fail, hard-crop one page at 1376 and continue.
+ * Every fallback page is degraded, with the layout reason and the fallback used.
+ */
+export function salvageSheet(contentH, pieces, pageH = PAGE_CSS_H) {
+  const first = layoutSheet(contentH, pieces, pageH);
+  if (first.ok) return first;
+  const height = Number(contentH) || 0;
+  const list = Array.isArray(pieces) ? pieces.filter((piece) => piece.bottom - piece.top > 0.5) : [];
+  const pages = Number.isFinite(first.y) ? [...first.pages] : [];
+  let y = Number.isFinite(first.y) ? first.y : 0;
+  const atoms = blockingAtoms(list, pageH);
+  let guard = 0;
+  while (y < height - 0.5) {
+    if (++guard > 80) return { ok: false, reason: "page loop", pages };
+    const header = headerAt(list, y);
+    const headerH = header ? header.bottom - header.top : 0;
+    const budget = pageH - headerH;
+    if (budget < 16) return { ok: false, reason: "header leaves no room", pages };
+    if (height <= y + budget + 0.5) {
+      const slices = [];
+      if (header) slices.push({ srcTop: header.top, srcBottom: header.bottom });
+      slices.push({ srcTop: y, srcBottom: height });
+      pages.push({ slices });
+      y = height;
+      break;
+    }
+    const cut = bestCut(atoms, y, y + budget);
+    if (cut != null && cut > y + 4) {
+      const slices = [];
+      if (header) slices.push({ srcTop: header.top, srcBottom: header.bottom });
+      slices.push({ srcTop: y, srcBottom: cut });
+      pages.push({ slices });
+      y = cut;
+      continue;
+    }
+    const limit = y + budget;
+    const piece = crossingPiece(list, y, limit);
+    const movable = list
+      .filter((item) => item.top > y + 4 && item.top <= limit + 0.5 && item.bottom > limit - 0.5)
+      .sort((a, b) => a.top - b.top)[0];
+    const marked = movable || piece;
+    const selector = marked?.sel || "";
+    const reason = `unsplittable at ${Math.round(y)}${selector ? ` ${selector}` : ""}`;
+    if (movable) {
+      const slices = [];
+      if (header) slices.push({ srcTop: header.top, srcBottom: header.bottom });
+      slices.push({ srcTop: y, srcBottom: movable.top });
+      pages.push({ slices, degraded: true, fallback: "move", reason, selector });
+      y = movable.top;
+      continue;
+    }
+    if (piece) {
+      const from = y <= piece.top + 0.5 ? piece.top : y;
+      const to = Math.min(height, piece.bottom);
+      const span = to - from;
+      if (span > pageH + 0.5) {
+        const fit = pageH / span;
+        pages.push({
+          slices: [{ srcTop: from, srcBottom: to, fit }],
+          degraded: true,
+          fallback: "scale",
+          reason,
+          selector,
+          fit,
+        });
+        y = to;
+        continue;
+      }
+    }
+    const cropBottom = Math.min(height, y + pageH);
+    pages.push({
+      slices: [{ srcTop: y, srcBottom: cropBottom }],
+      degraded: true,
+      fallback: "crop",
+      reason,
+      selector,
+    });
+    if (cropBottom <= y + 0.5) return { ok: false, reason, pages };
+    y = cropBottom;
+  }
+  return { ok: y >= height - 0.5, pages, degraded: pages.some((page) => page.degraded) };
+}
+
+/** Manifest JSON. Degraded pages keep the reason and which fallback published them. */
+export function buildFlatManifest({ issueId, printedAt, pages }) {
+  return {
+    issueId,
+    printedAt,
+    geometry: { cssWidth: PAGE_W, cssHeight: PAGE_CSS_H, cssViewportHeight: IPAD13.height, dpr: DPR, pageW: PAGE_W },
+    pages: (pages || []).map((page) => {
+      const row = {
+        folio: page.folio,
+        kind: page.kind,
+        index: page.index,
+        section: page.section,
+        url: page.url,
+        width: page.width,
+        height: page.height,
+        cssWidth: page.cssWidth,
+        cssHeight: page.cssHeight,
+        bytes: page.bytes,
+        hotspots: page.hotspots || [],
+      };
+      if (page.degraded) {
+        row.degraded = true;
+        row.reason = page.reason || "";
+        row.fallback = page.fallback || "";
+      }
+      return row;
+    }),
+  };
 }
 
 export function continuationName(folio, part) {
@@ -412,6 +540,37 @@ export function paintFlatPage(src, srcW, srcH, slices, scale) {
     out[o + 1] = PAPER[1];
     out[o + 2] = PAPER[2];
     out[o + 3] = PAPER[3];
+  }
+  const fitted = Array.isArray(slices) ? slices.find((slice) => Number(slice.fit) > 0 && Number(slice.fit) < 1) : null;
+  if (fitted && srcW > 0 && srcH > 0) {
+    let top = Infinity;
+    let bottom = -Infinity;
+    for (const slice of slices) {
+      top = Math.min(top, slice.srcTop);
+      bottom = Math.max(bottom, slice.srcBottom);
+    }
+    let srcTop = Math.round(top * scale);
+    let srcBottom = Math.round(bottom * scale);
+    srcTop = Math.max(0, Math.min(srcH, srcTop));
+    srcBottom = Math.max(srcTop, Math.min(srcH, srcBottom));
+    const srcRows = Math.max(1, srcBottom - srcTop);
+    const destW = Math.max(1, Math.min(PAGE_DEV_W, Math.round((srcW * PAGE_DEV_H) / srcRows)));
+    for (let destY = 0; destY < PAGE_DEV_H; destY++) {
+      const srcY =
+        srcRows <= 1 ? srcTop : srcTop + Math.round((destY * (srcRows - 1)) / (PAGE_DEV_H - 1));
+      const fromRow = srcY * srcW;
+      const toRow = destY * PAGE_DEV_W;
+      for (let destX = 0; destX < destW; destX++) {
+        const srcX = destW <= 1 ? 0 : Math.min(srcW - 1, Math.round((destX * (srcW - 1)) / (destW - 1)));
+        const from = (fromRow + srcX) * 4;
+        const to = (toRow + destX) * 4;
+        out[to] = src[from];
+        out[to + 1] = src[from + 1];
+        out[to + 2] = src[from + 2];
+        out[to + 3] = src[from + 3];
+      }
+    }
+    return { buffer: out, used: PAGE_DEV_H, pastEdge: false };
   }
   let dest = 0;
   let dropped = 0;
@@ -1479,6 +1638,16 @@ export async function printFlatEdition() {
         reason = "ok";
         break;
       }
+      if (shot?.buffer && laid && !laid.ok && /unsplittable/.test(String(shot.reject || laid.reason || ""))) {
+        const saved = salvageSheet(shot.contentHeight, shot.pieces, PAGE_CSS_H);
+        if (saved.ok) {
+          laid = saved;
+          delete shot.reject;
+          const spots = await hotspots(page, i);
+          mapped = remapHotspots(spots, shot.contentHeight, laid.pages);
+          log("salvage", leaf.folio, saved.pages.map((item) => item.fallback || "cut").join(","));
+        }
+      }
       const sheetOk = shot && !shot.reject && laid?.ok;
       if (!sheetOk) {
         report.push({
@@ -1506,7 +1675,8 @@ export async function printFlatEdition() {
       const section = (/^([A-Z]+)/.exec(leaf.folio) || [])[1] || leaf.folio;
       for (let part = 0; part < laid.pages.length; part++) {
         const name = continuationName(leaf.folio, part);
-        const painted = paintFlatPage(shot.buffer, shot.width, shot.height, laid.pages[part].slices, shot.scale);
+        const page = laid.pages[part];
+        const painted = paintFlatPage(shot.buffer, shot.width, shot.height, page.slices, shot.scale);
         const seam = findSeam(painted.buffer, PAGE_DEV_W, PAGE_DEV_H);
         const pageShot = {
           width: PAGE_DEV_W,
@@ -1516,12 +1686,14 @@ export async function printFlatEdition() {
           seam,
         };
         const verdict = judgePage(pageShot);
+        if (page.degraded) log("DEGRADED", name.folio, page.selector || "", page.fallback || "", page.reason || "");
         report.push({
           folio: name.folio,
           cssHeight: PAGE_CSS_H,
           blankRatio: pageShot.blankRatio,
-          ok: verdict.ok,
-          reason: verdict.reason,
+          ok: verdict.ok || Boolean(page.degraded),
+          reason: page.degraded ? `${page.fallback}: ${page.reason}` : verdict.reason,
+          degraded: Boolean(page.degraded),
         });
         log(
           "PAGE",
@@ -1530,7 +1702,7 @@ export async function printFlatEdition() {
           `blank ${pageShot.blankRatio.toFixed(2)}`,
           verdict.ok ? "ok" : `FAIL ${verdict.reason}`,
         );
-        if (!verdict.ok) continue;
+        if (!verdict.ok && !page.degraded) continue;
         const webpPath = path.join(outDir, `${name.file}.webp`);
         await encodeRawWebp(painted.buffer, webpPath);
         const webp = await readFile(webpPath);
@@ -1546,6 +1718,10 @@ export async function printFlatEdition() {
           cssWidth: PAGE_W,
           cssHeight: PAGE_CSS_H,
           hotspots: mapped[part] || [],
+          degraded: Boolean(page.degraded),
+          reason: page.reason || "",
+          fallback: page.fallback || "",
+          selector: page.selector || "",
         });
         await uploadObject(
           config,
@@ -1577,24 +1753,14 @@ export async function printFlatEdition() {
       const why = failures.map((row) => `${row.folio}:${row.reason}`).join(", ");
       throw new Error(`manifest withheld (${failures.length} pages): ${why}`);
     }
-    const manifest = {
+    const manifest = buildFlatManifest({
       issueId: publishId,
       printedAt,
-      geometry: { cssWidth: PAGE_W, cssHeight: PAGE_CSS_H, cssViewportHeight: IPAD13.height, dpr: DPR, pageW: PAGE_W },
       pages: shots.map((shot) => ({
-        folio: shot.folio,
-        kind: shot.kind,
-        index: shot.index,
-        section: shot.section,
+        ...shot,
         url: `/times-flat/${publishId}/${shot.file}.webp?v=${version}`,
-        width: shot.width,
-        height: shot.height,
-        cssWidth: shot.cssWidth,
-        cssHeight: shot.cssHeight,
-        bytes: shot.bytes,
-        hotspots: shot.hotspots,
       })),
-    };
+    });
     const manifestPath = path.join(outDir, "manifest.json");
     await writeFile(manifestPath, JSON.stringify(manifest));
     await uploadObject(config, token, `${publishId}/manifest.json`, await readFile(manifestPath), "application/json", MANIFEST_CACHE);
