@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ExternalLink, Loader2, Star } from "lucide-react";
 import toast from "react-hot-toast";
+import { PlayerAskAi } from "@/components/sports/PlayerAskAi";
 import { SeasonKeyStats } from "@/components/sports/SeasonKeyStats";
 import { useSwipeBack } from "@/hooks/useSwipeBack";
 import { useAuth } from "@/lib/auth-context";
@@ -12,6 +13,7 @@ import {
   removeFavoritePlayer,
 } from "@/lib/favorite-players";
 import { cfbHeadshot, fetchCfbPlayerProfile, type CfbPlayerProfile } from "@/lib/cfb";
+import { statLine } from "@/lib/player-ask";
 import { cn } from "@/lib/utils";
 
 export default function CfbPlayerPage() {
@@ -174,6 +176,41 @@ export default function CfbPlayerPage() {
               accent={accent}
             />
           )}
+
+          <PlayerAskAi
+            sport="cfb"
+            playerId={p.id}
+            playerName={p.name}
+            context={{
+              name: p.name,
+              team: p.teamName,
+              position: p.position,
+              bio: [
+                p.bio,
+                p.classYear ? `Class: ${p.classYear}` : "",
+                p.status ? `Status: ${p.status}` : "",
+                p.recruiting?.hometown ? `Hometown: ${p.recruiting.hometown}` : "",
+                p.schoolHistory.map((stop) => `${stop.teamName} ${stop.seasons ?? ""}`.trim()).join("; "),
+              ]
+                .filter(Boolean)
+                .join("\n"),
+              seasonLabel: splits[0]?.season ?? null,
+              seasonStats: p.seasonStats,
+              recentGames: (p.recentGames.length > 0
+                ? p.recentGames.map((g) => [g.label, g.result, g.line].filter(Boolean).join(" · "))
+                : (p.gameLogCategories[0]?.rows ?? []).slice(0, 8).map((row) =>
+                    [
+                      row.date ?? (row.week != null ? `Wk ${row.week}` : ""),
+                      `${row.atVs ?? ""} ${row.opponent}`.trim(),
+                      row.result,
+                      statLine(row.stats),
+                    ]
+                      .filter(Boolean)
+                      .join(" · "),
+                  )
+              ).slice(0, 8),
+            }}
+          />
 
           {splits.length > 0 && (
             <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">

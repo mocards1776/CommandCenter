@@ -59,9 +59,14 @@ Applied to Supabase project `esdgrgulaxnewmhjuyzh`, in order:
 
 15. `sports_finals_preview_sent` — one Telegram evening-preview photo per
     America/Chicago date (`chicago_date` primary key, service-role only).
-    Written by `sports-finals` `evening-preview`. Cron job
+    Written by     `sports-finals` `evening-preview`. Cron job
     `sports-finals-evening-preview` at 5:00pm America/Chicago once Vault has
     `sports_finals_cron`.
+
+16. `player_ai_answers` — saved Ask AI Q&A on a player page (`player_id`,
+    `sport`, `question`, `answer`, `sources`, `asked_at`). RLS on. SELECT for
+    `anon` and `authenticated`. No write policy; the `player-ask` edge
+    function inserts with the service role.
 
 Run `get_advisors` after any schema change; it catches missing RLS and
 mutable-search_path functions.

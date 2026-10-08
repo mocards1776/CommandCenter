@@ -765,6 +765,30 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["sports_player_tags"]["Insert"]>;
         Relationships: [];
       };
+      player_ai_answers: {
+        Row: {
+          id: string;
+          player_id: string;
+          sport: string;
+          question: string;
+          answer: string;
+          sources: Json;
+          asked_at: string;
+          asked_by: string | null;
+        };
+        Insert: {
+          id?: string;
+          player_id: string;
+          sport: string;
+          question: string;
+          answer: string;
+          sources?: Json;
+          asked_at?: string;
+          asked_by?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["player_ai_answers"]["Insert"]>;
+        Relationships: [];
+      };
       rss_reads: {
         Row: {
           id: string;

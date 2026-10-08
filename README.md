@@ -59,7 +59,7 @@ npm run lint
   editing them.
 - **Edge functions** — `supabase functions deploy <name>` (`todoist`,
   `book-lookup`, `backfill-covers`, `readwise-sync`, `book-ai`, `sports`, `rss`,
-  `newspaper-editor`, `sports-push`, `sports-finals`, `sports-highlights`).
+  `newspaper-editor`, `sports-push`, `sports-finals`, `sports-highlights`, `player-ask`).
   Canonical source: `supabase/functions/`. Keep the mirror in sync with
   `scripts/sync-edge-copies.sh` (CI fails on drift). On `main`, GitHub Actions
   deploys `rss` / `sports` / `sports-push` / `sports-telegram` / `sports-finals` / `sports-highlights` when that tree changes — requires repo secrets
