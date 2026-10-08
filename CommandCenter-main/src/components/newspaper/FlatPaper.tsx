@@ -2,11 +2,13 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { useSearchParams } from "react-router-dom";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { TimesHoldShell } from "@/components/newspaper/TimesHold";
-import { pageFit } from "@/lib/newspaper-fit";
 import {
+  FLAT_PAGE_H,
+  FLAT_PAGE_W,
   flatEditionAsk,
   flatEditionExpired,
   flatManifestUrl,
+  flatReaderScale,
   isFlatManifest,
   type FlatManifest,
   type FlatPage,
@@ -14,8 +16,12 @@ import {
 import { pressEdition } from "@/lib/newspaper";
 import { supabase } from "@/lib/supabase";
 
-const PAGE_W = 1032;
-const PAGE_H = 1376;
+const PAGE_W = FLAT_PAGE_W;
+const PAGE_H = FLAT_PAGE_H;
+
+function viewportPortrait(): boolean {
+  return window.innerWidth <= window.innerHeight;
+}
 
 function sectionOf(folio: string): string {
   const match = /^([A-Z]+)/.exec(folio);
@@ -37,6 +43,7 @@ export function FlatPaper({ onFallback }: { onFallback: () => void }) {
   const [manifest, setManifest] = useState<FlatManifest | null>(null);
   const [editions, setEditions] = useState<string[]>([asked]);
   const [pageIndex, setPageIndex] = useState(0);
+  const [orient, setOrient] = useState<"portrait" | "landscape">(() => (viewportPortrait() ? "portrait" : "landscape"));
   const [fit, setFit] = useState(1);
   const [a1Ready, setA1Ready] = useState(false);
   const pagerRef = useRef<HTMLDivElement>(null);
@@ -91,11 +98,29 @@ export function FlatPaper({ onFallback }: { onFallback: () => void }) {
   useLayoutEffect(() => {
     const el = pagerRef.current;
     if (!el) return;
-    const apply = () => setFit(pageFit(el.clientWidth, PAGE_W));
+    const apply = () => {
+      const portrait = viewportPortrait();
+      setOrient(portrait ? "portrait" : "landscape");
+      setFit(
+        flatReaderScale({
+          portrait,
+          pagerWidth: el.clientWidth,
+          pagerHeight: el.clientHeight,
+          pageWidth: PAGE_W,
+          pageHeight: PAGE_H,
+        }),
+      );
+    };
     apply();
     const ro = new ResizeObserver(apply);
     ro.observe(el);
-    return () => ro.disconnect();
+    window.addEventListener("resize", apply);
+    window.visualViewport?.addEventListener("resize", apply);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", apply);
+      window.visualViewport?.removeEventListener("resize", apply);
+    };
   }, [manifest]);
 
   const decodePage = useCallback(
@@ -133,7 +158,10 @@ export function FlatPaper({ onFallback }: { onFallback: () => void }) {
         const el = pagerRef.current;
         if (!el) return;
         const leaf = el.querySelectorAll(".wsj-page")[next] as HTMLElement | undefined;
-        if (leaf) leaf.scrollTop = 0;
+        if (leaf) {
+          leaf.scrollTop = 0;
+          leaf.scrollLeft = 0;
+        }
         indexRef.current = next;
         setPageIndex(next);
         setA1Ready(true);
@@ -178,6 +206,12 @@ export function FlatPaper({ onFallback }: { onFallback: () => void }) {
       const dx = touch.clientX - startX;
       const dy = touch.clientY - startY;
       if (Math.abs(dx) < 48 || Math.abs(dx) < Math.abs(dy)) return;
+      const leaf = (event.target as Element | null)?.closest?.(".wsj-page") as HTMLElement | null;
+      if (leaf && leaf.scrollWidth > leaf.clientWidth + 1) {
+        const max = leaf.scrollWidth - leaf.clientWidth;
+        if (dx < 0 && leaf.scrollLeft < max - 2) return;
+        if (dx > 0 && leaf.scrollLeft > 2) return;
+      }
       go(indexRef.current + (dx < 0 ? 1 : -1));
     };
     el.addEventListener("touchstart", touchStart, { capture: true, passive: true });
@@ -210,6 +244,9 @@ export function FlatPaper({ onFallback }: { onFallback: () => void }) {
 
   if (!manifest) return <TimesHoldShell line="Opening the printed edition" />;
 
+  const portrait = orient === "portrait";
+  const scale = portrait ? 1 : fit;
+
   const current = pages[pageIndex];
   const sections: { code: string; index: number }[] = [];
   for (const page of pages) {
@@ -234,6 +271,8 @@ export function FlatPaper({ onFallback }: { onFallback: () => void }) {
       data-times-flat="1"
       data-times-ready={a1Ready ? "1" : "0"}
       data-times-issue={manifest.issueId}
+      data-times-orient={orient}
+      data-times-fit={scale === 1 ? "1" : String(scale)}
     >
       {!a1Ready && (
         <div style={{ position: "absolute", inset: 0, zIndex: 5 }}>
@@ -241,9 +280,26 @@ export function FlatPaper({ onFallback }: { onFallback: () => void }) {
         </div>
       )}
       <style>{`
-        [data-times-flat="1"] .wsj-chrome { position: absolute; top: 0; left: 0; right: 0; z-index: 4; }
-        [data-times-flat="1"] .newspaper-edition.wsj-pager { position: absolute; inset: 0; height: auto; overflow: hidden; }
-        [data-times-flat="1"] .wsj-page { overflow: hidden !important; max-height: none; }
+        [data-times-flat="1"] .newspaper-edition.wsj-pager {
+          position: relative;
+          inset: auto;
+          height: 0;
+          overflow-x: auto;
+          overflow-y: hidden;
+        }
+        [data-times-flat="1"][data-times-orient="portrait"] .wsj-page {
+          overflow-x: auto !important;
+          overflow-y: auto !important;
+          justify-content: flex-start;
+          align-items: flex-start;
+          max-height: 100%;
+          touch-action: pan-x pan-y;
+        }
+        [data-times-flat="1"][data-times-orient="landscape"] .wsj-page {
+          overflow: hidden !important;
+          justify-content: center;
+          align-items: flex-start;
+        }
       `}</style>
       <div className="wsj-chrome print:hidden">
         <div className="wsj-chrome-l">
@@ -329,11 +385,11 @@ export function FlatPaper({ onFallback }: { onFallback: () => void }) {
       <div
         className="newspaper-edition wsj-pager"
         ref={pagerRef}
-        style={{ ["--tt-fit" as string]: String(fit), overflow: "hidden", scrollBehavior: "auto" }}
+        style={{ ["--tt-fit" as string]: String(scale), overflowX: "auto", overflowY: "hidden", scrollBehavior: "auto" }}
       >
         {pages.map((page, index) => (
-          <section key={page.folio} className="wsj-page" aria-label={`Page ${page.folio}`} data-folio={page.folio} data-kind={page.kind} style={{ overflow: "hidden" }}>
-            <div className="tt-flat-sheet" style={{ width: PAGE_W, height: PAGE_H, zoom: fit, overflow: "hidden" }}>
+          <section key={page.folio} className="wsj-page" aria-label={`Page ${page.folio}`} data-folio={page.folio} data-kind={page.kind}>
+            <div className="tt-flat-sheet" style={{ width: PAGE_W, height: PAGE_H, zoom: scale, flex: "none" }}>
               <div style={{ position: "relative", width: PAGE_W, height: PAGE_H }}>
                 <img
                   ref={(node) => {

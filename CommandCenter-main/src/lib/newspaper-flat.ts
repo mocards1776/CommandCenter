@@ -4,8 +4,35 @@
  */
 
 export const FLAT_BUCKET = "times-flat";
+/** Printed page, CSS pixels. The portrait reader shows this at scale 1. */
+export const FLAT_PAGE_W = 1032;
+export const FLAT_PAGE_H = 1376;
 /** All editions whose dateline falls on this day or the previous six. */
 export const FLAT_RETENTION_DAYS = 7;
+
+/**
+ * On-screen scale for one flat page.
+ * Portrait is always 1: the 1032-wide page stays at Josh's fixed size.
+ * A shorter visible area (Safari bar, sidebar) scrolls; it does not shrink.
+ * Landscape shows the whole page, scaled to the visible height.
+ */
+export function flatReaderScale(input: {
+  portrait: boolean;
+  pagerWidth: number;
+  pagerHeight: number;
+  pageWidth?: number;
+  pageHeight?: number;
+}): number {
+  if (input.portrait) return 1;
+  const pageW = input.pageWidth && input.pageWidth > 0 ? input.pageWidth : FLAT_PAGE_W;
+  const pageH = input.pageHeight && input.pageHeight > 0 ? input.pageHeight : FLAT_PAGE_H;
+  if (!(input.pagerHeight > 0) || !(pageH > 0)) return 1;
+  let scale = input.pagerHeight / pageH;
+  if (pageW > 0 && input.pagerWidth > 0 && scale * pageW > input.pagerWidth) {
+    scale = input.pagerWidth / pageW;
+  }
+  return scale;
+}
 
 export type FlatHotspot = {
   /** Fractions of the page image, top-left origin. */

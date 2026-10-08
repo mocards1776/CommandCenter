@@ -1,8 +1,11 @@
 import {
+  FLAT_PAGE_H,
+  FLAT_PAGE_W,
   FLAT_RETENTION_DAYS,
   flatEditionExpired,
   flatKeepFrom,
   flatEditionAsk,
+  flatReaderScale,
   flatRequested,
   isFlatManifest,
 } from "./newspaper-flat.ts";
@@ -22,5 +25,14 @@ if (!isFlatManifest({ issueId: "2026-10-07-evening", pages: [{ url: "https://exa
   throw new Error("manifest");
 }
 if (isFlatManifest({ issueId: "x", pages: [] })) throw new Error("empty pages");
+
+if (FLAT_PAGE_W !== 1032 || FLAT_PAGE_H !== 1376) throw new Error("page size");
+if (flatReaderScale({ portrait: true, pagerWidth: 1032, pagerHeight: 1261 }) !== 1) throw new Error("portrait hidden sidebar");
+if (flatReaderScale({ portrait: true, pagerWidth: 836, pagerHeight: 1100 }) !== 1) throw new Error("portrait sidebar stays 1");
+if (flatReaderScale({ portrait: true, pagerWidth: 1032, pagerHeight: 900 }) !== 1) throw new Error("portrait short stays 1");
+const landH = flatReaderScale({ portrait: false, pagerWidth: 1376, pagerHeight: 900 });
+if (landH !== 900 / FLAT_PAGE_H) throw new Error(`landscape height fit ${landH}`);
+const landW = flatReaderScale({ portrait: false, pagerWidth: 400, pagerHeight: 900 });
+if (landW !== 400 / FLAT_PAGE_W) throw new Error(`landscape stays whole ${landW}`);
 
 console.log("newspaper-flat ok");
