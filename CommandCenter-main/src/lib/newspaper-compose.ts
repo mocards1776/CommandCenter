@@ -53,6 +53,7 @@ import { fetchWatchList, WATCH_PAGE_GAMES, type WatchGame } from "./newspaper-wa
 import { fetchYesterdayRecap, type YesterdayRecap } from "./yesterday-recap";
 import { ISSUE_VERSION, type PrintedIssue, type PrintedQuery } from "./newspaper-issue";
 import { clearEditorStamps, editEdition, type EditorRequest } from "./newspaper-editor";
+import { athleticFulltextEnabled, withStoredAthleticText } from "./newspaper-athletic-fulltext";
 import { deskCopyQueue, dedupePush, essentialsFromDesks, finishDedupe } from "./newspaper-sections";
 import { fetchFavoriteCoachDesk, printsFavoriteCoaches } from "./newspaper-favorite-coaches";
 import {
@@ -270,6 +271,8 @@ type PressBag = {
   dedupeGroups?: string[][];
   dedupeCursor?: number;
   deskCopy?: GameWrapCard[];
+  /** Set after the optional Athletic full-text lookup so that hop does not repeat. */
+  athleticTextDone?: boolean;
   /** Stage-11 merge sub-steps. */
   mergeStep?: "merge" | "related-wraps" | "related-rest" | "tag";
   pool?: GameWrapCard[];
@@ -885,6 +888,11 @@ export async function pressStep(
   }
 
   if (state.stage === 18) {
+    if (athleticFulltextEnabled() && !state.athleticTextDone) {
+      state.athleticTextDone = true;
+      state.filed = await withStoredAthleticText(state.filed ?? []);
+      return pause();
+    }
     const filed = state.filed ?? [];
     const cursor = state.storyCursor ?? 0;
     if (cursor < filed.length) {
