@@ -17,6 +17,8 @@ import PlayerHeadshot from "@/components/sports/PlayerHeadshot";
 import { toMlbBoxMomentSnapshot } from "@/lib/game-moment-sources";
 import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
 import TeamMark from "@/components/sports/TeamMark";
+import { WsChampPct } from "@/components/sports/MlbWorldSeriesOdds";
+import { useMlbWorldSeriesOdds, wsPctFor } from "@/lib/mlb-ws-odds";
 import MlbTeamLogo from "@/components/sports/MlbTeamLogo";
 import { mlbGlowColor } from "@/lib/mlb-team-glow";
 import MlbLogoGlow from "@/components/sports/MlbLogoGlow";
@@ -1189,6 +1191,7 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
     enabled: g.home.teamId > 0,
     staleTime: 120_000,
   });
+  const wsOdds = useMlbWorldSeriesOdds();
   const showLiveMatchup =
     Boolean(g.situation) && (g.live || /warmup|in progress/i.test(g.status));
   const pregameClock = g.pregame && !/warmup/i.test(g.status);
@@ -1246,6 +1249,7 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
           loser={homeWins}
           form={awayForm.data ?? null}
           showForm={pregameClock}
+          wsPct={wsPctFor(wsOdds.data, g.away.teamId)}
         />
         <div className="min-w-0 shrink-0 self-center px-1 text-center">
           <AppleScoreCluster
@@ -1284,6 +1288,7 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
           loser={awayWins}
           form={homeForm.data ?? null}
           showForm={pregameClock}
+          wsPct={wsPctFor(wsOdds.data, g.home.teamId)}
         />
       </div>
       <PlayoffSeriesLine
@@ -1314,6 +1319,7 @@ function EspnTeam({
   loser,
   form,
   showForm = false,
+  wsPct,
 }: {
   side: MlbBoxscoreSide;
   align: "left" | "right";
@@ -1321,6 +1327,7 @@ function EspnTeam({
   loser?: boolean;
   form?: TeamFormStrip | null;
   showForm?: boolean;
+  wsPct?: number | null;
 }) {
   return (
     <Link
@@ -1367,6 +1374,7 @@ function EspnTeam({
             {side.record}
           </p>
         ) : null}
+        <WsChampPct pct={wsPct} muted={loser} />
         <TeamStandingLine standing={form?.standing} />
         {showForm ? (
           <TeamFormChips

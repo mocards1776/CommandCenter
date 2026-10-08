@@ -44,6 +44,21 @@ function nhlApiDevProxy(): Plugin {
         res.setHeader("Content-Type", "application/json; charset=utf-8");
         res.end(await upstream.text());
       });
+      // Dev stand-in for the mlb-ws-odds edge function. Same parser, same cache.
+      server.middlewares.use("/api/mlb-ws-odds", async (_req, res) => {
+        try {
+          const { fetchWsBoardCached } = await import("./supabase/functions/mlb-ws-odds/board.ts");
+          const board = await fetchWsBoardCached();
+          res.statusCode = 200;
+          res.setHeader("Content-Type", "application/json; charset=utf-8");
+          res.setHeader("Cache-Control", board ? "public, max-age=180" : "public, max-age=30");
+          res.end(JSON.stringify(board ?? { source: "Kalshi", teams: [] }));
+        } catch {
+          res.statusCode = 200;
+          res.setHeader("Content-Type", "application/json; charset=utf-8");
+          res.end(JSON.stringify({ source: "Kalshi", teams: [] }));
+        }
+      });
       // ESPN scoreboards are CORS-blocked from localhost; the VM can read them.
       server.middlewares.use("/api/espn", async (req, res) => {
         const url = new URL(req.url ?? "", "http://local");
