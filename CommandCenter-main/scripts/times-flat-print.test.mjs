@@ -166,6 +166,31 @@ for (const page of table.pages.slice(1)) {
 const blocked = layoutSheet(2000, [{ top: 10, bottom: 2000 }], 1376);
 assert.equal(blocked.ok, false);
 
+const columns = [];
+for (let top = 166; top + 15 <= 1642; top += 22) {
+  columns.push({ top, bottom: top + 14, left: 18, right: 490 });
+  columns.push({ top: top + 1, bottom: top + 15, left: 520, right: 1000 });
+}
+const lead = layoutSheet(1642, [{ top: 166, bottom: 1642, sel: "article.tt-nat-story", atoms: columns }], 1376);
+assert.equal(lead.ok, true, lead.reason || "a two-column lead cuts on the shared gap");
+for (const line of columns) {
+  const cut = lead.pages.some((page) =>
+    page.slices.some((slice) => slice.srcTop > line.top + 2 && slice.srcTop < line.bottom - 2),
+  );
+  assert.equal(cut, false, "a column line is not cut");
+}
+const photo = { top: 400, bottom: 900, left: 18, right: 1000 };
+const withPhoto = layoutSheet(
+  1642,
+  [{ top: 166, bottom: 1642, atoms: [photo, ...columns] }],
+  1376,
+);
+assert.equal(withPhoto.ok, true, withPhoto.reason || "a lead with a wide photo still splits");
+const throughPhoto = withPhoto.pages.some((page) =>
+  page.slices.some((slice) => slice.srcTop > photo.top + 2 && slice.srcTop < photo.bottom - 2),
+);
+assert.equal(throughPhoto, false, "a wide photo is not cut");
+
 assert.deepEqual(continuationName("A3", 0), { folio: "A3", file: "A3" });
 assert.deepEqual(continuationName("A3", 1), { folio: "A3 cont.", file: "A3-2" });
 assert.deepEqual(continuationName("A3", 2), { folio: "A3 cont. 2", file: "A3-3" });
