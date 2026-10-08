@@ -20,10 +20,11 @@
  *
  * A sheet is not shot until it has content, its height has held for more than
  * one frame, its images have decoded, and fonts are ready. A short or mostly
- * blank shot is retried. A sheet that still will not split is salvaged — move
- * the crossing block, else scale that one page into 1032×1376, else hard-crop
- * at 1376 — and the manifest is published with that page marked degraded.
- * A missing, clipped, or past-right sheet still removes the manifest.
+ * blank shot is retried. A sheet that still fails a fit check is salvaged
+ * (see planSheet) and its pages are published marked degraded. A missing,
+ * short, or blank sheet, or any publishVerdict guard, withholds the edition.
+ * Nothing is uploaded until every page has passed, so a withheld print leaves
+ * the edition's previous manifest and images as they were.
  *
  * Page images are addressed on the app origin (/times-flat/...) so Vercel's
  * CDN caches them. Storage objects use a year-long immutable cache header.
@@ -52,6 +53,20 @@ const RETENTION_DAYS = 7;
 export const MIN_CSS_HEIGHT = 480;
 /** Share of sampled pixels that are near-white or clear. Above this, the page is blank. */
 export const MAX_BLANK_RATIO = 0.9;
+/** A page this blank inside its painted rows has nothing on it. */
+export const EMPTY_PAGE_RATIO = 0.995;
+/** Below this scale copy is unreadable. Salvage hard-breaks instead, and the gate refuses it. */
+export const MIN_FIT = 0.5;
+/** A page with less body than this is near-empty: dropped if it has no ink, else joined to a neighbour. */
+export const NEAR_EMPTY_CSS = 64;
+/** Salvage only carries a block to the next page when this page keeps at least this much. */
+const MOVE_MIN_CSS = PAGE_CSS_H / 4;
+/** More degraded pages than this share withholds the edition. */
+export const MAX_DEGRADED_SHARE = 1 / 3;
+/** A1 is also the Telegram front. A shrink or merge there must keep this much size. */
+export const A1_MIN_FIT = 0.9;
+/** A 2064×2752 lossless page with any copy is far above this. Blank paper encodes to ~300 bytes. */
+export const MIN_WEBP_BYTES = 4_000;
 const PAGE_TRIES = 3;
 const SHEET_WAIT_MS = 18_000;
 const IMAGE_CACHE = "public, max-age=31536000, immutable";
@@ -333,7 +348,7 @@ export function layoutSheet(contentH, pieces, pageH = PAGE_CSS_H) {
     if (budget < 16) return { ok: false, reason: "header leaves no room", pages };
     if (height <= y + budget + 0.5) {
       const slices = [];
-      if (header) slices.push({ srcTop: header.top, srcBottom: header.bottom });
+      if (header) slices.push({ srcTop: header.top, srcBottom: header.bottom, header: true });
       slices.push({ srcTop: y, srcBottom: height });
       if (sliceSpan(slices) > pageH + 0.5) return { ok: false, reason: "past edge", pages };
       pages.push({ slices });
@@ -346,7 +361,7 @@ export function layoutSheet(contentH, pieces, pageH = PAGE_CSS_H) {
       return { ok: false, reason: `unsplittable at ${Math.round(y)}${sel}`, pages, y };
     }
     const slices = [];
-    if (header) slices.push({ srcTop: header.top, srcBottom: header.bottom });
+    if (header) slices.push({ srcTop: header.top, srcBottom: header.bottom, header: true });
     slices.push({ srcTop: y, srcBottom: cut });
     if (sliceSpan(slices) > pageH + 0.5) return { ok: false, reason: "past edge", pages };
     pages.push({ slices });
@@ -375,12 +390,14 @@ function crossingPiece(pieces, y, limit) {
 }
 
 /**
- * Last resort after layoutSheet cannot cut. One bad sheet still publishes.
+ * Last resort after layoutSheet fails (unsplittable, past edge, gap, page
+ * loop, or a table header taller than a page). Rows are never dropped:
  * (a) end this page at the top of the block that crosses the limit and start
- *     that block on the next page;
+ *     that block on the next page, when this page keeps at least a quarter;
  * (b) if that block alone is taller than a page, scale it uniformly into
- *     1032×1376 (fit on the slice; the bitmap stays 2064×2752);
- * (c) if both fail, hard-crop one page at 1376 and continue.
+ *     1032×1376 (fit on the slice; the bitmap stays 2064×2752), never below MIN_FIT;
+ * (c) otherwise hard-break one page at 1376 and continue from there.
+ * A header too tall to repeat is left off its continuation (no-header).
  * Every fallback page is degraded, with the layout reason and the fallback used.
  */
 export function salvageSheet(contentH, pieces, pageH = PAGE_CSS_H) {
@@ -391,54 +408,56 @@ export function salvageSheet(contentH, pieces, pageH = PAGE_CSS_H) {
   const pages = Number.isFinite(first.y) ? [...first.pages] : [];
   let y = Number.isFinite(first.y) ? first.y : 0;
   const atoms = blockingAtoms(list, pageH);
+  // Every step advances more than 4 CSS px.
+  const guardMax = Math.max(80, Math.ceil(height / 4) + 2);
   let guard = 0;
   while (y < height - 0.5) {
-    if (++guard > 80) return { ok: false, reason: "page loop", pages };
-    const header = headerAt(list, y);
-    const headerH = header ? header.bottom - header.top : 0;
-    const budget = pageH - headerH;
-    if (budget < 16) return { ok: false, reason: "header leaves no room", pages };
+    if (++guard > guardMax) return { ok: false, reason: "page loop", pages };
+    let header = headerAt(list, y);
+    let note = null;
+    if (header && pageH - (header.bottom - header.top) < 16) {
+      note = { degraded: true, fallback: "no-header", reason: `header leaves no room at ${Math.round(y)}` };
+      header = null;
+    }
+    const budget = pageH - (header ? header.bottom - header.top : 0);
+    const head = header ? [{ srcTop: header.top, srcBottom: header.bottom, header: true }] : [];
     if (height <= y + budget + 0.5) {
-      const slices = [];
-      if (header) slices.push({ srcTop: header.top, srcBottom: header.bottom });
-      slices.push({ srcTop: y, srcBottom: height });
-      pages.push({ slices });
+      pages.push({ slices: [...head, { srcTop: y, srcBottom: height }], ...note });
       y = height;
       break;
     }
     const cut = bestCut(atoms, y, y + budget);
     if (cut != null && cut > y + 4) {
-      const slices = [];
-      if (header) slices.push({ srcTop: header.top, srcBottom: header.bottom });
-      slices.push({ srcTop: y, srcBottom: cut });
-      pages.push({ slices });
+      pages.push({ slices: [...head, { srcTop: y, srcBottom: cut }], ...note });
       y = cut;
       continue;
     }
     const limit = y + budget;
     const piece = crossingPiece(list, y, limit);
     const movable = list
-      .filter((item) => item.top > y + 4 && item.top <= limit + 0.5 && item.bottom > limit - 0.5)
+      .filter((item) => item.top >= y + MOVE_MIN_CSS && item.top <= limit + 0.5 && item.bottom > limit - 0.5)
       .sort((a, b) => a.top - b.top)[0];
     const marked = movable || piece;
     const selector = marked?.sel || "";
     const reason = `unsplittable at ${Math.round(y)}${selector ? ` ${selector}` : ""}`;
     if (movable) {
-      const slices = [];
-      if (header) slices.push({ srcTop: header.top, srcBottom: header.bottom });
-      slices.push({ srcTop: y, srcBottom: movable.top });
-      pages.push({ slices, degraded: true, fallback: "move", reason, selector });
+      pages.push({
+        slices: [...head, { srcTop: y, srcBottom: movable.top }],
+        degraded: true,
+        fallback: "move",
+        reason,
+        selector,
+      });
       y = movable.top;
       continue;
     }
     if (piece) {
-      const from = y <= piece.top + 0.5 ? piece.top : y;
       const to = Math.min(height, piece.bottom);
-      const span = to - from;
-      if (span > pageH + 0.5) {
-        const fit = pageH / span;
+      const span = to - y;
+      const fit = pageH / span;
+      if (span > pageH + 0.5 && fit >= MIN_FIT) {
         pages.push({
-          slices: [{ srcTop: from, srcBottom: to, fit }],
+          slices: [{ srcTop: y, srcBottom: to, fit }],
           degraded: true,
           fallback: "scale",
           reason,
@@ -461,6 +480,193 @@ export function salvageSheet(contentH, pieces, pageH = PAGE_CSS_H) {
     y = cropBottom;
   }
   return { ok: y >= height - 0.5, pages, degraded: pages.some((page) => page.degraded) };
+}
+
+/** Scale a page is painted at. 1 unless salvage or a merge fitted it. */
+export function pageFit(page) {
+  const fit = Number(page?.fit) || Number(page?.slices?.find((slice) => Number(slice.fit) > 0)?.fit) || 1;
+  return Math.min(1, fit);
+}
+
+function bodySpan(page) {
+  return sliceSpan(page.slices.filter((slice) => !slice.header));
+}
+
+function degrade(page, fallback, reason) {
+  const fallbacks = page.degraded && page.fallback ? page.fallback.split("+") : [];
+  if (!fallbacks.includes(fallback)) fallbacks.push(fallback);
+  const reasons = page.degraded && page.reason ? [page.reason] : [];
+  if (reason && !reasons.includes(reason)) reasons.push(reason);
+  return { ...page, degraded: true, fallback: fallbacks.join("+"), reason: reasons.join("; ") };
+}
+
+function joinSlices(slices) {
+  const out = [];
+  for (const slice of slices) {
+    const { fit: _fit, ...plain } = slice;
+    const prev = out.at(-1);
+    if (prev && !prev.header && !plain.header && Math.abs(prev.srcBottom - plain.srcTop) <= 0.5) {
+      prev.srcBottom = plain.srcBottom;
+    } else {
+      out.push(plain);
+    }
+  }
+  return out;
+}
+
+/** The near-empty page's body joined onto a neighbour, fitted when the sum is over a page. */
+function joinPages(target, tiny, tinyFirst, pageH) {
+  const body = tiny.slices.filter((slice) => !slice.header);
+  const slices = tinyFirst
+    ? joinSlices([...tiny.slices, ...target.slices.filter((slice) => !slice.header)])
+    : joinSlices([...target.slices, ...body]);
+  const span = sliceSpan(slices);
+  const fit = span > pageH + 0.5 ? pageH / span : 1;
+  if (fit < MIN_FIT) return null;
+  let page = { ...target, slices: fit < 1 ? slices.map((slice) => ({ ...slice, fit })) : slices };
+  delete page.fit;
+  if (fit < 1) page.fit = fit;
+  if (tiny.degraded) page = degrade(page, tiny.fallback, tiny.reason);
+  if (fit < 1) page = degrade(page, "merge", `near-empty ${Math.round(sliceSpan(body))}px page merged`);
+  return { page, fit };
+}
+
+/**
+ * A page with less than NEAR_EMPTY_CSS of body joins the page before or after
+ * it. Joining without a fit wins; otherwise the larger fit, never below MIN_FIT.
+ * A page that cannot join stays, and planSheet refuses the sheet.
+ */
+export function mergeNearEmpty(pages, pageH = PAGE_CSS_H) {
+  const out = pages.map((page) => ({ ...page, slices: page.slices.map((slice) => ({ ...slice })) }));
+  let i = 0;
+  while (i < out.length && out.length > 1) {
+    const tiny = out[i];
+    if (bodySpan(tiny) >= NEAR_EMPTY_CSS) {
+      i += 1;
+      continue;
+    }
+    const intoPrev = i > 0 ? joinPages(out[i - 1], tiny, false, pageH) : null;
+    const intoNext = i + 1 < out.length ? joinPages(out[i + 1], tiny, true, pageH) : null;
+    const pick = [intoPrev, intoNext].filter(Boolean).sort((a, b) => b.fit - a.fit)[0];
+    if (!pick) {
+      i += 1;
+      continue;
+    }
+    if (pick === intoPrev) {
+      out.splice(i - 1, 2, pick.page);
+    } else {
+      out.splice(i, 2, pick.page);
+    }
+  }
+  return out;
+}
+
+function clipPieces(pieces, limit) {
+  const clamp = (box) => ({ ...box, bottom: Math.min(box.bottom, limit) });
+  return (Array.isArray(pieces) ? pieces : [])
+    .filter((piece) => piece.top < limit - 0.5)
+    .map((piece) => ({
+      ...clamp(piece),
+      header: piece.header && piece.header.bottom <= limit ? piece.header : null,
+      atoms: (piece.atoms || []).filter((atom) => atom.top < limit - 0.5).map(clamp),
+    }));
+}
+
+/** True when every sampled pixel in these sheet rows matches the first one: bare paper, nothing lost if dropped. */
+function inklessRows(shot, slices) {
+  const { buffer, width, height, scale } = shot;
+  if (!buffer || !(width > 0) || !(scale > 0)) return false;
+  let ref = null;
+  for (const slice of slices) {
+    const top = Math.max(0, Math.floor(slice.srcTop * scale));
+    const bottom = Math.min(height, Math.ceil(slice.srcBottom * scale));
+    for (let y = top; y < bottom; y += 2) {
+      for (let x = 0; x < width; x += 4) {
+        const o = (y * width + x) * 4;
+        if (o + 3 >= buffer.length) return false;
+        if (!ref) ref = [buffer[o], buffer[o + 1], buffer[o + 2]];
+        if (Math.abs(buffer[o] - ref[0]) > 6 || Math.abs(buffer[o + 1] - ref[1]) > 6 || Math.abs(buffer[o + 2] - ref[2]) > 6) {
+          return false;
+        }
+      }
+    }
+  }
+  return ref != null;
+}
+
+function overlaps(page, top, bottom) {
+  return page.slices.some((slice) => !slice.header && slice.srcTop < bottom - 0.5 && slice.srcBottom > top + 0.5);
+}
+
+/**
+ * Pages for one captured sheet, after the normal retries. Never throws.
+ * Refused (ok false): no pixels, short, blank, or less than MIN_CSS_HEIGHT
+ * captured; a page under MIN_FIT; a near-empty page with no neighbour to join.
+ * Everything else publishes, degraded where it had to:
+ *   clipped / past bottom — lay out the rows captured; last page "clip"
+ *   unsplittable, past edge, gap, page loop, header — salvageSheet
+ *   past right after the shrink capture — pages holding the element "crop-right"
+ *   past right fixed by the shrink capture — pages holding it "shrink"
+ *   stitch seam — the page holding it "as-is"
+ */
+export function planSheet(shot, pageH = PAGE_CSS_H) {
+  const refuse = (reason) => ({ ok: false, reason, pages: [] });
+  if (!shot?.buffer) return refuse(shot?.reject || "no sheet");
+  const content = Number(shot.contentHeight) || 0;
+  const captured = Number(shot.capturedHeight) || 0;
+  const blank = Number(shot.blankRatio);
+  if (content < MIN_CSS_HEIGHT) return refuse(`short ${Math.round(content)}`);
+  if (Number.isFinite(blank) && blank > MAX_BLANK_RATIO) return refuse(`blank ${blank.toFixed(2)}`);
+  const clipped = captured + 2 < content;
+  const clipReason = `clipped ${Math.round(captured)}<${Math.round(content)}`;
+  const usable = clipped ? captured : content;
+  if (usable < MIN_CSS_HEIGHT) return refuse(clipReason);
+  const pieces = clipped ? clipPieces(shot.pieces, usable) : shot.pieces;
+  const first = layoutSheet(usable, pieces, pageH);
+  let laid = first;
+  if (!first.ok) {
+    laid = salvageSheet(usable, pieces, pageH);
+    if (!laid.ok) return refuse(`${first.reason}; salvage ${laid.reason}`);
+  }
+  let pages = laid.pages.map((page) => ({ ...page, slices: page.slices.map((slice) => ({ ...slice })) }));
+  if (!first.ok && !pages.some((page) => page.degraded)) {
+    pages[pages.length - 1] = degrade(pages[pages.length - 1], "as-is", first.reason);
+  }
+  if (clipped) pages[pages.length - 1] = degrade(pages[pages.length - 1], "clip", clipReason);
+  const mark = (boxes, fallback, why) => {
+    for (const box of boxes) {
+      const hit = pages.flatMap((page, index) => (overlaps(page, box.top, box.bottom) ? [index] : []));
+      const at = hit.length ? hit : pages.map((_, index) => index);
+      for (const index of at) pages[index] = degrade(pages[index], fallback, why(box));
+    }
+  };
+  if (shot.pastRight) {
+    const boxes = shot.pastBoxes?.length ? shot.pastBoxes : [{ top: -Infinity, bottom: Infinity, sel: shot.pastDetail }];
+    mark(boxes, "crop-right", (box) => `element past right ${box.sel || ""}`.trim());
+  } else if (shot.shrunk?.length) {
+    mark(shot.shrunk, "shrink", (box) => `element past right ${box.sel || ""} shrunk ${box.fit}`.replace(/ +/g, " "));
+    for (const box of shot.shrunk) {
+      for (const page of pages) {
+        if (overlaps(page, box.top, box.bottom)) page.shrink = Math.min(page.shrink ?? 1, Number(box.fit) || 1);
+      }
+    }
+  }
+  if (shot.seam && Number(shot.scale) > 0) {
+    const y = shot.seam.y / shot.scale;
+    mark([{ top: y - 1, bottom: y + 1 }], "as-is", () => `seam y ${shot.seam.y}`);
+  }
+  if (pages.length > 1) {
+    const kept = pages.filter(
+      (page) => page.degraded || bodySpan(page) >= NEAR_EMPTY_CSS || !inklessRows(shot, page.slices.filter((slice) => !slice.header)),
+    );
+    if (kept.length) pages = kept;
+  }
+  pages = mergeNearEmpty(pages, pageH);
+  const tiny = pages.findIndex((page) => pages.length > 1 && bodySpan(page) < NEAR_EMPTY_CSS);
+  if (tiny >= 0) return refuse(`near-empty page ${tiny + 1} (${Math.round(bodySpan(pages[tiny]))}px)`);
+  const thin = pages.findIndex((page) => pageFit(page) < MIN_FIT);
+  if (thin >= 0) return refuse(`page ${thin + 1} fit ${pageFit(pages[thin]).toFixed(2)} < ${MIN_FIT}`);
+  return { ok: true, pages, salvaged: pages.some((page) => page.degraded) };
 }
 
 /** Manifest JSON. Degraded pages keep the reason and which fallback published them. */
@@ -487,6 +693,7 @@ export function buildFlatManifest({ issueId, printedAt, pages }) {
         row.degraded = true;
         row.reason = page.reason || "";
         row.fallback = page.fallback || "";
+        if (Number(page.fit) > 0 && page.fit < 1) row.fit = Math.round(page.fit * 1000) / 1000;
       }
       return row;
     }),
@@ -501,7 +708,11 @@ export function continuationName(folio, part) {
   };
 }
 
-/** Hotspots are fractions of the sheet. Move each one onto the page that holds it. */
+/**
+ * Hotspots are fractions of the sheet. Move each one onto the page that holds
+ * it. A fitted page is painted top-left at its fit, so y, h, x, and w scale
+ * with it, and y offsets past any repeated header or earlier slice.
+ */
 export function remapHotspots(spots, sheetH, pages) {
   const out = pages.map(() => []);
   if (!(sheetH > 0)) return out;
@@ -513,25 +724,36 @@ export function remapHotspots(spots, sheetH, pages) {
       page.slices.some((slice) => center >= slice.srcTop - 0.5 && center < slice.srcBottom + 0.5),
     );
     if (pageIndex < 0) continue;
+    const fit = pageFit(pages[pageIndex]);
     let dest = 0;
     let placed = null;
     for (const slice of pages[pageIndex].slices) {
       const span = slice.srcBottom - slice.srcTop;
       if (center >= slice.srcTop - 0.5 && center < slice.srcBottom + 0.5) {
-        const localTop = Math.max(slice.srcTop, top) - slice.srcTop + dest;
-        const localBottom = Math.min(slice.srcBottom, bottom) - slice.srcTop + dest;
+        const localTop = (Math.max(slice.srcTop, top) - slice.srcTop) * fit + dest;
+        const localBottom = (Math.min(slice.srcBottom, bottom) - slice.srcTop) * fit + dest;
         placed = { y: localTop / PAGE_CSS_H, h: Math.max(0, localBottom - localTop) / PAGE_CSS_H };
         break;
       }
-      dest += span;
+      dest += span * fit;
     }
     if (!placed || placed.h <= 0 || placed.y >= 1) continue;
-    out[pageIndex].push({ ...spot, y: placed.y, h: Math.min(placed.h, 1 - placed.y) });
+    const row = { ...spot, y: placed.y, h: Math.min(placed.h, 1 - placed.y) };
+    if (Number.isFinite(spot.x) && Number.isFinite(spot.w)) {
+      if (spot.x >= 1) continue;
+      const x = Math.max(0, spot.x);
+      row.x = x * fit;
+      row.w = Math.max(0, Math.min(spot.x + spot.w, 1) - x) * fit;
+    }
+    out[pageIndex].push(row);
   }
   return out;
 }
 
-/** Copy sheet slices into one 2064×2752 page and pad the rest with paper. */
+/**
+ * Copy sheet slices into one 2064×2752 page and pad the rest with paper.
+ * A fitted page samples its slices in order, top-left, at one uniform scale.
+ */
 export function paintFlatPage(src, srcW, srcH, slices, scale) {
   const out = Buffer.alloc(PAGE_DEV_W * PAGE_DEV_H * 4);
   for (let i = 0; i < PAGE_DEV_W * PAGE_DEV_H; i++) {
@@ -543,21 +765,23 @@ export function paintFlatPage(src, srcW, srcH, slices, scale) {
   }
   const fitted = Array.isArray(slices) ? slices.find((slice) => Number(slice.fit) > 0 && Number(slice.fit) < 1) : null;
   if (fitted && srcW > 0 && srcH > 0) {
-    let top = Infinity;
-    let bottom = -Infinity;
+    const bands = [];
+    let total = 0;
     for (const slice of slices) {
-      top = Math.min(top, slice.srcTop);
-      bottom = Math.max(bottom, slice.srcBottom);
+      const srcTop = Math.max(0, Math.min(srcH, Math.round(slice.srcTop * scale)));
+      const srcBottom = Math.max(srcTop, Math.min(srcH, Math.round(slice.srcBottom * scale)));
+      if (srcBottom <= srcTop) continue;
+      bands.push({ top: srcTop, at: total, rows: srcBottom - srcTop });
+      total += srcBottom - srcTop;
     }
-    let srcTop = Math.round(top * scale);
-    let srcBottom = Math.round(bottom * scale);
-    srcTop = Math.max(0, Math.min(srcH, srcTop));
-    srcBottom = Math.max(srcTop, Math.min(srcH, srcBottom));
-    const srcRows = Math.max(1, srcBottom - srcTop);
-    const destW = Math.max(1, Math.min(PAGE_DEV_W, Math.round((srcW * PAGE_DEV_H) / srcRows)));
-    for (let destY = 0; destY < PAGE_DEV_H; destY++) {
-      const srcY =
-        srcRows <= 1 ? srcTop : srcTop + Math.round((destY * (srcRows - 1)) / (PAGE_DEV_H - 1));
+    if (!total) return { buffer: out, used: 0, pastEdge: false };
+    const destH = Math.max(1, Math.min(PAGE_DEV_H, Math.round((total * Number(fitted.fit) * DPR) / scale)));
+    const destW = Math.max(1, Math.min(PAGE_DEV_W, Math.round((srcW * destH) / total)));
+    let band = 0;
+    for (let destY = 0; destY < destH; destY++) {
+      const v = total <= 1 || destH <= 1 ? 0 : Math.round((destY * (total - 1)) / (destH - 1));
+      while (band < bands.length - 1 && v >= bands[band].at + bands[band].rows) band += 1;
+      const srcY = bands[band].top + Math.min(bands[band].rows - 1, v - bands[band].at);
       const fromRow = srcY * srcW;
       const toRow = destY * PAGE_DEV_W;
       for (let destX = 0; destX < destW; destX++) {
@@ -570,7 +794,7 @@ export function paintFlatPage(src, srcW, srcH, slices, scale) {
         out[to + 3] = src[from + 3];
       }
     }
-    return { buffer: out, used: PAGE_DEV_H, pastEdge: false };
+    return { buffer: out, used: destH, pastEdge: false };
   }
   let dest = 0;
   let dropped = 0;
@@ -887,8 +1111,13 @@ export async function openSheet(page, index) {
   }, index);
 }
 
-export async function measureSheet(page, index) {
-  return page.evaluate((i) => {
+/**
+ * `shrink` (a floor, e.g. MIN_FIT) is the last-chance capture for a sheet
+ * still past right: each outermost element painting past 1032 gets CSS zoom
+ * so it ends inside the sheet, unless that needs less than the floor.
+ */
+export async function measureSheet(page, index, opts = {}) {
+  return page.evaluate(({ i, shrink }) => {
     const pager = document.querySelector(".newspaper-edition");
     const leaf = document.querySelectorAll(".wsj-page")[i];
     const sheet = leaf?.querySelector(".wsj-sheet");
@@ -967,7 +1196,7 @@ export async function measureSheet(page, index) {
       );
       contain(el);
     }
-    const sheetRect2 = sheet.getBoundingClientRect();
+    let sheetRect2 = sheet.getBoundingClientRect();
     const rel2 = (el) => {
       const r = el.getBoundingClientRect();
       return {
@@ -977,26 +1206,56 @@ export async function measureSheet(page, index) {
         right: (r.right - sheetRect2.left) / zoom,
       };
     };
-    let contentH = Math.max(sheet.scrollHeight, sheet.offsetHeight);
-    let pastRight = false;
-    let pastDetail = "";
-    for (const el of sheet.querySelectorAll("*")) {
-      if (!(el instanceof HTMLElement)) continue;
-      const box = rel2(el);
-      if (box.bottom > contentH) contentH = box.bottom;
-      if (box.bottom - box.top <= 1 || box.right <= width + 1) continue;
-      let painted = box.right;
-      let node = el.parentElement;
-      while (node && node !== sheet.parentElement) {
-        if (clipsX(node)) painted = Math.min(painted, rel2(node).right);
-        if (node === sheet) break;
-        node = node.parentElement;
+    const scanPast = () => {
+      let tall = Math.max(sheet.scrollHeight, sheet.offsetHeight);
+      const past = [];
+      for (const el of sheet.querySelectorAll("*")) {
+        if (!(el instanceof HTMLElement)) continue;
+        const box = rel2(el);
+        if (box.bottom > tall) tall = box.bottom;
+        if (box.bottom - box.top <= 1 || box.right <= width + 1) continue;
+        let painted = box.right;
+        let node = el.parentElement;
+        while (node && node !== sheet.parentElement) {
+          if (clipsX(node)) painted = Math.min(painted, rel2(node).right);
+          if (node === sheet) break;
+          node = node.parentElement;
+        }
+        if (painted <= width + 1) continue;
+        past.push({ el, box });
       }
-      if (painted <= width + 1) continue;
-      pastRight = true;
-      const detail = `${selOf(el)} right ${Math.round(box.right)} top ${Math.round(box.top)} ${Math.round(box.right - box.left)}x${Math.round(box.bottom - box.top)}`;
-      if (!pastDetail) pastDetail = detail;
+      return { tall, past: past.filter(({ el }) => !past.some((other) => other.el !== el && other.el.contains(el))) };
+    };
+    let { tall: contentH, past } = scanPast();
+    if (shrink > 0 && past.length) {
+      let changed = false;
+      for (const { el, box } of past) {
+        const left = Math.max(0, box.left);
+        const now = Number.parseFloat(el.style.zoom || "1") || 1;
+        const fit = box.right > left ? ((width - 1 - left) / (box.right - left)) * now : 0;
+        if (!(fit >= shrink) || fit >= now) continue;
+        el.style.setProperty("zoom", String(fit), "important");
+        el.setAttribute("data-tt-shrunk", String(Math.round(fit * 1000) / 1000));
+        changed = true;
+      }
+      if (changed) {
+        sheetRect2 = sheet.getBoundingClientRect();
+        ({ tall: contentH, past } = scanPast());
+      }
     }
+    const shrunkEls = [...sheet.querySelectorAll("[data-tt-shrunk]")].map((el) => ({
+      el,
+      fit: Number(el.getAttribute("data-tt-shrunk")) || 1,
+    }));
+    const pastRight = past.length > 0;
+    const detailOf = ({ el, box }) =>
+      `${selOf(el)} right ${Math.round(box.right)} top ${Math.round(box.top)} ${Math.round(box.right - box.left)}x${Math.round(box.bottom - box.top)}`;
+    const pastDetail = past.length ? detailOf(past[0]) : "";
+    const pastBoxes = past.slice(0, 8).map(({ el, box }) => ({ sel: selOf(el), top: box.top, bottom: box.bottom }));
+    const shrunk = shrunkEls.map(({ el, fit }) => {
+      const box = rel2(el);
+      return { sel: selOf(el), fit, top: box.top, bottom: box.bottom };
+    });
     const pieceSel = [
       "article",
       "table",
@@ -1087,13 +1346,15 @@ export async function measureSheet(page, index) {
       contentH,
       pastRight,
       pastDetail,
+      pastBoxes,
+      shrunk,
       fixed,
       pieces,
     };
-  }, index);
+  }, { i: index, shrink: Number(opts.shrink) || 0 });
 }
 
-export async function captureSheet(page, index, pngPath) {
+export async function captureSheet(page, index, pngPath, opts = {}) {
   const contained = [];
   const noteFixed = (geom) => {
     for (const row of geom?.fixed || []) {
@@ -1102,7 +1363,7 @@ export async function captureSheet(page, index, pngPath) {
   };
   await page.setViewportSize({ width: IPAD13.width, height: IPAD13.height });
   await openSheet(page, index);
-  let geom = await measureSheet(page, index);
+  let geom = await measureSheet(page, index, opts);
   noteFixed(geom);
   if (!geom || geom.contentH < 40 || geom.sheetW < 40) return null;
   const chrome = Math.max(48, geom.viewH - geom.h);
@@ -1110,7 +1371,7 @@ export async function captureSheet(page, index, pngPath) {
   await page.setViewportSize({ width: IPAD13.width, height: viewH });
   try {
     await openSheet(page, index);
-    geom = await measureSheet(page, index);
+    geom = await measureSheet(page, index, opts);
     noteFixed(geom);
     if (!geom || geom.w < 40 || geom.h < 40) return null;
     const need = Math.ceil(geom.y + geom.h + 8);
@@ -1118,7 +1379,7 @@ export async function captureSheet(page, index, pngPath) {
       const taller = Math.min(16000, Math.max(viewH, Math.ceil(geom.y + geom.contentH + chrome)));
       await page.setViewportSize({ width: IPAD13.width, height: taller });
       await openSheet(page, index);
-      geom = await measureSheet(page, index);
+      geom = await measureSheet(page, index, opts);
       noteFixed(geom);
       if (!geom) return null;
     }
@@ -1144,7 +1405,9 @@ export async function captureSheet(page, index, pngPath) {
         `box ${Math.round(geom.h)}`,
         `view ${Math.round(geom.viewH)}`,
       );
-      return { missing: "clipped" };
+      // Keep what is on screen. planSheet publishes it as a "clip" page
+      // if the retries never capture the whole sheet.
+      if (height < MIN_CSS_HEIGHT) return { missing: "clipped" };
     }
     try {
       await page.screenshot({
@@ -1179,6 +1442,8 @@ export async function captureSheet(page, index, pngPath) {
     pastBottom: capturedHeight + 1 < geom.contentH,
     pastRight: geom.pastRight,
     pastDetail: geom.pastDetail || "",
+    pastBoxes: geom.pastBoxes || [],
+    shrunk: geom.shrunk || [],
     fixed: contained,
     buffer: pixels,
     scale,
@@ -1515,6 +1780,139 @@ async function encodeRawWebp(buffer, webpPath) {
     webpPath,
   ]);
   await unlink(raw).catch(() => {});
+  return readFile(webpPath);
+}
+
+/** heights.txt / PAGE status for one report row. */
+export function rowStatus(row) {
+  if (!row.ok) return `FAIL ${row.reason}`;
+  if (row.degraded) return `DEGRADED ${row.fallback}: ${row.reason}`;
+  return "ok";
+}
+
+export function heightLine(row) {
+  return `${row.folio}\tcss ${row.cssHeight}\tblank ${row.blankRatio.toFixed(2)}\t${rowStatus(row)}`;
+}
+
+function encodedProblem(webp) {
+  const dim = webpSize(webp);
+  if (!dim || dim.width !== PAGE_DEV_W || dim.height !== PAGE_DEV_H) {
+    return `encoded ${dim ? `${dim.width}x${dim.height}` : "not VP8L"}`;
+  }
+  if (webp.length < MIN_WEBP_BYTES) return `encoded ${webp.length} bytes`;
+  return null;
+}
+
+/**
+ * Paint, judge, and encode every page of one planned sheet to outDir.
+ * Nothing is uploaded here. A page that fails its own check after planning
+ * publishes degraded "as-is" (seam, mostly white, rows past the edge); an
+ * empty page or a bad encode is a FAIL row, which withholds the edition.
+ */
+export async function renderSheet({ leaf, shot, plan, spots, outDir, firstIndex = 0, encode = encodeRawWebp, say = log }) {
+  const staged = [];
+  const report = [];
+  const mapped = remapHotspots(spots, shot.contentHeight, plan.pages);
+  const section = (/^([A-Z]+)/.exec(leaf.folio) || [])[1] || leaf.folio;
+  for (let part = 0; part < plan.pages.length; part++) {
+    const name = continuationName(leaf.folio, part);
+    let page = plan.pages[part];
+    const painted = paintFlatPage(shot.buffer, shot.width, shot.height, page.slices, shot.scale);
+    const pageShot = {
+      width: PAGE_DEV_W,
+      height: PAGE_DEV_H,
+      pastEdge: painted.pastEdge,
+      blankRatio: blankRatio(painted.buffer, PAGE_DEV_W, PAGE_DEV_H, painted.used),
+      seam: findSeam(painted.buffer, PAGE_DEV_W, PAGE_DEV_H),
+    };
+    const verdict = judgePage(pageShot);
+    const row = { folio: name.folio, cssHeight: PAGE_CSS_H, blankRatio: pageShot.blankRatio, ok: true };
+    let fail = null;
+    if (pageShot.blankRatio >= EMPTY_PAGE_RATIO) fail = `empty ${pageShot.blankRatio.toFixed(3)}`;
+    else if (!verdict.ok && /^size/.test(verdict.reason)) fail = verdict.reason;
+    else if (!verdict.ok) page = degrade(page, "as-is", verdict.reason);
+    let webp = null;
+    if (!fail) {
+      const webpPath = path.join(outDir, `${name.file}.webp`);
+      webp = await encode(painted.buffer, webpPath);
+      if (encodedProblem(webp)) webp = await encode(painted.buffer, webpPath);
+      fail = encodedProblem(webp);
+      if (!fail) {
+        staged.push({
+          folio: name.folio,
+          file: name.file,
+          webpPath,
+          kind: leaf.kind,
+          index: firstIndex + staged.length,
+          section,
+          bytes: webp.length,
+          width: PAGE_DEV_W,
+          height: PAGE_DEV_H,
+          cssWidth: PAGE_W,
+          cssHeight: PAGE_CSS_H,
+          hotspots: mapped[part] || [],
+          degraded: Boolean(page.degraded),
+          reason: page.reason || "",
+          fallback: page.fallback || "",
+          selector: page.selector || "",
+          fit: pageFit(page),
+          shrink: page.shrink ?? 1,
+          bodyCss: Math.round(bodySpan(page)),
+        });
+      }
+    }
+    if (fail) Object.assign(row, { ok: false, reason: fail });
+    else if (page.degraded) Object.assign(row, { degraded: true, fallback: page.fallback, reason: page.reason });
+    if (page.degraded) say("DEGRADED", name.folio, page.selector || "", page.fallback || "", page.reason || "");
+    say("PAGE", name.folio, `${PAGE_DEV_W}x${PAGE_DEV_H}`, `blank ${pageShot.blankRatio.toFixed(2)}`, rowStatus(row));
+    report.push(row);
+  }
+  return { staged, report };
+}
+
+const baseFolio = (folio) => folio.replace(/ cont\.(?: \d+)?$/, "");
+const LOSSY_A1 = new Set(["scale", "crop", "clip", "crop-right"]);
+
+/**
+ * Last gate before anything is uploaded. Refuses (ok false) on any FAIL row, a
+ * folio with no page, A1 scaled or cropped (it is also the Telegram front), a
+ * shrink or merge on A1 below A1_MIN_FIT, more than MAX_DEGRADED_SHARE of the
+ * pages degraded, any page under MIN_FIT, or a near-empty page.
+ */
+export function publishVerdict({ leaves, report, staged }) {
+  const reasons = [];
+  const failures = report.filter((row) => !row.ok);
+  if (failures.length) {
+    reasons.push(`${failures.length} pages failed: ${failures.map((row) => `${row.folio}:${row.reason}`).join(", ")}`);
+  }
+  const covered = new Set(staged.map((page) => baseFolio(page.folio)));
+  const missing = leaves.filter((leaf) => !covered.has(leaf.folio)).map((leaf) => leaf.folio);
+  if (missing.length) reasons.push(`no page for ${missing.join(", ")}`);
+  const degraded = staged.filter((page) => page.degraded);
+  for (const page of degraded) {
+    if (baseFolio(page.folio) !== "A1") continue;
+    const used = String(page.fallback || "").split("+");
+    const lossy = used.filter((fallback) => LOSSY_A1.has(fallback));
+    const small = Math.min(Number(page.fit) || 1, Number(page.shrink) || 1);
+    if (lossy.length) reasons.push(`front page ${page.folio} is ${lossy.join("+")}`);
+    else if (small < A1_MIN_FIT) reasons.push(`front page ${page.folio} at ${small.toFixed(2)} (< ${A1_MIN_FIT})`);
+  }
+  if (staged.length && degraded.length / staged.length > MAX_DEGRADED_SHARE) {
+    reasons.push(`${degraded.length} of ${staged.length} pages degraded (over ${Math.round(MAX_DEGRADED_SHARE * 100)}%)`);
+  }
+  const thin = staged.filter((page) => (Number(page.fit) || 1) < MIN_FIT);
+  if (thin.length) reasons.push(`scaled under ${MIN_FIT}: ${thin.map((page) => page.folio).join(", ")}`);
+  const near = staged.filter((page) => Number.isFinite(page.bodyCss) && page.bodyCss < NEAR_EMPTY_CSS);
+  if (near.length) reasons.push(`near-empty: ${near.map((page) => `${page.folio} ${page.bodyCss}px`).join(", ")}`);
+  return { ok: reasons.length === 0, reasons, degraded: degraded.length, pages: staged.length };
+}
+
+/** One-line GitHub Actions annotation, or null when nothing is degraded. */
+export function degradedWarning(publishId, staged) {
+  const degraded = staged.filter((page) => page.degraded);
+  if (!degraded.length) return null;
+  const list = degraded.map((page) => `${page.folio} ${page.fallback}`).join(", ");
+  return `::warning title=Times flat print::${publishId}: ${degraded.length} of ${staged.length} pages degraded (${list})`;
 }
 
 export async function printFlatEdition() {
@@ -1585,18 +1983,16 @@ export async function printFlatEdition() {
     if (!leaves.length) throw new Error("no folios");
     log("folios", leaves.length);
     log("publish", publishId);
-    await deleteManifest(config, session.access_token, publishId);
 
     const printedAt = new Date().toISOString();
     const version = String(Date.parse(printedAt));
     const report = [];
+    const staged = [];
     let failedSheets = 0;
     for (let i = 0; i < leaves.length; i++) {
       const leaf = leaves[i];
       const pngPath = path.join(outDir, `${leaf.folio}.png`);
       let shot = null;
-      let laid = null;
-      let mapped = [];
       let reason = "no sheet";
       for (let attempt = 1; attempt <= PAGE_TRIES; attempt++) {
         if (attempt > 1) log("retry", leaf.folio, attempt, reason);
@@ -1614,158 +2010,109 @@ export async function printFlatEdition() {
           ready.pending || 0,
           ready.ok ? "content" : "shell",
         );
-        shot = await captureSheet(page, i, pngPath);
-        if (!shot || shot.missing) {
-          reason = shot?.missing || "no sheet";
-          shot = null;
+        const next = await captureSheet(page, i, pngPath);
+        if (!next || next.missing) {
+          // An earlier attempt's pixels stay the fallback.
+          reason = next?.missing || "no sheet";
           continue;
         }
+        shot = next;
         const sheetVerdict = judgeSheet(shot);
         if (!sheetVerdict.ok) {
           reason = sheetVerdict.reason;
           if (shot.pastDetail) log("past right", shot.pastDetail);
-          shot = { ...shot, reject: sheetVerdict.reason };
+          shot.reject = sheetVerdict.reason;
           continue;
         }
-        laid = layoutSheet(shot.contentHeight, shot.pieces, PAGE_CSS_H);
+        const laid = layoutSheet(shot.contentHeight, shot.pieces, PAGE_CSS_H);
         if (!laid.ok) {
           reason = laid.reason || "layout";
-          shot = { ...shot, reject: reason };
+          shot.reject = reason;
           continue;
         }
-        const spots = await hotspots(page, i);
-        mapped = remapHotspots(spots, shot.contentHeight, laid.pages);
         reason = "ok";
         break;
       }
-      if (shot?.buffer && laid && !laid.ok && /unsplittable/.test(String(shot.reject || laid.reason || ""))) {
-        const saved = salvageSheet(shot.contentHeight, shot.pieces, PAGE_CSS_H);
-        if (saved.ok) {
-          laid = saved;
-          delete shot.reject;
-          const spots = await hotspots(page, i);
-          mapped = remapHotspots(spots, shot.contentHeight, laid.pages);
-          log("salvage", leaf.folio, saved.pages.map((item) => item.fallback || "cut").join(","));
+      if (shot?.buffer && shot.pastRight) {
+        log("shrink", leaf.folio, shot.pastDetail || "");
+        const wide = await captureSheet(page, i, pngPath, { shrink: MIN_FIT });
+        if (wide?.buffer && planSheet(wide).ok) {
+          shot = wide;
+          log("shrunk", leaf.folio, (wide.shrunk || []).map((box) => `${box.sel} ${box.fit}`).join(", ") || "none");
         }
       }
-      const sheetOk = shot && !shot.reject && laid?.ok;
-      if (!sheetOk) {
+      const plan = shot?.buffer ? planSheet(shot) : { ok: false, reason: shot?.reject || reason, pages: [] };
+      if (!plan.ok) {
         report.push({
           folio: leaf.folio,
           cssHeight: shot ? Math.round(shot.contentHeight) : 0,
           blankRatio: shot ? shot.blankRatio : 1,
           ok: false,
-          reason: shot?.reject || reason,
+          reason: plan.reason,
         });
-        log("HEIGHT", leaf.folio, "FAIL", shot?.reject || reason);
+        log("HEIGHT", leaf.folio, "FAIL", plan.reason);
         failedSheets += 1;
         if (i === 2 && failedSheets === 3) {
           const why = report.map((row) => `${row.folio}:${row.reason}`).join(", ");
           throw new Error(`stopped after the first 3 sheets failed (${why})`);
         }
+        if (shot) shot.buffer = null;
         continue;
       }
+      if (plan.salvaged) log("salvage", leaf.folio, shot.reject || "", plan.pages.map((item) => item.fallback || "cut").join(","));
       log(
         "HEIGHT",
         leaf.folio,
         `content ${Math.round(shot.contentHeight)}`,
         `captured ${Math.round(shot.capturedHeight)}`,
-        `${laid.pages.length} pages`,
+        `${plan.pages.length} pages`,
       );
-      const section = (/^([A-Z]+)/.exec(leaf.folio) || [])[1] || leaf.folio;
-      for (let part = 0; part < laid.pages.length; part++) {
-        const name = continuationName(leaf.folio, part);
-        const page = laid.pages[part];
-        const painted = paintFlatPage(shot.buffer, shot.width, shot.height, page.slices, shot.scale);
-        const seam = findSeam(painted.buffer, PAGE_DEV_W, PAGE_DEV_H);
-        const pageShot = {
-          width: PAGE_DEV_W,
-          height: PAGE_DEV_H,
-          pastEdge: painted.pastEdge,
-          blankRatio: blankRatio(painted.buffer, PAGE_DEV_W, PAGE_DEV_H, painted.used),
-          seam,
-        };
-        const verdict = judgePage(pageShot);
-        if (page.degraded) log("DEGRADED", name.folio, page.selector || "", page.fallback || "", page.reason || "");
-        report.push({
-          folio: name.folio,
-          cssHeight: PAGE_CSS_H,
-          blankRatio: pageShot.blankRatio,
-          ok: verdict.ok || Boolean(page.degraded),
-          reason: page.degraded ? `${page.fallback}: ${page.reason}` : verdict.reason,
-          degraded: Boolean(page.degraded),
-        });
-        log(
-          "PAGE",
-          name.folio,
-          `${PAGE_DEV_W}x${PAGE_DEV_H}`,
-          `blank ${pageShot.blankRatio.toFixed(2)}`,
-          verdict.ok ? "ok" : `FAIL ${verdict.reason}`,
-        );
-        if (!verdict.ok && !page.degraded) continue;
-        const webpPath = path.join(outDir, `${name.file}.webp`);
-        await encodeRawWebp(painted.buffer, webpPath);
-        const webp = await readFile(webpPath);
-        shots.push({
-          folio: name.folio,
-          file: name.file,
-          kind: leaf.kind,
-          index: shots.length,
-          section,
-          bytes: webp.length,
-          width: PAGE_DEV_W,
-          height: PAGE_DEV_H,
-          cssWidth: PAGE_W,
-          cssHeight: PAGE_CSS_H,
-          hotspots: mapped[part] || [],
-          degraded: Boolean(page.degraded),
-          reason: page.reason || "",
-          fallback: page.fallback || "",
-          selector: page.selector || "",
-        });
-        await uploadObject(
-          config,
-          session.access_token,
-          `${publishId}/${name.file}.webp`,
-          webp,
-          "image/webp",
-          IMAGE_CACHE,
-        );
-        if (name.file === "A1") log("A1 on storage for the Telegram alert");
-      }
+      const spots = await hotspots(page, i);
+      const done = await renderSheet({ leaf, shot, plan, spots, outDir, firstIndex: staged.length });
+      report.push(...done.report);
+      staged.push(...done.staged);
       shot.buffer = null;
       await unlink(pngPath).catch(() => {});
     }
     await page.close();
     await context.close();
-    const heightLines = report.map(
-      (row) =>
-        `${row.folio}\tcss ${row.cssHeight}\tblank ${row.blankRatio.toFixed(2)}\t${row.ok ? "ok" : `FAIL ${row.reason}`}`,
-    );
+    const heightLines = report.map(heightLine);
     await writeFile(path.join(outDir, "heights.txt"), `${heightLines.join("\n")}\n`);
-    log(`page heights (${report.length}):\n${heightLines.join("\n")}`);
-    const failures = report.filter((row) => !row.ok);
+    const degradedCount = staged.filter((item) => item.degraded).length;
+    log(`page heights (${report.length} rows, ${degradedCount} degraded):\n${heightLines.join("\n")}`);
+    const warning = degradedWarning(publishId, staged);
+    if (warning) console.log(warning);
     const token = session.access_token;
-    const covered = new Set(shots.map((shot) => shot.folio.replace(/ cont\.(?: \d+)?$/, "")));
-    if (failures.length || covered.size !== leaves.length) {
-      await deleteManifest(config, token, publishId);
+    const verdict = publishVerdict({ leaves, report, staged });
+    if (!verdict.ok) {
+      // Nothing else from this run goes to storage, so the edition's last good
+      // manifest and its images still stand. With no manifest yet, a clean A1
+      // still goes up for the Telegram front, as before.
+      const front = staged.find((item) => item.file === "A1" && !item.degraded);
+      if (front && !(await manifestPublished(config, publishId))) {
+        await uploadObject(config, token, `${publishId}/A1.webp`, await readFile(front.webpPath), "image/webp", IMAGE_CACHE);
+        log("A1 on storage for the Telegram alert (manifest withheld)");
+      }
       await prune(config, token).catch((err) => log("prune", err.message));
-      const why = failures.map((row) => `${row.folio}:${row.reason}`).join(", ");
-      throw new Error(`manifest withheld (${failures.length} pages): ${why}`);
+      throw new Error(`manifest withheld: ${verdict.reasons.join("; ")}`);
+    }
+    for (const item of staged) {
+      await uploadObject(config, token, `${publishId}/${item.file}.webp`, await readFile(item.webpPath), "image/webp", IMAGE_CACHE);
+      if (item.file === "A1") log("A1 on storage for the Telegram alert");
     }
     const manifest = buildFlatManifest({
       issueId: publishId,
       printedAt,
-      pages: shots.map((shot) => ({
-        ...shot,
-        url: `/times-flat/${publishId}/${shot.file}.webp?v=${version}`,
+      pages: staged.map((item) => ({
+        ...item,
+        url: `/times-flat/${publishId}/${item.file}.webp?v=${version}`,
       })),
     });
     const manifestPath = path.join(outDir, "manifest.json");
     await writeFile(manifestPath, JSON.stringify(manifest));
     await uploadObject(config, token, `${publishId}/manifest.json`, await readFile(manifestPath), "application/json", MANIFEST_CACHE);
-    const total = shots.reduce((sum, shot) => sum + shot.bytes, 0);
-    log("uploaded", publishId, shots.length, "pages", total, "bytes");
+    const total = staged.reduce((sum, item) => sum + item.bytes, 0);
+    log("uploaded", publishId, staged.length, "pages", degradedCount, "degraded", total, "bytes");
     log("manifest", `${config.url}/storage/v1/object/public/${BUCKET}/${publishId}/manifest.json`);
     await prune(config, token);
     return manifest;
@@ -1774,18 +2121,15 @@ export async function printFlatEdition() {
   }
 }
 
-async function deleteManifest(config, token, issueId) {
-  const res = await fetch(`${config.url}/storage/v1/object/${BUCKET}`, {
-    method: "DELETE",
-    headers: authHeaders(config, token, { "Content-Type": "application/json" }),
-    body: JSON.stringify({ prefixes: [`${issueId}/manifest.json`] }),
-  });
-  if (!res.ok && res.status !== 404) {
-    const text = await res.text();
-    log("manifest delete", res.status, text.slice(0, 160));
-    return;
+async function manifestPublished(config, issueId) {
+  try {
+    const res = await fetch(`${config.url}/storage/v1/object/public/${BUCKET}/${issueId}/manifest.json?t=${Date.now()}`, {
+      cache: "no-store",
+    });
+    return res.ok;
+  } catch {
+    return true;
   }
-  log("cleared manifest", issueId);
 }
 
 const invoked = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
