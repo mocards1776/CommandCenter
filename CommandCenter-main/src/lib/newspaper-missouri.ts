@@ -70,6 +70,32 @@ const PROMO_PATH =
  * Self-promo, advertorial, and off-topic series copy — Combest's own
  * johncombestblog.com "Debt collection series" is the type specimen.
  */
+const LOCAL_DROP_PATH = /\/video\/|\/unscripted\/|\/weather\/|\/sponsored|\/livestream/i;
+const LOCAL_DROP_TITLE =
+  /^(?:SPONSORED|Sponsored|Streaming Exclusive|Celebrating |Mindful Monday|Springfield Changemakers|Garden Spot|Crunch Time|Athlete of the Week|FIRST ALERT WEATHER|WATCH:|VIDEO:|LIVE:)/i;
+const MISSOURI_POLITICS =
+  /\b(?:legislat|kehoe|hanaway|amendment|ballot|election|senate|governor|city council|county commission|jefferson city|capitol|campaign|democrat|republican|general assembly)\b/i;
+
+/** Politics outranks crime and community copy on the local wires. */
+export function isMissouriPolitics(text: string): boolean {
+  return MISSOURI_POLITICS.test(text);
+}
+
+/**
+ * KY3 and KOLR article-vs-video gate. A feed or page failure never calls this
+ * with a throw; the caller drops the item and the rest of the desk still prints.
+ */
+export function keepLocalWire(item: { title: string; link: string; snippet?: string | null }, source: string): boolean {
+  const link = item.link || "";
+  const title = item.title || "";
+  const snippet = (item.snippet ?? "").replace(/\s+/g, " ").trim();
+  if (LOCAL_DROP_PATH.test(link)) return false;
+  if (LOCAL_DROP_TITLE.test(title.trim())) return false;
+  if (source === "KY3" && /to report a correction or typo/i.test(snippet)) return false;
+  if (source === "KOLR" && snippet.length < 80) return false;
+  return Boolean(title.trim() && link);
+}
+
 export function isPromoMissouriItem(item: { source?: string; headline: string; url: string }): boolean {
   const hay = `${item.source ?? ""} ${item.headline} ${item.url}`;
   if (PROMO_PATH.test(item.url) || PROMO_PATH.test(hay)) return true;
@@ -161,6 +187,8 @@ function sourceFromHost(host: string): string {
     "fox2now.com": "FOX 2",
     "kmov.com": "KMOV",
     "kshb.com": "KSHB",
+    "ky3.com": "KY3",
+    "ozarksfirst.com": "KOLR",
     "thehill.com": "The Hill",
     "rollcall.com": "Roll Call",
     "politico.com": "Politico",

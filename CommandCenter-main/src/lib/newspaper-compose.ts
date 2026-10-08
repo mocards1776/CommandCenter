@@ -9,6 +9,8 @@ import { fetchHeismanOdds } from "./newspaper-heisman";
 import { fetchClubSheet } from "./newspaper-clubsheet";
 import { enrichMissouriItems, fetchMissouriDesk, fetchMissouriScout } from "./newspaper-missouri-fetch";
 import type { MoItem } from "./newspaper-missouri";
+import { fetchMlbtr } from "./newspaper-mlbtr";
+import { fetchPowerMizzou } from "./newspaper-powermizzou";
 import { fetchOpener, type Opener } from "./newspaper-openers";
 import { attachRelatedGameCopy, attachRelatedGameCopyStep } from "./newspaper-sport-desk";
 import { cleanStoryCopy, htmlToNewspaperText, isNavSoup, isPeripheralClubStory, isPrintableStoryBody, killedSource, stampBodyChars, truncateAtSentence } from "./newspaper-copy";
@@ -270,6 +272,10 @@ type PressBag = {
   dedupeGroups?: string[][];
   dedupeCursor?: number;
   deskCopy?: GameWrapCard[];
+  /** MLB Trade Rumors, held from the wrap hop until the club and Missouri desks file. */
+  mlbtrRoyals?: MoItem[];
+  mlbtrCards?: GameWrapCard[];
+  mlbtrLeague?: GameWrapCard[];
   /** Stage-11 merge sub-steps. */
   mergeStep?: "merge" | "related-wraps" | "related-rest" | "tag";
   pool?: GameWrapCard[];
@@ -444,12 +450,26 @@ export async function pressStep(
     );
     state.wraps = packed.wraps;
     state.athletic = packed.athletic;
+    const mlbtr = await fetchMlbtr();
+    state.mlbtrCards = mlbtr.cardinals;
+    state.mlbtrLeague = mlbtr.league;
+    state.mlbtrRoyals = mlbtr.royals;
     state.stage = 6;
     return pause();
   }
 
   if (state.stage === 6) {
-    state.news = await settle(fetchTeamArticles(favs, pressId), [] as GameWrapCard[]);
+    const news = await settle(fetchTeamArticles(favs, pressId), [] as GameWrapCard[]);
+    const takenTitles = [
+      ...news.map((card) => card.headline),
+      ...(state.athletic ?? []).map((card) => card.headline),
+      ...(state.wraps ?? []).map((wrap) => wrap.item.title),
+    ];
+    const power = await fetchPowerMizzou(takenTitles);
+    state.news = [...news, ...(state.mlbtrCards ?? []), ...power];
+    state.athletic = [...(state.athletic ?? []), ...(state.mlbtrLeague ?? [])];
+    delete state.mlbtrCards;
+    delete state.mlbtrLeague;
     state.stage = 7;
     return pause();
   }
@@ -477,13 +497,20 @@ export async function pressStep(
       })),
       null,
     );
-    const fresh = (desk?.items ?? []).filter((item) => missouriItemInEdition(item.when, pressId));
+    const royals = state.mlbtrRoyals ?? [];
+    delete state.mlbtrRoyals;
+    const withRoyals = desk
+      ? { ...desk, items: [...royals, ...desk.items] }
+      : royals.length
+        ? { scout: null, items: royals, listen: [] as MoItem[] }
+        : null;
+    const fresh = (withRoyals?.items ?? []).filter((item) => missouriItemInEdition(item.when, pressId));
     const items = fileMissouriItems({
       fresh,
       carried: opts.carriedMissouri ?? [],
       readKeys,
     });
-    state.missouri = items.length || desk ? { scout: desk?.scout ?? null, items, listen: desk?.listen ?? [] } : null;
+    state.missouri = items.length || withRoyals ? { scout: withRoyals?.scout ?? null, items, listen: withRoyals?.listen ?? [] } : null;
     state.stage = 9;
     return pause();
   }

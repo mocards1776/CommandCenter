@@ -3,6 +3,8 @@ import {
   buildMissouriDesk,
   combestUrl,
   feedItemToMo,
+  isMissouriPolitics,
+  keepLocalWire,
   newestPublished,
   parseArticlePublished,
   parseCombest,
@@ -17,9 +19,11 @@ import { fetchRssArticle, fetchRssFeed, type RssFeedItem } from "./rss";
 export const MOSCOUT_NATIVE_FEED = "https://moscout.com/daily-updates-1?format=rss";
 export const MOSCOUT_FEED = "https://rss.app/feeds/nG7WGKJTs5LOQjxd.xml";
 const COMBEST_FEED = "https://johncombest.com/feed/";
-const WIRES: { url: string; source: string }[] = [
+const WIRES: { url: string; source: string; local?: boolean }[] = [
   { url: "https://missouriindependent.com/feed/", source: "Missouri Independent" },
   { url: "https://www.missourinet.com/feed/", source: "Missourinet" },
+  { url: "https://www.ky3.com/arc/outboundfeeds/rss/category/news/local/?outputType=xml", source: "KY3", local: true },
+  { url: "https://www.ozarksfirst.com/news/local-news/feed/", source: "KOLR", local: true },
 ];
 
 function shiftDay(day: string, delta: number): string {
@@ -115,12 +119,18 @@ async function combestLinks(day: string): Promise<MoItem[]> {
 
 async function wireItems(): Promise<MoItem[]> {
   const lists = await Promise.all(
-    WIRES.map(async (w) =>
-      (await feedItems(w.url))
-        .filter((i) => i.link && fresh(i.publishedAt, 36))
-        .slice(0, 12)
-        .map((i) => feedItemToMo(i, w.source)),
-    ),
+    WIRES.map(async (w) => {
+      let rows = (await feedItems(w.url)).filter((i) => i.link && fresh(i.publishedAt, 36));
+      if (w.local) {
+        rows = rows.filter((i) => keepLocalWire({ title: i.title, link: i.link, snippet: i.snippet }, w.source));
+        rows.sort((a, b) => {
+          const ap = isMissouriPolitics(`${a.title} ${a.snippet ?? ""}`) ? 0 : 1;
+          const bp = isMissouriPolitics(`${b.title} ${b.snippet ?? ""}`) ? 0 : 1;
+          return ap - bp;
+        });
+      }
+      return rows.slice(0, 12).map((i) => feedItemToMo(i, w.source));
+    }),
   );
   return lists.flat();
 }

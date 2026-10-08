@@ -38,6 +38,7 @@ import {
   withoutEditorStamps,
 } from "./newspaper.ts";
 import { cleanedBodyLength, cleanStoryCopy, isPeripheralClubStory, killedSource, printHeadline } from "./newspaper-copy.ts";
+import { isMlbtrCard } from "./newspaper-mlbtr.ts";
 import { storySource } from "./newspaper-source.ts";
 import type { GameWrapCard } from "./newspaper-sports";
 import { favoriteKeyFitsPath, storyMatchesFavorite } from "./newspaper-favorite-match.ts";
@@ -419,6 +420,7 @@ export function a1ComingUp<T extends { favoriteKey?: string | null }>(games: T[]
 
 /** A1 lead / second / third: a followed club, today's MoScout, or historic national. */
 export function mayFrontA1(card: GameWrapCard, edition: string): boolean {
+  if (card.status === "Brief") return false;
   if (isA1Muted(card, edition)) return false;
   if (isTodaysMoScout(card, edition)) return true;
   if (isHistoricNationalCard(card)) return true;
@@ -655,6 +657,7 @@ export function isDeskStory(card: GameWrapCard): boolean {
   if (isPeripheralClubStory(card)) return false;
   if (isEssentialsDesk(card)) return Boolean(card.headline);
   if (isAthleticCard(card)) return Boolean(card.headline && card.leaguePath);
+  if (isMlbtrCard(card)) return Boolean(card.headline && card.leaguePath);
   if (card.id.startsWith("league-")) return Boolean(card.headline && card.leaguePath);
   if (isGameWrapStory(card)) {
     if (
@@ -669,6 +672,7 @@ export function isDeskStory(card: GameWrapCard): boolean {
   }
   if (!isFavoriteStory(card)) return false;
   if (card.id.startsWith("news-")) return Boolean(card.headline);
+  if (card.id.startsWith("pm-") || card.caption === "PowerMizzou") return Boolean(card.headline);
   if (cleanedBodyLength(card) >= 80) return true;
   if (
     card.status &&
@@ -913,7 +917,8 @@ export function storyRank(card: GameWrapCard, edition: string): number {
   if (card.postseason) score += 40;
   if (card.id.startsWith("news-")) score += 25;
   if (card.id.startsWith("league-")) score += 10;
-  if (isAthleticCard(card)) score += 12;
+  if (isMlbtrCard(card)) score += 13;
+  else if (isAthleticCard(card)) score += 12;
   if (isRecapStory(card)) score += 20;
   if (cleanedBodyLength(card) >= 400) score += 15;
   // ESPN lists the piece it is pushing first. There is no pageview count.
@@ -1166,7 +1171,7 @@ function sameStory(a: string[], b: string[]): boolean {
 function sourceRank(card: GameWrapCard): number {
   const source = (storySource(card) ?? "").toLowerCase();
   if (source.includes("post-dispatch")) return 0;
-  if (source.includes("athletic")) return 1;
+  if (source.includes("athletic") || source.includes("mlb trade rumors") || source.includes("powermizzou")) return 1;
   if (source.includes("associated press")) return 2;
   if (source === "espn") return 3;
   return 4;
@@ -1570,7 +1575,7 @@ export function editorFront(fresh: GameWrapCard[], _edition = ""): GameWrapCard[
   const picked: GameWrapCard[] = [];
   const taken = new Set<string>();
   const ordered = fresh
-    .filter((card) => card.editorFront != null && card.editorFront < FRONT_STORIES)
+    .filter((card) => card.editorFront != null && card.editorFront < FRONT_STORIES && card.status !== "Brief")
     .sort((a, b) => a.editorFront! - b.editorFront!);
   for (const card of ordered) {
     if (taken.has(card.id)) continue;
@@ -1609,8 +1614,8 @@ function favoritePages(
   if (frontPicks.length) {
     for (const card of frontPicks) {
       if (picks.length >= FRONT_STORIES) break;
-      if (taken.has(card.id)) continue;
-      picks.push(card);
+    if (taken.has(card.id) || card.status === "Brief") continue;
+    picks.push(card);
       taken.add(card.id);
     }
   } else {
