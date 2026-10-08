@@ -44,7 +44,7 @@ jobs:
             exit 0
           fi
           REF="${PROJECT_REF:-esdgrgulaxnewmhjuyzh}"
-          for fn in rss sports sports-push sports-telegram sports-finals sports-highlights competitive-telegram backfill-covers book-ai book-lookup todoist readwise-sync story-link plaid magazine-sync newspaper-editor newspaper-national times-telegram times-telegram-shots; do
+          for fn in rss sports sports-push sports-telegram sports-finals sports-highlights competitive-telegram backfill-covers book-ai book-lookup todoist readwise-sync story-link plaid magazine-sync newspaper-editor newspaper-national times-telegram times-telegram-shots player-ask; do
             if [ -d "supabase/functions/$fn" ]; then
               echo "Deploying $fn…"
               if [ "$fn" = "rss" ] || [ "$fn" = "sports" ] || [ "$fn" = "sports-push" ] || [ "$fn" = "sports-telegram" ] || [ "$fn" = "sports-finals" ] || [ "$fn" = "sports-highlights" ] || [ "$fn" = "competitive-telegram" ] || [ "$fn" = "story-link" ] || [ "$fn" = "magazine-sync" ] || [ "$fn" = "newspaper-editor" ] || [ "$fn" = "newspaper-national" ] || [ "$fn" = "times-telegram-shots" ]; then

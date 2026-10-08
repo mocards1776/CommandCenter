@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ChevronDown, ChevronRight, ExternalLink, Loader2 } from "lucide-react";
 import HighlightReel from "@/components/sports/HighlightReel";
+import { PlayerAskAi } from "@/components/sports/PlayerAskAi";
 import SportsNotesPanel from "@/components/sports/SportsNotesPanel";
 import PlayerTagsPanel from "@/components/sports/PlayerTagsPanel";
 import TeamMark from "@/components/sports/TeamMark";
@@ -47,6 +48,7 @@ import {
   type MlbPlayerStatLine,
   type MlbSplitRow,
 } from "@/lib/mlb";
+import { statLine } from "@/lib/player-ask";
 import { cn, formatCentralDateTime, formatSportsDate, isPublishedTodayCentral } from "@/lib/utils";
 
 export default function MlbPlayerPage() {
@@ -388,6 +390,28 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
         seasonRanks={activeLevel === "mlb" ? (ranks.data ?? []) : []}
         isPitcher={isPitcher}
         levelLabel={showLevelSelector ? levelLabel : undefined}
+      />
+
+      <PlayerAskAi
+        sport="mlb"
+        playerId={String(p.id)}
+        playerName={p.name}
+        context={{
+          name: p.name,
+          team: p.teamName,
+          position: p.position,
+          bio: mlbBio.data?.text ?? "",
+          seasonLabel: String(p.season),
+          seasonStats: seasonStats.map((s) => ({ label: s.label, value: s.value })),
+          recentGames: [
+            ...(latestGame.data ?? []).slice(0, 5).map((g) => {
+              const side = g.isHome ? "vs" : "at";
+              const result = g.isWin == null ? "" : g.isWin ? "W" : "L";
+              return [g.date, `${side} ${g.opponent}`, result, statLine(g.stats)].filter(Boolean).join(" · ");
+            }),
+            last5.data ? `Last 5 combined: ${statLine(last5.data.stats, 12)}` : "",
+          ].filter(Boolean),
+        }}
       />
 
       {showLevelSelector && (

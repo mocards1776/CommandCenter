@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ExternalLink, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { EspnPlayerHero, type HeroStatBox } from "@/components/sports/EspnPlayerHero";
+import { PlayerAskAi } from "@/components/sports/PlayerAskAi";
 import { SeasonKeyStats } from "@/components/sports/SeasonKeyStats";
 import { useSwipeBack } from "@/hooks/useSwipeBack";
 import { useAuth } from "@/lib/auth-context";
@@ -13,6 +14,7 @@ import {
   removeFavoritePlayer,
 } from "@/lib/favorite-players";
 import { fetchNhlPlayerProfile, nhlHeadshot, type NhlPlayerProfile } from "@/lib/nhl";
+import { statLine } from "@/lib/player-ask";
 import { cn, formatSportsDate } from "@/lib/utils";
 
 export default function NhlPlayerPage() {
@@ -136,6 +138,38 @@ export default function NhlPlayerPage() {
               accent={accent}
             />
           )}
+
+          <PlayerAskAi
+            sport="nhl"
+            playerId={p.id}
+            playerName={p.name}
+            context={{
+              name: p.name,
+              team: p.teamName,
+              position: p.position,
+              bio: [
+                p.birthPlace ? `Born ${p.birthPlace}` : "",
+                p.draft ? `Draft: ${p.draft}` : "",
+                p.experience ? `Experience: ${p.experience}` : "",
+                p.status ? `Status: ${p.status}` : "",
+                p.teamHistory.map((stop) => `${stop.teamName} ${stop.seasons ?? ""}`.trim()).join("; "),
+              ]
+                .filter(Boolean)
+                .join(". "),
+              seasonLabel: p.seasonLabel,
+              seasonStats: p.seasonStats,
+              recentGames: p.gameLog.slice(0, 8).map((row) =>
+                [
+                  row.date ?? "",
+                  `${row.atVs ?? ""} ${row.opponent}`.trim(),
+                  row.result,
+                  statLine(row.stats),
+                ]
+                  .filter(Boolean)
+                  .join(" · "),
+              ),
+            }}
+          />
 
           {splits.length > 0 && (activeSplit?.categories?.length ?? 0) > 0 && (
             <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
