@@ -161,13 +161,9 @@ const stamped = stampEditorDesk(stories, desk);
 assert(stamped.find((c) => c.id === "wire-401")?.editorRank == null, "a wrap is never ranked");
 const edited = buildEdition({ stories: stamped, clubs: [], edition });
 const editedFront = edited.pages.find((p) => p.kind === "favorites-front") as FavoritesFrontPage;
-assert(editedFront.lead?.id !== "league-no-hitter", "a non-favorite league story does not take A1 even when the editor names it");
-assert(editedFront.lead?.id === "wire-401", "the editor can front last night's home-club final");
-assert(editedFront.second?.id === "news-lions-win", "the editor's followed-club pick runs next");
-assert(
-  [editedFront.lead, editedFront.second, editedFront.third].every((c) => !c || c.id !== "league-no-hitter"),
-  "other-team copy never occupies an A1 slot",
-);
+assert(editedFront.lead?.id === "league-no-hitter", "the editor's lead runs first, club or not");
+assert(editedFront.second?.id === "wire-401", "the editor's second pick stays second");
+assert(editedFront.third?.id === "news-lions-win", "the editor's third pick stays third");
 const mlbPages = edited.pages.filter((p) => p.kind === "sport-front" && p.section === "MLB");
 assert(
   !JSON.stringify(mlbPages).includes("league-junk"),
@@ -207,11 +203,7 @@ const routineFront = front(
     rationale: "",
   }),
 );
-assert(routineFront.lead?.id !== "league-routine" && Boolean(routineFront.lead?.favoriteKey), "a routine league story does not bump a home story off A1");
-assert(
-  [routineFront.lead, routineFront.second, routineFront.third].every((c) => !c || c.id !== "league-routine"),
-  "a routine league story never runs on A1",
-);
+assert(routineFront.lead?.id === "news-cards-note", "a routine item merged into the Cardinals note keeps that note");
 const twoMajors = buildEdition({
   stories: stampEditorDesk([...stories, firing], {
     front: ["league-no-hitter", "league-firing", "wire-401"],
@@ -223,11 +215,10 @@ const twoMajors = buildEdition({
   edition,
 });
 const twoFront = twoMajors.pages.find((p) => p.kind === "favorites-front") as FavoritesFrontPage;
-assert(twoFront.lead?.id !== "league-no-hitter" && twoFront.lead?.id !== "league-firing", "major other-team copy does not take A1");
-assert(twoFront.lead?.id === "wire-401" || twoFront.lead?.favoriteKey === "mlb-stl", "a home-club story keeps A1");
+assert(twoFront.lead?.id === "league-no-hitter", "the editor's league lead stays on A1");
 assert(
-  [twoFront.lead, twoFront.second, twoFront.third].every((c) => !c || !c.id.startsWith("league-")),
-  "major league news may run in Section A but never occupies an A1 slot",
+  twoFront.second?.id === "league-firing" || twoFront.second?.id === "wire-401",
+  "the next surviving editor pick stays second",
 );
 
 // Ordinary national news the editor names still stays in Section B.
@@ -246,11 +237,8 @@ const fundingFront = front(
     rationale: "",
   }),
 );
-assert(fundingFront.lead?.id !== "nat-funding", "ordinary national news does not take A1 even if the editor names it");
-assert(
-  [fundingFront.lead, fundingFront.second, fundingFront.third].every((c) => !c || c.id !== "nat-funding"),
-  "ordinary national news never runs on A1",
-);
+assert(fundingFront.lead?.id === "nat-funding", "the editor's national lead stays on A1");
+assert(fundingFront.second?.id === "news-cards-note", "the editor's club pick stays second");
 const attemptCard = card({
   id: "nat-attempt",
   sportLabel: "National",
@@ -274,7 +262,7 @@ const thinLead = stampEditorDesk(
   [...stories, card({ id: "league-thin", headline: "Thin item", body: "Short." })],
   { front: ["league-thin"], order: [], spike: [], rationale: "" },
 );
-assert(front(thinLead).lead?.id !== "league-thin", "a thin pick does not lead");
+assert(front(thinLead).lead?.id === "league-thin", "a short editor pick still leads");
 
 // When the editor fails, the paper is the rule desk's, unchanged.
 const failed = await editEdition(stamped, edition, async () => {
@@ -303,7 +291,7 @@ const ok = await editEdition(stories, edition, async (req) => {
 assert(asked === 1, "one call per press");
 assert(ok.stories.find((c) => c.id === "league-no-hitter")?.editorFront === 0, "the lead is stamped");
 assert(ok.stories.find((c) => c.id === "league-junk")?.editorSpiked === true, "the spike is stamped");
-assert(front(ok.stories).lead?.id !== "league-no-hitter", "an editor-named other-team story still cannot occupy A1");
+assert(front(ok.stories).lead?.id === "league-no-hitter", "an editor-named other-team story leads A1");
 
 // Last edition's stamps do not ride into the next one.
 const carried = fileEditionStories({
@@ -352,12 +340,8 @@ assert(mondayHeld.find((c) => c.id === "recap-sat-blues")?.editorFront === 0, "t
 const mondayA1 = buildEdition({ stories: mondayHeld, clubs: [], edition: monday }).pages.find(
   (p) => p.kind === "favorites-front",
 ) as FavoritesFrontPage;
-assert(mondayA1.lead?.id !== "recap-sat-blues", "a holdover wrap does not lead");
-assert(
-  [mondayA1.lead, mondayA1.second, mondayA1.third].every((c) => !c || c.id !== "recap-sat-blues"),
-  "a holdover wrap never runs on A1",
-);
-assert(mondayA1.lead?.id === "news-cards-monday", "fresh news takes the lead the wrap vacated");
+assert(mondayA1.lead?.id === "recap-sat-blues", "the editor's holdover wrap stays the lead");
+assert(mondayA1.second?.id === "news-cards-monday", "the editor's second pick stays second");
 
 // Holdover news may still front (a carry that is not a game wrap, and not an
 // injury note the desk will swap for a favorite result).
@@ -408,11 +392,7 @@ const sixersFront = buildEdition({
   clubs: [],
   edition: "2026-10-06-midday",
 }).pages.find((p) => p.kind === "favorites-front") as FavoritesFrontPage;
-assert(sixersFront.lead?.id !== "box-nba-401898999", "editor cannot put a 76ers box wrap on A1");
-assert(
-  [sixersFront.lead, sixersFront.second, sixersFront.third].every((c) => !c || c.id !== "box-nba-401898999"),
-  "76ers never occupy an A1 slot even when the editor names them",
-);
-assert(sixersFront.lead?.id === "news-cowboys-midday" || sixersFront.lead?.id === "news-cards-note", "a priority club takes A1 instead");
+assert(sixersFront.lead?.id === "box-nba-401898999", "the editor's 76ers pick leads A1");
+assert(sixersFront.second?.id === "news-cowboys-midday", "the editor's Cowboys pick stays second");
 
 console.log("newspaper-editor ok");

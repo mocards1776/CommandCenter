@@ -781,8 +781,8 @@ const heldNews = card({
 assert(isHoldoverGame(heldWrap), "a carried recap is a holdover game");
 assert(!isHoldoverGame(heldNews), "holdover news is not a holdover game");
 assert(
-  editorFront([heldWrap, heldNews]).map((c) => c.id).join() === "news-held",
-  "editorFront drops a holdover wrap and keeps holdover news",
+  editorFront([heldWrap, heldNews]).map((c) => c.id).join() === "recap-held,news-held",
+  "editorFront keeps the editor's front in order, including a holdover wrap",
 );
 assert(!filed.some((story) => story.id === "stale"), "an unread story older than a day and a half does not carry");
 assert(!filed.some((story) => story.id === "read-carry"), "a read story does not carry");
@@ -1186,8 +1186,8 @@ assert(!cannotLeadFront(lionsDefeat, [lionsWrap, lionsDefeat, lionsBet]), "the d
     i === 0 ? { ...c, editorFront: 0 } : i === 1 ? { ...c, editorFront: 1 } : c,
   );
   const front = editorFront(stamped);
-  assert(front[0]?.id !== "news-50053980", "editor betting lead is swapped off A1");
-  assert(front.some((c) => c.id === "news-50107710" || c.id === "wire-nfl-401872978"), "matchup recap takes the lead slot");
+  assert(front[0]?.id === "news-50053980", "editor front keeps the stamped lead");
+  assert(front[1]?.id === "news-50107710", "editor front keeps the second pick");
 }
 
 const thorntonNote = card({
@@ -1249,7 +1249,7 @@ assert(
 );
 {
   const front = editorFront([thorntonNote, mizzouFinal]);
-  assert(front[0]?.id === "wire-cfb-mizzou-florida", "editor injury lead is swapped for the Mizzou result");
+  assert(front.map((c) => c.id).join() === "news-thornton,wire-cfb-mizzou-florida", "editor front stays in stamped order");
 }
 {
   const evening = buildEdition({
@@ -1260,7 +1260,7 @@ assert(
   const a1 = evening.pages.find((p) => p.kind === "favorites-front");
   assert(
     a1?.kind === "favorites-front" && a1.lead?.id === "wire-cfb-mizzou-florida",
-    `A1 leads with Mizzou, not Thornton (got ${a1 && a1.kind === "favorites-front" ? a1.lead?.headline : "no front"})`,
+    `A1 leads with the editor's in-window Mizzou pick (got ${a1 && a1.kind === "favorites-front" ? a1.lead?.headline : "no front"})`,
   );
 }
 {
@@ -1279,7 +1279,7 @@ assert(
   const a1 = paper.pages.find((p) => p.kind === "favorites-front");
   assert(
     a1?.kind === "favorites-front" && a1.lead?.id === "wire-cfb-mizzou-florida",
-    "A1 still leads with Mizzou when the filed row lost favoriteKey",
+    "A1 still leads with the editor's Mizzou pick when the filed row lost favoriteKey",
   );
 }
 {
@@ -1713,7 +1713,7 @@ assert(isGameWrapStory({ id: "box-football/college-football-401856708" }), "a bo
   const boardA1 = boardPaper.pages.find((p) => p.kind === "favorites-front");
   assert(
     boardA1?.kind === "favorites-front" && boardA1.lead?.id === "box-football/college-football-401856708",
-    `A1 leads with the board's Mizzou recap, not a preseason sit-out (got ${boardA1 && boardA1.kind === "favorites-front" ? boardA1.lead?.headline : "no front"})`,
+    `A1 leads with the board's Mizzou recap when the editor pick is outside the edition (got ${boardA1 && boardA1.kind === "favorites-front" ? boardA1.lead?.headline : "no front"})`,
   );
   const uga = card({
     id: "wire-cfb-uga",
@@ -2705,18 +2705,18 @@ const middayA1 = middaySixers.pages.find((p) => p.kind === "favorites-front");
 const middayIds =
   middayA1?.kind === "favorites-front" ? [middayA1.lead, middayA1.second, middayA1.third].map((c) => c?.id) : [];
 assert(
-  middayA1?.kind === "favorites-front" && middayA1.lead?.id !== "box-nba-401898999",
-  `A1 does not lead with the 76ers box wrap (got ${middayA1 && middayA1.kind === "favorites-front" ? middayA1.lead?.id : "none"})`,
+  middayA1?.kind === "favorites-front" && middayA1.lead?.id === "box-nba-401898999",
+  `A1 leads with the editor's 76ers pick (got ${middayA1 && middayA1.kind === "favorites-front" ? middayA1.lead?.id : "none"})`,
 );
-assert(!middayIds.includes("box-nba-401898999"), "76ers box wrap never occupies an A1 slot");
+assert(middayIds[0] === "box-nba-401898999", "the editor's 76ers pick occupies the A1 lead");
 assert(
   middayA1?.kind === "favorites-front" &&
     !middayA1.briefs.some((c) => c.id === "box-nba-401898999") &&
     !middayA1.news.some((c) => c.id === "box-nba-401898999"),
   "76ers is not on the A1 page as a brief or under-story",
 );
-assert(!middayIds.includes("league-knicks-kat"), "non-favorite NBA never occupies an A1 slot");
-assert(middayIds.includes("news-cowboys-midday") || middayIds.includes("mo-1x9ok2o"), "Cowboys or today's MoScout take the front");
+assert(!middayIds.includes("league-knicks-kat"), "an unpicked Knicks wire does not join the editor's front");
+assert(middayIds[1] == null && middayIds[2] == null, "an editor front of one story is not refilled");
 assert(
   a1ComingUp([
     { id: "sixers", favoriteKey: "nba-phi" },

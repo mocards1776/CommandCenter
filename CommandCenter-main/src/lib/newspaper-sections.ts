@@ -1561,35 +1561,21 @@ export function isMajorStory(card: GameWrapCard): boolean {
 
 /** League stories the editor may front in Section A in one edition. */
 /**
- * Stories the editor put on A1, in its order, held to the desk's beat: a
- * favorite-club, today's MoScout, or historic-national story always may.
- * Other teams never occupy an A1 slot, even when the copy is major.
+ * Stories the editor put on A1, in its order.
+ * A non-empty front is final: non-club copy, short copy, holdovers, and
+ * muted desks stay where the editor placed them. An empty list means the
+ * editor returned no front or the call failed, and the rule desk fills A1.
  */
-export function editorFront(fresh: GameWrapCard[], edition = ""): GameWrapCard[] {
+export function editorFront(fresh: GameWrapCard[], _edition = ""): GameWrapCard[] {
   const picked: GameWrapCard[] = [];
   const taken = new Set<string>();
   const ordered = fresh
-    .filter((card) => card.editorFront != null && card.editorFront < FRONT_STORIES && hasStoryCopy(card))
-    .filter((card) => !isHoldoverGame(card))
+    .filter((card) => card.editorFront != null && card.editorFront < FRONT_STORIES)
     .sort((a, b) => a.editorFront! - b.editorFront!);
   for (const card of ordered) {
-    let choice: GameWrapCard | null = card;
-    if (cannotLeadFront(card, fresh, edition)) {
-      choice = leadReplacement(card, fresh, taken, edition);
-      if (!choice) continue;
-    }
-    if (taken.has(choice.id)) continue;
-    if (
-      isA1Muted(choice, edition) ||
-      !(isFavoriteStory(choice) || isMoScoutCard(choice) || isHistoricNationalCard(choice))
-    ) {
-      if (choice.sportLabel === "National") continue;
-      // Other-team copy may still run inside Section A when it is major.
-      // It never occupies an A1 slot. 76ers / NBA fluff never do either.
-      continue;
-    }
-    picked.push(choice);
-    taken.add(choice.id);
+    if (taken.has(card.id)) continue;
+    picked.push(card);
+    taken.add(card.id);
     if (picked.length >= FRONT_STORIES) break;
   }
   return picked;
@@ -1618,49 +1604,49 @@ function favoritePages(
   const clubOf = (c: GameWrapCard) => c.favoriteKey ?? c.teamName ?? c.id;
   const picks: GameWrapCard[] = [];
   const taken = new Set<string>();
-  const slotOk = (card: GameWrapCard) => mayFrontA1(card, edition);
-  // Editor picks first, but betting sheets / stale previews never open A1 —
-  // swap in that matchup's recap when we have one.
-  for (const card of frontPicks) {
-    if (picks.length >= FRONT_STORIES) break;
-    let choice: GameWrapCard | null = card;
-    if (cannotLeadFront(card, frontPool, edition) || !slotOk(card)) choice = leadReplacement(card, frontPool, taken, edition);
-    if (!choice || taken.has(choice.id) || cannotLeadFront(choice, frontPool, edition) || !slotOk(choice)) continue;
-    picks.push(choice);
-    taken.add(choice.id);
-  }
-  // A video stub or one-line note leaves a column of bare photo on the front.
-  const written = frontPool.filter(
-    (c) =>
-      slotOk(c) &&
-      !cannotLeadFront(c, frontPool, edition) &&
-      !taken.has(c.id) &&
-      !isTodaysMoScout(c, edition),
-  );
-  for (const card of written) {
-    if (picks.length >= 3) break;
-    if (!picks.some((f) => clubOf(f) === clubOf(card))) {
+  // A non-empty editor front is the paper. Do not drop short or non-club
+  // picks, and do not refill the open slots with club stories.
+  if (frontPicks.length) {
+    for (const card of frontPicks) {
+      if (picks.length >= FRONT_STORIES) break;
+      if (taken.has(card.id)) continue;
       picks.push(card);
       taken.add(card.id);
     }
-  }
-  for (const card of [...written, ...frontPool]) {
-    if (picks.length >= 3) break;
-    if (!slotOk(card) || cannotLeadFront(card, frontPool, edition) || taken.has(card.id)) continue;
-    picks.push(card);
-    taken.add(card.id);
-  }
-  const scout = frontPool.find((c) => isTodaysMoScout(c, edition));
-  if (scout && !taken.has(scout.id)) {
-    if (picks.length < FRONT_STORIES) {
-      picks.push(scout);
-      taken.add(scout.id);
-    } else {
-      const replaceAt = picks.length - 1;
-      const dropped = picks[replaceAt]!;
-      taken.delete(dropped.id);
-      picks[replaceAt] = scout;
-      taken.add(scout.id);
+  } else {
+    const slotOk = (card: GameWrapCard) => mayFrontA1(card, edition);
+    const written = frontPool.filter(
+      (c) =>
+        slotOk(c) &&
+        !cannotLeadFront(c, frontPool, edition) &&
+        !taken.has(c.id) &&
+        !isTodaysMoScout(c, edition),
+    );
+    for (const card of written) {
+      if (picks.length >= 3) break;
+      if (!picks.some((f) => clubOf(f) === clubOf(card))) {
+        picks.push(card);
+        taken.add(card.id);
+      }
+    }
+    for (const card of [...written, ...frontPool]) {
+      if (picks.length >= 3) break;
+      if (!slotOk(card) || cannotLeadFront(card, frontPool, edition) || taken.has(card.id)) continue;
+      picks.push(card);
+      taken.add(card.id);
+    }
+    const scout = frontPool.find((c) => isTodaysMoScout(c, edition));
+    if (scout && !taken.has(scout.id)) {
+      if (picks.length < FRONT_STORIES) {
+        picks.push(scout);
+        taken.add(scout.id);
+      } else {
+        const replaceAt = picks.length - 1;
+        const dropped = picks[replaceAt]!;
+        taken.delete(dropped.id);
+        picks[replaceAt] = scout;
+        taken.add(scout.id);
+      }
     }
   }
   const [lead = null, second = null, third = null] = picks;
