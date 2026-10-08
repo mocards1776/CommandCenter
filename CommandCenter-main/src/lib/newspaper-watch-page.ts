@@ -49,6 +49,8 @@ export type WatchGame = {
   favoriteLabel?: string | null;
   /** One-line reason printed on must-watch rows. Frozen with the issue. */
   printReason?: string | null;
+  /** Press copy sentence. When present it replaces printReason on the card. */
+  why?: string | null;
   /** ESPN season type 1. NBA/WNBA exhibitions always print in the lowest tier. */
   preseason?: boolean;
   /** Playoff series line (Tied 1-1, CLE leads 2-0). */
@@ -418,6 +420,8 @@ export function watchFavoriteLabel(game: WatchGame, byId: Map<string, WatchFavor
 
 /** One printed why-watch line. Never an empty stub — every card gets context. */
 export function watchContext(game: WatchGame): string {
+  const why = game.why?.replace(/\s+/g, " ").trim();
+  if (why) return why;
   if (game.preseason) return game.printReason && /preseason/i.test(game.printReason) ? game.printReason : "Preseason";
   const printed = printReason(game);
   if (printed) return printed;

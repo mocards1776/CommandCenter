@@ -55,6 +55,7 @@ import { fetchWatchList, WATCH_PAGE_GAMES, type WatchGame } from "./newspaper-wa
 import { fetchYesterdayRecap, type YesterdayRecap } from "./yesterday-recap";
 import { ISSUE_VERSION, type PrintedIssue, type PrintedQuery } from "./newspaper-issue";
 import { clearEditorStamps, editEdition, type EditorRequest } from "./newspaper-editor";
+import { buildTimesCopy } from "./newspaper-copy-desk";
 import { deskCopyQueue, dedupePush, essentialsFromDesks, finishDedupe } from "./newspaper-sections";
 import { fetchFavoriteCoachDesk, printsFavoriteCoaches } from "./newspaper-favorite-coaches";
 import {
@@ -480,6 +481,7 @@ export async function pressStep(
       fetchWatchList(day, { limit: WATCH_PAGE_GAMES, favorites: favs }),
       [] as WatchGame[],
     );
+    state.watchTop = [...(state.watch ?? [])].sort((a, b) => b.heat - a.heat).slice(0, 6);
     state.scoutItem = await settle(
       fetchMissouriScout(pressId).then(async (item) => (item ? ((await enrichMissouriItems([item], 1))[0] ?? item) : null)),
       null,
@@ -908,6 +910,19 @@ export async function pressStep(
     dropBagKeys(state, ["deskCopy"]);
     state.storyCursor = 0;
     state.stage = 18;
+    return pause();
+  }
+
+  if (state.stage === 18 && !state.copyDone) {
+    state.copyDone = true;
+    const editionDate = /^\d{4}-\d{2}-\d{2}/.exec(pressId)?.[0] ?? day;
+    const copy = await buildTimesCopy({
+      editionDate,
+      watch: (state.watchTop ?? []) as WatchGame[],
+      front: state.filed ?? [],
+    });
+    if (copy) put([pressId, "tt-copy", day], copy);
+    dropBagKeys(state, ["watchTop"]);
     return pause();
   }
 
