@@ -18,6 +18,8 @@ import { toMlbBoxMomentSnapshot } from "@/lib/game-moment-sources";
 import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
 import TeamMark from "@/components/sports/TeamMark";
 import MlbTeamLogo from "@/components/sports/MlbTeamLogo";
+import { mlbGlowColor } from "@/lib/mlb-team-glow";
+import MlbLogoGlow from "@/components/sports/MlbLogoGlow";
 import { TeamFormChips, TeamStandingLine } from "@/components/sports/TeamFormChips";
 import { fetchMlbTeamForm, type TeamFormStrip } from "@/lib/team-form";
 import {
@@ -1201,22 +1203,23 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
       : g.status;
   return (
     <header className="relative w-full max-w-full min-w-0 overflow-hidden rounded-xl border border-white/[0.1] bg-[#07101d] shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
+      {/* Soft team tint over the score row only (not the tall live panel below). */}
       <div
         className={cn(
-          "pointer-events-none absolute inset-y-0 left-0 w-1/2",
+          "pointer-events-none absolute left-0 top-0 h-60 w-1/2",
           homeWins ? "opacity-40" : "opacity-90",
         )}
         style={{
-          background: `radial-gradient(ellipse at 20% 45%, #${g.away.primaryColor}88, transparent 58%)`,
+          background: `radial-gradient(ellipse at 18% 55%, #${mlbGlowColor(g.away.teamId, g.away.primaryColor)}40, transparent 62%)`,
         }}
       />
       <div
         className={cn(
-          "pointer-events-none absolute inset-y-0 right-0 w-1/2",
+          "pointer-events-none absolute right-0 top-0 h-60 w-1/2",
           awayWins ? "opacity-40" : "opacity-90",
         )}
         style={{
-          background: `radial-gradient(ellipse at 80% 45%, #${g.home.primaryColor}88, transparent 58%)`,
+          background: `radial-gradient(ellipse at 82% 55%, #${mlbGlowColor(g.home.teamId, g.home.primaryColor)}40, transparent 62%)`,
         }}
       />
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(255,255,255,0.06),transparent_45%)]" />
@@ -1328,10 +1331,12 @@ function EspnTeam({
       )}
     >
       {side.teamId > 0 ? (
-        <MlbTeamLogo
-          teamId={side.teamId}
-          className={cn("h-14 w-14 sm:h-20 sm:w-20", loser && "opacity-40")}
-        />
+        <MlbLogoGlow teamId={side.teamId} primaryColor={side.primaryColor} spread={4.4} dim={loser}>
+          <MlbTeamLogo
+            teamId={side.teamId}
+            className={cn("h-14 w-14 sm:h-20 sm:w-20", loser && "opacity-40")}
+          />
+        </MlbLogoGlow>
       ) : null}
       <div
         className={cn(
