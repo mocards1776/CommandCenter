@@ -8,6 +8,7 @@
  *
  *   node scripts/times-shots.mjs --flat --issue 2026-10-07-evening
  *   node scripts/times-flat-print.mjs --issue 2026-10-07-evening
+ *   node scripts/times-flat-print.mjs --issue 2026-10-07-evening --publish 2026-10-07-evening-test
  *
  * Auth for a person at the machine: TIMES_SESSION_FILE (default
  * /tmp/tt-measure/session.json) plus TIMES_LAYOUT_FILE, or TIMES_SESSION_JSON.
@@ -39,6 +40,11 @@ const APP = (process.env.TIMES_APP_ORIGIN || "https://command-center-flax-gamma.
 const IPAD13 = { width: 1032, height: 1376 };
 const PAGE_W = 1032;
 const DPR = 2;
+/** Every printed page is one iPad Pro 13" portrait screen. */
+const PAGE_CSS_H = 1376;
+export const PAGE_DEV_W = PAGE_W * DPR;
+export const PAGE_DEV_H = PAGE_CSS_H * DPR;
+const PAPER = [251, 250, 246, 255];
 const BUCKET = "times-flat";
 const RETENTION_DAYS = 7;
 /** Header-only shells from this press land around 200 CSS px. Real inside pages start above this. */
@@ -152,15 +158,217 @@ export function webpSize(buf) {
   return { width, height };
 }
 
+/** The full sheet, before it is split. A short capture or a stub never publishes. */
+export function judgeSheet(sheet) {
+  const content = Number(sheet?.contentHeight) || 0;
+  const captured = Number(sheet?.capturedHeight) || 0;
+  const blankRatio = Number(sheet?.blankRatio);
+  if (content < MIN_CSS_HEIGHT) return { ok: false, reason: `short ${Math.round(content)}` };
+  if (captured + 2 < content) return { ok: false, reason: `clipped ${Math.round(captured)}<${Math.round(content)}` };
+  if (sheet?.pastBottom) return { ok: false, reason: "element past bottom" };
+  if (sheet?.pastRight) return { ok: false, reason: "element past right" };
+  if (Number.isFinite(blankRatio) && blankRatio > MAX_BLANK_RATIO) {
+    return { ok: false, reason: `blank ${blankRatio.toFixed(2)}` };
+  }
+  if (sheet?.seam) return { ok: false, reason: `seam y ${sheet.seam.y}` };
+  return { ok: true, reason: "ok" };
+}
+
+/** One output page: exactly one screen, seam-free, content inside the page. */
 export function judgePage(page) {
-  const cssHeight = Number(page?.cssHeight) || 0;
   const blankRatio = Number(page?.blankRatio);
-  if (cssHeight < MIN_CSS_HEIGHT) return { ok: false, reason: `short ${Math.round(cssHeight)}` };
+  if (page?.width !== PAGE_DEV_W || page?.height !== PAGE_DEV_H) {
+    return { ok: false, reason: `size ${page?.width || 0}x${page?.height || 0}` };
+  }
+  if (page?.pastEdge) return { ok: false, reason: "past edge" };
   if (Number.isFinite(blankRatio) && blankRatio > MAX_BLANK_RATIO) {
     return { ok: false, reason: `blank ${blankRatio.toFixed(2)}` };
   }
   if (page?.seam) return { ok: false, reason: `seam y ${page.seam.y}` };
   return { ok: true, reason: "ok" };
+}
+
+function sliceSpan(slices) {
+  return slices.reduce((sum, slice) => sum + (slice.srcBottom - slice.srcTop), 0);
+}
+
+/** Latest y in (start, limit] that does not pass through an atom. */
+function bestCut(atoms, start, limit) {
+  const candidates = [];
+  for (const atom of atoms) {
+    if (atom.bottom <= start + 0.5 || atom.top >= limit - 0.5) continue;
+    if (atom.top <= start + 0.5 && atom.bottom >= limit - 0.5) return null;
+    if (atom.top > start + 8 && atom.top <= limit + 0.5) candidates.push(atom.top);
+    if (atom.bottom > start + 8 && atom.bottom <= limit + 0.5) candidates.push(atom.bottom);
+  }
+  candidates.sort((a, b) => b - a);
+  for (const cut of candidates) {
+    const hits = atoms.some((atom) => atom.top < cut - 0.4 && atom.bottom > cut + 0.4);
+    if (!hits) return cut;
+  }
+  return null;
+}
+
+function blockingAtoms(pieces, pageH) {
+  const atoms = [];
+  for (const piece of pieces) {
+    const tall = piece.bottom - piece.top > pageH + 0.5;
+    if (tall && piece.atoms?.length) {
+      if (piece.header) atoms.push(piece.header);
+      for (const atom of piece.atoms) atoms.push(atom);
+    } else {
+      atoms.push({ top: piece.top, bottom: piece.bottom });
+    }
+  }
+  return atoms;
+}
+
+function headerAt(pieces, y) {
+  for (const piece of pieces) {
+    const header = piece.header;
+    if (!header) continue;
+    if (y >= header.bottom - 0.5 && y < piece.bottom - 0.5) return header;
+  }
+  return null;
+}
+
+function rangeCovered(pages, top, bottom) {
+  let y = top;
+  const slices = pages
+    .flatMap((page) => page.slices)
+    .sort((a, b) => a.srcTop - b.srcTop || a.srcBottom - b.srcBottom);
+  for (const slice of slices) {
+    if (slice.srcBottom <= y + 0.5) continue;
+    if (slice.srcTop > y + 1) continue;
+    y = Math.max(y, slice.srcBottom);
+    if (y >= bottom - 0.5) return true;
+  }
+  return y >= bottom - 0.5;
+}
+
+/**
+ * Split a sheet into page-height bands. Breaks fall in the gap between
+ * pieces, or — when one piece is taller than a page — between its table
+ * rows or text lines. A continuation of a table repeats the header.
+ */
+export function layoutSheet(contentH, pieces, pageH = PAGE_CSS_H) {
+  const height = Number(contentH) || 0;
+  const list = Array.isArray(pieces) ? pieces.filter((piece) => piece.bottom - piece.top > 0.5) : [];
+  if (height < 1) return { ok: false, reason: "empty", pages: [] };
+  if (height <= pageH + 0.5) {
+    return { ok: true, pages: [{ slices: [{ srcTop: 0, srcBottom: height }] }] };
+  }
+  const atoms = blockingAtoms(list, pageH);
+  const pages = [];
+  let y = 0;
+  let guard = 0;
+  while (y < height - 0.5) {
+    if (++guard > 80) return { ok: false, reason: "page loop", pages };
+    const header = headerAt(list, y);
+    const headerH = header ? header.bottom - header.top : 0;
+    const budget = pageH - headerH;
+    if (budget < 16) return { ok: false, reason: "header leaves no room", pages };
+    if (height <= y + budget + 0.5) {
+      const slices = [];
+      if (header) slices.push({ srcTop: header.top, srcBottom: header.bottom });
+      slices.push({ srcTop: y, srcBottom: height });
+      if (sliceSpan(slices) > pageH + 0.5) return { ok: false, reason: "past edge", pages };
+      pages.push({ slices });
+      break;
+    }
+    const cut = bestCut(atoms, y, y + budget);
+    if (cut == null || cut <= y + 4) return { ok: false, reason: `unsplittable at ${Math.round(y)}`, pages };
+    const slices = [];
+    if (header) slices.push({ srcTop: header.top, srcBottom: header.bottom });
+    slices.push({ srcTop: y, srcBottom: cut });
+    if (sliceSpan(slices) > pageH + 0.5) return { ok: false, reason: "past edge", pages };
+    pages.push({ slices });
+    y = cut;
+  }
+  for (const piece of list) {
+    const targets =
+      piece.bottom - piece.top > pageH + 0.5 && piece.atoms?.length
+        ? piece.atoms
+        : [{ top: piece.top, bottom: piece.bottom }];
+    for (const atom of targets) {
+      if (!rangeCovered(pages, atom.top, atom.bottom)) {
+        return { ok: false, reason: `gap at ${Math.round(atom.top)}`, pages };
+      }
+    }
+  }
+  return { ok: true, pages };
+}
+
+export function continuationName(folio, part) {
+  if (part <= 0) return { folio, file: folio };
+  return {
+    folio: part === 1 ? `${folio} cont.` : `${folio} cont. ${part}`,
+    file: `${folio}-${part + 1}`,
+  };
+}
+
+/** Hotspots are fractions of the sheet. Move each one onto the page that holds it. */
+export function remapHotspots(spots, sheetH, pages) {
+  const out = pages.map(() => []);
+  if (!(sheetH > 0)) return out;
+  for (const spot of spots || []) {
+    const top = spot.y * sheetH;
+    const bottom = top + spot.h * sheetH;
+    const center = (top + bottom) / 2;
+    const pageIndex = pages.findIndex((page) =>
+      page.slices.some((slice) => center >= slice.srcTop - 0.5 && center < slice.srcBottom + 0.5),
+    );
+    if (pageIndex < 0) continue;
+    let dest = 0;
+    let placed = null;
+    for (const slice of pages[pageIndex].slices) {
+      const span = slice.srcBottom - slice.srcTop;
+      if (center >= slice.srcTop - 0.5 && center < slice.srcBottom + 0.5) {
+        const localTop = Math.max(slice.srcTop, top) - slice.srcTop + dest;
+        const localBottom = Math.min(slice.srcBottom, bottom) - slice.srcTop + dest;
+        placed = { y: localTop / PAGE_CSS_H, h: Math.max(0, localBottom - localTop) / PAGE_CSS_H };
+        break;
+      }
+      dest += span;
+    }
+    if (!placed || placed.h <= 0 || placed.y >= 1) continue;
+    out[pageIndex].push({ ...spot, y: placed.y, h: Math.min(placed.h, 1 - placed.y) });
+  }
+  return out;
+}
+
+/** Copy sheet slices into one 2064×2752 page and pad the rest with paper. */
+export function paintFlatPage(src, srcW, srcH, slices, scale) {
+  const out = Buffer.alloc(PAGE_DEV_W * PAGE_DEV_H * 4);
+  for (let i = 0; i < PAGE_DEV_W * PAGE_DEV_H; i++) {
+    const o = i * 4;
+    out[o] = PAPER[0];
+    out[o + 1] = PAPER[1];
+    out[o + 2] = PAPER[2];
+    out[o + 3] = PAPER[3];
+  }
+  let dest = 0;
+  let dropped = 0;
+  const copyW = Math.min(PAGE_DEV_W, srcW);
+  for (const slice of slices) {
+    let srcTop = Math.round(slice.srcTop * scale);
+    let srcBottom = Math.round(slice.srcBottom * scale);
+    srcTop = Math.max(0, Math.min(srcH, srcTop));
+    srcBottom = Math.max(srcTop, Math.min(srcH, srcBottom));
+    let rows = srcBottom - srcTop;
+    if (dest + rows > PAGE_DEV_H) {
+      dropped += dest + rows - PAGE_DEV_H;
+      rows = PAGE_DEV_H - dest;
+    }
+    for (let row = 0; row < rows; row++) {
+      const from = ((srcTop + row) * srcW) * 4;
+      const to = ((dest + row) * PAGE_DEV_W) * 4;
+      src.copy(out, to, from, from + copyW * 4);
+    }
+    dest += rows;
+    if (dest >= PAGE_DEV_H) break;
+  }
+  return { buffer: out, used: dest, pastEdge: dropped > 2 || srcW > PAGE_DEV_W + 4 };
 }
 
 /**
@@ -232,11 +440,12 @@ export function findSeam(canvas, width, height) {
   return null;
 }
 
-function blankRatio(canvas, width, height) {
+function blankRatio(canvas, width, height, limit = height) {
   let white = 0;
   let n = 0;
   const step = 8;
-  for (let y = 0; y < height; y += step) {
+  const yMax = Math.max(0, Math.min(height, limit));
+  for (let y = 0; y < yMax; y += step) {
     const row = y * width * 4;
     for (let x = 0; x < width; x += step) {
       const o = row + x * 4;
@@ -367,21 +576,174 @@ async function rawSize(file) {
 }
 
 /**
- * One shot of the whole sheet. Slicing the folio and stitching the clips
- * pasted the last slice's top edge — two device rows of the navy page
- * background — over the copy, one viewport above the bottom. The viewport
- * grows until the folio holds the sheet, then the sheet rect is captured
- * once. Width stays 1032 CSS px so the width-only fit does not change.
+ * The 1650 pack hides flowed blocks and cuts sentences. Printing wants the
+ * copy those rules removed, measured at 1032 CSS px wide, then one screenshot
+ * of that whole sheet. No slice is stitched.
  */
-async function sheetBox(page, index) {
-  return page.evaluate(async (i) => {
+async function openSheet(page, index) {
+  await page.evaluate(async (i) => {
+    const leaf = document.querySelectorAll(".wsj-page")[i];
+    const sheet = leaf?.querySelector(".wsj-sheet");
+    if (!leaf || !sheet) return;
+    const unlock = (el, size) => {
+      if (!el) return;
+      el.style.setProperty("overflow", "visible", "important");
+      el.style.setProperty("max-height", "none", "important");
+      if (size) el.style.setProperty("height", "auto", "important");
+    };
+    let busy = false;
+    const release = () => {
+      if (busy) return;
+      busy = true;
+      try {
+      const host = sheet.closest(".wsj-fit-plan");
+      host?.querySelectorAll("style").forEach((node) => node.remove());
+      for (const node of sheet.querySelectorAll("[data-fit-full]")) {
+        const full = node.getAttribute("data-fit-full");
+        if (full != null && node.textContent !== full) node.textContent = full;
+      }
+      for (const node of sheet.querySelectorAll("[hidden]")) node.hidden = false;
+      unlock(document.querySelector(".newspaper-root"), false);
+      unlock(document.querySelector(".newspaper-edition"), false);
+      unlock(leaf, true);
+      unlock(sheet, true);
+      for (const el of sheet.querySelectorAll("*")) {
+        if (!(el instanceof HTMLElement)) continue;
+        if (el.scrollHeight > el.clientHeight + 2 || el.scrollWidth > el.clientWidth + 2) unlock(el, true);
+      }
+      } finally {
+        busy = false;
+      }
+    };
+    window.__ttPrintUnlock?.disconnect();
+    window.__ttPrintUnlock = new MutationObserver(release);
+    window.__ttPrintUnlock.observe(sheet.closest(".wsj-fit-plan") || sheet, { childList: true, subtree: true });
+    release();
+    const pager = document.querySelector(".newspaper-edition");
+    if (pager) pager.scrollTo({ left: i * pager.clientWidth, behavior: "instant" });
+    leaf.scrollTop = 0;
+    const imgs = [...sheet.querySelectorAll("img")];
+    for (const img of imgs) {
+      img.loading = "eager";
+      const src = img.getAttribute("src");
+      if (src && (!img.complete || img.naturalWidth === 0)) img.src = src;
+    }
+    await Promise.all(
+      imgs.map(
+        (img) =>
+          new Promise((resolve) => {
+            if (img.complete && (img.naturalWidth > 0 || img.getAttribute("src") == null)) {
+              resolve();
+              return;
+            }
+            const done = () => resolve();
+            img.addEventListener("load", done, { once: true });
+            img.addEventListener("error", done, { once: true });
+            setTimeout(done, 4000);
+          }),
+      ),
+    );
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    release();
+  }, index);
+}
+
+async function measureSheet(page, index) {
+  return page.evaluate((i) => {
     const pager = document.querySelector(".newspaper-edition");
     const leaf = document.querySelectorAll(".wsj-page")[i];
     const sheet = leaf?.querySelector(".wsj-sheet");
     if (!leaf || !sheet) return null;
     if (pager) pager.scrollTo({ left: i * pager.clientWidth, behavior: "instant" });
     leaf.scrollTop = 0;
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const zoom = Number.parseFloat(getComputedStyle(sheet).zoom || "1") || 1;
+    const sheetRect = sheet.getBoundingClientRect();
+    const rel = (el) => {
+      const r = el.getBoundingClientRect();
+      return {
+        top: (r.top - sheetRect.top) / zoom,
+        bottom: (r.bottom - sheetRect.top) / zoom,
+        right: (r.right - sheetRect.left) / zoom,
+      };
+    };
+    let contentH = Math.max(sheet.scrollHeight, sheet.offsetHeight);
+    let pastRight = false;
+    const width = sheet.offsetWidth;
+    for (const el of sheet.querySelectorAll("*")) {
+      if (!(el instanceof HTMLElement)) continue;
+      const box = rel(el);
+      if (box.bottom > contentH) contentH = box.bottom;
+      if (el.scrollHeight > el.clientHeight + 2) {
+        const spill = box.top + el.scrollHeight / zoom;
+        if (spill > contentH) contentH = spill;
+      }
+      if (box.right > width + 1 && box.bottom - box.top > 1) pastRight = true;
+    }
+    const pieceSel = [
+      "article",
+      "table",
+      ".wsj-mast",
+      ".wsj-form-card",
+      ".wsj-brief",
+      ".wsj-front-under",
+      ".wsj-front-row",
+      ".wsj-rail",
+      ".wsj-rail-block",
+      ".wx",
+      "figure",
+      ".wsj-section-head",
+      ".tt-outlook",
+    ].join(",");
+    const found = [...sheet.querySelectorAll(pieceSel)];
+    const own = found.filter((el) => !found.some((other) => other !== el && other.contains(el)));
+    for (const el of sheet.querySelectorAll("div, section, header, ul, ol")) {
+      if (el === sheet || own.some((piece) => piece === el || piece.contains(el) || el.contains(piece))) continue;
+      if (el.offsetHeight < 12 || el.offsetWidth < 80) continue;
+      if ([...el.children].some((child) => child instanceof HTMLElement && child.offsetHeight > el.offsetHeight * 0.7)) continue;
+      own.push(el);
+    }
+    const pageH = 1376;
+    const pieces = [];
+    for (const el of own) {
+      const box = rel(el);
+      if (box.bottom - box.top < 8) continue;
+      const piece = { top: box.top, bottom: box.bottom, atoms: [], header: null };
+      if (box.bottom - box.top > pageH + 0.5) {
+        const thead = el.querySelector("thead");
+        if (thead) {
+          const head = rel(thead);
+          piece.header = { top: head.top, bottom: head.bottom };
+        }
+        for (const row of el.querySelectorAll("tr")) {
+          if (row.closest("thead")) continue;
+          const rowBox = rel(row);
+          if (rowBox.bottom - rowBox.top > 0.5) piece.atoms.push({ top: rowBox.top, bottom: rowBox.bottom });
+        }
+        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        let node = walker.nextNode();
+        while (node) {
+          if (!node.parentElement?.closest("table") && (node.textContent || "").trim()) {
+            const range = document.createRange();
+            range.selectNodeContents(node);
+            for (const r of range.getClientRects()) {
+              if (r.height < 1 || r.width < 1) continue;
+              piece.atoms.push({
+                top: (r.top - sheetRect.top) / zoom,
+                bottom: (r.bottom - sheetRect.top) / zoom,
+              });
+            }
+          }
+          node = walker.nextNode();
+        }
+        for (const media of el.querySelectorAll("img, svg, canvas")) {
+          if (media.closest("table")) continue;
+          const mediaBox = rel(media);
+          if (mediaBox.bottom - mediaBox.top > 1) piece.atoms.push({ top: mediaBox.top, bottom: mediaBox.bottom });
+        }
+      }
+      pieces.push(piece);
+    }
+    pieces.sort((a, b) => a.top - b.top);
     const s = sheet.getBoundingClientRect();
     return {
       x: s.x,
@@ -390,48 +752,54 @@ async function sheetBox(page, index) {
       h: s.height,
       viewW: window.innerWidth,
       viewH: window.innerHeight,
-      leafH: leaf.clientHeight,
-      sheetH: sheet.offsetHeight,
-      sheetW: sheet.offsetWidth,
+      sheetW: width,
+      contentH,
+      pastRight,
+      pieces,
     };
   }, index);
 }
 
-function clipInside(box) {
-  const x = Math.max(0, box.x);
-  const y = Math.max(0, box.y);
-  const width = Math.min(box.w, box.viewW - x);
-  const height = Math.min(box.h, box.viewH - y);
-  const full = width >= box.w - 1 && height >= box.h - 1;
-  return { x, y, width, height, full };
-}
-
 async function captureSheet(page, index, pngPath) {
   await page.setViewportSize({ width: IPAD13.width, height: IPAD13.height });
-  const geom = await sheetBox(page, index);
-  if (!geom || geom.sheetH < 40 || geom.sheetW < 40) return null;
-  const chrome = Math.max(0, geom.viewH - geom.leafH);
-  const viewH = Math.min(16000, Math.max(IPAD13.height, Math.ceil(geom.sheetH + chrome + 32)));
+  await openSheet(page, index);
+  let geom = await measureSheet(page, index);
+  if (!geom || geom.contentH < 40 || geom.sheetW < 40) return null;
+  const chrome = Math.max(48, geom.viewH - geom.h);
+  const viewH = Math.min(16000, Math.max(IPAD13.height, Math.ceil(geom.y + geom.contentH + chrome)));
   await page.setViewportSize({ width: IPAD13.width, height: viewH });
   try {
-    let box = await sheetBox(page, index);
-    if (!box || box.w < 40 || box.h < 40) return null;
-    let clip = clipInside(box);
-    if (!clip.full || box.sheetH > box.leafH + 2) {
-      const need = Math.min(16000, Math.ceil(box.y + box.h + chrome + 32));
-      await page.setViewportSize({ width: IPAD13.width, height: Math.max(viewH, need) });
-      box = await sheetBox(page, index);
-      if (!box || box.w < 40 || box.h < 40) return null;
-      clip = clipInside(box);
+    await openSheet(page, index);
+    geom = await measureSheet(page, index);
+    if (!geom || geom.w < 40 || geom.h < 40) return null;
+    const need = Math.ceil(geom.y + geom.h + 8);
+    if (need > viewH || geom.h + 1 < geom.contentH) {
+      const taller = Math.min(16000, Math.max(viewH, Math.ceil(geom.y + geom.contentH + chrome)));
+      await page.setViewportSize({ width: IPAD13.width, height: taller });
+      await openSheet(page, index);
+      geom = await measureSheet(page, index);
+      if (!geom) return null;
     }
-    if (!clip.full || clip.width < 40 || clip.height < 40) return null;
-    await page.screenshot({
-      path: pngPath,
-      animations: "disabled",
-      type: "png",
-      clip: { x: clip.x, y: clip.y, width: clip.width, height: clip.height },
-      timeout: 30_000,
-    });
+    const x = Math.max(0, geom.x);
+    const y = Math.max(0, geom.y);
+    const width = Math.min(geom.w, geom.viewW - x);
+    const height = Math.min(geom.h, geom.viewH - y);
+    if (width < 40 || height + 2 < geom.contentH) {
+      log("clip short", Math.round(height), "of", Math.round(geom.contentH));
+      return null;
+    }
+    try {
+      await page.screenshot({
+        path: pngPath,
+        animations: "disabled",
+        type: "png",
+        clip: { x, y, width, height },
+        timeout: 45_000,
+      });
+    } catch (err) {
+      log("screenshot", String(err?.message || err).slice(0, 180));
+      return null;
+    }
   } finally {
     await page.setViewportSize({ width: IPAD13.width, height: IPAD13.height });
   }
@@ -441,13 +809,19 @@ async function captureSheet(page, index, pngPath) {
   await ffmpeg(["-y", "-i", pngPath, "-f", "rawvideo", "-pix_fmt", "rgba", rawOut]);
   const pixels = await readFile(rawOut);
   await unlink(rawOut).catch(() => {});
+  const capturedHeight = height / scale;
   const seam = findSeam(pixels, width, height);
   return {
     width,
     height,
     cssWidth: geom.sheetW,
-    cssHeight: height / scale,
-    sheetCssHeight: geom.sheetH,
+    capturedHeight,
+    contentHeight: geom.contentH,
+    pieces: geom.pieces,
+    pastBottom: capturedHeight + 1 < geom.contentH,
+    pastRight: geom.pastRight,
+    buffer: pixels,
+    scale,
     blankRatio: blankRatio(pixels, width, height),
     seam,
   };
@@ -759,10 +1133,35 @@ async function hotspots(page, index) {
   }, index);
 }
 
+async function encodeRawWebp(buffer, webpPath) {
+  const raw = `${webpPath}.raw`;
+  await writeFile(raw, buffer);
+  await ffmpeg([
+    "-y",
+    "-f",
+    "rawvideo",
+    "-pix_fmt",
+    "rgba",
+    "-s",
+    `${PAGE_DEV_W}x${PAGE_DEV_H}`,
+    "-i",
+    raw,
+    "-c:v",
+    "libwebp",
+    "-lossless",
+    "1",
+    "-compression_level",
+    "6",
+    webpPath,
+  ]);
+  await unlink(raw).catch(() => {});
+}
+
 export async function printFlatEdition() {
   const issueId = opt("issue") || process.env.ISSUE_ID;
+  const publishId = opt("publish") || process.env.TIMES_FLAT_PUBLISH || issueId;
   if (!editionDate(issueId || "")) throw new Error("--issue 2026-10-07-evening is required");
-  const outDir = opt("out") || process.env.TIMES_FLAT_OUT || path.resolve("times-flat-out", issueId);
+  const outDir = opt("out") || process.env.TIMES_FLAT_OUT || path.resolve("times-flat-out", publishId);
   const config = await supabaseConfig();
   const { session, layout } = await loadSession(config);
   const projectRef = new URL(config.url).hostname.split(".")[0];
@@ -825,7 +1224,8 @@ export async function printFlatEdition() {
     );
     if (!leaves.length) throw new Error("no folios");
     log("folios", leaves.length);
-    await deleteManifest(config, session.access_token, issueId);
+    log("publish", publishId);
+    await deleteManifest(config, session.access_token, publishId);
 
     const printedAt = new Date().toISOString();
     const version = String(Date.parse(printedAt));
@@ -833,9 +1233,9 @@ export async function printFlatEdition() {
     for (let i = 0; i < leaves.length; i++) {
       const leaf = leaves[i];
       const pngPath = path.join(outDir, `${leaf.folio}.png`);
-      const webpPath = path.join(outDir, `${leaf.folio}.webp`);
       let shot = null;
-      let spots = [];
+      let laid = null;
+      let mapped = [];
       let reason = "no sheet";
       for (let attempt = 1; attempt <= PAGE_TRIES; attempt++) {
         if (attempt > 1) log("retry", leaf.folio, attempt, reason);
@@ -858,49 +1258,98 @@ export async function printFlatEdition() {
           reason = "no sheet";
           continue;
         }
-        spots = fitHotspots(await hotspots(page, i), shot.sheetCssHeight, shot.cssHeight);
-        const verdict = judgePage(shot);
-        reason = verdict.reason;
-        if (verdict.ok) break;
+        const sheetVerdict = judgeSheet(shot);
+        if (!sheetVerdict.ok) {
+          reason = sheetVerdict.reason;
+          shot = { ...shot, reject: sheetVerdict.reason };
+          continue;
+        }
+        laid = layoutSheet(shot.contentHeight, shot.pieces, PAGE_CSS_H);
+        if (!laid.ok) {
+          reason = laid.reason || "layout";
+          shot = { ...shot, reject: reason };
+          continue;
+        }
+        const spots = await hotspots(page, i);
+        mapped = remapHotspots(spots, shot.contentHeight, laid.pages);
+        reason = "ok";
+        break;
       }
-      const verdict = shot ? judgePage(shot) : { ok: false, reason };
-      const cssHeight = shot ? Math.round(shot.cssHeight) : 0;
-      report.push({
-        folio: leaf.folio,
-        cssHeight,
-        blankRatio: shot ? shot.blankRatio : 1,
-        ok: verdict.ok,
-        reason: verdict.reason,
-      });
+      const sheetOk = shot && !shot.reject && laid?.ok;
+      if (!sheetOk) {
+        report.push({
+          folio: leaf.folio,
+          cssHeight: shot ? Math.round(shot.contentHeight) : 0,
+          blankRatio: shot ? shot.blankRatio : 1,
+          ok: false,
+          reason: shot?.reject || reason,
+        });
+        log("HEIGHT", leaf.folio, "FAIL", shot?.reject || reason);
+        continue;
+      }
       log(
         "HEIGHT",
         leaf.folio,
-        `css ${cssHeight}`,
-        shot ? `${shot.width}x${shot.height}` : "no-shot",
-        `blank ${shot ? shot.blankRatio.toFixed(2) : "1.00"}`,
-        verdict.ok ? "ok" : `FAIL ${verdict.reason}`,
+        `content ${Math.round(shot.contentHeight)}`,
+        `captured ${Math.round(shot.capturedHeight)}`,
+        `${laid.pages.length} pages`,
       );
-      if (!verdict.ok || !shot) continue;
-      await encodeWebp(pngPath, webpPath);
-      const webp = await readFile(webpPath);
-      const row = {
-        folio: leaf.folio,
-        kind: leaf.kind,
-        index: shots.length,
-        section: (/^([A-Z]+)/.exec(leaf.folio) || [])[1] || leaf.folio,
-        file: webpPath,
-        bytes: webp.length,
-        width: shot.width,
-        height: shot.height,
-        cssWidth: shot.cssWidth,
-        cssHeight: shot.cssHeight,
-        hotspots: spots,
-      };
-      shots.push(row);
-      const tokenNow = session.access_token;
-      await uploadObject(config, tokenNow, `${issueId}/${leaf.folio}.webp`, webp, "image/webp", IMAGE_CACHE);
-      if (leaf.folio === "A1") log("A1 on storage for the Telegram alert");
-      if (i !== 0) await unlink(pngPath).catch(() => {});
+      const section = (/^([A-Z]+)/.exec(leaf.folio) || [])[1] || leaf.folio;
+      for (let part = 0; part < laid.pages.length; part++) {
+        const name = continuationName(leaf.folio, part);
+        const painted = paintFlatPage(shot.buffer, shot.width, shot.height, laid.pages[part].slices, shot.scale);
+        const seam = findSeam(painted.buffer, PAGE_DEV_W, PAGE_DEV_H);
+        const pageShot = {
+          width: PAGE_DEV_W,
+          height: PAGE_DEV_H,
+          pastEdge: painted.pastEdge,
+          blankRatio: blankRatio(painted.buffer, PAGE_DEV_W, PAGE_DEV_H, painted.used),
+          seam,
+        };
+        const verdict = judgePage(pageShot);
+        report.push({
+          folio: name.folio,
+          cssHeight: PAGE_CSS_H,
+          blankRatio: pageShot.blankRatio,
+          ok: verdict.ok,
+          reason: verdict.reason,
+        });
+        log(
+          "PAGE",
+          name.folio,
+          `${PAGE_DEV_W}x${PAGE_DEV_H}`,
+          `blank ${pageShot.blankRatio.toFixed(2)}`,
+          verdict.ok ? "ok" : `FAIL ${verdict.reason}`,
+        );
+        if (!verdict.ok) continue;
+        const webpPath = path.join(outDir, `${name.file}.webp`);
+        await encodeRawWebp(painted.buffer, webpPath);
+        const webp = await readFile(webpPath);
+        shots.push({
+          folio: name.folio,
+          file: name.file,
+          kind: leaf.kind,
+          index: shots.length,
+          section,
+          bytes: webp.length,
+          width: PAGE_DEV_W,
+          height: PAGE_DEV_H,
+          cssWidth: PAGE_W,
+          cssHeight: PAGE_CSS_H,
+          hotspots: mapped[part] || [],
+        });
+        await uploadObject(
+          config,
+          session.access_token,
+          `${publishId}/${name.file}.webp`,
+          webp,
+          "image/webp",
+          IMAGE_CACHE,
+        );
+        if (name.file === "A1") log("A1 on storage for the Telegram alert");
+      }
+      shot.buffer = null;
+      await unlink(pngPath).catch(() => {});
     }
     await page.close();
     await context.close();
@@ -912,22 +1361,23 @@ export async function printFlatEdition() {
     log(`page heights (${report.length}):\n${heightLines.join("\n")}`);
     const failures = report.filter((row) => !row.ok);
     const token = session.access_token;
-    if (failures.length || shots.length !== leaves.length) {
-      await deleteManifest(config, token, issueId);
+    const covered = new Set(shots.map((shot) => shot.folio.replace(/ cont\.(?: \d+)?$/, "")));
+    if (failures.length || covered.size !== leaves.length) {
+      await deleteManifest(config, token, publishId);
       await prune(config, token).catch((err) => log("prune", err.message));
       const why = failures.map((row) => `${row.folio}:${row.reason}`).join(", ");
       throw new Error(`manifest withheld (${failures.length} pages): ${why}`);
     }
     const manifest = {
-      issueId,
+      issueId: publishId,
       printedAt,
-      geometry: { cssWidth: PAGE_W, cssViewportHeight: IPAD13.height, dpr: DPR, pageW: PAGE_W },
+      geometry: { cssWidth: PAGE_W, cssHeight: PAGE_CSS_H, cssViewportHeight: IPAD13.height, dpr: DPR, pageW: PAGE_W },
       pages: shots.map((shot) => ({
         folio: shot.folio,
         kind: shot.kind,
         index: shot.index,
         section: shot.section,
-        url: `/times-flat/${issueId}/${shot.folio}.webp?v=${version}`,
+        url: `/times-flat/${publishId}/${shot.file}.webp?v=${version}`,
         width: shot.width,
         height: shot.height,
         cssWidth: shot.cssWidth,
@@ -938,10 +1388,10 @@ export async function printFlatEdition() {
     };
     const manifestPath = path.join(outDir, "manifest.json");
     await writeFile(manifestPath, JSON.stringify(manifest));
-    await uploadObject(config, token, `${issueId}/manifest.json`, await readFile(manifestPath), "application/json", MANIFEST_CACHE);
+    await uploadObject(config, token, `${publishId}/manifest.json`, await readFile(manifestPath), "application/json", MANIFEST_CACHE);
     const total = shots.reduce((sum, shot) => sum + shot.bytes, 0);
-    log("uploaded", issueId, shots.length, "pages", total, "bytes");
-    log("manifest", `${config.url}/storage/v1/object/public/${BUCKET}/${issueId}/manifest.json`);
+    log("uploaded", publishId, shots.length, "pages", total, "bytes");
+    log("manifest", `${config.url}/storage/v1/object/public/${BUCKET}/${publishId}/manifest.json`);
     await prune(config, token);
     return manifest;
   } finally {
