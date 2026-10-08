@@ -10,7 +10,9 @@ import {
   type MlbLivePlayerCard,
   type MlbLiveSituation,
 } from "@/lib/mlb";
+import { fetchMlbLivePlay } from "@/lib/mlb-live-pitches";
 import { fetchMlbBatterHeatZones, heatZoneGrid } from "@/lib/mlb-pbp";
+import { mergeLivePitches } from "@/lib/mlb-statcast";
 import { cn } from "@/lib/utils";
 
 function SideCard({
@@ -52,8 +54,8 @@ function SideCard({
     <Link
       to={`/sports/mlb/player/${card.id}`}
       className={cn(
-        "flex min-w-0 items-start gap-2.5 transition hover:opacity-95",
-        align === "right" && "flex-row-reverse text-right",
+        "flex min-w-0 items-start gap-2.5 transition hover:opacity-95 sm:flex-col sm:gap-2",
+        align === "right" && "flex-row-reverse text-right sm:items-end",
       )}
     >
       <PlayerHeadshot
@@ -108,6 +110,21 @@ export default function MlbLiveMatchupPanel({
     staleTime: 10 * 60_000,
   });
   const grid = useMemo(() => heatZoneGrid(zones.data), [zones.data]);
+  // Statcast for the current PA: field-filtered poll of the same feed/live.
+  const livePlay = useQuery({
+    queryKey: ["mlb-live-play", game.gamePk],
+    queryFn: () => fetchMlbLivePlay(game.gamePk),
+    enabled: Boolean(game.gamePk),
+    staleTime: 5_000,
+    refetchInterval: 10_000,
+  });
+  const pitches = useMemo(
+    () => mergeLivePitches(situation.pitches, livePlay.data?.pitches),
+    [situation.pitches, livePlay.data?.pitches],
+  );
+  const pitchHand =
+    livePlay.data?.pitchHand ??
+    (/^L/i.test(pitcher?.hand ?? "") ? "L" : /^R/i.test(pitcher?.hand ?? "") ? "R" : null);
 
   const vsBits: string[] = [];
   if (extras.data?.vsPitcher && pitcher) {
@@ -130,7 +147,8 @@ export default function MlbLiveMatchupPanel({
             batterId={batter?.id ?? null}
             cells={grid}
             pending={zones.isPending && !zones.data}
-            pitches={situation.pitches}
+            pitches={pitches}
+            pitchHand={pitchHand}
           />
           <p className="numeral text-[15px] font-semibold tracking-wide text-cream">
             {situation.balls}-{situation.strikes}

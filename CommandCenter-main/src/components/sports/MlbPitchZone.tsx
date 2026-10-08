@@ -1,5 +1,5 @@
 import MlbHeatGrid from "@/components/sports/MlbHeatGrid";
-import type { MlbPitchPlot } from "@/lib/mlb";
+import MlbPitchStatcastCard from "@/components/sports/MlbPitchStatcastCard";
 import { heatZoneGrid } from "@/lib/mlb-pbp";
 import {
   formatPitchMph,
@@ -13,12 +13,13 @@ import {
   relaxPitchDots,
   zoneInsetPct,
 } from "@/lib/mlb-pitch-zone";
+import { pitchRowStats, type MlbLivePitch } from "@/lib/mlb-statcast";
 import { cn } from "@/lib/utils";
 
 /** Zone height ÷ width — matches the old hot-zone grid proportions. */
 const ZONE_ASPECT = 0.92;
 
-function pitchTitle(p: MlbPitchPlot): string {
+function pitchTitle(p: MlbLivePitch): string {
   return [
     `#${p.number}`,
     p.pitchType,
@@ -34,7 +35,7 @@ function PitchDot({
   pos,
   latest,
 }: {
-  pitch: MlbPitchPlot;
+  pitch: MlbLivePitch;
   pos: { leftPct: number; topPct: number };
   latest: boolean;
 }) {
@@ -82,11 +83,17 @@ function PitchLegend() {
   );
 }
 
-function PitchList({ pitches }: { pitches: MlbPitchPlot[] }) {
+function PitchList({ pitches }: { pitches: MlbLivePitch[] }) {
   const lastNumber = pitches[pitches.length - 1]?.number;
+  const cols = "grid grid-cols-[1.1rem_1.7rem_1.6rem_minmax(0,1fr)] gap-x-1.5";
   return (
-    <div className="w-[10.5rem] min-w-0 text-[11px] sm:w-[11rem]">
-      <div className="grid grid-cols-[1.1rem_1.6rem_1.5rem_minmax(0,1fr)] gap-x-1.5 border-b border-white/[0.08] pb-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-[#6f778a]">
+    <div className="w-full min-w-0 text-[11px]">
+      <div
+        className={cn(
+          cols,
+          "border-b border-white/[0.08] px-1 pb-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-[#6f778a]",
+        )}
+      >
         <span>#</span>
         <span>Type</span>
         <span className="text-right">Mph</span>
@@ -96,11 +103,13 @@ function PitchList({ pitches }: { pitches: MlbPitchPlot[] }) {
         {pitches.map((p) => {
           const s = pitchResultStyle(pitchResultFromPlot(p));
           const latest = p.number === lastNumber;
+          const stats = pitchRowStats(p.statcast);
           return (
             <li
               key={p.number}
               className={cn(
-                "grid grid-cols-[1.1rem_1.6rem_1.5rem_minmax(0,1fr)] items-center gap-x-1.5 rounded-[3px] py-[3px] leading-tight",
+                cols,
+                "items-center rounded-[4px] px-1 py-[3px] leading-tight",
                 latest && "bg-white/[0.06]",
               )}
               title={pitchTitle(p)}
@@ -114,6 +123,11 @@ function PitchList({ pitches }: { pitches: MlbPitchPlot[] }) {
               <span className="font-semibold text-cream">{pitchTypeCode(p.pitchType) ?? "—"}</span>
               <span className="numeral text-right text-white/80">{formatPitchMph(p.speed)}</span>
               <span className="truncate text-white/70">{p.callLabel}</span>
+              {stats.length > 0 ? (
+                <span className="numeral col-span-3 col-start-2 truncate text-[9.5px] leading-snug text-[#8b93a7]">
+                  {stats.join(" · ")}
+                </span>
+              ) : null}
             </li>
           );
         })}
@@ -124,7 +138,8 @@ function PitchList({ pitches }: { pitches: MlbPitchPlot[] }) {
 
 /**
  * Live strike zone: faded batter hot zones + the current at-bat's pitches as
- * numbered dots at their plate location (catcher's view), with a pitch list.
+ * numbered dots at their plate location (catcher's view), with a latest-pitch
+ * Statcast card and a pitch list (pitches without coordinates are list-only).
  * No pitches yet → the plain hot-zone grid at full strength.
  */
 export default function MlbPitchZone({
@@ -132,15 +147,19 @@ export default function MlbPitchZone({
   cells,
   pending,
   pitches,
+  pitchHand = null,
 }: {
   batterId: number | null;
   cells: ReturnType<typeof heatZoneGrid>;
   pending: boolean;
-  pitches: MlbPitchPlot[];
+  pitches: MlbLivePitch[];
+  /** Pitcher's throwing hand, for arm / glove-side break. */
+  pitchHand?: "L" | "R" | null;
 }) {
   const hasPitches = pitches.length > 0;
   const inset = zoneInsetPct();
-  const latestNumber = pitches[pitches.length - 1]?.number;
+  const latest = pitches[pitches.length - 1] ?? null;
+  const latestNumber = latest?.number;
   const aspect = (1 + 2 * PLOT_MARGIN_X) / ((1 + 2 * PLOT_MARGIN_Y) * ZONE_ASPECT);
   // True plate spots, then nudge overlapping dots apart so every number reads.
   const dots = relaxPitchDots(
@@ -152,7 +171,7 @@ export default function MlbPitchZone({
   );
 
   return (
-    <div className="flex max-w-full flex-col items-center justify-center gap-x-5 gap-y-3 lg:flex-row">
+    <div className="flex w-full max-w-full flex-col items-center justify-center gap-x-5 gap-y-3 lg:flex-row lg:items-start">
       <div className="flex flex-col items-center gap-2.5">
         <div
           className="relative w-[15.5rem] max-w-full sm:w-[17rem] lg:w-[18rem]"
@@ -184,7 +203,12 @@ export default function MlbPitchZone({
         </div>
         {hasPitches ? <PitchLegend /> : null}
       </div>
-      {hasPitches ? <PitchList pitches={pitches} /> : null}
+      {hasPitches ? (
+        <div className="flex w-full min-w-0 max-w-[22rem] flex-col gap-2.5 lg:w-[18.5rem]">
+          {latest ? <MlbPitchStatcastCard pitch={latest} pitchHand={pitchHand} /> : null}
+          <PitchList pitches={pitches} />
+        </div>
+      ) : null}
     </div>
   );
 }
