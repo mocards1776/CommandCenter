@@ -935,9 +935,16 @@ export async function measureSheet(page, index) {
 }
 
 export async function captureSheet(page, index, pngPath) {
+  const contained = [];
+  const noteFixed = (geom) => {
+    for (const row of geom?.fixed || []) {
+      if (!contained.includes(row)) contained.push(row);
+    }
+  };
   await page.setViewportSize({ width: IPAD13.width, height: IPAD13.height });
   await openSheet(page, index);
   let geom = await measureSheet(page, index);
+  noteFixed(geom);
   if (!geom || geom.contentH < 40 || geom.sheetW < 40) return null;
   const chrome = Math.max(48, geom.viewH - geom.h);
   const viewH = Math.min(16000, Math.max(IPAD13.height, Math.ceil(geom.y + geom.contentH + chrome)));
@@ -945,6 +952,7 @@ export async function captureSheet(page, index, pngPath) {
   try {
     await openSheet(page, index);
     geom = await measureSheet(page, index);
+    noteFixed(geom);
     if (!geom || geom.w < 40 || geom.h < 40) return null;
     const need = Math.ceil(geom.y + geom.h + 8);
     if (need > viewH || geom.h + 1 < geom.contentH) {
@@ -952,6 +960,7 @@ export async function captureSheet(page, index, pngPath) {
       await page.setViewportSize({ width: IPAD13.width, height: taller });
       await openSheet(page, index);
       geom = await measureSheet(page, index);
+      noteFixed(geom);
       if (!geom) return null;
     }
     const clip = clipSize(geom);
@@ -965,7 +974,7 @@ export async function captureSheet(page, index, pngPath) {
       log("clip offscreen", `x ${Math.round(x)}`, `w ${Math.round(width)}`, `view ${Math.round(geom.viewW)}`);
       return { missing: "offscreen" };
     }
-    if (geom.fixed?.length) log("contained", geom.fixed.slice(0, 4).join(" | "));
+    if (contained.length) log("contained", contained.slice(0, 4).join(" | "));
     if (height + 2 < geom.contentH) {
       log(
         "clip short",
@@ -1011,7 +1020,7 @@ export async function captureSheet(page, index, pngPath) {
     pastBottom: capturedHeight + 1 < geom.contentH,
     pastRight: geom.pastRight,
     pastDetail: geom.pastDetail || "",
-    fixed: geom.fixed || [],
+    fixed: contained,
     buffer: pixels,
     scale,
     blankRatio: blankRatio(pixels, width, height),
