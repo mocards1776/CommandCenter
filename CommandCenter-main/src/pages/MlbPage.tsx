@@ -45,6 +45,8 @@ import { loadTeamInterest, scoreRuwtGame } from "@/lib/ruwt";
 import { markSportsSolo } from "@/lib/sports-home";
 import { cn } from "@/lib/utils";
 import MlbPlayoffBracket from "@/components/sports/MlbPlayoffBracket";
+import MlbWorldSeriesOdds, { WsChampPct } from "@/components/sports/MlbWorldSeriesOdds";
+import { useMlbWorldSeriesOdds, wsPctFor } from "@/lib/mlb-ws-odds";
 
 const MLB_TABS = new Set<MlbPageTab>([
   "playoffs",
@@ -115,6 +117,8 @@ export default function MlbPage() {
     staleTime: 60_000,
     refetchInterval: tab === "playoffs" ? 30_000 : false,
   });
+
+  const wsOdds = useMlbWorldSeriesOdds();
 
   const standings = useQuery({
     queryKey: ["mlb-standings"],
@@ -256,7 +260,8 @@ export default function MlbPage() {
     leaders.isFetching ||
     (tab === "highlights" && tonight.isFetching) ||
     (tab === "contracts" && contracts.isFetching) ||
-    (tab === "playoffs" && playoffs.isFetching);
+    (tab === "playoffs" && playoffs.isFetching) ||
+    wsOdds.isFetching;
 
   const refresh = () => {
     void Promise.all([
@@ -265,6 +270,7 @@ export default function MlbPage() {
       leaders.refetch(),
       favorites.refetch(),
       playoffs.refetch(),
+      wsOdds.refetch(),
       tab === "highlights" ? tonight.refetch() : Promise.resolve(),
       tab === "contracts" ? contracts.refetch() : Promise.resolve(),
     ]).then(() => toast.success("MLB updated"));
@@ -316,7 +322,8 @@ export default function MlbPage() {
       </div>
 
       {tab === "playoffs" && (
-        <section>
+        <section className="space-y-4">
+          <MlbWorldSeriesOdds board={wsOdds.data} />
           {playoffs.isPending ? (
             <p className="text-chalk flex items-center gap-2 text-[13px]">
               <Loader2 size={14} className="animate-spin" /> Loading bracket…
@@ -335,6 +342,7 @@ export default function MlbPage() {
           loading={scoreboard.isPending}
           error={scoreboard.isError ? "Couldn’t load scoreboard." : null}
           ruwtByGameId={ruwtByGameId}
+          wsBoard={wsOdds.data}
         />
       )}
       {tab === "standings" && (
@@ -511,11 +519,13 @@ function ScoreboardSection({
   loading,
   error,
   ruwtByGameId,
+  wsBoard,
 }: {
   games: MlbScoreGame[];
   loading: boolean;
   error: string | null;
   ruwtByGameId: Map<string, number>;
+  wsBoard: ReturnType<typeof useMlbWorldSeriesOdds>["data"];
 }) {
   if (loading) return <LoadingBlock label="Loading games…" />;
   if (error) return <ErrorLine>{error}</ErrorLine>;
@@ -538,7 +548,7 @@ function ScoreboardSection({
       {live.length > 0 && (
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
           {live.map((g) => (
-            <ScoreCard key={g.id} game={g} ruwtScore={ruwtByGameId.get(g.id)} />
+            <ScoreCard key={g.id} game={g} ruwtScore={ruwtByGameId.get(g.id)} wsBoard={wsBoard} />
           ))}
         </div>
       )}
@@ -547,7 +557,7 @@ function ScoreboardSection({
           {live.length > 0 && <h3 className="rule-head mb-3">Also today</h3>}
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
             {rest.map((g) => (
-              <ScoreCard key={g.id} game={g} ruwtScore={ruwtByGameId.get(g.id)} />
+              <ScoreCard key={g.id} game={g} ruwtScore={ruwtByGameId.get(g.id)} wsBoard={wsBoard} />
             ))}
           </div>
         </div>
@@ -556,7 +566,15 @@ function ScoreboardSection({
   );
 }
 
-function ScoreCard({ game, ruwtScore }: { game: MlbScoreGame; ruwtScore?: number }) {
+function ScoreCard({
+  game,
+  ruwtScore,
+  wsBoard,
+}: {
+  game: MlbScoreGame;
+  ruwtScore?: number;
+  wsBoard: ReturnType<typeof useMlbWorldSeriesOdds>["data"];
+}) {
   const awayWins =
     game.final && (game.away.score ?? 0) > (game.home.score ?? 0);
   const homeWins =
@@ -616,17 +634,23 @@ function ScoreCard({ game, ruwtScore }: { game: MlbScoreGame; ruwtScore?: number
 
       {pregame ? (
         <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-3.5">
-          <ScorePreviewTeam side={game.away} align="left" />
+          <ScorePreviewTeam side={game.away} align="left" wsPct={wsPctFor(wsBoard, game.away.teamId)} />
           <div className="text-center">
             <p className="font-display text-[28px] leading-none text-white">
               {game.whenShort ?? "TBD"}
             </p>
           </div>
-          <ScorePreviewTeam side={game.home} align="right" />
+          <ScorePreviewTeam side={game.home} align="right" wsPct={wsPctFor(wsBoard, game.home.teamId)} />
         </div>
       ) : (
         <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-3.5">
-          <ScorePreviewTeam side={game.away} align="left" muted={homeWins} winner={awayWins} />
+          <ScorePreviewTeam
+            side={game.away}
+            align="left"
+            muted={homeWins}
+            winner={awayWins}
+            wsPct={wsPctFor(wsBoard, game.away.teamId)}
+          />
           <div className="text-center">
             <p className="font-display text-[34px] leading-none tabular-nums text-white">
               <span className={awayWins ? "text-white" : homeWins ? "text-white/45" : "text-white"}>
@@ -643,7 +667,13 @@ function ScoreCard({ game, ruwtScore }: { game: MlbScoreGame; ruwtScore?: number
               </p>
             )}
           </div>
-          <ScorePreviewTeam side={game.home} align="right" muted={awayWins} winner={homeWins} />
+          <ScorePreviewTeam
+            side={game.home}
+            align="right"
+            muted={awayWins}
+            winner={homeWins}
+            wsPct={wsPctFor(wsBoard, game.home.teamId)}
+          />
         </div>
       )}
 
@@ -711,11 +741,13 @@ function ScorePreviewTeam({
   align,
   muted,
   winner,
+  wsPct,
 }: {
   side: MlbScoreGame["away"];
   align: "left" | "right";
   muted?: boolean;
   winner?: boolean;
+  wsPct?: number | null;
 }) {
   return (
     <div
@@ -738,6 +770,7 @@ function ScorePreviewTeam({
         {side.record && (
           <p className="numeral mt-0.5 text-[12px] font-medium text-white/70">{side.record}</p>
         )}
+        <WsChampPct pct={wsPct} muted={muted} />
       </div>
     </div>
   );
