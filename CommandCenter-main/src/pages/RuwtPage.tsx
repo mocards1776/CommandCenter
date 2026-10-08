@@ -11,6 +11,7 @@ import { CfbWinProbCaption } from "@/components/sports/CfbWinProbability";
 import LogoPlate from "@/components/sports/LogoPlate";
 import PossessionFootball from "@/components/sports/PossessionFootball";
 import TeamMark from "@/components/sports/TeamMark";
+import MlbLogoGlow from "@/components/sports/MlbLogoGlow";
 import type { UnifiedRuwtItem } from "@/hooks/useRuwtSlate";
 import { useRuwtSlateSplit } from "@/hooks/useRuwtSlateSplit";
 import { kickoffLabel, ruwtStartIso } from "@/lib/ruwt-score-tab";
@@ -1171,18 +1172,6 @@ function RuwtCard({
         game.live ? "border-alert/45" : "border-white/[0.08]",
       )}
     >
-      <div
-        className="pointer-events-none absolute inset-y-0 left-0 w-1/2 opacity-80"
-        style={{
-          background: `radial-gradient(ellipse at 15% 50%, #${game.away.primaryColor}66, transparent 65%)`,
-        }}
-      />
-      <div
-        className="pointer-events-none absolute inset-y-0 right-0 w-1/2 opacity-80"
-        style={{
-          background: `radial-gradient(ellipse at 85% 50%, #${game.home.primaryColor}66, transparent 65%)`,
-        }}
-      />
       <div className="relative z-10 flex items-center justify-between gap-2 border-b border-white/[0.06] px-3 py-2">
         <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-cream">
           <span className="text-accent">#{rank}</span>{" "}
@@ -1373,7 +1362,11 @@ function Side({
         muted && "opacity-60",
       )}
     >
-      {side.teamId ? <TeamMark teamId={side.teamId} size="md" /> : null}
+      {side.teamId ? (
+        <MlbLogoGlow teamId={side.teamId} primaryColor={side.primaryColor} spread={5.2}>
+          <TeamMark teamId={side.teamId} size="md" />
+        </MlbLogoGlow>
+      ) : null}
       <p className="text-[15px] font-bold tracking-wide text-white">{side.abbrev}</p>
       {side.record && (
         <p className="numeral text-[12px] font-medium text-white/70">{side.record}</p>
