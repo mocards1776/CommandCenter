@@ -14,7 +14,6 @@ import { parsePressId, pressEdition } from "@/lib/newspaper";
 import { supabase } from "@/lib/supabase";
 
 const PAGE_W = 1032;
-const NEAR = 3;
 
 function sectionOf(folio: string): string {
   const match = /^([A-Z]+)/.exec(folio);
@@ -40,6 +39,9 @@ export function FlatPaper({ onFallback }: { onFallback: () => void }) {
   const [a1Ready, setA1Ready] = useState(false);
   const pagerRef = useRef<HTMLDivElement>(null);
   const indexRef = useRef(0);
+  const turnToken = useRef(0);
+  const decodedRef = useRef(new Set<string>());
+  const imgRefs = useRef(new Map<number, HTMLImageElement>());
   const fallback = useRef(onFallback);
   fallback.current = onFallback;
 
@@ -93,84 +95,115 @@ export function FlatPaper({ onFallback }: { onFallback: () => void }) {
     return () => ro.disconnect();
   }, [manifest]);
 
-  const go = useCallback(
-    (idx: number) => {
-      const el = pagerRef.current;
-      if (!el || !pages.length) return;
-      const next = Math.max(0, Math.min(pages.length - 1, idx));
-      const leaf = el.querySelectorAll(".wsj-page")[next] as HTMLElement | undefined;
-      if (leaf) leaf.scrollTop = 0;
-      el.scrollTo({
-        left: next * el.clientWidth,
-        behavior: Math.abs(next - indexRef.current) > NEAR ? "instant" : "smooth",
-      });
-      indexRef.current = next;
-      setPageIndex(next);
-      const folio = pages[next]?.folio;
-      if (folio) window.history.replaceState(null, "", `#${folio}`);
+  const decodePage = useCallback(
+    async (index: number) => {
+      const page = pages[index];
+      const img = imgRefs.current.get(index);
+      if (!page || !img) return false;
+      if (decodedRef.current.has(page.url) && img.complete && img.naturalWidth > 0) return true;
+      img.decoding = "sync";
+      if (img.getAttribute("src") !== page.url) img.src = page.url;
+      try {
+        await img.decode();
+      } catch {
+        return false;
+      }
+      if (img.naturalWidth > 0) {
+        decodedRef.current.add(page.url);
+        return true;
+      }
+      return false;
     },
     [pages],
+  );
+
+  // Stay on the page already on screen until the target bitmap is fully decoded,
+  // then jump in one frame. A smooth scroll would show WebKit's late decode.
+  const go = useCallback(
+    (idx: number) => {
+      if (!pages.length) return;
+      const next = Math.max(0, Math.min(pages.length - 1, idx));
+      const token = ++turnToken.current;
+      void (async () => {
+        await decodePage(next);
+        if (token !== turnToken.current) return;
+        const el = pagerRef.current;
+        if (!el) return;
+        const leaf = el.querySelectorAll(".wsj-page")[next] as HTMLElement | undefined;
+        if (leaf) leaf.scrollTop = 0;
+        indexRef.current = next;
+        setPageIndex(next);
+        setA1Ready(true);
+        el.scrollTo({ left: next * el.clientWidth, behavior: "instant" });
+        const folio = pages[next]?.folio;
+        if (folio) window.history.replaceState(null, "", `#${folio}`);
+      })();
+    },
+    [decodePage, pages],
   );
 
   useEffect(() => {
     const el = pagerRef.current;
     if (!el || !pages.length) return;
-    let timer = 0;
-    const settle = () => {
-      const idx = Math.round(el.scrollLeft / (el.clientWidth || 1));
-      const next = Math.max(0, Math.min(pages.length - 1, idx));
-      if (next !== indexRef.current) {
-        indexRef.current = next;
-        setPageIndex(next);
-        const folio = pages[next]?.folio;
-        if (folio) window.history.replaceState(null, "", `#${folio}`);
-      }
+    const lock = () => {
+      const width = el.clientWidth || 1;
+      const idx = Math.round(el.scrollLeft / width);
+      if (idx !== indexRef.current) el.scrollTo({ left: indexRef.current * width, behavior: "instant" });
     };
-    const onScroll = () => {
-      window.clearTimeout(timer);
-      timer = window.setTimeout(settle, 120);
-    };
-    el.addEventListener("scroll", onScroll, { passive: true });
-    el.addEventListener("scrollend", settle);
+    el.addEventListener("scroll", lock, { passive: true });
     const jumpHash = () => {
       const hash = window.location.hash.replace(/^#/, "");
-      if (!hash) return;
-      const idx = pages.findIndex((p) => p.folio === hash);
-      if (idx >= 0) go(idx);
+      const idx = hash ? pages.findIndex((p) => p.folio === hash) : 0;
+      go(idx >= 0 ? idx : 0);
     };
     jumpHash();
     window.addEventListener("hashchange", jumpHash);
+    let startX = 0;
+    let startY = 0;
+    let tracking = false;
+    const touchStart = (event: TouchEvent) => {
+      if (event.touches.length !== 1) return;
+      startX = event.touches[0]!.clientX;
+      startY = event.touches[0]!.clientY;
+      tracking = true;
+    };
+    const touchEnd = (event: TouchEvent) => {
+      if (!tracking) return;
+      tracking = false;
+      const touch = event.changedTouches[0];
+      if (!touch) return;
+      const dx = touch.clientX - startX;
+      const dy = touch.clientY - startY;
+      if (Math.abs(dx) < 48 || Math.abs(dx) < Math.abs(dy)) return;
+      go(indexRef.current + (dx < 0 ? 1 : -1));
+    };
+    el.addEventListener("touchstart", touchStart, { capture: true, passive: true });
+    el.addEventListener("touchend", touchEnd, { capture: true });
     return () => {
-      window.clearTimeout(timer);
-      el.removeEventListener("scroll", onScroll);
-      el.removeEventListener("scrollend", settle);
+      el.removeEventListener("scroll", lock);
       window.removeEventListener("hashchange", jumpHash);
+      el.removeEventListener("touchstart", touchStart, true);
+      el.removeEventListener("touchend", touchEnd, true);
     };
   }, [pages, go]);
 
   useEffect(() => {
-    const root = pagerRef.current;
-    if (!root) return;
-    const imgs = [...root.querySelectorAll<HTMLImageElement>("img")];
-    const jobs: Promise<unknown>[] = [];
-    imgs.forEach((img, i) => {
-      if (i < pageIndex || i > pageIndex + NEAR) return;
-      img.loading = "eager";
-      jobs.push(img.decode().catch(() => undefined));
-    });
-    void Promise.all(jobs);
-    const idle = window.requestIdleCallback?.bind(window) ?? ((cb: () => void) => window.setTimeout(cb, 200));
-    const id = idle(() => {
-      for (let i = pageIndex + NEAR + 1; i < pages.length; i++) {
-        const img = new Image();
-        img.decoding = "async";
-        img.src = pages[i]!.url;
+    if (!pages.length) return;
+    let cancel = false;
+    void decodePage(pageIndex);
+    if (pageIndex > 0) void decodePage(pageIndex - 1);
+    if (pageIndex + 1 < pages.length) void decodePage(pageIndex + 1);
+    void (async () => {
+      for (let i = 0; i < pages.length; i++) {
+        if (cancel) return;
+        if (Math.abs(i - pageIndex) <= 1) continue;
+        await decodePage(i);
       }
-    });
+    })();
     return () => {
-      if (window.cancelIdleCallback && typeof id === "number") window.cancelIdleCallback(id);
+      cancel = true;
     };
-  }, [pageIndex, pages]);
+  }, [decodePage, pageIndex, pages.length]);
 
   if (!manifest) return <TimesHoldShell line="Opening the printed edition" />;
 
@@ -194,10 +227,16 @@ export function FlatPaper({ onFallback }: { onFallback: () => void }) {
   return (
     <div
       className="newspaper-root wsj-shell"
+      style={{ position: "relative" }}
       data-times-flat="1"
       data-times-ready={a1Ready ? "1" : "0"}
       data-times-issue={manifest.issueId}
     >
+      {!a1Ready && (
+        <div style={{ position: "absolute", inset: 0, zIndex: 5 }}>
+          <TimesHoldShell line="Opening the printed edition" />
+        </div>
+      )}
       <div className="wsj-chrome print:hidden">
         <div className="wsj-chrome-l">
           <strong>Thompson Times</strong>
@@ -279,31 +318,28 @@ export function FlatPaper({ onFallback }: { onFallback: () => void }) {
           </label>
         </div>
       </div>
-      <div className="newspaper-edition wsj-pager" ref={pagerRef} style={{ ["--tt-fit" as string]: String(fit) }}>
+      <div
+        className="newspaper-edition wsj-pager"
+        ref={pagerRef}
+        style={{ ["--tt-fit" as string]: String(fit), overflowX: "hidden", scrollBehavior: "auto" }}
+      >
         {pages.map((page, index) => (
           <section key={page.folio} className="wsj-page" aria-label={`Page ${page.folio}`} data-folio={page.folio} data-kind={page.kind}>
             <div className="tt-flat-sheet" style={{ width: PAGE_W, zoom: fit }}>
               <div style={{ position: "relative", width: PAGE_W }}>
                 <img
+                  ref={(node) => {
+                    if (node) imgRefs.current.set(index, node);
+                    else imgRefs.current.delete(index);
+                  }}
                   src={page.url}
                   alt=""
                   width={page.cssWidth}
                   height={page.cssHeight}
-                  decoding="async"
-                  fetchPriority={index === 0 ? "high" : "auto"}
-                  loading={index <= NEAR ? "eager" : "lazy"}
+                  decoding="sync"
+                  fetchPriority={index === pageIndex || index === pageIndex + 1 || index === pageIndex - 1 ? "high" : "low"}
                   draggable={false}
                   style={{ display: "block", width: "100%", height: "auto" }}
-                  onLoad={
-                    index === 0
-                      ? (e) => {
-                          void e.currentTarget.decode().then(
-                            () => setA1Ready(true),
-                            () => setA1Ready(true),
-                          );
-                        }
-                      : undefined
-                  }
                 />
                 <div style={{ position: "absolute", inset: 0 }}>
                   {page.hotspots.map((spot, i) => {

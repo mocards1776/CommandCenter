@@ -15,6 +15,8 @@ import { alertText, editionTitle, frontFor, replyMarkup } from "../times-telegra
  *   session→ mint that same short-lived session for the flat-page printer. Does not
  *            claim the alert and does not send Telegram.
  *   flat-peek → newest ready edition in the window, whether or not the alert was claimed
+ *   hold   → refresh the image claim while the runner waits for the flat manifest,
+ *            so the text alert does not send a second message during that wait
  *   send   → multipart front + optional weather/day/watch PNGs: photo 1 carries
  *            the caption and the web_app "Read the paper" button; the rest follow
  *            in order (weather, The Day Ahead, Best Games). Missing extras are skipped.
@@ -192,7 +194,7 @@ Deno.serve(async (req) => {
   const action = String(field("action") ?? "");
   const test = caller === "admin" && (field("test") === true || field("test") === "true");
   const askedId = typeof field("issue_id") === "string" ? String(field("issue_id")) : "";
-  const runnerMayName = action === "send" || action === "release" || action === "peek" || action === "claim" || action === "session" || action === "flat-peek";
+  const runnerMayName = action === "send" || action === "release" || action === "peek" || action === "claim" || action === "session" || action === "flat-peek" || action === "hold";
   if (askedId && caller !== "admin" && !runnerMayName) {
     return json({ ok: false, error: "Only admin may name an issue" }, 403);
   }
@@ -250,6 +252,19 @@ Deno.serve(async (req) => {
         supabase_url: url,
         supabase_anon_key: anonKey,
       });
+    }
+
+    if (action === "hold") {
+      if (!askedId) return json({ ok: false, error: "issue_id required" }, 400);
+      if (test) return json({ ok: true, held: true });
+      const { error } = await db
+        .from("times_telegram_alerts")
+        .update({ claimed_at: new Date().toISOString() })
+        .eq("issue_id", askedId)
+        .eq("mode", "image")
+        .is("sent_at", null);
+      if (error) return json({ ok: false, error: error.message }, 500);
+      return json({ ok: true, held: true });
     }
 
     if (action === "claim") {

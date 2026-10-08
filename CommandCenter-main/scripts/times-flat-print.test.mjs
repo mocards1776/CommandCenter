@@ -36,18 +36,27 @@ assert.deepEqual(webpSize(buf), { width: 2064, height: 3303 });
 assert.equal(webpSize(Buffer.from("nope")), null);
 
 const shots = readFileSync(new URL("./times-shots.mjs", import.meta.url), "utf8");
-assert.match(shots, /flatA1Png/, "telegram send must look for the flat A1");
-assert.match(shots, /FLAT_A1_WAIT_MS = 3 \* 60 \* 1000/, "flat A1 wait stays inside a few minutes");
+assert.match(shots, /loadFlatA1Png/, "telegram send must look for the flat A1");
+assert.match(shots, /MANIFEST_WAIT_MS = 30 \* 60 \* 1000/, "manifest wait is capped at 30 minutes");
+assert.match(shots, /MANIFEST_POLL_MS = 30 \* 1000/, "manifest poll is about 30 seconds");
 assert.match(shots, /using the chromium front/, "missing flat A1 keeps today's front");
+assert.match(shots, /action: "hold"/, "the wait refreshes the image claim so text does not send twice");
 assert.match(shots, /action: "session"/, "the printer mints through the existing shots function");
+assert.doesNotMatch(shots, /FLAT_A1_WAIT_MS/, "the alert no longer gives up after a few minutes");
 assert.doesNotMatch(shots, /TIMES_FLAT_SESSION/, "no hand-made session secret");
 
 const workflow = readFileSync(new URL("../../.github/workflows/times-telegram-shots.yml", import.meta.url), "utf8");
-assert.match(workflow, /group: times-telegram-shots/);
+assert.match(workflow, /group: times-telegram-shots-\$\{\{ github\.event\.inputs\.issue_id \|\| github\.run_id \}\}/);
 assert.match(workflow, /group: times-flat-print/);
+assert.match(workflow, /timeout-minutes: 50/, "shoot job covers the 30-minute wait plus the shots");
 assert.match(workflow, /action: "session"|--mint/, "print job logs in with the shots OIDC mint");
 assert.match(workflow, /id-token: write/);
 assert.doesNotMatch(workflow, /TIMES_FLAT_SESSION/);
 assert.doesNotMatch(workflow, /TIMES_SUPABASE_ANON_KEY/);
+assert.equal(
+  (workflow.match(/group: times-telegram-shots/g) ?? []).length,
+  1,
+  "only the shoot job wears the shots concurrency group",
+);
 
 console.log("times-flat-print ok");

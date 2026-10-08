@@ -16,10 +16,12 @@ name: Times Telegram image alert
 # times-telegram starts this workflow with workflow_dispatch as soon as an
 # edition is ready (Supabase secret TIMES_TELEGRAM_GITHUB_TOKEN, already used
 # for the image alert). The schedule below is only a backup; GitHub's
-# schedule: cron in this repo is hours late. After a kick, times-telegram holds
-# the text alert for 12 minutes. The shoot job itself waits at most 3 extra
-# minutes for the flat A1 file, then sends once. The print job has its own
-# concurrency group so a long print does not hold the next alert.
+# schedule: cron in this repo is hours late. The shoot job takes the Chromium
+# shots, then polls every 30s for that edition's flat manifest, up to 30
+# minutes, and sends once. A different edition has its own concurrency group,
+# so this wait does not hold the next alert. The print job stays on its own
+# group too. If the manifest never appears, the send is today's fallback:
+# the flat A1 file when it is a real page, otherwise the Chromium front.
 #
 # On-demand flat print of one edition: run this workflow with issue_id set.
 # If that edition's alert already went out, the shoot job peeks and skips, and
@@ -46,10 +48,13 @@ permissions:
 jobs:
   shoot:
     concurrency:
-      group: times-telegram-shots
+      # Per edition, so a 30-minute manifest wait does not queue the next alert.
+      # A schedule run with no issue id uses the run id and still claim-locks one send.
+      group: times-telegram-shots-${{ github.event.inputs.issue_id || github.run_id }}
       cancel-in-progress: false
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    # Chromium install and the sheet shots, plus the 30-minute manifest wait.
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
         with:

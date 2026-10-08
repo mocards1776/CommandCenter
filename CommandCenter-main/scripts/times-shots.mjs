@@ -24,6 +24,7 @@ import { appendFile, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/pro
 import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const APP = (process.env.TIMES_APP_ORIGIN || "https://command-center-flax-gamma.vercel.app").replace(/\/$/, "");
 const SUPABASE_URL = (process.env.TIMES_SUPABASE_URL || "https://esdgrgulaxnewmhjuyzh.supabase.co").replace(/\/$/, "");
@@ -36,8 +37,13 @@ const AUDIENCE = "times-telegram-shots";
  * sheet, which may be taller. Do not introduce a second canvas.
  */
 const IPAD13 = { width: 1032, height: 1376 };
-/** Extra wait, after the Chromium front exists, for the flat A1 file. */
-const FLAT_A1_WAIT_MS = 3 * 60 * 1000;
+/**
+ * After the Chromium shots exist, wait until the flat manifest is published
+ * so the alert's "Read the paper" button opens the flat edition. Poll about
+ * every 30s. Cap is from the moment this wait starts, not from filing.
+ */
+export const MANIFEST_WAIT_MS = 30 * 60 * 1000;
+export const MANIFEST_POLL_MS = 30 * 1000;
 const FLAT_MIN_CSS = 480;
 const TELEGRAM_PHOTO_MAX = 9_500_000;
 const ALERT_KINDS = [
@@ -301,40 +307,92 @@ async function webpToPng(bytes) {
 }
 
 /**
- * The flat printer uploads A1.webp as soon as that sheet validates.
- * Prefer a lossless PNG of that file (same pixels) so the alert photo is the
- * iPad A1. Missing, short, or too large: the caller keeps the Chromium front.
- * The wait is capped so the alert is not held more than a few minutes.
+ * Whether the shoot job should keep polling, send the flat A1, or send
+ * today's fallback. A published manifest wins even on the last poll.
+ * @returns {"flat" | "fallback" | "wait"}
  */
-async function flatA1Png(issueId) {
-  const deadline = Date.now() + FLAT_A1_WAIT_MS;
-  const base = `${SUPABASE_URL}/storage/v1/object/public/times-flat/${issueId}/A1.webp`;
-  while (true) {
-    try {
-      const res = await fetch(`${base}?t=${Date.now()}`, { cache: "no-store" });
-      if (res.ok) {
-        const bytes = Buffer.from(await res.arrayBuffer());
-        const dim = webpSize(bytes);
-        const cssH = dim ? dim.height / DPR_GUESS : 0;
-        if (dim && cssH >= FLAT_MIN_CSS && bytes.length > 80_000) {
-          const png = await webpToPng(bytes);
-          if (png.length > TELEGRAM_PHOTO_MAX) {
-            log("flat A1 png is over the Telegram photo limit; using the chromium front");
-            return null;
-          }
-          log("flat A1", `${dim.width}x${dim.height}`, `${bytes.length} webp bytes`, `${png.length} png bytes`);
-          return png;
-        }
-        log("flat A1 not usable yet", bytes.length, dim ? `${dim.width}x${dim.height}` : "no-dim");
-      }
-    } catch (err) {
-      log("flat A1 fetch:", err.message);
-    }
-    if (Date.now() >= deadline) break;
-    await new Promise((resolve) => setTimeout(resolve, 5_000));
+export function manifestWaitDecision(elapsedMs, manifestReady, capMs = MANIFEST_WAIT_MS) {
+  if (manifestReady) return "flat";
+  if (elapsedMs >= capMs) return "fallback";
+  return "wait";
+}
+
+async function flatManifestReady(issueId) {
+  const url = `${SUPABASE_URL}/storage/v1/object/public/times-flat/${issueId}/manifest.json?t=${Date.now()}`;
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) return false;
+  const data = await res.json().catch(() => null);
+  return Boolean(data && data.issueId === issueId && Array.isArray(data.pages) && data.pages.length > 0);
+}
+
+/** Keep the image claim fresh so the text alert does not send a second message while we wait. */
+async function holdClaim(issueId) {
+  try {
+    await call({ action: "hold", issue_id: issueId });
+  } catch (err) {
+    log("hold claim:", err.message);
   }
-  log("flat A1 not ready within 3 min; sending the chromium front");
-  return null;
+}
+
+/**
+ * Poll until the flat manifest for this edition is public, or the cap passes.
+ * Does not send. The caller sends exactly once after this returns.
+ */
+async function waitForFlatManifest(issueId) {
+  const started = Date.now();
+  while (true) {
+    let ready = false;
+    try {
+      ready = await flatManifestReady(issueId);
+    } catch (err) {
+      log("flat manifest:", err.message);
+    }
+    const elapsed = Date.now() - started;
+    const decision = manifestWaitDecision(elapsed, ready);
+    if (decision === "flat") {
+      log("flat manifest is up");
+      return decision;
+    }
+    if (decision === "fallback") {
+      log("flat manifest not published within 30 min; sending today's fallback");
+      return decision;
+    }
+    await holdClaim(issueId);
+    const left = MANIFEST_WAIT_MS - elapsed;
+    await new Promise((resolve) => setTimeout(resolve, Math.min(MANIFEST_POLL_MS, Math.max(0, left))));
+  }
+}
+
+/**
+ * One fetch of the flat A1. A lossless PNG of that file is the same pixels as
+ * the iPad page. Missing, short, or too large: the caller keeps the Chromium front.
+ */
+async function loadFlatA1Png(issueId) {
+  const url = `${SUPABASE_URL}/storage/v1/object/public/times-flat/${issueId}/A1.webp?t=${Date.now()}`;
+  try {
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) {
+      log("flat A1 missing", res.status);
+      return null;
+    }
+    const bytes = Buffer.from(await res.arrayBuffer());
+    const dim = webpSize(bytes);
+    const cssH = dim ? dim.height / DPR_GUESS : 0;
+    if (!dim || cssH < FLAT_MIN_CSS || bytes.length <= 80_000) {
+      log("flat A1 not usable", bytes.length, dim ? `${dim.width}x${dim.height}` : "no-dim");
+      return null;
+    }
+    const png = await webpToPng(bytes);
+    if (png.length > TELEGRAM_PHOTO_MAX) {
+      log("flat A1 png is over the Telegram photo limit; using the chromium front");
+      return null;
+    }
+    log("flat A1", `${dim.width}x${dim.height}`, `${bytes.length} webp bytes`, `${png.length} png bytes`);
+    return png;
+  } catch (err) {
+    log("flat A1 fetch:", err.message);
+    return null;
+  }
 }
 
 const DPR_GUESS = 2;
@@ -397,6 +455,12 @@ async function main() {
     return;
   }
   log("claimed", claim.issue_id, test ? "(test)" : "");
+  // Text may retake a claim that sits for 10 minutes. Refresh it through the
+  // chromium shots and the manifest wait so that path does not send as well.
+  const holdTimer = setInterval(() => {
+    void holdClaim(claim.issue_id);
+  }, 60_000);
+  if (typeof holdTimer.unref === "function") holdTimer.unref();
   let shots;
   try {
     shots = await shoot(claim);
@@ -412,7 +476,8 @@ async function main() {
   let frontPng = shots.frontPng;
   let frontName = `${claim.issue_id}-front.png`;
   if (send) {
-    const flat = await flatA1Png(claim.issue_id).catch((err) => {
+    await waitForFlatManifest(claim.issue_id);
+    const flat = await loadFlatA1Png(claim.issue_id).catch((err) => {
       log("flat A1 skipped:", err.message);
       return null;
     });
@@ -436,7 +501,10 @@ async function main() {
     await writeFile(dest, png);
     log("wrote", dest);
   }
-  if (!send) return;
+  if (!send) {
+    clearInterval(holdTimer);
+    return;
+  }
 
   const form = new FormData();
   form.set("action", "send");
@@ -447,13 +515,17 @@ async function main() {
     if (png) form.set(name, new Blob([png], { type: "image/png" }), `${claim.issue_id}-${name}.png`);
   }
   const res = await fetch(SHOTS_URL, { method: "POST", headers: await authHeaders(), body: form });
+  clearInterval(holdTimer);
   const body = await res.json().catch(() => null);
   log("send:", JSON.stringify(body));
   if (!res.ok || !body?.ok) throw new Error(`send failed: ${body?.error ?? res.status}`);
   if (!body.skipped && !body.sent) throw new Error("Telegram refused the image alert");
 }
 
-main().catch((err) => {
-  console.error(`[times-shots] ${err.message}`);
-  process.exit(1);
-});
+const entry = process.argv[1];
+if (entry && path.resolve(entry) === fileURLToPath(import.meta.url)) {
+  main().catch((err) => {
+    console.error(`[times-shots] ${err.message}`);
+    process.exit(1);
+  });
+}
