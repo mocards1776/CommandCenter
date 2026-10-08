@@ -3,7 +3,6 @@ import { asFiledQueries, asPrintedIssue, ISSUE_VERSION, peekProofIssue, slimIssu
 import { filterRecentFiledIssues, EDITION_LOOKBACK_MS, type FiledIssueMeta } from "./newspaper-editions";
 import type { EditorRequest } from "./newspaper-editor";
 import { ISSUE_QUERY_COLUMNS, ISSUE_SHELL_COLUMNS } from "./newspaper-payload";
-import { consumeIssueShellStream, frontPrefixLength, yieldToPaint } from "./newspaper-front-load";
 
 function filed(data: { version?: unknown; status?: unknown } | null, error: unknown): boolean {
   return !error && !!data && data.status === "ready" && data.version === ISSUE_VERSION;
@@ -13,67 +12,6 @@ function filed(data: { version?: unknown; status?: unknown } | null, error: unkn
 export async function readRemoteStories(id: string): Promise<unknown[] | null> {
   const shell = await readRemoteIssueShell(id);
   return shell?.stories ?? null;
-}
-
-async function* responseTextChunks(body: ReadableStream<Uint8Array>): AsyncGenerator<string> {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (value?.byteLength) yield decoder.decode(value, { stream: true });
-    }
-    const rest = decoder.decode();
-    if (rest) yield rest;
-  } finally {
-    reader.releaseLock();
-  }
-}
-
-/**
- * Stories + print clock, A1 first. `onFront` runs once the lead slots are in
- * hand; the returned issue still has every story. Desks stay on the queries
- * request so the ~4MB file does not compete with first paint.
- */
-export async function readRemoteIssueFrontFirst(
-  id: string,
-  onFront: (issue: PrintedIssue) => void,
-): Promise<PrintedIssue | null> {
-  const planted = peekProofIssue(id);
-  if (planted) {
-    const shell = { ...planted, queries: [] as PrintedIssue["queries"] };
-    const n = frontPrefixLength(shell.stories);
-    if (n < shell.stories.length) {
-      onFront({ ...shell, stories: shell.stories.slice(0, n) });
-      await yieldToPaint();
-    }
-    return shell;
-  }
-
-  const base = import.meta.env.VITE_SUPABASE_URL;
-  const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
-  if (!base || !key) return readRemoteIssueShell(id);
-
-  try {
-    const { data } = await supabase.auth.getSession();
-    const headers: Record<string, string> = {
-      apikey: key,
-      Accept: "application/vnd.pgrst.object+json",
-    };
-    if (data.session?.access_token) headers.Authorization = `Bearer ${data.session.access_token}`;
-    const url = `${base.replace(/\/$/, "")}/rest/v1/newspaper_issues?id=eq.${encodeURIComponent(id)}&select=${encodeURIComponent(ISSUE_SHELL_COLUMNS.replace(/\s/g, ""))}`;
-    const res = await fetch(url, { headers });
-    if (!res.ok || !res.body) return readRemoteIssueShell(id);
-    const streamed = await consumeIssueShellStream(responseTextChunks(res.body), (stories) => {
-      const partial = asPrintedIssue(id, ISSUE_VERSION, stories, []);
-      if (partial) onFront(partial);
-    });
-    if (!streamed) return readRemoteIssueShell(id);
-    return asPrintedIssue(id, streamed.version, streamed.stories, [], { printedAt: streamed.printedAt });
-  } catch {
-    return readRemoteIssueShell(id);
-  }
 }
 
 /** Stories + print clock, no desks. A1 can set from this. */
