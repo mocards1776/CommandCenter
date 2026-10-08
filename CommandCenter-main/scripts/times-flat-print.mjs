@@ -411,6 +411,8 @@ export function salvageSheet(contentH, pieces, pageH = PAGE_CSS_H) {
   // Every step advances more than 4 CSS px.
   const guardMax = Math.max(80, Math.ceil(height / 4) + 2);
   let guard = 0;
+  // A block already hard-broken keeps breaking; its tail is not scaled.
+  let broken = null;
   while (y < height - 0.5) {
     if (++guard > guardMax) return { ok: false, reason: "page loop", pages };
     let header = headerAt(list, y);
@@ -455,7 +457,7 @@ export function salvageSheet(contentH, pieces, pageH = PAGE_CSS_H) {
       const to = Math.min(height, piece.bottom);
       const span = to - y;
       const fit = pageH / span;
-      if (span > pageH + 0.5 && fit >= MIN_FIT) {
+      if (span > pageH + 0.5 && fit >= MIN_FIT && piece !== broken) {
         pages.push({
           slices: [{ srcTop: y, srcBottom: to, fit }],
           degraded: true,
@@ -477,6 +479,7 @@ export function salvageSheet(contentH, pieces, pageH = PAGE_CSS_H) {
       selector,
     });
     if (cropBottom <= y + 0.5) return { ok: false, reason, pages };
+    broken = piece;
     y = cropBottom;
   }
   return { ok: y >= height - 0.5, pages, degraded: pages.some((page) => page.degraded) };
