@@ -9,10 +9,23 @@
  *   node scripts/times-shots.mjs --flat --issue 2026-10-07-evening
  *   node scripts/times-flat-print.mjs --issue 2026-10-07-evening
  *
- * Auth: TIMES_SESSION_FILE (default /tmp/tt-measure/session.json) plus
- * TIMES_LAYOUT_FILE, or TIMES_SESSION_JSON. Supabase URL and the publishable
- * key come from the environment or /tmp/tt-measure/vite.env.
- * TIMES_APP_ORIGIN defaults to production.
+ * Auth for a person at the machine: TIMES_SESSION_FILE (default
+ * /tmp/tt-measure/session.json) plus TIMES_LAYOUT_FILE, or TIMES_SESSION_JSON.
+ * The GitHub Actions job does not use a session secret. It asks
+ * times-telegram-shots for a short-lived session (action "session") with the
+ * same GitHub OIDC token the Telegram shots already use.
+ * Supabase URL and the publishable key come from TIMES_SUPABASE_FILE, the
+ * environment, or /tmp/tt-measure/vite.env. TIMES_APP_ORIGIN defaults to production.
+ *
+ * A sheet is not shot until it has content, its height has held for more than
+ * one frame, its images have decoded, and fonts are ready. A short or mostly
+ * blank shot is retried. The manifest is uploaded only when every page passes.
+ * Otherwise any published manifest for that edition is removed and the reader
+ * stays on the live paper.
+ *
+ * Page images are addressed on the app origin (/times-flat/...) so Vercel's
+ * CDN caches them. Storage objects use a year-long immutable cache header.
+ * The manifest itself stays a small JSON object on Supabase.
  *
  * Images go to the public times-flat bucket. Editions older than 7 calendar
  * days (America/Chicago) are deleted at the end of the run.
@@ -28,6 +41,14 @@ const PAGE_W = 1032;
 const DPR = 2;
 const BUCKET = "times-flat";
 const RETENTION_DAYS = 7;
+/** Header-only shells from this press land around 200 CSS px. Real inside pages start above this. */
+export const MIN_CSS_HEIGHT = 480;
+/** Share of sampled pixels that are near-white or clear. Above this, the page is blank. */
+export const MAX_BLANK_RATIO = 0.9;
+const PAGE_TRIES = 3;
+const SHEET_WAIT_MS = 18_000;
+const IMAGE_CACHE = "public, max-age=31536000, immutable";
+const MANIFEST_CACHE = "public, max-age=60";
 const SESSION_FILE = process.env.TIMES_SESSION_FILE || "/tmp/tt-measure/session.json";
 const LAYOUT_FILE = process.env.TIMES_LAYOUT_FILE || "/tmp/tt-measure/layout.json";
 
@@ -98,11 +119,104 @@ async function readEnvFile(file) {
 }
 
 async function supabaseConfig() {
+  if (process.env.TIMES_SUPABASE_FILE) {
+    try {
+      const parsed = JSON.parse(await readFile(process.env.TIMES_SUPABASE_FILE, "utf8"));
+      const url = String(parsed.url || "").replace(/\/$/, "");
+      const key = String(parsed.key || "");
+      if (url && key) return { url, key };
+    } catch {
+      /* fall through to the env file */
+    }
+  }
   const file = await readEnvFile("/tmp/tt-measure/vite.env");
   const url = (process.env.TIMES_SUPABASE_URL || process.env.VITE_SUPABASE_URL || file.VITE_SUPABASE_URL || "").replace(/\/$/, "");
   const key = process.env.TIMES_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || file.VITE_SUPABASE_ANON_KEY || "";
   if (!url || !key) throw new Error("Missing Supabase URL or publishable key");
   return { url, key };
+}
+
+/** Lossless WebP (VP8L) width and height. Returns null for any other container. */
+export function webpSize(buf) {
+  if (!buf || buf.length < 25) return null;
+  if (buf.toString("ascii", 0, 4) !== "RIFF" || buf.toString("ascii", 8, 12) !== "WEBP") return null;
+  if (buf.toString("ascii", 12, 16) !== "VP8L") return null;
+  if (buf[20] !== 0x2f) return null;
+  const b0 = buf[21];
+  const b1 = buf[22];
+  const b2 = buf[23];
+  const b3 = buf[24];
+  const width = 1 + (((b1 & 0x3f) << 8) | b0);
+  const height = 1 + (((b3 & 0x0f) << 10) | (b2 << 2) | ((b1 & 0xc0) >> 6));
+  if (width < 2 || height < 2) return null;
+  return { width, height };
+}
+
+export function judgePage(page) {
+  const cssHeight = Number(page?.cssHeight) || 0;
+  const blankRatio = Number(page?.blankRatio);
+  if (cssHeight < MIN_CSS_HEIGHT) return { ok: false, reason: `short ${Math.round(cssHeight)}` };
+  if (Number.isFinite(blankRatio) && blankRatio > MAX_BLANK_RATIO) {
+    return { ok: false, reason: `blank ${blankRatio.toFixed(2)}` };
+  }
+  return { ok: true, reason: "ok" };
+}
+
+function blankRatio(canvas, width, height) {
+  let white = 0;
+  let n = 0;
+  const step = 8;
+  for (let y = 0; y < height; y += step) {
+    const row = y * width * 4;
+    for (let x = 0; x < width; x += step) {
+      const o = row + x * 4;
+      n += 1;
+      const a = canvas[o + 3];
+      if (a < 16 || (canvas[o] >= 248 && canvas[o + 1] >= 248 && canvas[o + 2] >= 248)) white += 1;
+    }
+  }
+  return n ? white / n : 1;
+}
+
+/** Drop a tall unpainted tail. A real page keeps its last ink row. */
+function cropWhiteTail(canvas, width, height) {
+  const step = 4;
+  let bottom = -1;
+  for (let y = height - 1; y >= 0; y -= 1) {
+    const row = y * width * 4;
+    let ink = 0;
+    let n = 0;
+    for (let x = 0; x < width; x += step) {
+      const o = row + x * 4;
+      n += 1;
+      if (canvas[o + 3] > 16 && (canvas[o] < 248 || canvas[o + 1] < 248 || canvas[o + 2] < 248)) ink += 1;
+    }
+    if (n && ink / n > 0.004) {
+      bottom = y;
+      break;
+    }
+  }
+  if (bottom < 0) return { buffer: canvas, height: 1 };
+  const keep = Math.min(height, bottom + 1 + 8);
+  if (height - keep < 80) return { buffer: canvas, height };
+  const next = Buffer.alloc(width * keep * 4);
+  canvas.copy(next, 0, 0, width * keep * 4);
+  return { buffer: next, height: keep };
+}
+
+function fitHotspots(spots, sheetCss, contentCss) {
+  if (!sheetCss || !contentCss || Math.abs(sheetCss - contentCss) < 1) return spots;
+  const scale = sheetCss / contentCss;
+  const out = [];
+  for (const spot of spots) {
+    const y = spot.y * scale;
+    const h = spot.h * scale;
+    if (y >= 1 || y + h <= 0) continue;
+    const top = Math.max(0, y);
+    const bottom = Math.min(1, y + h);
+    out.push({ ...spot, y: top, h: bottom - top });
+  }
+  return out;
 }
 
 async function loadSession(config) {
@@ -252,11 +366,20 @@ async function captureSheet(page, index, pngPath) {
     await unlink(raw).catch(() => {});
     await unlink(part.slice).catch(() => {});
   }
+  const cropped = cropWhiteTail(canvas, outW, outH);
+  const blank = blankRatio(cropped.buffer, outW, cropped.height);
   const rawOut = `${pngPath}.raw`;
-  await writeFile(rawOut, canvas);
-  await ffmpeg(["-y", "-f", "rawvideo", "-pix_fmt", "rgba", "-s", `${outW}x${outH}`, "-i", rawOut, pngPath]);
+  await writeFile(rawOut, cropped.buffer);
+  await ffmpeg(["-y", "-f", "rawvideo", "-pix_fmt", "rgba", "-s", `${outW}x${cropped.height}`, "-i", rawOut, pngPath]);
   await unlink(rawOut).catch(() => {});
-  return { width: outW, height: outH, cssWidth: geom.w, cssHeight: geom.h };
+  return {
+    width: outW,
+    height: cropped.height,
+    cssWidth: geom.w,
+    cssHeight: cropped.height / scale,
+    sheetCssHeight: geom.h,
+    blankRatio: blank,
+  };
 }
 
 function authHeaders(config, token, extra = {}) {
@@ -267,13 +390,13 @@ function authHeaders(config, token, extra = {}) {
   };
 }
 
-async function uploadObject(config, token, objectPath, bytes, contentType) {
+async function uploadObject(config, token, objectPath, bytes, contentType, cacheControl) {
   const res = await fetch(`${config.url}/storage/v1/object/${BUCKET}/${objectPath}`, {
     method: "POST",
     headers: authHeaders(config, token, {
       "Content-Type": contentType,
       "x-upsert": "true",
-      "cache-control": "public, max-age=86400",
+      "cache-control": cacheControl,
     }),
     body: bytes,
   });
@@ -389,6 +512,60 @@ async function reveal(page) {
     const pager = document.querySelector(".newspaper-edition");
     if (pager) pager.style.visibility = "visible";
   });
+}
+
+/**
+ * Non-empty sheet, fonts ready, every image decoded, and the same height
+ * across three animation frames and two polls. A short shell keeps waiting
+ * until the budget runs out so a late table can still land.
+ */
+async function waitForSheet(page, index, budgetMs) {
+  await page.evaluate(() => document.fonts?.ready).catch(() => {});
+  const start = Date.now();
+  let lastH = -1;
+  let stablePolls = 0;
+  let last = null;
+  while (Date.now() - start < budgetMs) {
+    const snap = await page.evaluate(async (i) => {
+      const leaf = document.querySelectorAll(".wsj-page")[i];
+      const sheet = leaf?.querySelector(".wsj-sheet");
+      if (!sheet || sheet.childElementCount === 0) {
+        return { empty: true, h: 0, stable: false, pending: 0, text: 0 };
+      }
+      const imgs = [...sheet.querySelectorAll("img")];
+      const pending = imgs.filter((img) => !img.complete).length;
+      const h1 = sheet.offsetHeight;
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const h2 = sheet.offsetHeight;
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const h3 = sheet.offsetHeight;
+      const text = (sheet.innerText || "").replace(/\s+/g, " ").trim().length;
+      return {
+        empty: false,
+        h: h3,
+        stable: h1 > 0 && h1 === h2 && h2 === h3,
+        pending,
+        text,
+      };
+    }, index);
+    last = snap;
+    if (!snap.empty && snap.stable && snap.pending === 0 && snap.text >= 24 && snap.h === lastH) stablePolls += 1;
+    else if (!snap.empty && snap.stable && snap.pending === 0 && snap.text >= 24) stablePolls = 1;
+    else stablePolls = 0;
+    lastH = snap.h || 0;
+    if (
+      !snap.empty &&
+      snap.stable &&
+      snap.pending === 0 &&
+      snap.text >= 24 &&
+      snap.h >= MIN_CSS_HEIGHT &&
+      stablePolls >= 2
+    ) {
+      return { ok: true, ...snap };
+    }
+    await page.waitForTimeout(200);
+  }
+  return { ok: false, ...(last || { empty: true, h: 0, stable: false, pending: 0, text: 0 }) };
 }
 
 async function waitQuiet(page, index) {
@@ -577,21 +754,65 @@ export async function printFlatEdition() {
     );
     if (!leaves.length) throw new Error("no folios");
     log("folios", leaves.length);
+    await deleteManifest(config, session.access_token, issueId);
 
+    const printedAt = new Date().toISOString();
+    const version = String(Date.parse(printedAt));
+    const report = [];
     for (let i = 0; i < leaves.length; i++) {
       const leaf = leaves[i];
-      await primePage(page, i);
       const pngPath = path.join(outDir, `${leaf.folio}.png`);
       const webpPath = path.join(outDir, `${leaf.folio}.webp`);
-      const shot = await captureSheet(page, i, pngPath);
-      if (!shot) {
-        log("skip", leaf.folio, "no sheet");
-        continue;
+      let shot = null;
+      let spots = [];
+      let reason = "no sheet";
+      for (let attempt = 1; attempt <= PAGE_TRIES; attempt++) {
+        if (attempt > 1) log("retry", leaf.folio, attempt, reason);
+        await primePage(page, i);
+        const ready = await waitForSheet(page, i, SHEET_WAIT_MS);
+        log(
+          "sheet",
+          leaf.folio,
+          "attempt",
+          attempt,
+          "css",
+          Math.round(ready.h || 0),
+          ready.stable ? "stable" : "moving",
+          "images",
+          ready.pending || 0,
+          ready.ok ? "content" : "shell",
+        );
+        shot = await captureSheet(page, i, pngPath);
+        if (!shot) {
+          reason = "no sheet";
+          continue;
+        }
+        spots = fitHotspots(await hotspots(page, i), shot.sheetCssHeight, shot.cssHeight);
+        const verdict = judgePage(shot);
+        reason = verdict.reason;
+        if (verdict.ok) break;
       }
+      const verdict = shot ? judgePage(shot) : { ok: false, reason };
+      const cssHeight = shot ? Math.round(shot.cssHeight) : 0;
+      report.push({
+        folio: leaf.folio,
+        cssHeight,
+        blankRatio: shot ? shot.blankRatio : 1,
+        ok: verdict.ok,
+        reason: verdict.reason,
+      });
+      log(
+        "HEIGHT",
+        leaf.folio,
+        `css ${cssHeight}`,
+        shot ? `${shot.width}x${shot.height}` : "no-shot",
+        `blank ${shot ? shot.blankRatio.toFixed(2) : "1.00"}`,
+        verdict.ok ? "ok" : `FAIL ${verdict.reason}`,
+      );
+      if (!verdict.ok || !shot) continue;
       await encodeWebp(pngPath, webpPath);
       const webp = await readFile(webpPath);
-      const spots = await hotspots(page, i);
-      shots.push({
+      const row = {
         folio: leaf.folio,
         kind: leaf.kind,
         index: shots.length,
@@ -603,48 +824,72 @@ export async function printFlatEdition() {
         cssWidth: shot.cssWidth,
         cssHeight: shot.cssHeight,
         hotspots: spots,
-      });
-      log(leaf.folio, `${shot.width}x${shot.height}px`, `${webp.length} bytes`, `${spots.length} links`, `css ${shot.cssWidth}x${shot.cssHeight}`);
+      };
+      shots.push(row);
+      const tokenNow = session.access_token;
+      await uploadObject(config, tokenNow, `${issueId}/${leaf.folio}.webp`, webp, "image/webp", IMAGE_CACHE);
+      if (leaf.folio === "A1") log("A1 on storage for the Telegram alert");
       if (i !== 0) await unlink(pngPath).catch(() => {});
     }
     await page.close();
     await context.close();
+    const heightLines = report.map(
+      (row) =>
+        `${row.folio}\tcss ${row.cssHeight}\tblank ${row.blankRatio.toFixed(2)}\t${row.ok ? "ok" : `FAIL ${row.reason}`}`,
+    );
+    await writeFile(path.join(outDir, "heights.txt"), `${heightLines.join("\n")}\n`);
+    log(`page heights (${report.length}):\n${heightLines.join("\n")}`);
+    const failures = report.filter((row) => !row.ok);
+    const token = session.access_token;
+    if (failures.length || shots.length !== leaves.length) {
+      await deleteManifest(config, token, issueId);
+      await prune(config, token).catch((err) => log("prune", err.message));
+      const why = failures.map((row) => `${row.folio}:${row.reason}`).join(", ");
+      throw new Error(`manifest withheld (${failures.length} pages): ${why}`);
+    }
+    const manifest = {
+      issueId,
+      printedAt,
+      geometry: { cssWidth: PAGE_W, cssViewportHeight: IPAD13.height, dpr: DPR, pageW: PAGE_W },
+      pages: shots.map((shot) => ({
+        folio: shot.folio,
+        kind: shot.kind,
+        index: shot.index,
+        section: shot.section,
+        url: `/times-flat/${issueId}/${shot.folio}.webp?v=${version}`,
+        width: shot.width,
+        height: shot.height,
+        cssWidth: shot.cssWidth,
+        cssHeight: shot.cssHeight,
+        bytes: shot.bytes,
+        hotspots: shot.hotspots,
+      })),
+    };
+    const manifestPath = path.join(outDir, "manifest.json");
+    await writeFile(manifestPath, JSON.stringify(manifest));
+    await uploadObject(config, token, `${issueId}/manifest.json`, await readFile(manifestPath), "application/json", MANIFEST_CACHE);
+    const total = shots.reduce((sum, shot) => sum + shot.bytes, 0);
+    log("uploaded", issueId, shots.length, "pages", total, "bytes");
+    log("manifest", `${config.url}/storage/v1/object/public/${BUCKET}/${issueId}/manifest.json`);
+    await prune(config, token);
+    return manifest;
   } finally {
     await browser.close();
   }
+}
 
-  if (!shots.length) throw new Error("captured no pages");
-  const token = session.access_token;
-  for (const shot of shots) {
-    const bytes = await readFile(shot.file);
-    await uploadObject(config, token, `${issueId}/${shot.folio}.webp`, bytes, "image/webp");
+async function deleteManifest(config, token, issueId) {
+  const res = await fetch(`${config.url}/storage/v1/object/${BUCKET}`, {
+    method: "DELETE",
+    headers: authHeaders(config, token, { "Content-Type": "application/json" }),
+    body: JSON.stringify({ prefixes: [`${issueId}/manifest.json`] }),
+  });
+  if (!res.ok && res.status !== 404) {
+    const text = await res.text();
+    log("manifest delete", res.status, text.slice(0, 160));
+    return;
   }
-  const manifest = {
-    issueId,
-    printedAt: new Date().toISOString(),
-    geometry: { cssWidth: PAGE_W, cssViewportHeight: IPAD13.height, dpr: DPR, pageW: PAGE_W },
-    pages: shots.map((shot) => ({
-      folio: shot.folio,
-      kind: shot.kind,
-      index: shot.index,
-      section: shot.section,
-      url: `${config.url}/storage/v1/object/public/${BUCKET}/${issueId}/${shot.folio}.webp`,
-      width: shot.width,
-      height: shot.height,
-      cssWidth: shot.cssWidth,
-      cssHeight: shot.cssHeight,
-      bytes: shot.bytes,
-      hotspots: shot.hotspots,
-    })),
-  };
-  const manifestPath = path.join(outDir, "manifest.json");
-  await writeFile(manifestPath, JSON.stringify(manifest));
-  await uploadObject(config, token, `${issueId}/manifest.json`, await readFile(manifestPath), "application/json");
-  const total = shots.reduce((sum, shot) => sum + shot.bytes, 0);
-  log("uploaded", issueId, shots.length, "pages", total, "bytes");
-  log("manifest", manifest.pages[0]?.url.replace(/\/A1\.webp$/, "/manifest.json"));
-  await prune(config, token);
-  return manifest;
+  log("cleared manifest", issueId);
 }
 
 const invoked = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;

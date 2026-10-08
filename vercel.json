@@ -5,6 +5,18 @@
   "installCommand": "npm install",
   "framework": "vite",
   "rewrites": [
-    { "source": "/((?!api/).*)", "destination": "/index.html" }
+    {
+      "source": "/times-flat/:issue/:file",
+      "destination": "https://esdgrgulaxnewmhjuyzh.supabase.co/storage/v1/object/public/times-flat/:issue/:file"
+    },
+    { "source": "/((?!api/|times-flat/).*)", "destination": "/index.html" }
+  ],
+  "headers": [
+    {
+      "source": "/times-flat/(.*\\.webp)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    }
   ]
 }
