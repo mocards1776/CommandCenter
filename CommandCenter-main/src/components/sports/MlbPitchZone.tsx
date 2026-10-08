@@ -1,5 +1,7 @@
 import MlbHeatGrid from "@/components/sports/MlbHeatGrid";
 import MlbPitchStatcastCard from "@/components/sports/MlbPitchStatcastCard";
+import PlayerHeadshot from "@/components/sports/PlayerHeadshot";
+import { batterBoxSide, matchupSide, type Hand } from "@/lib/mlb-batter-box";
 import { heatZoneGrid } from "@/lib/mlb-pbp";
 import {
   formatPitchMph,
@@ -136,9 +138,119 @@ function PitchList({ pitches }: { pitches: MlbLivePitch[] }) {
   );
 }
 
+export type MlbZoneBatter = {
+  id: number | null;
+  /** Short display name, e.g. "T. Hernández". */
+  name: string | null;
+  /** Side this PA (`matchup.batSide.code`); null hides the capsules. */
+  batSide: Hand | null;
+  /** Batting team accent, hex without "#". */
+  color?: string | null;
+};
+
+/**
+ * Slim pill in one batter's-box margin of the catcher's-view plot. The active
+ * side carries the headshot, R/L and "BATS RIGHT/LEFT"; the empty box is a
+ * faint dashed outline. Sized to sit inside the existing plot margin.
+ */
+function BatterCapsule({
+  side,
+  inset,
+  batter,
+}: {
+  side: "left" | "right";
+  inset: { x: number; y: number };
+  batter: MlbZoneBatter | null;
+}) {
+  const x = {
+    [side]: `${inset.x / 2}%`,
+    transform: `translateX(${side === "left" ? "-50%" : "50%"})`,
+  } as const;
+  if (!batter?.batSide) {
+    return (
+      <div
+        aria-hidden
+        className="pointer-events-none absolute w-[26px] rounded-full border border-dashed border-white/[0.12] sm:w-[30px]"
+        style={{ ...x, top: `${inset.y}%`, bottom: `${inset.y}%` }}
+      />
+    );
+  }
+  const c = `#${(batter.color || "60a5fa").replace(/^#/, "")}`;
+  const right = batter.batSide === "R";
+  return (
+    <div
+      role="img"
+      aria-label={`${batter.name ?? "Batter"} bats ${right ? "right" : "left"}`}
+      className="pointer-events-none absolute flex w-[26px] flex-col items-center gap-1 overflow-hidden rounded-full pt-0.5 sm:w-[30px] sm:gap-[5px]"
+      style={{
+        ...x,
+        top: `${Math.max(0, inset.y - 6)}%`,
+        bottom: `${inset.y}%`,
+        background: `linear-gradient(180deg, ${c}70, ${c}1c 72%, transparent)`,
+        boxShadow: `inset 0 0 0 1px ${c}99`,
+      }}
+    >
+      {batter.id ? (
+        <PlayerHeadshot
+          playerId={batter.id}
+          size={213}
+          className="h-[22px] w-[22px] shrink-0 rounded-full bg-[#dfe6f2] ring-[1.5px] ring-white/75 sm:h-[26px] sm:w-[26px]"
+          alt=""
+        />
+      ) : null}
+      <span className="text-[12px] font-extrabold leading-none text-white sm:text-[13px]">
+        {batter.batSide}
+      </span>
+      <span className="rotate-180 whitespace-nowrap text-[8px] font-bold tracking-[0.16em] text-white/75 [writing-mode:vertical-rl] sm:text-[8.5px]">
+        BATS {right ? "RIGHT" : "LEFT"}
+      </span>
+    </div>
+  );
+}
+
+function HandChip({ children }: { children: string }) {
+  return (
+    <span className="shrink-0 rounded-full bg-white/[0.07] px-1.5 py-px text-[9px] font-bold tracking-[0.08em] text-[#dfe5f1]">
+      {children}
+    </span>
+  );
+}
+
+/** "RHP T. Mahle → T. Hernández RHB · same side"; parts hide when unknown. */
+function MatchupLine({
+  pitcherName,
+  pitchHand,
+  batter,
+}: {
+  pitcherName: string | null;
+  pitchHand: Hand | null;
+  batter: MlbZoneBatter | null;
+}) {
+  const batSide = batter?.batSide ?? null;
+  if (!pitchHand && !batSide) return null;
+  const rel = matchupSide(batSide, pitchHand);
+  return (
+    <p className="flex max-w-full flex-wrap items-center justify-center gap-x-1.5 gap-y-0.5 text-[11px] leading-tight text-[#a8b0c2]">
+      <span className="inline-flex min-w-0 items-center gap-1">
+        {pitchHand ? <HandChip>{`${pitchHand}HP`}</HandChip> : null}
+        {pitcherName ? <span className="max-w-[7.5rem] truncate">{pitcherName}</span> : null}
+      </span>
+      <span className="text-[#5d6578]" aria-hidden>
+        →
+      </span>
+      <span className="inline-flex min-w-0 items-center gap-1">
+        {batter?.name ? <span className="max-w-[7.5rem] truncate">{batter.name}</span> : null}
+        {batSide ? <HandChip>{`${batSide}HB`}</HandChip> : null}
+      </span>
+      {rel ? <span className="text-[#6f778a]">· {rel}</span> : null}
+    </p>
+  );
+}
+
 /**
  * Live strike zone: faded batter hot zones + the current at-bat's pitches as
- * numbered dots at their plate location (catcher's view), with a latest-pitch
+ * numbered dots at their plate location (catcher's view), the batter's-box
+ * capsule on the side he is hitting from (RHB left, LHB right), a latest-pitch
  * Statcast card and a pitch list (pitches without coordinates are list-only).
  * No pitches yet → the plain hot-zone grid at full strength.
  */
@@ -148,6 +260,8 @@ export default function MlbPitchZone({
   pending,
   pitches,
   pitchHand = null,
+  batter = null,
+  pitcherName = null,
 }: {
   batterId: number | null;
   cells: ReturnType<typeof heatZoneGrid>;
@@ -155,7 +269,11 @@ export default function MlbPitchZone({
   pitches: MlbLivePitch[];
   /** Pitcher's throwing hand, for arm / glove-side break. */
   pitchHand?: "L" | "R" | null;
+  /** Current batter + handedness for the batter's-box capsule. */
+  batter?: MlbZoneBatter | null;
+  pitcherName?: string | null;
 }) {
+  const boxSide = batterBoxSide(batter?.batSide);
   const hasPitches = pitches.length > 0;
   const inset = zoneInsetPct();
   const latest = pitches[pitches.length - 1] ?? null;
@@ -172,7 +290,8 @@ export default function MlbPitchZone({
 
   return (
     <div className="flex w-full max-w-full flex-col items-center justify-center gap-x-5 gap-y-3 lg:flex-row lg:items-start">
-      <div className="flex flex-col items-center gap-2.5">
+      <div className="flex max-w-full flex-col items-center gap-2.5">
+        <MatchupLine pitcherName={pitcherName} pitchHand={pitchHand} batter={batter} />
         <div
           className="relative w-[15.5rem] max-w-full sm:w-[17rem] lg:w-[18rem]"
           style={{ aspectRatio: String(aspect) }}
@@ -192,6 +311,12 @@ export default function MlbPitchZone({
               <div className="pointer-events-none absolute inset-0 z-[2] rounded-[2px] border border-white/55" />
             ) : null}
           </div>
+          {boxSide ? (
+            <>
+              <BatterCapsule side="left" inset={inset} batter={boxSide === "left" ? batter : null} />
+              <BatterCapsule side="right" inset={inset} batter={boxSide === "right" ? batter : null} />
+            </>
+          ) : null}
           {dots.map((d) => (
             <PitchDot
               key={d.pitch.number}
