@@ -26,6 +26,7 @@ export function FitCopy({
   children?: ReactNode;
 }) {
   const cut = useSheetCut(cid);
+  if (cut != null && !cut.trim()) return null;
   return (
     <p className={className} data-tt-cid={cid} data-fit-full={full}>
       {cut != null ? cut : (children ?? full)}

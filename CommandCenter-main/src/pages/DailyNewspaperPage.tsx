@@ -79,7 +79,7 @@ import {
   DeskSnap,
 } from "@/components/newspaper/BoxScore";
 import { RecapBox, RecapChrome, RecapPhoto } from "@/components/newspaper/GameRecap";
-import { clubFormIsThin, clubOpensLabel, clubTickerRecord, formStatColumns, frontPageLeftover, groupByDay, planSchedulePages, printableFormStat } from "@/lib/newspaper-page";
+import { clubFormIsThin, clubGridFresh, clubOpensLabel, clubsForGrid, clubTickerRecord, formStatColumns, frontPageLeftover, groupByDay, planSchedulePages, printableFormStat } from "@/lib/newspaper-page";
 import { ReaderProvider } from "@/components/newspaper/PaperReader";
 import { useReader } from "@/components/newspaper/reader-context";
 import { CfbFill, CfbScheduleDesk } from "@/components/newspaper/CfbScheduleDesk";
@@ -189,6 +189,8 @@ import { clearEditorStamps, editEdition } from "@/lib/newspaper-editor";
 import { fetchWatchList, WATCH_PAGE_GAMES } from "@/lib/newspaper-watch";
 import WatchGuide from "@/components/newspaper/WatchGuide";
 import DayAhead from "@/components/newspaper/DayAhead";
+import { classBoxFor } from "@/lib/newspaper-class";
+import { fetchClassNewsletter } from "@/lib/newspaper-class-fetch";
 import { insertDayAhead, scheduleDateFor, type DaySchedule } from "@/lib/newspaper-day-ahead";
 import { fetchDaySchedule } from "@/lib/newspaper-day-ahead-fetch";
 import BeezPage from "@/components/newspaper/BeezPage";
@@ -197,6 +199,7 @@ import { readTimesBeez } from "@/lib/newspaper-beez-fetch";
 import RacesPage from "@/components/newspaper/RacesPage";
 import { insertRaceBriefs, sampleRaceBriefs, type RaceBriefsDesk } from "@/lib/newspaper-races";
 import { fetchRaceBriefs } from "@/lib/newspaper-races-fetch";
+import { applyRaceCopy, applyWatchWhy, asTimesCopy, dekMap } from "@/lib/newspaper-copy-desk";
 import {
   asNationalDesk,
   sampleNationalDesk,
@@ -1117,6 +1120,7 @@ function Story({
   trim,
   chrome,
   compactBox,
+  dekOverride,
 }: {
   card: GameWrapCard;
   team?: TeamInfobox | null;
@@ -1145,6 +1149,8 @@ function Story({
   /** False skips the recap box when a banner already carries the score. */
   chrome?: boolean;
   compactBox?: boolean;
+  /** Press copy under an A1 headline. Omitted when the sheet fitter clears it. */
+  dekOverride?: string;
 }) {
   const full = cardCopy(card);
   const copy = substantive(card, text ?? full);
@@ -1153,7 +1159,7 @@ function Story({
     Boolean((card.scoreLine && /\d/.test(card.scoreLine)) || card.recapGame || game);
   const storyCopy = recap ? recapBodyForPage(copy) : copy;
   const partial = readOn ?? Boolean(jump || (storyCopy && storyCopy.length < full.length * 0.9));
-  const dek = dekFor(card, storyCopy);
+  const dek = dekOverride || dekFor(card, storyCopy);
   const useDrop = Boolean(drop && storyCopy && recapShouldDropCap(storyCopy));
   const photoKind = recapPhotoKind(card.photo, card.photoWidth);
   const narrowArt =
@@ -1678,6 +1684,7 @@ function FrontPage({
   secondTeaser,
   thirdTeaser,
   scout,
+  deks,
 }: {
   lead: GameWrapCard | null;
   second: GameWrapCard | null;
@@ -1700,6 +1707,7 @@ function FrontPage({
   secondTeaser?: string;
   thirdTeaser?: string;
   scout?: MoItem | null;
+  deks?: Record<string, string>;
 }) {
   const moFolio = sections.find((s) => s.title === "Missouri")?.folio ?? null;
   const scoutBand = scout ? <ScoutBand item={scout} onTurn={onTurn} deskFolio={moFolio} /> : null;
@@ -1799,6 +1807,7 @@ function FrontPage({
           <Story
             className="lead"
             card={pageLead}
+            dekOverride={deks?.[pageLead.id]}
             team={teamForCard(teams, pageLead)}
             text={splitStoryCopy(copyOf(pageLead, pageLeadTeaser), 1100).teaser}
             size="xl"
@@ -1815,6 +1824,7 @@ function FrontPage({
               <Story
                 className="under-lead"
                 card={underLead}
+                dekOverride={deks?.[underLead.id]}
                 team={teamForCard(teams, underLead)}
                 text={
                   recapDek(underLead, 4) ||
@@ -1835,6 +1845,7 @@ function FrontPage({
             <div className="wsj-front-row one" data-tt-flow="">
               <Story
                 card={flowCard}
+                dekOverride={deks?.[flowCard.id]}
                 team={teamForCard(teams, flowCard)}
                 text={copyOf(flowCard, flowTeaser)}
                 size="md"
@@ -1910,6 +1921,7 @@ function ClubsDesk({
   const active = allActive.slice(offset, limit != null ? offset + limit : undefined);
   const shelved = offset > 0 ? [] : teams.filter((t) => clubIsOffseason(t, openers.get(t.fav.key)));
   const cols = balancedCols(active.length, [5, 4, 3, 6, 2]);
+  if (!active.length && !shelved.length) return null;
   return (
     <div className="wsj-clubs-desk">
       <header className="wsj-desk-head">
@@ -6344,6 +6356,17 @@ function NewspaperDesk() {
     refetchOnReconnect: false,
   });
 
+  const copyQ = useQuery({
+    queryKey: [pressId, "tt-copy", day],
+    queryFn: async () => null,
+    staleTime: Infinity,
+    gcTime: 20 * 60 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+  const timesCopy = useMemo(() => asTimesCopy(copyQ.data), [copyQ.data]);
+  const frontDeks = useMemo(() => dekMap(timesCopy), [timesCopy]);
+
   // The Day Ahead: the schedule filed for the edition's date. During a live press
   // the desk fetches it; a filed edition uses the companion loaded with the issue.
   const scheduleDate = scheduleDateFor(pressId);
@@ -6369,6 +6392,15 @@ function NewspaperDesk() {
 
   // Races We're Tracking: one row per race for the edition date (or the newest
   // filing inside two days). No rows: the page is omitted. Client-only.
+  const classQ = useQuery({
+    queryKey: ["tt-class-newsletter", scheduleDate],
+    enabled: Boolean(scheduleDate),
+    queryFn: () => fetchClassNewsletter(scheduleDate!),
+    staleTime: 5 * 60_000,
+    gcTime: 20 * 60 * 60_000,
+    retry: 1,
+  });
+
   const racesQ = useQuery({
     queryKey: ["tt-race-briefs", scheduleDate],
     enabled: Boolean(scheduleDate) && !racesSample,
@@ -6721,8 +6753,10 @@ function NewspaperDesk() {
         ? dayAheadQ.data
         : null;
   const beezDesk = companions?.id === pressId ? companions.beez : (beezQ.data ?? null);
-  const raceDesk: RaceBriefsDesk | null =
-    racesSample && scheduleDate ? sampleRaceBriefs(scheduleDate) : (racesQ.data ?? null);
+  const raceDesk: RaceBriefsDesk | null = applyRaceCopy(
+    racesSample && scheduleDate ? sampleRaceBriefs(scheduleDate) : (racesQ.data ?? null),
+    timesCopy,
+  );
   const edition = useMemo(() => {
     const raw = standingsQ.data ?? {};
     const counted: Record<string, { length: number }> = {};
@@ -7012,6 +7046,27 @@ function NewspaperDesk() {
     };
   }, [goPage]);
 
+  const gridTeams = useMemo(() => {
+    const formKeys = new Set(
+      edition.pages.flatMap((page) => (page.kind === "favorites-clubs" ? (page.formClubs ?? []).map((club) => club.key) : [])),
+    );
+    const storyKeys = new Set(stories.flatMap((card) => (card.favoriteKey ? [card.favoriteKey] : [])));
+    return clubsForGrid(
+      teams.map((team) => ({
+        key: team.fav.key,
+        name: team.fav.shortName,
+        fresh: clubGridFresh({
+          hasStory: storyKeys.has(team.fav.key),
+          recent: team.recentLines.length,
+          nextStartIso: team.detail?.upcoming?.[0]?.startIso ?? null,
+          hasNext: Boolean(team.detail?.upcoming?.length || team.snap.nextGame),
+        }),
+        team,
+      })),
+      formKeys,
+    ).map((row) => row.team);
+  }, [edition.pages, stories, teams]);
+
   // Built once per edition/data change, never per page turn: re-rendering 60 folios on every
   // swipe was the slow part. Anything that must follow the folio in view reads PagerIndexContext.
   const sheets = useMemo(
@@ -7068,6 +7123,7 @@ function NewspaperDesk() {
                   clubsFolio={pages.find((p) => p.kind === "favorites-clubs" && p.weatherPart === "outlook")?.folio ?? "A3"}
                   editionDay={day}
                   onTurn={goFolio}
+                  deks={frontDeks}
                   leadContinue={page.leadContinue}
                   secondContinue={page.secondContinue}
                   thirdContinue={page.thirdContinue}
@@ -7084,7 +7140,7 @@ function NewspaperDesk() {
                   />
                   {(page.clubLimit ?? (page.weatherPart === "today" ? 3 : 0)) > 0 ? (
                     <ClubsDesk
-                      teams={teams}
+                      teams={gridTeams}
                       offset={page.clubOffset ?? (page.weatherPart === "today" ? 0 : 3)}
                       limit={page.clubLimit ?? (page.weatherPart === "today" ? 3 : 0)}
                     />
@@ -7108,9 +7164,15 @@ function NewspaperDesk() {
                   <ClubFormGrid clubs={page.clubs} sheets={sheetsQ.data ?? {}} columns={2} />
                 </div>
               ) : page.kind === "favorites-watch" ? (
-                <WatchGuide games={watchQ.data ?? []} editionLabel={press.label} />
+                <WatchGuide games={applyWatchWhy(watchQ.data ?? [], timesCopy)} editionLabel={press.label} />
               ) : page.kind === "favorites-day" ? (
-                <DayAhead date={page.date} events={page.events} upcoming={page.upcoming} editionLabel={press.label} />
+                <DayAhead
+                  date={page.date}
+                  events={page.events}
+                  upcoming={page.upcoming}
+                  editionLabel={press.label}
+                  classBox={classBoxFor(classQ.data ?? null, page.date, page.events.map((event) => event.title))}
+                />
               ) : page.kind === "favorites-beez" ? (
                 <BeezPage desk={page.desk} editionLabel={press.label} />
               ) : page.kind === "favorites-races" ? (
@@ -7202,6 +7264,9 @@ function NewspaperDesk() {
       leadersQ.data,
       heismanQ.data,
       watchQ.data,
+      timesCopy,
+      frontDeks,
+      classQ.data,
       notebookByFolio,
       leagueClubsQ.data,
       boardQ.data,

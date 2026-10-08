@@ -314,6 +314,65 @@ export function pageHasBlankBand(opts: {
   return (opts.internalGapsPx ?? []).some((gap) => gap > PAGE_INTERNAL_GAP_PX);
 }
 
+/** Josh's club order for the Your Clubs grid. Anything else follows. */
+export const CLUB_GRID_ORDER = [
+  "cfb-mizzou",
+  "mlb-stl",
+  "nhl-stl",
+  "cbb-mizzou",
+  "nfl-det",
+  "nfl-kc",
+  "eng-wrexham",
+  "eng-wolves",
+  "eng-arsenal",
+  "cfb-missouri-state",
+  "cbb-missouri-state",
+] as const;
+
+export function clubGridRank(key: string): number {
+  const index = CLUB_GRID_ORDER.indexOf(key as (typeof CLUB_GRID_ORDER)[number]);
+  return index < 0 ? CLUB_GRID_ORDER.length : index;
+}
+
+/**
+ * A club is fresh when this edition has a story, a recent result, or a game
+ * inside the next week. A next game with no kickoff still counts.
+ */
+export function clubGridFresh(input: {
+  hasStory: boolean;
+  recent: number;
+  nextStartIso?: string | null;
+  hasNext: boolean;
+}, now = Date.now()): boolean {
+  if (input.hasStory || input.recent > 0) return true;
+  if (input.nextStartIso) {
+    const t = Date.parse(input.nextStartIso);
+    if (Number.isNaN(t)) return input.hasNext;
+    return t <= now + 7 * 86_400_000;
+  }
+  return input.hasNext;
+}
+
+/** Grid order, without the A3 form clubs, stale clubs, or a repeated Blues. */
+export function clubsForGrid<T extends { key: string; name: string; fresh: boolean }>(
+  clubs: T[],
+  formKeys: ReadonlySet<string>,
+): T[] {
+  const seenKey = new Set<string>();
+  const seenName = new Set<string>();
+  const ordered = [...clubs].sort((a, b) => clubGridRank(a.key) - clubGridRank(b.key) || a.key.localeCompare(b.key));
+  const out: T[] = [];
+  for (const club of ordered) {
+    if (formKeys.has(club.key) || !club.fresh) continue;
+    const name = club.name.trim().toLowerCase();
+    if (seenKey.has(club.key) || seenName.has(name)) continue;
+    seenKey.add(club.key);
+    seenName.add(name);
+    out.push(club);
+  }
+  return out;
+}
+
 /** Guard: packed folios must fill the canvas, not just fit it. */
 export function assertPagesFilled(
   pages: { folio: string; contentBottomPx: number; internalGapsPx?: number[] }[],

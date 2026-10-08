@@ -671,6 +671,26 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["times_day_schedule"]["Insert"]>;
         Relationships: [];
       };
+      times_class_newsletter: {
+        Row: {
+          week_of: string;
+          teacher: string;
+          learning: Json;
+          reminders: Json;
+          upcoming: Json;
+          received_at: string;
+        };
+        Insert: {
+          week_of: string;
+          teacher: string;
+          learning?: Json;
+          reminders?: Json;
+          upcoming?: Json;
+          received_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["times_class_newsletter"]["Insert"]>;
+        Relationships: [];
+      };
       times_race_briefs: {
         Row: {
           brief_date: string;

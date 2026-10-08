@@ -54,6 +54,8 @@ export type RaceBrief = {
   notes: RaceNote[];
   source: string | null;
   updated_at: string | null;
+  /** Press copy, when the tt-copy row has a sentence for this race. */
+  copy?: string | null;
 };
 
 /** One morning's slate, after the date fallback has already been applied. */
@@ -78,6 +80,10 @@ export type FavoritesRacesPage = {
   stale: boolean;
   continued: boolean;
   races: RaceBrief[];
+  /** Missouri Roundup box, printed under SD 8 / SD 30 on one sheet. */
+  roundup?: RaceBrief | null;
+  /** Name / date / status rows when the book is too long for a full brief each. */
+  list?: RaceBrief[];
 };
 
 function asRecord(raw: unknown): Record<string, unknown> | null {
@@ -107,8 +113,28 @@ export function shiftYmd(date: string, days: number): string | null {
   return new Date(utc).toISOString().slice(0, 10);
 }
 
-/** "SD 8" from "SD8" / "sd 30". Unknown codes print as filed. */
+export function raceCode(race: string): string {
+  return str(race).replace(/\s+/g, "").toUpperCase();
+}
+
+export function isMissouriRoundup(race: string): boolean {
+  return raceCode(race) === "MOROUNDUP";
+}
+
+export function isSenateRace(race: string): boolean {
+  return /^SD\d+$/.test(raceCode(race));
+}
+
+/** Amendment, proposition, and other statewide questions. Senate districts are not ballot measures. */
+export function isBallotMeasure(race: string): boolean {
+  const code = raceCode(race);
+  if (!code || isSenateRace(code) || isMissouriRoundup(code)) return false;
+  return /AMEND|PROP|ISSUE|MEASURE|BALLOT|^Q\d+$/.test(code);
+}
+
+/** "SD 8" from "SD8" / "sd 30". The roundup row prints as Missouri Roundup. */
 export function raceLabel(race: string): string {
+  if (isMissouriRoundup(race)) return "Missouri Roundup";
   const compact = str(race);
   const match = /^([A-Za-z]+)\s*(\d+)$/.exec(compact);
   if (!match) return compact;
@@ -120,12 +146,51 @@ export function raceNumber(race: string): number {
   return match ? Number(match[1]) : Number.POSITIVE_INFINITY;
 }
 
+function raceSortRank(race: string): number {
+  if (isSenateRace(race)) return 0;
+  if (isBallotMeasure(race)) return 1;
+  if (isMissouriRoundup(race)) return 3;
+  return 2;
+}
+
+/** Senate districts, then ballot measures, then everything else. */
 export function sortRaceBriefs(races: RaceBrief[]): RaceBrief[] {
   return [...races].sort((a, b) => {
+    const byKind = raceSortRank(a.race) - raceSortRank(b.race);
+    if (byKind) return byKind;
     const byNum = raceNumber(a.race) - raceNumber(b.race);
     if (byNum) return byNum;
     return a.race.localeCompare(b.race);
   });
+}
+
+const FULL_BRIEF_CAP = 6;
+
+export function raceHasActiveBuys(race: RaceBrief): boolean {
+  return race.spend.length > 0;
+}
+
+/**
+ * Full briefs for a short book. Past about six races, full briefs stay on
+ * SD 8, SD 30, and any race with buys on file. The roundup is its own box.
+ */
+export function presentRaceBriefs(races: RaceBrief[]): {
+  full: RaceBrief[];
+  roundup: RaceBrief | null;
+  list: RaceBrief[];
+} {
+  const ordered = sortRaceBriefs(races);
+  const roundup = ordered.find((race) => isMissouriRoundup(race.race)) ?? null;
+  const rest = ordered.filter((race) => !isMissouriRoundup(race.race));
+  if (rest.length <= FULL_BRIEF_CAP) return { full: rest, roundup, list: [] };
+  const full: RaceBrief[] = [];
+  const list: RaceBrief[] = [];
+  for (const race of rest) {
+    const always = raceCode(race.race) === "SD8" || raceCode(race.race) === "SD30";
+    if (always || raceHasActiveBuys(race)) full.push(race);
+    else list.push(race);
+  }
+  return { full, roundup, list };
 }
 
 /** "Oct. 6" — AP month, no year. */
@@ -410,17 +475,23 @@ export function insertRaceBriefs<
   E extends { pages: (EditionPage | FavoritesRacesPage)[]; sections: EditionSection[] },
 >(edition: E, desk: RaceBriefsDesk | null): E {
   if (!desk?.races.length) return edition;
-  const packed = packRacePages(desk.races);
-  if (!packed.length) return edition;
+  const presented = presentRaceBriefs(desk.races);
+  const packed = packRacePages(presented.full);
+  const sheets = packed.length ? packed : presented.roundup || presented.list.length ? [[] as RaceBrief[]] : [];
+  if (!sheets.length) return edition;
   const at = edition.pages.findIndex(
     (p) => p.kind === "favorites-day" || p.kind === "favorites-beez" || p.kind === "favorites-watch",
   );
   if (at < 0) return edition;
   const anchor = edition.pages[at]!;
   const n = anchor.sectionPage;
-  const add = packed.length;
+  const add = sheets.length;
   const count = anchor.sectionCount + add;
-  const inserted: FavoritesRacesPage[] = packed.map((races, k) => ({
+  let roundupAt = 0;
+  sheets.forEach((races, k) => {
+    if (races.some((race) => raceCode(race.race) === "SD8" || raceCode(race.race) === "SD30")) roundupAt = k;
+  });
+  const inserted: FavoritesRacesPage[] = sheets.map((races, k) => ({
     kind: "favorites-races",
     folio: `${anchor.section}${n + k}`,
     section: anchor.section,
@@ -432,6 +503,8 @@ export function insertRaceBriefs<
     stale: desk.stale,
     continued: k > 0,
     races,
+    ...(k === roundupAt && presented.roundup ? { roundup: presented.roundup } : {}),
+    ...(k === 0 && presented.list.length ? { list: presented.list } : {}),
   }));
   const pages = edition.pages.flatMap((item, i) => {
     if (item.section !== anchor.section) return [item];

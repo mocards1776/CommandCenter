@@ -31,6 +31,9 @@ import {
   A2_CLUB_CARDS,
   FORM_CLUBS_PER_PACKED_PAGE,
   clubFormIsThin,
+  clubGridFresh,
+  clubGridRank,
+  clubsForGrid,
   clubOpensLabel,
   clubTickerRecord,
   formStatColumns,
@@ -232,5 +235,21 @@ assert(formStatColumns(4) === 2, "four stats fill two even rows");
 assert(!printableFormStat({ label: "RZ TD %", value: "0.00" }), "filed 0.00 RZ TD % does not print");
 assert(printableFormStat({ label: "RZ TD %", value: "63.16" }), "a real RZ TD % still prints");
 assert(printableFormStat({ label: "Sacks", value: "0" }), "a real zero sack total still prints");
+
+assert(clubGridRank("cfb-mizzou") < clubGridRank("mlb-stl") && clubGridRank("nhl-stl") < clubGridRank("nfl-det"), "Mizzou football, Cardinals, and Blues lead the grid");
+assert(clubGridRank("eng-arsenal") < clubGridRank("cfb-missouri-state"), "Arsenal sits ahead of Missouri State");
+assert(!clubGridFresh({ hasStory: false, recent: 0, nextStartIso: "2026-12-01T00:00:00Z", hasNext: true }, Date.parse("2026-10-08T12:00:00Z")), "a December opener is not fresh in October");
+assert(clubGridFresh({ hasStory: true, recent: 0, hasNext: false }), "a story in the edition is fresh");
+const grid = clubsForGrid(
+  [
+    { key: "nhl-stl", name: "Blues", fresh: true },
+    { key: "nhl-stl-2", name: "Blues", fresh: true },
+    { key: "mlb-stl", name: "Cardinals", fresh: true },
+    { key: "nfl-kc", name: "Chiefs", fresh: false },
+    { key: "eng-arsenal", name: "Arsenal", fresh: true },
+  ],
+  new Set(["mlb-stl"]),
+);
+assert(grid.map((club) => club.key).join() === "nhl-stl,eng-arsenal", "form clubs, stale clubs, and the extra Blues box drop, and the row closes up");
 
 console.log("newspaper-page ok");

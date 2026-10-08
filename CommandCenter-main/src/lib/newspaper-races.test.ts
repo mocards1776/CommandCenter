@@ -18,6 +18,7 @@ import {
   money,
   packRacePages,
   pickBriefDate,
+  presentRaceBriefs,
   printDay,
   raceLabel,
   raceNumber,
@@ -44,6 +45,8 @@ assert(shiftYmd("2026-10-01", -2) === "2026-09-29", "window can cross a month");
 assert(shiftYmd("nope", -2) === null, "bad date has no window");
 
 assert(raceLabel("SD8") === "SD 8" && raceLabel("SD30") === "SD 30", "race labels space the number");
+assert(raceLabel("MOROUNDUP") === "Missouri Roundup", "roundup code prints as Missouri Roundup");
+assert(asRaceBrief({ race: "MO roundup", headline: "The week" })?.race === "MOROUNDUP", "roundup row folds to MOROUNDUP");
 assert(raceLabel("sd 16") === "SD 16", "race labels fold case");
 assert(raceNumber("SD8") < raceNumber("SD30"), "district 8 sorts before 30");
 
@@ -225,5 +228,34 @@ const racePages = twoPages.pages.filter((p) => p.kind === "favorites-races");
 assert(racePages.length >= 2, "overflow files a second races folio");
 assert(racePages[0] && !racePages[0].continued && racePages[1]?.continued, "second folio is marked continued");
 assert(racePages.every((p) => p.races.length >= 1), "each continued folio carries at least one race");
+
+function bare(race: string, spend = 0): RaceBrief {
+  return {
+    race,
+    headline: `${race} status`,
+    bullets: ["One", "Two", "Three"],
+    spend: spend
+      ? [{ sponsor: "PAC", side: "Support", station: "KYTV", market: "Springfield", amount: spend, grps: 1, cpp: 1, flight_start: null, flight_end: null, is_new: false }]
+      : [],
+    links: [],
+    notes: [],
+    source: null,
+    updated_at: "2026-10-08T12:00:00Z",
+  };
+}
+const book = presentRaceBriefs([
+  bare("AMENDMENT3"),
+  bare("SD30"),
+  bare("SD16"),
+  bare("SD8"),
+  bare("PROP A"),
+  bare("MOROUNDUP"),
+  bare("SD20", 10),
+  bare("SD12"),
+]);
+assert(book.roundup?.race === "MOROUNDUP", "roundup leaves the full-brief stack");
+assert(book.full.map((r) => r.race).join() === "SD8,SD20,SD30", "past six races, full briefs are SD 8, SD 30, and buys");
+assert(book.list.map((r) => r.race).join() === "SD12,SD16,AMENDMENT3,PROP A", "the rest stay in senate-then-ballot order");
+assert(presentRaceBriefs([bare("SD30"), bare("SD8"), bare("AMENDMENT3")]).full.map((r) => r.race).join() === "SD8,SD30,AMENDMENT3", "a short book keeps every race, senate first");
 
 console.log("newspaper-races ok");

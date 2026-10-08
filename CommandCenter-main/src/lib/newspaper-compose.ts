@@ -9,6 +9,8 @@ import { fetchHeismanOdds } from "./newspaper-heisman";
 import { fetchClubSheet } from "./newspaper-clubsheet";
 import { enrichMissouriItems, fetchMissouriDesk, fetchMissouriScout } from "./newspaper-missouri-fetch";
 import type { MoItem } from "./newspaper-missouri";
+import { fetchMlbtr } from "./newspaper-mlbtr";
+import { fetchPowerMizzou } from "./newspaper-powermizzou";
 import { fetchOpener, type Opener } from "./newspaper-openers";
 import { attachRelatedGameCopy, attachRelatedGameCopyStep } from "./newspaper-sport-desk";
 import { cleanStoryCopy, htmlToNewspaperText, isNavSoup, isPeripheralClubStory, isPrintableStoryBody, killedSource, stampBodyChars, truncateAtSentence } from "./newspaper-copy";
@@ -53,6 +55,7 @@ import { fetchWatchList, WATCH_PAGE_GAMES, type WatchGame } from "./newspaper-wa
 import { fetchYesterdayRecap, type YesterdayRecap } from "./yesterday-recap";
 import { ISSUE_VERSION, type PrintedIssue, type PrintedQuery } from "./newspaper-issue";
 import { clearEditorStamps, editEdition, type EditorRequest } from "./newspaper-editor";
+import { buildTimesCopy } from "./newspaper-copy-desk";
 import { deskCopyQueue, dedupePush, essentialsFromDesks, finishDedupe } from "./newspaper-sections";
 import { fetchFavoriteCoachDesk, printsFavoriteCoaches } from "./newspaper-favorite-coaches";
 import {
@@ -233,6 +236,10 @@ type PressBag = {
   news?: GameWrapCard[];
   weather?: unknown;
   watch?: WatchGame[];
+  /** Hottest games kept for the copy pass after the watch desk is flushed. */
+  watchTop?: WatchGame[];
+  /** Set before the copy call so a failed hop does not call again. */
+  copyDone?: boolean;
   scoutItem?: unknown;
   missouri?: { scout: MoItem | null; items: MoItem[]; listen: MoItem[] } | null;
   openers?: unknown;
@@ -270,6 +277,10 @@ type PressBag = {
   dedupeGroups?: string[][];
   dedupeCursor?: number;
   deskCopy?: GameWrapCard[];
+  /** MLB Trade Rumors, held from the wrap hop until the club and Missouri desks file. */
+  mlbtrRoyals?: MoItem[];
+  mlbtrCards?: GameWrapCard[];
+  mlbtrLeague?: GameWrapCard[];
   /** Stage-11 merge sub-steps. */
   mergeStep?: "merge" | "related-wraps" | "related-rest" | "tag";
   pool?: GameWrapCard[];
@@ -444,12 +455,26 @@ export async function pressStep(
     );
     state.wraps = packed.wraps;
     state.athletic = packed.athletic;
+    const mlbtr = await fetchMlbtr();
+    state.mlbtrCards = mlbtr.cardinals;
+    state.mlbtrLeague = mlbtr.league;
+    state.mlbtrRoyals = mlbtr.royals;
     state.stage = 6;
     return pause();
   }
 
   if (state.stage === 6) {
-    state.news = await settle(fetchTeamArticles(favs, pressId), [] as GameWrapCard[]);
+    const news = await settle(fetchTeamArticles(favs, pressId), [] as GameWrapCard[]);
+    const takenTitles = [
+      ...news.map((card) => card.headline),
+      ...(state.athletic ?? []).map((card) => card.headline),
+      ...((state.wraps ?? []) as { item?: { title?: string } }[]).map((wrap) => wrap.item?.title ?? ""),
+    ];
+    const power = await fetchPowerMizzou(takenTitles);
+    state.news = [...news, ...(state.mlbtrCards ?? []), ...power];
+    state.athletic = [...(state.athletic ?? []), ...(state.mlbtrLeague ?? [])];
+    delete state.mlbtrCards;
+    delete state.mlbtrLeague;
     state.stage = 7;
     return pause();
   }
@@ -460,6 +485,7 @@ export async function pressStep(
       fetchWatchList(day, { limit: WATCH_PAGE_GAMES, favorites: favs }),
       [] as WatchGame[],
     );
+    state.watchTop = [...(state.watch ?? [])].sort((a, b) => b.heat - a.heat).slice(0, 6);
     state.scoutItem = await settle(
       fetchMissouriScout(pressId).then(async (item) => (item ? ((await enrichMissouriItems([item], 1))[0] ?? item) : null)),
       null,
@@ -477,13 +503,20 @@ export async function pressStep(
       })),
       null,
     );
-    const fresh = (desk?.items ?? []).filter((item) => missouriItemInEdition(item.when, pressId));
+    const royals = state.mlbtrRoyals ?? [];
+    delete state.mlbtrRoyals;
+    const withRoyals = desk
+      ? { ...desk, items: [...royals, ...desk.items] }
+      : royals.length
+        ? { scout: null, items: royals, listen: [] as MoItem[] }
+        : null;
+    const fresh = (withRoyals?.items ?? []).filter((item) => missouriItemInEdition(item.when, pressId));
     const items = fileMissouriItems({
       fresh,
       carried: opts.carriedMissouri ?? [],
       readKeys,
     });
-    state.missouri = items.length || desk ? { scout: desk?.scout ?? null, items, listen: desk?.listen ?? [] } : null;
+    state.missouri = items.length || withRoyals ? { scout: withRoyals?.scout ?? null, items, listen: withRoyals?.listen ?? [] } : null;
     state.stage = 9;
     return pause();
   }
@@ -881,6 +914,19 @@ export async function pressStep(
     dropBagKeys(state, ["deskCopy"]);
     state.storyCursor = 0;
     state.stage = 18;
+    return pause();
+  }
+
+  if (state.stage === 18 && !state.copyDone) {
+    state.copyDone = true;
+    const editionDate = /^\d{4}-\d{2}-\d{2}/.exec(pressId)?.[0] ?? day;
+    const copy = await buildTimesCopy({
+      editionDate,
+      watch: (state.watchTop ?? []) as WatchGame[],
+      front: state.filed ?? [],
+    });
+    if (copy) put([pressId, "tt-copy", day], copy);
+    dropBagKeys(state, ["watchTop"]);
     return pause();
   }
 

@@ -224,6 +224,45 @@
   text-underline-offset: 2px;
 }
 
+.tt-races-roundup {
+  padding: 10px 12px 8px;
+  border: 1px solid var(--w-rule);
+  background: var(--w-paper);
+}
+.tt-races-roundup h3 {
+  margin: 2px 0 6px;
+  font-family: var(--w-head);
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.15;
+}
+.tt-races-roundup-note {
+  margin: 6px 0 0;
+  font-family: var(--w-cond);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+}
+.tt-races-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.tt-races-list li {
+  display: grid;
+  grid-template-columns: 140px 72px minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--w-hair);
+  font-size: 14px;
+}
+.tt-races-list b { font-family: var(--w-cond); letter-spacing: 0.04em; }
+.tt-races-list span { font-family: var(--w-cond); color: var(--w-muted); }
+.tt-races-list em { font-style: italic; }
+
 .tt-races-credit {
   margin: 2px 0 0;
   padding-top: 8px;

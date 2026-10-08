@@ -5,7 +5,10 @@ import { PhoneFrontCard } from "@/components/newspaper/PhoneFrontCard";
 import { PhoneWatchCard } from "@/components/newspaper/PhoneWatchCard";
 import { PhoneWeatherCard } from "@/components/newspaper/PhoneWeatherCard";
 import { fetchDaySchedule } from "@/lib/newspaper-day-ahead-fetch";
-import { readRemoteStories } from "@/lib/newspaper-issue-remote";
+import { readRemoteQueries, readRemoteStories } from "@/lib/newspaper-issue-remote";
+import { queryNamed } from "@/lib/newspaper-document";
+import { applyStoryDeks, applyWatchWhy, asTimesCopy } from "@/lib/newspaper-copy-desk";
+import type { GameWrapCard } from "@/lib/newspaper-sports";
 import {
   isPhoneCardKind,
   phoneCardDate,
@@ -43,9 +46,13 @@ export default function NewspaperPhoneCardPage() {
       if (useSample) return sampleFrontStories();
       if (!issue) return [];
       try {
-        const stories = await readRemoteStories(issue);
+        const [stories, queries] = await Promise.all([
+          readRemoteStories(issue),
+          readRemoteQueries(issue).catch(() => null),
+        ]);
         if (!stories) return [];
-        return phoneFrontStories(stories, issue);
+        const stamped = applyStoryDeks(stories as GameWrapCard[], asTimesCopy(queryNamed(queries ?? [], "tt-copy")));
+        return phoneFrontStories(stamped, issue);
       } catch {
         return [];
       }
@@ -86,7 +93,13 @@ export default function NewspaperPhoneCardPage() {
       if (sample === "heavy") return sampleHeavyWatchGames(date);
       if (sample === "1") return sampleWatchGames();
       const live = await fetchWatchList(date);
-      return live;
+      if (!issue) return live;
+      try {
+        const queries = await readRemoteQueries(issue);
+        return applyWatchWhy(live, asTimesCopy(queryNamed(queries ?? [], "tt-copy")));
+      } catch {
+        return live;
+      }
     },
     enabled: card === "watch",
     staleTime: 5 * 60_000,
