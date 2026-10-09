@@ -20,9 +20,7 @@
  * editor functions is aborted, so opening the paper here can never change the desk or an issue.
  * Day Ahead and watch cards are skipped when there is no schedule row / no games.
  */
-import { appendFile, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { spawn } from "node:child_process";
-import { tmpdir } from "node:os";
+import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -37,15 +35,6 @@ const AUDIENCE = "times-telegram-shots";
  * sheet, which may be taller. Do not introduce a second canvas.
  */
 const IPAD13 = { width: 1032, height: 1376 };
-/**
- * After the Chromium shots exist, wait until the flat manifest is published
- * so the alert's "Read the paper" button opens the flat edition. Poll about
- * every 30s. Cap is from the moment this wait starts, not from filing.
- */
-export const MANIFEST_WAIT_MS = 30 * 60 * 1000;
-export const MANIFEST_POLL_MS = 30 * 1000;
-const FLAT_MIN_CSS = 480;
-const TELEGRAM_PHOTO_MAX = 9_500_000;
 const ALERT_KINDS = [
   ["weather", "favorites-clubs"],
   ["day", "favorites-day"],
@@ -267,64 +256,6 @@ async function logout(session) {
   await call({ action: "logout", access_token: session.access_token }).catch((err) => log("logout:", err.message));
 }
 
-function ffmpeg(args) {
-  return new Promise((resolve, reject) => {
-    const env = { ...process.env };
-    delete env.LD_LIBRARY_PATH;
-    const child = spawn("ffmpeg", ["-hide_banner", "-loglevel", "error", ...args], { stdio: "inherit", env });
-    child.on("error", reject);
-    child.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`ffmpeg ${code}`))));
-  });
-}
-
-/** Lossless WebP (VP8L) width and height. Same layout as times-flat-print.mjs. */
-function webpSize(buf) {
-  if (!buf || buf.length < 25) return null;
-  if (buf.toString("ascii", 0, 4) !== "RIFF" || buf.toString("ascii", 8, 12) !== "WEBP") return null;
-  if (buf.toString("ascii", 12, 16) !== "VP8L") return null;
-  if (buf[20] !== 0x2f) return null;
-  const b0 = buf[21];
-  const b1 = buf[22];
-  const b2 = buf[23];
-  const b3 = buf[24];
-  const width = 1 + (((b1 & 0x3f) << 8) | b0);
-  const height = 1 + (((b3 & 0x0f) << 10) | (b2 << 2) | ((b1 & 0xc0) >> 6));
-  if (width < 2 || height < 2) return null;
-  return { width, height };
-}
-
-async function webpToPng(bytes) {
-  const dir = await mkdtemp(path.join(tmpdir(), "tt-a1-"));
-  try {
-    const src = path.join(dir, "A1.webp");
-    const dest = path.join(dir, "A1.png");
-    await writeFile(src, bytes);
-    await ffmpeg(["-y", "-i", src, "-frames:v", "1", dest]);
-    return await readFile(dest);
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-}
-
-/**
- * Whether the shoot job should keep polling, send the flat A1, or send
- * today's fallback. A published manifest wins even on the last poll.
- * @returns {"flat" | "fallback" | "wait"}
- */
-export function manifestWaitDecision(elapsedMs, manifestReady, capMs = MANIFEST_WAIT_MS) {
-  if (manifestReady) return "flat";
-  if (elapsedMs >= capMs) return "fallback";
-  return "wait";
-}
-
-async function flatManifestReady(issueId) {
-  const url = `${SUPABASE_URL}/storage/v1/object/public/times-flat/${issueId}/manifest.json?t=${Date.now()}`;
-  const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) return false;
-  const data = await res.json().catch(() => null);
-  return Boolean(data && data.issueId === issueId && Array.isArray(data.pages) && data.pages.length > 0);
-}
-
 /** Keep the image claim fresh so the text alert does not send a second message while we wait. */
 async function holdClaim(issueId) {
   try {
@@ -334,106 +265,7 @@ async function holdClaim(issueId) {
   }
 }
 
-/**
- * Poll until the flat manifest for this edition is public, or the cap passes.
- * Does not send. The caller sends exactly once after this returns.
- */
-async function waitForFlatManifest(issueId) {
-  const started = Date.now();
-  while (true) {
-    let ready = false;
-    try {
-      ready = await flatManifestReady(issueId);
-    } catch (err) {
-      log("flat manifest:", err.message);
-    }
-    const elapsed = Date.now() - started;
-    const decision = manifestWaitDecision(elapsed, ready);
-    if (decision === "flat") {
-      log("flat manifest is up");
-      return decision;
-    }
-    if (decision === "fallback") {
-      log("flat manifest not published within 30 min; sending today's fallback");
-      return decision;
-    }
-    await holdClaim(issueId);
-    const left = MANIFEST_WAIT_MS - elapsed;
-    await new Promise((resolve) => setTimeout(resolve, Math.min(MANIFEST_POLL_MS, Math.max(0, left))));
-  }
-}
-
-/**
- * One fetch of the flat A1. A lossless PNG of that file is the same pixels as
- * the iPad page. Missing, short, or too large: the caller keeps the Chromium front.
- */
-async function loadFlatA1Png(issueId) {
-  const url = `${SUPABASE_URL}/storage/v1/object/public/times-flat/${issueId}/A1.webp?t=${Date.now()}`;
-  try {
-    const res = await fetch(url, { cache: "no-store" });
-    if (!res.ok) {
-      log("flat A1 missing", res.status);
-      return null;
-    }
-    const bytes = Buffer.from(await res.arrayBuffer());
-    const dim = webpSize(bytes);
-    const cssH = dim ? dim.height / DPR_GUESS : 0;
-    if (!dim || cssH < FLAT_MIN_CSS || bytes.length <= 80_000) {
-      log("flat A1 not usable", bytes.length, dim ? `${dim.width}x${dim.height}` : "no-dim");
-      return null;
-    }
-    const png = await webpToPng(bytes);
-    if (png.length > TELEGRAM_PHOTO_MAX) {
-      log("flat A1 png is over the Telegram photo limit; using the chromium front");
-      return null;
-    }
-    log("flat A1", `${dim.width}x${dim.height}`, `${bytes.length} webp bytes`, `${png.length} png bytes`);
-    return png;
-  } catch (err) {
-    log("flat A1 fetch:", err.message);
-    return null;
-  }
-}
-
-const DPR_GUESS = 2;
-
 async function main() {
-  // Flat pages for the iPad. Does not claim or send a Telegram alert.
-  //   node scripts/times-shots.mjs --flat --issue 2026-10-07-evening
-  if (flag("flat")) {
-    const { printFlatEdition } = await import("./times-flat-print.mjs");
-    await printFlatEdition();
-    return;
-  }
-  if (flag("mint")) {
-    if (!asked) throw new Error("--mint requires --issue");
-    const minted = await call({ action: "session", issue_id: asked });
-    const sessionFile = opt("session-file") || "times-flat-session.json";
-    const layoutFile = opt("layout-file") || "times-flat-layout.json";
-    const supabaseFile = opt("supabase-file") || "times-flat-supabase.json";
-    await writeFile(sessionFile, JSON.stringify(minted.session), { mode: 0o600 });
-    await writeFile(layoutFile, JSON.stringify(minted.layout ?? {}), { mode: 0o600 });
-    await writeFile(
-      supabaseFile,
-      JSON.stringify({ url: minted.supabase_url, key: minted.supabase_anon_key }),
-      { mode: 0o600 },
-    );
-    log("minted read session for", asked);
-    return;
-  }
-  if (flag("logout")) {
-    const sessionFile = opt("session-file") || "times-flat-session.json";
-    const session = JSON.parse(await readFile(sessionFile, "utf8"));
-    await call({ action: "logout", access_token: session.access_token });
-    log("revoked read session");
-    return;
-  }
-  if (flag("flat-peek")) {
-    const peeked = asked ? { issue_id: asked } : await call({ action: "flat-peek" });
-    if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT, `issue=${peeked.issue_id ?? ""}\n`);
-    log(peeked.issue_id ? `flat print ${peeked.issue_id}` : "no edition to print");
-    return;
-  }
   if (flag("peek")) {
     const peek = await call({ action: "peek", ...(asked ? { issue_id: asked } : {}) });
     // Workflow gate: only install a browser when an edition is waiting.
@@ -456,7 +288,7 @@ async function main() {
   }
   log("claimed", claim.issue_id, test ? "(test)" : "");
   // Text may retake a claim that sits for 10 minutes. Refresh it through the
-  // chromium shots and the manifest wait so that path does not send as well.
+  // shots so that path does not send as well.
   const holdTimer = setInterval(() => {
     void holdClaim(claim.issue_id);
   }, 60_000);
@@ -473,20 +305,8 @@ async function main() {
   }
 
   await mkdir(outDir, { recursive: true });
-  let frontPng = shots.frontPng;
-  let frontName = `${claim.issue_id}-front.png`;
-  if (send) {
-    await waitForFlatManifest(claim.issue_id);
-    const flat = await loadFlatA1Png(claim.issue_id).catch((err) => {
-      log("flat A1 skipped:", err.message);
-      return null;
-    });
-    if (flat) {
-      frontPng = flat;
-      frontName = `${claim.issue_id}-A1.png`;
-      log("telegram front is the flat A1");
-    }
-  }
+  const frontPng = shots.frontPng;
+  const frontName = `${claim.issue_id}-front.png`;
   const frontPath = path.join(outDir, frontName);
   await writeFile(frontPath, frontPng);
   log("wrote", frontPath);

@@ -93,32 +93,6 @@ function nhlApiDevProxy(): Plugin {
   };
 }
 
-/** Same path the production rewrite uses, so a preview can read printed pages. */
-function timesFlatProxy(): Plugin {
-  const handler = async (req: import("http").IncomingMessage, res: import("http").ServerResponse) => {
-    const raw = req.url ?? "/";
-    const q = raw.includes("?") ? raw.slice(raw.indexOf("?")) : "";
-    const pathname = raw.split("?")[0] ?? "/";
-    const upstream = `https://esdgrgulaxnewmhjuyzh.supabase.co/storage/v1/object/public/times-flat${pathname}${q}`;
-    const got = await fetch(upstream);
-    res.statusCode = got.status;
-    const type = got.headers.get("content-type");
-    if (type) res.setHeader("Content-Type", type);
-    const cache = got.headers.get("cache-control");
-    if (cache) res.setHeader("Cache-Control", cache);
-    res.end(Buffer.from(await got.arrayBuffer()));
-  };
-  return {
-    name: "times-flat-proxy",
-    configureServer(server) {
-      server.middlewares.use("/times-flat", handler);
-    },
-    configurePreviewServer(server) {
-      server.middlewares.use("/times-flat", handler);
-    },
-  };
-}
-
 function timesPrecache(): Plugin {
   return {
     name: "times-precache",
@@ -141,7 +115,7 @@ function timesPrecache(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [tailwindcss(), react(), nhlApiDevProxy(), timesFlatProxy(), timesPrecache()],
+  plugins: [tailwindcss(), react(), nhlApiDevProxy(), timesPrecache()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

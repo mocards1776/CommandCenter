@@ -8,24 +8,9 @@ name: Times Telegram image alert
 # the function mints and revokes. Day Ahead / watch photos are skipped when
 # there is no schedule row or no games.
 #
-# The same run prints the flat iPad pages (print job). That job asks the same
-# function for a read session (action "session") and does not claim or send.
-# No session JSON is stored for the printer. Filing kicks this one workflow, so
-# the flat print starts with the Telegram shots.
-#
 # times-telegram starts this workflow with workflow_dispatch as soon as an
-# edition is ready (Supabase secret TIMES_TELEGRAM_GITHUB_TOKEN, already used
-# for the image alert). The schedule below is only a backup; GitHub's
-# schedule: cron in this repo is hours late. The shoot job takes the Chromium
-# shots, then polls every 30s for that edition's flat manifest, up to 30
-# minutes, and sends once. A different edition has its own concurrency group,
-# so this wait does not hold the next alert. The print job stays on its own
-# group too. If the manifest never appears, the send is today's fallback:
-# the flat A1 file when it is a real page, otherwise the Chromium front.
-#
-# On-demand flat print of one edition: run this workflow with issue_id set.
-# If that edition's alert already went out, the shoot job peeks and skips, and
-# only the print job runs.
+# edition is ready (Supabase secret TIMES_TELEGRAM_GITHUB_TOKEN). The schedule
+# below is only a backup; GitHub's schedule: cron in this repo is hours late.
 on:
   # schedule:
   #   # Backup only. Every 10 minutes around each press (6 a.m., noon, 5 p.m.
@@ -37,13 +22,8 @@ on:
   workflow_dispatch:
     inputs:
       issue_id:
-        description: Edition id to screenshot and print (optional on a schedule run)
+        description: Edition id to screenshot (optional on a schedule run)
         required: false
-        type: string
-      publish:
-        description: Preview storage name. Empty publishes under the edition id.
-        required: false
-        default: ""
         type: string
 
 permissions:
@@ -53,13 +33,12 @@ permissions:
 jobs:
   shoot:
     concurrency:
-      # Per edition, so a 30-minute manifest wait does not queue the next alert.
-      # A schedule run with no issue id uses the run id and still claim-locks one send.
+      # Per edition. A schedule run with no issue id uses the run id and still
+      # claim-locks one send.
       group: times-telegram-shots-${{ github.event.inputs.issue_id || github.run_id }}
       cancel-in-progress: false
     runs-on: ubuntu-latest
-    # Chromium install and the sheet shots, plus the 30-minute manifest wait.
-    timeout-minutes: 50
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -86,8 +65,6 @@ jobs:
         if: steps.peek.outputs.issue != ''
         working-directory: ${{ runner.temp }}/times-shots
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg
           npm init -y > /dev/null
           npm i --no-audit --no-fund playwright@1.48.2
           npx playwright install --with-deps chromium
@@ -97,79 +74,3 @@ jobs:
         env:
           ISSUE_ID: ${{ steps.peek.outputs.issue }}
         run: node times-shots.mjs --out shots --issue "$ISSUE_ID"
-
-  print:
-    concurrency:
-      group: times-flat-print
-      cancel-in-progress: false
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          sparse-checkout: CommandCenter-main/scripts
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - name: Stage printer
-        run: |
-          mkdir -p "$RUNNER_TEMP/flat-print"
-          cp CommandCenter-main/scripts/times-shots.mjs CommandCenter-main/scripts/times-flat-print.mjs "$RUNNER_TEMP/flat-print/"
-      - name: Which edition
-        id: edition
-        working-directory: ${{ runner.temp }}/flat-print
-        env:
-          ISSUE_ID: ${{ github.event.inputs.issue_id }}
-        run: |
-          if [ -n "$ISSUE_ID" ]; then
-            echo "issue=$ISSUE_ID" >> "$GITHUB_OUTPUT"
-          else
-            node times-shots.mjs --flat-peek
-          fi
-      - name: Skip a backup sweep that already published
-        id: gate
-        if: steps.edition.outputs.issue != ''
-        run: |
-          if [ "${{ github.event_name }}" != "schedule" ]; then
-            echo "skip=0" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          code=$(curl -s -o /dev/null -w "%{http_code}" \
-            "https://esdgrgulaxnewmhjuyzh.supabase.co/storage/v1/object/public/times-flat/${{ steps.edition.outputs.issue }}/manifest.json")
-          if [ "$code" = "200" ]; then
-            echo "manifest already published"
-            echo "skip=1" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=0" >> "$GITHUB_OUTPUT"
-          fi
-      - name: Install WebKit
-        if: steps.edition.outputs.issue != '' && steps.gate.outputs.skip != '1'
-        working-directory: ${{ runner.temp }}/flat-print
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg
-          npm init -y > /dev/null
-          npm i --no-audit --no-fund playwright@1.56.1
-          npx playwright install --with-deps webkit
-      - name: Mint read session
-        id: mint
-        if: steps.edition.outputs.issue != '' && steps.gate.outputs.skip != '1'
-        working-directory: ${{ runner.temp }}/flat-print
-        env:
-          ISSUE_ID: ${{ steps.edition.outputs.issue }}
-        run: node times-shots.mjs --mint --issue "$ISSUE_ID" --session-file session.json --layout-file layout.json --supabase-file supabase.json
-      - name: Print edition
-        if: steps.edition.outputs.issue != '' && steps.gate.outputs.skip != '1'
-        working-directory: ${{ runner.temp }}/flat-print
-        env:
-          ISSUE_ID: ${{ steps.edition.outputs.issue }}
-          TIMES_FLAT_PUBLISH: ${{ inputs.publish }}
-          TIMES_SESSION_FILE: ${{ runner.temp }}/flat-print/session.json
-          TIMES_LAYOUT_FILE: ${{ runner.temp }}/flat-print/layout.json
-          TIMES_SUPABASE_FILE: ${{ runner.temp }}/flat-print/supabase.json
-          NODE_PATH: ${{ runner.temp }}/flat-print/node_modules
-        run: node times-flat-print.mjs --issue "$ISSUE_ID"
-      - name: Revoke read session
-        if: always() && steps.mint.outcome == 'success'
-        working-directory: ${{ runner.temp }}/flat-print
-        run: node times-shots.mjs --logout --session-file session.json
