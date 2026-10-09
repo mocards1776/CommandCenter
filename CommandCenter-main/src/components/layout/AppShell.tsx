@@ -174,7 +174,6 @@ export default function AppShell() {
       (onNewspaper && prefersNewspaperHome()) ||
       (onReading && prefersReadingHome()),
   );
-  const [buildNote, setBuildNote] = useState<string | null>(null);
 
   useEffect(() => {
     if (onReading) {
@@ -267,11 +266,7 @@ export default function AppShell() {
     () => onRss && (soloParam || soloSession),
     [onRss, soloParam, soloSession],
   );
-  const newspaperOnly = useMemo(
-    () => onNewspaper && (soloParam || soloSession),
-    [onNewspaper, soloParam, soloSession],
-  );
-  const hideMainChrome = readingOnly || sportsOnly || rssOnly || newspaperOnly;
+  const hideMainChrome = readingOnly || sportsOnly || rssOnly;
 
   const today = (() => {
     if (onSports || sportsOnly) {
@@ -294,10 +289,6 @@ export default function AppShell() {
     <span className="text-accent">Sports</span>
   ) : rssOnly || onRss ? (
     <span className="text-accent">{rssBrand || "News"}</span>
-  ) : newspaperOnly ? (
-    <>
-      Thompson <span className="text-accent">Times</span>
-    </>
   ) : (
     <>
       Command <span className="text-accent">Center</span>
@@ -320,9 +311,17 @@ export default function AppShell() {
       </main>
     );
   }
+  // The paper owns the whole screen and draws its own bar.
+  if (onNewspaper) {
+    return (
+      <main className="fixed inset-0 flex flex-col overflow-hidden">
+        <Outlet />
+      </main>
+    );
+  }
 
   return (
-    <div className={cn("flex flex-col", onNewspaper ? "fixed inset-0 overflow-hidden" : "min-h-screen")}>
+    <div className="flex min-h-screen flex-col">
       <header
         className="bg-ink relative flex min-h-[58px] shrink-0 items-center justify-between overflow-hidden px-4 print:hidden md:min-h-[70px] md:px-8"
         style={{
@@ -340,17 +339,11 @@ export default function AppShell() {
             (window as unknown as { __ccLogoTap?: number }).__ccLogoTap = now;
             // Double-tap within 600ms → hard reload so PWA/React Query pick up new deploys.
             if (now - last < 600) {
-              if (!onNewspaper) toast.success("Reloading…");
+              toast.success("Reloading…");
               window.setTimeout(() => window.location.reload(), 250);
               return;
             }
-            const note = info.label + " · tap again to reload";
-            if (onNewspaper) {
-              setBuildNote(note);
-              window.setTimeout(() => setBuildNote((cur) => (cur === note ? null : cur)), 5000);
-              return;
-            }
-            toast(note, { duration: 5000, icon: "🇺🇸" });
+            toast(info.label + " · tap again to reload", { duration: 5000, icon: "🇺🇸" });
           }}
           title="Show app version (double-tap to reload)"
           className="relative z-10 flex items-center gap-3 md:gap-4 text-left"
@@ -360,11 +353,7 @@ export default function AppShell() {
             {brand}
           </h1>
         </button>
-        {onNewspaper && buildNote ? (
-          <p className="relative z-10 min-w-0 max-w-[58%] truncate text-right text-[10px] leading-tight tracking-[0.04em] text-cream/80 md:text-[11px]">
-            {buildNote}
-          </p>
-        ) : onReading ? (
+        {onReading ? (
           <PagesTodayBadge />
         ) : onSports ? (
           <div className="relative z-10 flex shrink-0 items-center gap-3">
@@ -433,9 +422,8 @@ export default function AppShell() {
         <main
           className={cn(
             "min-w-0 flex-1 overflow-x-hidden md:pb-0",
-            onNewspaper && "flex min-h-0 flex-col overflow-hidden",
             // Reading/Dispatch/Times solo: no bottom bar. Sports solo + full app: pad for tabs.
-            readingOnly || rssOnly || newspaperOnly ? "pb-0" : "pb-[76px] md:pb-0",
+            readingOnly || rssOnly ? "pb-0" : "pb-[76px] md:pb-0",
           )}
         >
           <Outlet />
