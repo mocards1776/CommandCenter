@@ -6,6 +6,8 @@
  * so older issues render; the client builds the layout from whatever is there.
  */
 
+import { espnThumbUrl } from "./newspaper-images.ts";
+
 export type WatchLeague = "MLB" | "NFL" | "NHL" | "CFB" | "Soccer" | "NBA" | "WNBA";
 
 export type WatchSide = {
@@ -339,6 +341,10 @@ const ESPN_LOGO: Record<WatchLeague, string> = {
 
 /** Prefer the stored mark; otherwise a CDN crest from team id or abbreviation. */
 export function watchLogo(side: WatchSide, league: WatchLeague): string | null {
+  return espnThumbUrl(watchLogoRaw(side, league));
+}
+
+function watchLogoRaw(side: WatchSide, league: WatchLeague): string | null {
   if (side.logo) return side.logo;
   if (league === "MLB" && side.teamId) return `https://www.mlbstatic.com/team-logos/${side.teamId}.svg`;
   const sport = ESPN_LOGO[league];

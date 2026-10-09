@@ -16,7 +16,13 @@ import {
   type ReactNode,
 } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useQuery as useQueryBase,
+  useQueryClient,
+  type QueryKey,
+  type UseQueryOptions,
+  type UseQueryResult,
+} from "@tanstack/react-query";
 import { Bookmark, ChevronLeft, ChevronRight, Share } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import {
@@ -221,7 +227,8 @@ import {
   type MatchedWrap,
   type TeamInfobox,
 } from "@/lib/newspaper-sports";
-import { isNarrowStoryImage } from "@/lib/newspaper-images";
+import { espnThumbUrl, isNarrowStoryImage, rewriteEspnThumbs } from "@/lib/newspaper-images";
+import { useStoryImage } from "@/components/newspaper/StoryImage";
 import {
   buildEdition,
   dropEmptyFolios,
@@ -283,6 +290,23 @@ import {
 import { cn } from "@/lib/utils";
 import { fetchYesterdayRecap } from "@/lib/yesterday-recap";
 
+/** Desk data is observed already rewritten to ESPN combiner thumbs. */
+function useQuery<
+  TQueryFnData = unknown,
+  TError = Error,
+  TData = TQueryFnData,
+  TQueryKey extends QueryKey = QueryKey,
+>(
+  options: UseQueryOptions<TQueryFnData, TError, TData, TQueryKey>,
+): UseQueryResult<TData, TError> {
+  const select = options.select;
+  return useQueryBase({
+    ...options,
+    select: (data: TQueryFnData) =>
+      rewriteEspnThumbs(select ? select(data) : (data as unknown as TData)) as TData,
+  });
+}
+
 /** How many stories get a full ESPN story pull rather than the wire stub. */
 const DEEP_STORIES = 48;
 
@@ -336,7 +360,7 @@ function TeamLogo({
   }
   return (
     <img
-      src={src}
+      src={espnThumbUrl(src) ?? src}
       alt={alt ?? ""}
       className={cn("wsj-logo", size)}
       loading="lazy"
@@ -981,7 +1005,8 @@ function runIn(text: string): [string, string] {
 
 function Cut({ card, shape = "wide" }: { card: GameWrapCard; shape?: "wide" | "tall" | "square" }) {
   const [measured, setMeasured] = useState<number | null>(null);
-  if (!card.photo) return null;
+  const photo = useStoryImage(card.photo);
+  if (!card.photo || photo.hidden) return null;
   const caption =
     card.caption && squash(card.caption) !== squash(card.teamName) ? card.caption : null;
   const native = typeof card.photoWidth === "number" && card.photoWidth > 0 ? card.photoWidth : measured;
@@ -992,9 +1017,10 @@ function Cut({ card, shape = "wide" }: { card: GameWrapCard; shape?: "wide" | "t
       style={native && kind === "fit" ? { maxWidth: native } : undefined}
     >
       <img
-        src={card.photo}
+        src={photo.src}
         alt=""
         loading="lazy"
+        onError={photo.onError}
         onLoad={(e) => {
           const w = e.currentTarget.naturalWidth;
           if (w > 0) setMeasured((prev) => (prev && prev <= w ? prev : w));
@@ -1241,16 +1267,18 @@ function Brief({
   trim?: number;
 }) {
   const dek = recapDek(card, featured ? 2 : 1);
+  const photo = useStoryImage(card.photo);
+  const showPhoto = Boolean(card.photo) && !photo.hidden;
   return (
     <article
-      className={cn("wsj-brief", featured && "featured", (card.photo || crest) && "has-art")}
+      className={cn("wsj-brief", featured && "featured", (showPhoto || crest) && "has-art")}
       style={tint(color)}
       data-tt-keys={storyReadKeys(card).join("|")}
       data-tt-title={card.headline}
       {...(trim != null ? { "data-tt-trim": trim } : {})}
     >
-      {card.photo ? (
-        <img className="wsj-brief-photo" src={card.photo} alt="" loading="lazy" />
+      {showPhoto ? (
+        <img className="wsj-brief-photo" src={photo.src} alt="" loading="lazy" onError={photo.onError} />
       ) : crest ? (
         <span className="wsj-brief-crest">
           <img src={crest} alt="" loading="lazy" />
@@ -3418,6 +3446,12 @@ function WrapFlow({ cards, path }: { cards: GameWrapCard[]; path: string }) {
   );
 }
 
+function FeatureArt({ url, onGone }: { url: string; onGone: () => void }) {
+  const photo = useStoryImage(url, onGone);
+  if (photo.hidden) return null;
+  return <img src={photo.src} alt="" loading="lazy" onError={photo.onError} />;
+}
+
 /** Box scores: the best game set large with its recap, the rest in agate. */
 function ScoresDesk({
   page,
@@ -3431,6 +3465,7 @@ function ScoresDesk({
   edition: string;
 }) {
   const open = useReader();
+  const [featurePhotoDead, setFeaturePhotoDead] = useState(false);
   const filedWraps = page.articles
     .map((a) => a.card)
     .filter((c) => storyFitsSection(c, page.path) && (isGameWrap(c) || isRecapStory(c) || Boolean(c.scoreLine)));
@@ -3477,6 +3512,7 @@ function ScoresDesk({
   const card = boxStoryCard(featured);
   const isMlb = page.path === "baseball/mlb";
   const photo = featured.recap?.photo ?? null;
+  const showFeaturePhoto = Boolean(photo) && !featurePhotoDead;
   const sparse = games.length < 7;
   const ahead = college
     ? []
@@ -3493,7 +3529,7 @@ function ScoresDesk({
       {wrapCards.length ? <WrapFlow cards={wrapCards} path={page.path} /> : null}
       {!wrapCards.length ? (
       <article
-        className={cn("tt-feature", !photo && "graphic")}
+        className={cn("tt-feature", !showFeaturePhoto && "graphic")}
         {...(card
           ? {
               "data-tt-keys": storyReadKeys(card).join("|"),
@@ -3501,9 +3537,9 @@ function ScoresDesk({
             }
           : {})}
       >
-        {photo ? (
+        {showFeaturePhoto ? (
           <figure className="tt-feature-photo">
-            <img src={photo} alt="" loading="lazy" />
+            <FeatureArt url={photo!} onGone={() => setFeaturePhotoDead(true)} />
             <figcaption>
               {featured.away.name} at {featured.home.name}
               {featured.venue ? `, ${featured.venue}` : ""}.
@@ -3532,7 +3568,7 @@ function ScoresDesk({
               <NamedText text={featured.recap.blurb} />
             </FitCopy>
           ) : null}
-          {photo ? <ScoreHero game={featured} size="md" /> : null}
+          {showFeaturePhoto ? <ScoreHero game={featured} size="md" /> : null}
           <Linescore game={featured} />
           <Decisions game={featured} faces />
           <Leaders game={featured} max={4} />
@@ -4632,15 +4668,16 @@ function NatPhoto({
   size: NationalPhotoSize;
   onFail: () => void;
 }) {
-  if (!story.imageUrl) return null;
+  const photo = useStoryImage(story.imageUrl, onFail);
+  if (!story.imageUrl || photo.hidden) return null;
   const credit = story.imageCredit || story.source;
   return (
     <figure className={cn("tt-nat-cut", size)}>
       <img
-        src={story.imageUrl}
+        src={photo.src}
         alt=""
         loading={size === "lead" ? "eager" : "lazy"}
-        onError={onFail}
+        onError={photo.onError}
       />
       {credit ? <figcaption>Photo: {credit}</figcaption> : null}
     </figure>
@@ -4804,16 +4841,18 @@ function MoSource({ item }: { item: MoItem }) {
 function MoStory({ item, size, trim }: { item: MoItem; size: "xl" | "md" | "sm"; trim?: number }) {
   const open = useReader();
   const card = moCard(item);
+  const photo = useStoryImage(item.photo);
+  const showPhoto = Boolean(item.photo) && size !== "sm" && !photo.hidden;
   return (
     <article
-      className={cn("tt-mo-story", size, item.photo && size !== "sm" && "has-photo")}
+      className={cn("tt-mo-story", size, showPhoto && "has-photo")}
       data-tt-keys={storyReadKeys({ id: item.id, headline: item.headline, wrapHref: item.url }).join("|")}
       data-tt-title={item.headline}
       {...(trim != null ? { "data-tt-trim": trim } : {})}
     >
-      {item.photo && size !== "sm" ? (
+      {showPhoto ? (
         <button type="button" className="tt-mo-photo" onClick={() => open({ card })} aria-label={item.headline}>
-          <img src={item.photo} alt="" loading="lazy" />
+          <img src={photo.src} alt="" loading="lazy" onError={photo.onError} />
         </button>
       ) : null}
       <div className="tt-mo-copy">
@@ -4920,10 +4959,12 @@ function MissouriDesk({ page, onTurn }: { page: MissouriEditionPage; onTurn: (fo
 function ScoutBand({ item, onTurn, deskFolio }: { item: MoItem; onTurn: (folio: string) => void; deskFolio: string | null }) {
   const open = useReader();
   const card = moCard(item);
+  const photo = useStoryImage(item.photo);
+  const showPhoto = Boolean(item.photo) && !photo.hidden;
   const dek = item.dek ? cleanDek(item.dek.length > 420 ? item.dek.slice(0, 420) : item.dek) : null;
   return (
     <section
-      className={cn("tt-scout", item.photo && "has-photo")}
+      className={cn("tt-scout", showPhoto && "has-photo")}
       data-tt-keys={storyReadKeys({ id: item.id, headline: item.headline, wrapHref: item.url }).join("|")}
       data-tt-title={item.headline}
     >
@@ -4932,7 +4973,7 @@ function ScoutBand({ item, onTurn, deskFolio }: { item: MoItem; onTurn: (folio: 
         <strong>Missouri Scout</strong>
         <em>{moWhen(item.when) || "Latest"}</em>
       </div>
-      {item.photo ? <img className="tt-scout-photo" src={item.photo} alt="" loading="lazy" /> : null}
+      {showPhoto ? <img className="tt-scout-photo" src={photo.src} alt="" loading="lazy" onError={photo.onError} /> : null}
       <div className="tt-scout-copy">
         <h3 className="wsj-hl md">
           <HeadlineSave card={card}>
@@ -6007,7 +6048,10 @@ function NewspaperDesk() {
     })();
   }, [copyReady, pressId, filedStories, signedIn]);
   const pressReady = lockedCopy?.id === pressId;
-  const printedStories = lockedCopy?.stories ?? NO_STORIES
+  const printedStories = useMemo(
+    () => rewriteEspnThumbs(lockedCopy?.stories ?? NO_STORIES),
+    [lockedCopy?.stories],
+  );
 
   const leagueClubsQ = useQuery({
     queryKey: [pressId, "tt-league-clubs", day, sportPaths.join("|")],

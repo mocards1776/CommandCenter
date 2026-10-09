@@ -16,6 +16,8 @@ import {
   type RecapGamePack,
   type RecapLeader,
 } from "@/lib/newspaper-recap";
+import { espnThumbUrl } from "@/lib/newspaper-images";
+import { useStoryImage } from "@/components/newspaper/StoryImage";
 import { cn } from "@/lib/utils";
 import { PersonName } from "./PlayerPop";
 
@@ -60,7 +62,7 @@ export function RecapChips({
           {l.headshot ? <Face person={l} size={compact ? "sm" : "md"} /> : l.team || pack.away.logo ? (
             <img
               className={cn("tt-recap-chip-logo", compact && "sm")}
-              src={l.headshot || teamLogoFor(pack, l) || ""}
+              src={espnThumbUrl(l.headshot || teamLogoFor(pack, l) || "") ?? ""}
               alt=""
               onError={(e) => {
                 e.currentTarget.style.visibility = "hidden";
@@ -101,19 +103,21 @@ export function RecapPhoto({
   caption?: string | null;
 }) {
   const [measured, setMeasured] = useState<number | null>(null);
+  const photo = useStoryImage(url);
   const native = typeof width === "number" && width > 0 ? width : measured;
   const kind = recapPhotoKind(url, native);
-  if (kind === "none" || !url) return null;
+  if (kind === "none" || !url || photo.hidden) return null;
   return (
     <figure
       className={cn("tt-recap-photo", kind)}
       style={native && kind === "fit" ? { maxWidth: native } : undefined}
     >
       <img
-        src={url}
+        src={photo.src}
         alt=""
         loading="lazy"
         decoding="async"
+        onError={photo.onError}
         onLoad={(e) => {
           const w = e.currentTarget.naturalWidth;
           if (w > 0) setMeasured((prev) => (prev && prev <= w ? prev : w));

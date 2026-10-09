@@ -126,8 +126,17 @@ function isTimesNavigation(url) {
   );
 }
 
+function isEspnThumb(url) {
+  if (!/(?:^|\.)a\.espncdn\.com$/i.test(url.hostname) || url.pathname !== "/combiner/i") return false;
+  const img = url.searchParams.get("img") || "";
+  return (
+    /^\/i\/headshots\/[^/]+\/players\/full\/\d+\.png$/i.test(img) || /^\/i\/teamlogos\/.+\.png$/i.test(img)
+  );
+}
+
 function isSharpImage(url) {
   if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+  if (isEspnThumb(url)) return true;
   if (/[?&](?:resize|w|width)=(\d{1,3})\b/i.test(url.href)) {
     const n = Number(RegExp.$1);
     if (Number.isFinite(n) && n < 800) return false;

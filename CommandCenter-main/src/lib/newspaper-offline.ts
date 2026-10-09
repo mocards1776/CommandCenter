@@ -8,6 +8,7 @@
 
 import {
   estimateStoryImageWidth,
+  isEspnThumbUrl,
   STORY_IMAGE_INSET_BELOW_PX,
   upgradeStoryImageUrl,
 } from "./newspaper-images.ts";
@@ -30,6 +31,7 @@ function isImageUrl(value: string): boolean {
 export function isSharpOriginalUrl(raw: string | null | undefined): boolean {
   const url = (raw ?? "").trim();
   if (!url || !HTTP.test(url)) return false;
+  if (isEspnThumbUrl(url)) return true;
   if (/[?&](?:resize|w|width)=(\d{1,3})\b/i.test(url)) {
     const n = Number(RegExp.$1);
     if (Number.isFinite(n) && n < STORY_IMAGE_INSET_BELOW_PX) return false;

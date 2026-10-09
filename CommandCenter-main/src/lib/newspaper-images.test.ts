@@ -6,7 +6,9 @@ import {
   estimateStoryImageWidth,
   isNarrowStoryImage,
   pickBestStoryImage,
+  rewriteEspnThumbs,
   srcsetCandidates,
+  storyImageCandidates,
   upgradeStoryImageUrl,
 } from "./newspaper-images.ts";
 
@@ -84,5 +86,47 @@ assert(unknown?.includes("original.jpg"), "a URL with no size hint beats a known
 assert(upgradeStoryImageUrl("javascript:alert(1)") == null, "non-http is dropped");
 assert(upgradeStoryImageUrl(null) == null, "empty is dropped");
 assert(pickBestStoryImage([null, "", "  "]) == null, "no usable candidate");
+
+const shot = "https://a.espncdn.com/i/headshots/nfl/players/full/3139477.png";
+const shotThumb =
+  "https://a.espncdn.com/combiner/i?img=/i/headshots/nfl/players/full/3139477.png&w=160&h=116";
+assert(upgradeStoryImageUrl(shot) === shotThumb, "ESPN headshot uses the combiner at 160×116");
+assert(upgradeStoryImageUrl(shotThumb) === shotThumb, "an ESPN headshot thumb is left at 160");
+assert(!upgradeStoryImageUrl(shotThumb)?.includes("w=1600"), "combiner w= is not bumped to 1600");
+
+const logo = "https://a.espncdn.com/i/teamlogos/nfl/500/kc.png";
+assert(
+  upgradeStoryImageUrl(logo) === "https://a.espncdn.com/combiner/i?img=/i/teamlogos/nfl/500/kc.png&w=128&h=128",
+  "ESPN logo uses the combiner at 128",
+);
+assert(
+  upgradeStoryImageUrl("https://a.espncdn.com/i/teamlogos/nhl/500-dark/stl.png")?.includes("/500-dark/stl.png"),
+  "dark logos keep their path",
+);
+assert(
+  upgradeStoryImageUrl("https://a.espncdn.com/i/teamlogos/mlb/500/scoreboard/stl.png")?.includes("/scoreboard/stl.png"),
+  "scoreboard logos keep their path",
+);
+
+const ampPreview =
+  "https://bloximages.newyork1.vip.townnews.com/stltoday.com/content/tncms/assets/v3/editorial/9/5c/95c783a9-3787-4edc-8940-5ddca6415928.preview.jpg?crop=1&amp;resize=200%2C133";
+const amp = storyImageCandidates(ampPreview);
+assert(amp.src.includes(".preview.jpg") && !amp.src.includes("&amp;") && !amp.src.includes("amp;"), "BLOX tries the stored preview first and &amp; becomes &");
+assert(amp.fallback?.includes(".image.jpg") && !amp.fallback.includes("&amp;"), "fallback is the upgraded .image");
+const other = storyImageCandidates("https://example.com/a.jpg?w=200");
+assert(other.fallback === "https://example.com/a.jpg?w=200", "non-BLOX art still falls back to the stored URL");
+const filedImage =
+  "https://bloximages.newyork1.vip.townnews.com/stltoday.com/content/tncms/assets/v3/editorial/9/5c/95c783a9-3787-4edc-8940-5ddca6415928.image.jpg";
+const filed = storyImageCandidates(filedImage);
+assert(filed.src.includes(".preview.jpg") && filed.fallback?.includes(".image.jpg"), "a filed BLOX .image tries its .preview twin first");
+const composed = storyImageCandidates(upgradeStoryImageUrl(ampPreview));
+assert(composed.src.includes(".preview.jpg") && composed.fallback?.includes(".image.jpg"), "an upgraded BLOX .image still tries .preview first");
+
+const tree = { logo, note: "plain", nest: [shot] };
+const shrunk = rewriteEspnThumbs(tree);
+assert(shrunk.logo.includes("combiner") && shrunk.note === "plain" && shrunk.nest[0]?.includes("w=160"), "desk data uses thumbs");
+assert(rewriteEspnThumbs(tree) === shrunk, "thumb rewrite keeps the same object");
+const plain = { note: "plain" };
+assert(rewriteEspnThumbs(plain) === plain, "data with no ESPN art is unchanged");
 
 console.log("newspaper-images ok");

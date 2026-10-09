@@ -1,7 +1,20 @@
 import { Bookmark, X } from "lucide-react";
+import { useStoryImage } from "./StoryImage";
 import { useReader } from "./reader-context";
 import { SaveMark } from "./SaveMark";
 import { useSavedArticles } from "./saved-context";
+
+function SavedThumb({ src }: { src: string }) {
+  const photo = useStoryImage(src);
+  if (photo.hidden) {
+    return (
+      <span className="tt-saved-thumb">
+        <Bookmark size={18} strokeWidth={1.5} />
+      </span>
+    );
+  }
+  return <img src={photo.src} alt="" onError={photo.onError} />;
+}
 
 function savedWhen(iso: string): string {
   const d = new Date(iso);
@@ -43,7 +56,7 @@ export function SavedDrawer({ onClose }: { onClose: () => void }) {
                         aria-label={row.headline}
                       >
                         {row.image ? (
-                          <img src={row.image} alt="" />
+                          <SavedThumb src={row.image} />
                         ) : (
                           <span className="tt-saved-thumb">
                             <Bookmark size={18} strokeWidth={1.5} />

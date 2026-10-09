@@ -1,4 +1,5 @@
 import { useState, type CSSProperties } from "react";
+import { useStoryImage } from "@/components/newspaper/StoryImage";
 import { editionDateline } from "@/lib/newspaper";
 import { ElectionEar } from "@/components/newspaper/ElectionEar";
 import { electionEar } from "@/lib/newspaper-election";
@@ -12,6 +13,8 @@ import {
 /** Lead photo at most its native width — never stretched or CSS-upscaled. */
 function LeadArt({ src, nativeWidth }: { src: string; nativeWidth: number | null }) {
   const [natural, setNatural] = useState<number | null>(nativeWidth && nativeWidth > 0 ? nativeWidth : null);
+  const photo = useStoryImage(src);
+  if (photo.hidden) return null;
   const style: CSSProperties = {
     width: "auto",
     maxWidth: natural ? `min(100%, ${natural}px)` : "100%",
@@ -22,7 +25,8 @@ function LeadArt({ src, nativeWidth }: { src: string; nativeWidth: number | null
   return (
     <img
       className="tt-phone-front-art"
-      src={src}
+      src={photo.src}
+      onError={photo.onError}
       alt=""
       style={style}
       onLoad={(e) => {

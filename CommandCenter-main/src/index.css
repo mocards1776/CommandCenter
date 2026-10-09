@@ -2590,6 +2590,13 @@ li.counting .tt-count.card {
   gap: var(--w-gutter);
   align-items: start;
 }
+.wsj-story-art:empty {
+  display: none;
+}
+.wsj-story.art-side:not(:has(img, .wsj-poster)) {
+  display: flex;
+  grid-template-columns: unset;
+}
 .wsj-story.primary.art-top .wsj-cut img,
 .wsj-story.secondary.art-top .wsj-cut img {
   aspect-ratio: 16 / 9;
@@ -8116,6 +8123,10 @@ li.counting .tt-count.card {
   display: grid;
   flex-direction: unset;
   grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+}
+.newspaper-root .wsj-story.art-side:not(:has(img, .wsj-poster)) {
+  display: flex;
+  grid-template-columns: unset;
 }
 .newspaper-root .wsj-front-row.two {
   display: grid;
