@@ -225,21 +225,24 @@ function walkEspnThumbs(value: unknown): unknown {
 }
 
 /**
- * Try the upgraded URL first. Fall back to the stored URL (with `&amp;`
- * decoded). A filed BLOX `.image` that 404s can still try its `.preview` twin.
+ * Try the upgraded URL first, then the stored URL (with `&amp;` decoded).
+ * BLOX hosts try the stored URL first. A filed BLOX `.image` that 404s can
+ * still try its `.preview` twin.
  */
 export function storyImageCandidates(raw: string | null | undefined): { src: string; fallback: string | null } {
   const stored = decodeAmp((raw ?? "").trim());
   if (!stored || !HTTP.test(stored)) return { src: stored, fallback: null };
-  const upgraded = upgradeStoryImageUrl(stored) ?? stored;
-  if (upgraded !== stored) return { src: upgraded, fallback: stored };
   let host = "";
   try {
     host = new URL(stored).hostname;
   } catch {
     host = "";
   }
-  if (isBloxHost(host) || /bloximages|tncms/i.test(stored)) {
+  const blox = isBloxHost(host) || /bloximages|tncms/i.test(stored);
+  const upgraded = upgradeStoryImageUrl(stored) ?? stored;
+  // BLOX `.image` upgrades can 404 (stltoday): the stored URL goes first.
+  if (upgraded !== stored) return blox ? { src: stored, fallback: upgraded } : { src: upgraded, fallback: stored };
+  if (blox) {
     const preview = stored.replace(/\.image(\.(?:jpe?g|png|webp|gif))(?=[?#]|$)/i, ".preview$1");
     if (preview !== stored) return { src: stored, fallback: preview };
   }
