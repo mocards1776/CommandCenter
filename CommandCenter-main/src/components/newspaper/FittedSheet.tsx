@@ -1,9 +1,11 @@
 import { createContext, useContext, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { publishA1Held } from "@/lib/newspaper-a1-held";
 import {
   EMPTY_FIT_PLAN,
   hideCssForPlan,
   planSheetFit,
   plansEqual,
+  sheetDropKey,
   type SheetFitPlan,
 } from "@/lib/newspaper-fit";
 
@@ -89,6 +91,14 @@ export function FittedSheet({
       ro.disconnect();
     };
   }, []);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const folio = el.closest("[data-folio]")?.getAttribute("data-folio");
+    if (folio !== "A1") return;
+    publishA1Held(sheetDropKey(el), plan.moved ?? []);
+  }, [plan]);
 
   const hideCss = hideCssForPlan(sheetId, plan);
 
