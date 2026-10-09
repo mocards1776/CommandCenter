@@ -28,6 +28,7 @@ import {
   type StarPick,
 } from "@/lib/newspaper-agate";
 import { mlbTeamColor } from "@/lib/newspaper-recap";
+import { espnThumbUrl } from "@/lib/newspaper-images";
 import { cn } from "@/lib/utils";
 import { PersonName } from "./PlayerPop";
 import "./box-agate.css";
@@ -36,7 +37,7 @@ function Mark({ src, size = "sm" }: { src: string | null | undefined; size?: "xs
   if (!src) return <span className={cn("tt-mark", size, "empty")} aria-hidden="true" />;
   return (
     <img
-      src={src}
+      src={espnThumbUrl(src) ?? src}
       alt=""
       className={cn("tt-mark", size)}
       loading="lazy"
@@ -52,7 +53,7 @@ export function Face({ person, size = "md" }: { person: BoxPerson | null | undef
   if (!person?.headshot) return <span className={cn("tt-face", size, "empty")} aria-hidden="true" />;
   return (
     <img
-      src={person.headshot}
+      src={espnThumbUrl(person.headshot) ?? person.headshot}
       alt=""
       className={cn("tt-face", size)}
       loading="lazy"

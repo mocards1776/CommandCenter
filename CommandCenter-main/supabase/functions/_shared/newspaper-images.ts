@@ -9,6 +9,18 @@
 export const STORY_IMAGE_TARGET_PX = 1600;
 export const STORY_IMAGE_INSET_BELOW_PX = 800;
 
+/** 2× the 80px coach portrait. Matches ESPN's headshot combiner ratio. */
+const ESPN_HEADSHOT_W = 160;
+const ESPN_HEADSHOT_H = 116;
+/**
+ * 2× the 64px `.wsj-logo.xl` crest (A1's largest standard logo).
+ * Watch and phone crests are 48px. The 148px coach tile is softer than 2×.
+ */
+const ESPN_LOGO_PX = 128;
+
+const ESPN_HEADSHOT_PATH = /^\/i\/headshots\/[^/]+\/players\/full\/\d+\.png$/i;
+const ESPN_LOGO_PATH = /^\/i\/teamlogos\/.+\.png$/i;
+
 export type StoryImageCandidate = {
   url: string;
   width?: number | null;
@@ -31,6 +43,59 @@ function decodeOnce(url: string): string {
   } catch {
     return url;
   }
+}
+
+/** Stored feed URLs sometimes keep a literal `&amp;` in the query. */
+function decodeAmp(url: string): string {
+  return url.replace(/&amp;/gi, "&");
+}
+
+function espnHost(hostname: string): boolean {
+  return /(?:^|\.)a\.espncdn\.com$/i.test(hostname);
+}
+
+/** Combiner URL for an ESPN headshot or team logo, or null when it is neither. */
+function canonicalEspnThumb(raw: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (!espnHost(parsed.hostname)) return null;
+  let path = parsed.pathname;
+  if (path === "/combiner/i") {
+    const img = parsed.searchParams.get("img") ?? "";
+    if (!img.startsWith("/")) return null;
+    path = img;
+  }
+  const head = ESPN_HEADSHOT_PATH.test(path);
+  const logo = !head && ESPN_LOGO_PATH.test(path);
+  if (!head && !logo) return null;
+  const w = head ? ESPN_HEADSHOT_W : ESPN_LOGO_PX;
+  const h = head ? ESPN_HEADSHOT_H : ESPN_LOGO_PX;
+  return `https://a.espncdn.com/combiner/i?img=${path}&w=${w}&h=${h}`;
+}
+
+/** ESPN combiner thumb of a headshot (`/players/full/`) or team logo. Any w/h. */
+export function isEspnThumbUrl(raw: string | null | undefined): boolean {
+  const url = (raw ?? "").trim();
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    if (!espnHost(parsed.hostname) || parsed.pathname !== "/combiner/i") return false;
+    const img = parsed.searchParams.get("img") ?? "";
+    return ESPN_HEADSHOT_PATH.test(img) || ESPN_LOGO_PATH.test(img);
+  } catch {
+    return false;
+  }
+}
+
+/** Same string when it is not an ESPN headshot or logo. */
+export function espnThumbUrl(raw: string | null | undefined): string | null {
+  const url = trimUrl(raw);
+  if (!url) return null;
+  return canonicalEspnThumb(url) ?? url;
 }
 
 function parseResizeWidth(value: string | null | undefined): number | null {
@@ -71,7 +136,9 @@ export function estimateStoryImageWidth(raw: string | null | undefined): number 
 export function upgradeStoryImageUrl(raw: string | null | undefined): string | null {
   const src = trimUrl(raw);
   if (!src) return null;
-  let url = decodeOnce(src);
+  let url = decodeAmp(decodeOnce(src));
+  const espn = canonicalEspnThumb(url);
+  if (espn) return espn;
 
   url = url.replace(/\.preview(\.(?:jpe?g|png|webp|gif))(?=[?#]|$)/i, ".image$1");
   url = url.replace(/\/preview(\.(?:jpe?g|png|webp|gif))(?=[?#]|$)/i, "/image$1");
@@ -115,6 +182,68 @@ export function upgradeStoryImageUrl(raw: string | null | undefined): string | n
   }
 
   return parsed.toString();
+}
+
+const espnThumbCache = new WeakMap<object, unknown>();
+
+/** Replace ESPN headshot and logo URLs anywhere in printed or live desk data. */
+export function rewriteEspnThumbs<T>(value: T): T {
+  if (typeof value === "string") return (canonicalEspnThumb(value) ?? value) as T;
+  if (value == null || typeof value !== "object") return value;
+  const hit = espnThumbCache.get(value);
+  if (hit !== undefined) return hit as T;
+  const next = walkEspnThumbs(value);
+  espnThumbCache.set(value, next);
+  return next as T;
+}
+
+function walkEspnThumbs(value: unknown): unknown {
+  if (typeof value === "string") {
+    const next = canonicalEspnThumb(value);
+    return next && next !== value ? next : value;
+  }
+  if (Array.isArray(value)) {
+    let changed = false;
+    const out = value.map((item) => {
+      const next = walkEspnThumbs(item);
+      if (next !== item) changed = true;
+      return next;
+    });
+    return changed ? out : value;
+  }
+  if (!value || typeof value !== "object") return value;
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) return value;
+  let changed = false;
+  const out: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value)) {
+    const next = walkEspnThumbs(item);
+    if (next !== item) changed = true;
+    out[key] = next;
+  }
+  return changed ? out : value;
+}
+
+/**
+ * Try the upgraded URL first. Fall back to the stored URL (with `&amp;`
+ * decoded). A filed BLOX `.image` that 404s can still try its `.preview` twin.
+ */
+export function storyImageCandidates(raw: string | null | undefined): { src: string; fallback: string | null } {
+  const stored = decodeAmp((raw ?? "").trim());
+  if (!stored || !HTTP.test(stored)) return { src: stored, fallback: null };
+  const upgraded = upgradeStoryImageUrl(stored) ?? stored;
+  if (upgraded !== stored) return { src: upgraded, fallback: stored };
+  let host = "";
+  try {
+    host = new URL(stored).hostname;
+  } catch {
+    host = "";
+  }
+  if (isBloxHost(host) || /bloximages|tncms/i.test(stored)) {
+    const preview = stored.replace(/\.image(\.(?:jpe?g|png|webp|gif))(?=[?#]|$)/i, ".preview$1");
+    if (preview !== stored) return { src: stored, fallback: preview };
+  }
+  return { src: stored, fallback: null };
 }
 
 export function isNarrowStoryImage(

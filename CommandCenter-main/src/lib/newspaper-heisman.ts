@@ -3,6 +3,8 @@
  * Reads Kalshi's public market API (no auth) at press time.
  */
 
+import { espnThumbUrl } from "./newspaper-images.ts";
+
 const KALSHI = "https://api.elections.kalshi.com/trade-api/v2";
 const CT = "America/Chicago";
 const ESPN_LOGO = "https://a.espncdn.com/i/teamlogos/ncaa/500";
@@ -142,7 +144,8 @@ export function formatHeismanAsOf(iso: string): string {
 }
 
 function logoFromId(id: string): string {
-  return `${ESPN_LOGO}/${id}.png`;
+  const full = `${ESPN_LOGO}/${id}.png`;
+  return espnThumbUrl(full) ?? full;
 }
 
 export function matchHeismanLogo(school: string, hints: HeismanLogoHint[] = []): string | null {
@@ -152,7 +155,7 @@ export function matchHeismanLogo(school: string, hints: HeismanLogoHint[] = []):
     const logo = hint.logo;
     if (!logo) continue;
     const names = [hint.name, hint.abbrev].filter(Boolean).map((n) => squashSchool(String(n)));
-    if (names.some((n) => n && (n === key || n.includes(key) || key.includes(n)))) return logo;
+    if (names.some((n) => n && (n === key || n.includes(key) || key.includes(n)))) return espnThumbUrl(logo) ?? logo;
   }
   const id = SCHOOL_IDS[key] ?? SCHOOL_IDS[key.replace(/\s+fl$/, "")] ?? null;
   return id ? logoFromId(id) : null;
