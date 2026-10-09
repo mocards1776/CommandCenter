@@ -165,8 +165,17 @@ async function pinClock(page, issueId) {
   await page.clock.setFixedTime(at);
 }
 
-/** Printed sheet at iPad Pro 13" width. Height is the copy; nothing is cropped. */
+/** One printed screen at iPad Pro 13". Only pages near the reader mount, so turn to it first. */
 async function shootSheet(page, kind) {
+  const folio = await page
+    .locator(`.wsj-page[data-kind="${kind}"]`)
+    .first()
+    .getAttribute("data-folio", { timeout: 5_000 })
+    .catch(() => null);
+  if (!folio) return null;
+  await page.evaluate((f) => {
+    if (location.hash !== `#${f}`) location.hash = f;
+  }, folio);
   const ready = await page
     .waitForFunction(
       (name) => {
