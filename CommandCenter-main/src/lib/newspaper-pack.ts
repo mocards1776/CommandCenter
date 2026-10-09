@@ -10,7 +10,8 @@
  *    roots leave the page; story copy is cut on a line instead when at least
  *    MIN_CUT_LINES of it still fit (its "full story" line carries on). Before
  *    copy goes whole, the story's own [data-tt-yield] furniture goes.
- * 2. [data-tt-keep] blocks go the same way, last. [data-tt-lead] never does.
+ * 2. [data-tt-keep] blocks go the same way, last. [data-tt-lead] never does,
+ *    nor does its headline.
  * 3. Anything else wholly below the foot goes, then the lowest whole unit
  *    (story, card, row, item, paragraph) still crossing it. A [data-tt-rows]
  *    board is never a unit: it loses its last tiles instead.
@@ -125,7 +126,8 @@ export function packSheet(sheet: HTMLElement): PackResult {
   const settled = new Map<HTMLElement, number>();
   /** The dropped block being offered its room back; nothing may drop it again. */
   let held: HTMLElement | null = null;
-  const kept = (el: HTMLElement) => holdsLead(el) || (held != null && el.contains(held));
+  const kept = (el: HTMLElement) =>
+    holdsLead(el) || (el.matches(HEADLINE) && el.closest(LEAD) != null) || (held != null && el.contains(held));
   /** Full heights of copy shortened to make room for a held block. */
   const natural = new Map<HTMLElement, number>();
 

@@ -174,16 +174,8 @@ import { fetchRaceBriefs } from "@/lib/newspaper-races-fetch";
 import {
   asNationalDesk,
   sampleNationalDesk,
-  nationalDropParts,
-  nationalLeadColumns,
-  nationalPageCopy,
-  nationalPhotoSize,
-  nationalStoryHasMore,
-  nationalStorySize,
   type NationalDesk,
-  type NationalPhotoSize,
   type NationalStory,
-  type NationalStorySize,
 } from "@/lib/newspaper-national";
 import { readTimesNationalNews } from "@/lib/newspaper-national-fetch";
 import {
@@ -919,7 +911,7 @@ function Prose({
   let insetAt = inset ? (paras.length <= 2 ? paras.length : Math.max(1, Math.round(paras.length * 0.6))) : -1;
   if (insetAt === quoteAt) insetAt += 1;
   return (
-    <div className={cn("wsj-prose", `c${fit}`, drop && "drop", dress && "dressed", ended && "ended")}>
+    <div className={cn("wsj-prose", `c${fit}`, length >= 420 && "measure", drop && "drop", dress && "dressed", ended && "ended")}>
       {paras.map((p, i) => (
         <Fragment key={i}>
           {i === insetAt ? inset : null}
@@ -1129,6 +1121,8 @@ function Story({
   trim,
   chrome,
   compactBox,
+  showDek = true,
+  yieldArt,
 }: {
   card: GameWrapCard;
   team?: TeamInfobox | null;
@@ -1157,6 +1151,10 @@ function Story({
   /** False skips the recap box when a banner already carries the score. */
   chrome?: boolean;
   compactBox?: boolean;
+  /** False leaves the dek off, as on a page's smaller stories. */
+  showDek?: boolean;
+  /** The photo leaves the page before the story does. */
+  yieldArt?: boolean;
 }) {
   const full = cardCopy(card);
   const copy = substantive(card, text ?? full);
@@ -1196,10 +1194,14 @@ function Story({
       {...(className?.split(" ").includes("lead") ? { "data-tt-lead": "" } : {})}
       {...(trim != null ? { "data-tt-trim": trim } : {})}
     >
-      {artNode ? <div className="wsj-story-art">{artNode}</div> : null}
+      {artNode ? (
+        <div className="wsj-story-art" {...(yieldArt ? { "data-tt-yield": "" } : {})}>
+          {artNode}
+        </div>
+      ) : null}
       <div className="wsj-story-copy">
         <Headline card={card} size={size} game={game} />
-        {dek && (!recap || chrome === false) ? (
+        {showDek && dek && (!recap || chrome === false) ? (
           <p className="wsj-dek">
             {dek}
           </p>
@@ -1349,6 +1351,96 @@ function BriefGrid({
         })}
       </div>
     </section>
+  );
+}
+
+/* ───────────────────────── broadsheet ───────────────────────── */
+
+/**
+ * A printed news page: the lead across four of six columns, a two-column rail
+ * beside it, and a band of three columns under them. Every cell is a fixed
+ * box, so the packer cuts each story on a line at its foot and the reader
+ * holds the rest; stories with copy to spare run on into what room is left.
+ */
+function Broadsheet({
+  cards,
+  games,
+  label,
+}: {
+  cards: GameWrapCard[];
+  games?: Map<string, BoxGame>;
+  label?: string;
+}) {
+  if (!cards.length) return null;
+  const [lead, ...rest] = cards;
+  const railN = rest.length >= 7 ? 3 : Math.min(2, rest.length);
+  const rail = rest.slice(0, railN);
+  const band = rest.slice(railN);
+  const colN = Math.min(3, band.length);
+  const cols: GameWrapCard[][] = Array.from({ length: colN }, () => []);
+  band.forEach((card, i) => cols[i % colN]!.push(card));
+  const teaser = (card: GameWrapCard, chars: number) => splitStoryCopy(cardCopy(card), chars).teaser;
+  return (
+    <div className={cn("tt-bs", !band.length && "no-band", !rail.length && "no-rail")} data-tt-pack="">
+      <div className="tt-bs-lead">
+        <Story
+          className="lead"
+          card={lead!}
+          text={teaser(lead!, 1600)}
+          size="xl"
+          cols={3}
+          art="top"
+          drop
+          readOn
+          compactBox
+          game={games?.get(lead!.id) ?? null}
+        />
+      </div>
+      {rail.length ? (
+        <div className="tt-bs-rail">
+          {rail.map((card, i) => (
+            <Story
+              key={card.id}
+              card={card}
+              text={teaser(card, 700)}
+              size={i === 0 ? "md" : "sm"}
+              art={i === 0 ? "top" : "none"}
+              readOn
+              showDek={false}
+              yieldArt
+              game={games?.get(card.id) ?? null}
+              trim={10 + i}
+            />
+          ))}
+        </div>
+      ) : null}
+      {band.length ? (
+        <div className="tt-bs-band" style={{ ["--tt-bs-cols" as string]: colN }}>
+          {label ? <h3 className="wsj-band-title tt-bs-label">{label}</h3> : null}
+          {cols.map((col, c) =>
+            col.length ? (
+              <div className="tt-bs-col" key={c}>
+                {col.map((card, i) => (
+                  <Story
+                    key={card.id}
+                    card={card}
+                    text={teaser(card, 600)}
+                    size="sm"
+                    cols={2}
+                    art={i === 0 ? "top" : "none"}
+                    readOn
+                    showDek={false}
+                    yieldArt
+                    game={games?.get(card.id) ?? null}
+                    trim={20 + i * colN + c}
+                  />
+                ))}
+              </div>
+            ) : null,
+          )}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -2132,7 +2224,9 @@ function InsidePage({
         colorFor={(c) => teamColor(teamForCard(teams, c))}
       />
       {notebooks.map((team) => (
-        <StatPoster key={team.fav.key} team={team} layout="band" />
+        <div key={team.fav.key} data-tt-flow="">
+          <StatPoster team={team} layout="band" />
+        </div>
       ))}
     </div>
   );
@@ -2260,7 +2354,9 @@ function ContinuePage({
         );
       })}
       {notebooks.map((team) => (
-        <StatPoster key={team.fav.key} team={team} layout="band" />
+        <div key={team.fav.key} data-tt-flow="">
+          <StatPoster team={team} layout="band" />
+        </div>
       ))}
     </div>
   );
@@ -3066,7 +3162,6 @@ function SportSectionFront({
 function SportNewsDesk({
   page,
   board,
-  leagueClubs,
   edition,
   onTurn,
 }: {
@@ -3112,13 +3207,8 @@ function SportNewsDesk({
     ...recapCards,
     ...page.articles.map((a) => a.card).filter((c) => !retold(c)),
   ]);
-  const folios = Object.fromEntries(page.articles.map((a) => [a.card.id, a.folio]));
   const withArt = stories.filter((c) => c.photo);
   const lead = withArt[0] ?? stories[0] ?? null;
-  const seconds = stories.filter((c) => c !== lead && c.photo).slice(0, newsContinue ? 2 : 1);
-  const briefs = stories.filter((c) => c !== lead && !seconds.includes(c)).slice(0, newsContinue ? 4 : 3);
-  const crestFor = (card: GameWrapCard) =>
-    leagueClubs.find((c) => c.short && card.teamName?.toLowerCase().includes(c.short.toLowerCase()))?.logo ?? null;
 
   const showStrip = !page.path.includes("college-football");
   return (
@@ -3144,48 +3234,10 @@ function SportNewsDesk({
         ) : null,
       )}
       {lead ? (
-        <div className={cn("wsj-sport-lead-grid", seconds.length ? "with-side" : "solo")}>
-          <Story
-            className="lead"
-            card={lead}
-            text={splitStoryCopy(cardCopy(lead), seconds.length ? 1500 : 1000).teaser}
-            size="xl"
-            cols={2}
-            art="top"
-            drop
-            readOn
-            game={gameById.get(lead.id) ?? null}
-            jump={folios[lead.id] && folios[lead.id] !== page.folio ? folios[lead.id] : undefined}
-            onTurn={onTurn}
-          />
-          {seconds.length ? (
-            <div className="wsj-sport-seconds" data-tt-flow="">
-              {seconds.map((card, i) => (
-                <Story
-                  key={card.id}
-                  card={card}
-                  text={recapDek(card, 2)}
-                  size="md"
-                  art="top"
-                  readOn
-                  game={gameById.get(card.id) ?? null}
-                  trim={20 + i}
-                />
-              ))}
-            </div>
-          ) : null}
-        </div>
+        <Broadsheet cards={[lead, ...stories.filter((c) => c !== lead)]} games={gameById} label="Around the league" />
       ) : (
         <p className="wsj-empty">The league wire is quiet. Scores, tables and the slate follow.</p>
       )}
-      <BriefGrid
-        cards={briefs}
-        title={briefs.length ? "Around the league" : undefined}
-        folios={folios}
-        here={page.folio}
-        onTurn={onTurn}
-        crestFor={crestFor}
-      />
     </div>
   );
 }
@@ -4581,20 +4633,6 @@ function ClubFormGrid({
 
 type NationalEditionPage = Extract<EditionPage, { kind: "national" }>;
 
-function natWhen(iso: string | null): string {
-  if (!iso) return "";
-  const t = Date.parse(iso);
-  if (Number.isNaN(t)) return "";
-  return new Date(t).toLocaleString("en-US", {
-    timeZone: "America/Chicago",
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
 function natDate(day: string): string {
   return new Date(`${day}T12:00:00`).toLocaleDateString("en-US", {
     weekday: "long",
@@ -4604,145 +4642,8 @@ function natDate(day: string): string {
   });
 }
 
-function NatDropText({ text }: { text: string }) {
-  const { letter, rest } = nationalDropParts(text);
-  if (!letter) return <>{rest}</>;
-  return (
-    <>
-      <span className="tt-nat-drop">{letter}</span>
-      {rest}
-    </>
-  );
-}
-
 function natCard(story: NationalStory): GameWrapCard {
   return nationalStoryCard(story);
-}
-
-function NatSummary({
-  story,
-  cols,
-  drop,
-  size,
-  ended,
-}: {
-  story: NationalStory;
-  cols: 1 | 2 | 3;
-  drop?: boolean;
-  size: NationalStorySize;
-  ended?: boolean;
-}) {
-  const paras = nationalPageCopy(story, size);
-  if (!paras.length) return null;
-  /* Shared `.wsj-prose.drop` + CSS columns parks ::first-letter in column 2.
-     National leads set a real drop span in a two-column grid instead. */
-  if (drop && cols > 1) {
-    const { left, right } = nationalLeadColumns(paras);
-    return (
-      <div className={cn("tt-nat-lead-cols", ended && "ended")}>
-        <div className="tt-nat-lead-col">
-          {left.map((p, i) => (
-            <p key={i}>{i === 0 ? <NatDropText text={p} /> : p}</p>
-          ))}
-        </div>
-        {right.length ? (
-          <div className="tt-nat-lead-col">
-            {right.map((p, i) => (
-              <p key={i}>{p}</p>
-            ))}
-          </div>
-        ) : null}
-      </div>
-    );
-  }
-  return (
-    <div className={cn("wsj-prose", `c${cols}`, ended && "ended")}>
-      {paras.map((p, i) => (
-        <p key={i}>{drop && i === 0 ? <NatDropText text={p} /> : p}</p>
-      ))}
-    </div>
-  );
-}
-
-function NatPhoto({
-  story,
-  size,
-  onFail,
-}: {
-  story: NationalStory;
-  size: NationalPhotoSize;
-  onFail: () => void;
-}) {
-  const photo = useStoryImage(story.imageUrl, onFail);
-  if (!story.imageUrl || photo.hidden) return null;
-  const credit = story.imageCredit || story.source;
-  return (
-    <figure className={cn("tt-nat-cut", size)}>
-      <img
-        src={photo.src}
-        alt=""
-        loading={size === "lead" ? "eager" : "lazy"}
-        onError={photo.onError}
-      />
-      {credit ? <figcaption>Photo: {credit}</figcaption> : null}
-    </figure>
-  );
-}
-
-function NatStory({
-  story,
-  size,
-  photo,
-  trim,
-}: {
-  story: NationalStory;
-  size: NationalStorySize;
-  photo: NationalPhotoSize | null;
-  trim?: number;
-}) {
-  const open = useReader();
-  const [failed, setFailed] = useState(false);
-  const showPhoto = Boolean(photo && story.imageUrl && !failed);
-  const card = natCard(story);
-  const more = nationalStoryHasMore(story, size);
-  return (
-    <article
-      className={cn("tt-nat-story", size, showPhoto && "has-photo")}
-      data-tt-keys={storyReadKeys({ id: story.id, headline: story.headline, wrapHref: story.url }).join("|")}
-      data-tt-title={story.headline}
-      {...(trim != null ? { "data-tt-trim": trim } : {})}
-    >
-      {showPhoto && photo ? (
-        <button type="button" className="tt-nat-photo-btn" onClick={() => open({ card })} aria-label={story.headline}>
-          <NatPhoto story={story} size={photo} onFail={() => setFailed(true)} />
-        </button>
-      ) : null}
-      <div className="tt-nat-copy">
-        <p className="tt-nat-src">
-          <b>{story.source}</b>
-          {story.credit && story.credit !== story.source ? <span> · {story.credit}</span> : null}
-          {story.byline ? <span> · {story.byline}</span> : null}
-          {natWhen(story.publishedAt) ? <em> · {natWhen(story.publishedAt)}</em> : null}
-        </p>
-        <h3 className={cn("wsj-hl", size === "lead" ? "xl" : size === "medium" ? "md" : "sm")}>
-          <HeadlineSave card={card}>
-            <button type="button" className="wsj-a wsj-story-link" onClick={() => open({ card })}>
-              {story.headline}
-            </button>
-          </HeadlineSave>
-        </h3>
-        <NatSummary story={story} cols={size === "lead" ? 2 : 1} drop={size === "lead"} size={size} ended={!more} />
-        {story.bodyNote ? <p className="tt-nat-note">{story.bodyNote}</p> : null}
-        {more ? (
-          <p className="wsj-jump">
-            <button type="button" className="wsj-jump-btn" onClick={() => open({ card })}>
-              Click for full story <span aria-hidden="true">→</span>
-            </button>
-          </p>
-        ) : null}
-      </div>
-    </article>
-  );
 }
 
 function NationalNewsDesk({
@@ -4753,13 +4654,7 @@ function NationalNewsDesk({
   onTurn: (folio: string) => void;
 }) {
   if (!page.stories.length) return null;
-  const lead = page.stories[0]!;
-  const afterLead = page.stories.slice(1);
-  const mediums = afterLead.filter((_, i) => nationalStorySize(1 + i) === "medium");
-  const rest = afterLead.filter((_, i) => nationalStorySize(1 + i) === "col");
   const more = page.jumpFolio ?? (page.sectionPage < page.sectionCount ? `${page.section}${page.sectionPage + 1}` : null);
-  const photoAt = (offset: number, story: NationalStory) =>
-    nationalPhotoSize(offset, Boolean(story.imageUrl));
   const front = page.sectionPage === 1;
   return (
     <div className="tt-nat">
@@ -4783,27 +4678,7 @@ function NationalNewsDesk({
       ) : (
         <p className="tt-nat-byline">Continued from B{page.sectionPage - 1} · news only</p>
       )}
-      <NatStory story={lead} size="lead" photo={photoAt(0, lead)} />
-      {mediums.length ? (
-        <div className="tt-nat-mediums">
-          {mediums.map((story, i) => (
-            <NatStory key={story.id} story={story} size="medium" photo={photoAt(1 + i, story)} trim={18 + i} />
-          ))}
-        </div>
-      ) : null}
-      {rest.length ? (
-        <div className="tt-nat-cols">
-          {rest.map((story, i) => (
-            <NatStory
-              key={story.id}
-              story={story}
-              size="col"
-              photo={photoAt(1 + mediums.length + i, story)}
-              trim={28 + i}
-            />
-          ))}
-        </div>
-      ) : null}
+      <Broadsheet cards={page.stories.map(natCard)} label={front ? "Also in the news" : "More from the desk"} />
       {more ? <TurnBar onTurn={onTurn} folio={more} label="More national news" /> : null}
     </div>
   );
