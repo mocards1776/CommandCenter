@@ -687,6 +687,76 @@ export function SlateLine({ game, clockOnly }: { game: BoxGame; clockOnly?: bool
   );
 }
 
+/** One game as a schedule entry: time and TV, the two clubs, then probables or the venue in small type. */
+function ScheduleEntry({ game }: { game: BoxGame }) {
+  const played = game.final || game.live;
+  const when = played ? gameClock(game) : slateClock(game) || game.status;
+  const tv = shortBroadcast(game.broadcasts.filter(Boolean)[0]) || "";
+  const probs = game.probables.away || game.probables.home;
+  const note = [game.round, game.series].filter(Boolean).join(" · ");
+  return (
+    <article className={cn("tt-sched-game", game.live && "live")} data-tt-trim={60}>
+      <p className="tt-sched-when">
+        <time dateTime={game.startIso ?? undefined}>{when}</time>
+        {note ? <em>{note}</em> : null}
+        {tv ? <span>{tv}</span> : null}
+      </p>
+      {[game.away, game.home].map((side, i) => (
+        <p key={i} className={cn("tt-sched-side", played && side.winner && "won")}>
+          <Mark src={side.logo} size="xs" />
+          <b>{side.short || side.abbrev}</b>
+          {side.record ? <i>{side.record}</i> : null}
+          {played ? <strong>{side.score ?? ""}</strong> : i === 1 ? <i className="at">home</i> : null}
+        </p>
+      ))}
+      {probs ? (
+        <p className="tt-sched-note">
+          {game.probables.away ? <PersonName path={game.path} id={game.probables.away.id} name={game.probables.away.name} /> : "TBD"}
+          {game.probables.away?.line ? ` (${game.probables.away.line})` : ""}
+          {" vs. "}
+          {game.probables.home ? <PersonName path={game.path} id={game.probables.home.id} name={game.probables.home.name} /> : "TBD"}
+          {game.probables.home?.line ? ` (${game.probables.home.line})` : ""}
+        </p>
+      ) : game.venue ? (
+        <p className="tt-sched-note">{game.venue}</p>
+      ) : null}
+    </article>
+  );
+}
+
+/** A league's schedule as agate: day heads and ruled entries, set in balanced columns. */
+export function ScheduleAgate({
+  games,
+  dayLabel,
+  columns = 3,
+}: {
+  games: BoxGame[];
+  dayLabel: (day: string) => string;
+  columns?: number;
+}) {
+  if (!games.length) return null;
+  const days: [string, BoxGame[]][] = [];
+  for (const g of games) {
+    const last = days[days.length - 1];
+    if (last && last[0] === g.day) last[1].push(g);
+    else days.push([g.day, [g]]);
+  }
+  return (
+    <div className="tt-sched" style={{ ["--sched-cols" as string]: String(columns) }}>
+      {days.map(([day, list]) => (
+        <section key={day}>
+          <h3>
+            {dayLabel(day)} <em>{list.length === 1 ? "1 game" : `${list.length} games`}</em>
+          </h3>
+          {list.map((g) => (
+            <ScheduleEntry key={g.id} game={g} />
+          ))}
+        </section>
+      ))}
+    </div>
+  );
+}
+
 /** Compact division snapshot: abbrev + W–L. Packs a remaining band without wrapping a full table. */
 export function DeskSnap({ tables }: { tables: StandGroup[] }) {
   if (!tables.length) return null;

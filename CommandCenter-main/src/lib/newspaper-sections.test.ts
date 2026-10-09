@@ -254,7 +254,14 @@ const folios = paper.pages.map((page) => page.folio);
 assert(folios[0] === "A1", "section A opens the paper");
 assert(folios.includes("A2"), "section A has a clubs desk page");
 assert(folios.includes("NFL1") && folios.includes("NFL2") && folios.includes("NFL3"), "NFL opens with desk pages");
-assert(folios.includes("NFL4"), "NFL still has a schedule page after empty recaps/news drop");
+assert(
+  paper.pages.some((p) => p.kind === "sport-front" && p.section === "NFL" && p.focus === "schedule"),
+  "NFL still has a schedule page after empty recaps/news drop",
+);
+assert(
+  !paper.pages.some((p) => p.kind === "sport-front" && p.section === "NFL" && p.focus === "form"),
+  "NFL club form prints on the standings page, not a folio of its own",
+);
 assert(folios.includes("MLB1") && folios.includes("MLB2"), "MLB still opens a section");
 
 const a = paper.pages[0];
@@ -263,10 +270,14 @@ assert(
   a?.kind === "favorites-front" && a.news.some((story) => story.id === "news-injury"),
   "Tuesday's Chiefs story still runs",
 );
-const outlookForm = paper.pages.find((page) => page.kind === "favorites-clubs" && page.weatherPart === "outlook");
+const formPage = paper.pages.find((page) => page.kind === "favorites-form");
 assert(
-  outlookForm?.kind === "favorites-clubs" && outlookForm.formClubs?.[0]?.key === "mlb-stl",
-  "club form on A3 lists Cardinals before Chiefs",
+  formPage?.kind === "favorites-form" && formPage.clubs[0]?.key === "mlb-stl",
+  "Section A club form lists Cardinals before Chiefs",
+);
+assert(
+  !paper.pages.some((page) => page.kind === "favorites-clubs" && page.weatherPart === "outlook"),
+  "the weather prints on one page; there is no outlook folio",
 );
 assert(a?.kind === "favorites-front" && a.news.every((story) => story.id !== "wire-nfl-weekend"), "weekend score stays off A1 fresh list");
 assert(a?.kind === "favorites-front", "A1 is the favorites front");
@@ -295,8 +306,6 @@ assert(
 );
 const nflTeams = paper.pages.find((page) => page.kind === "sport-front" && page.section === "NFL" && page.focus === "teams");
 assert(nflTeams?.kind === "sport-front", "standings sit with the reference pages");
-const nflForm = paper.pages.find((page) => page.kind === "sport-front" && page.section === "NFL" && page.focus === "form");
-assert(nflForm?.kind === "sport-front", "club form sits with the reference pages");
 const nflSched = paper.pages.find((page) => page.kind === "sport-front" && page.section === "NFL" && page.focus === "schedule");
 assert(nflSched?.kind === "sport-front", "the schedule is at the back of the section");
 assert(
@@ -311,10 +320,10 @@ assert(
 );
 const mlbPlayoffs = paper.pages.find((page) => page.kind === "sport-front" && page.section === "MLB" && page.focus === "playoffs");
 assert(mlbPlayoffs?.kind === "sport-front", "MLB still prints the playoff tree");
-assert((paper.sections.find((s) => s.code === "NFL")?.pages ?? 0) >= 4, "NFL keeps a front and the reference desks");
+assert((paper.sections.find((s) => s.code === "NFL")?.pages ?? 0) >= 3, "NFL keeps a front and the reference desks");
 assert(
   (paper.sections.find((s) => s.code === "A")?.pages ?? 0) >= 4,
-  "A has a front, weather, outlook/form, and the watch page — no empty cream pads",
+  "A has a front, weather, club form, and the watch page — no empty cream pads",
 );
 assert((paper.sections.find((s) => s.code === "MLB")?.pages ?? 0) >= 4, "MLB keeps a front and the reference desks");
 assert(
@@ -323,8 +332,8 @@ assert(
   "the Chiefs note still has an NFL home",
 );
 assert(
-  paper.pages.some((page) => page.kind === "favorites-clubs" && (page.formClubs?.length ?? 0) > 0),
-  "Section A prints club form on the outlook folio instead of short pad pages",
+  paper.pages.filter((page) => page.kind === "favorites-form").length === 1,
+  "Section A prints club form on one page of team boxes",
 );
 
 const leagueWire = card({
@@ -427,7 +436,7 @@ const tuesdayPaper = buildEdition({
   clubs: [chiefs],
   edition: "2026-09-29",
 });
-assert((tuesdayPaper.sections.find((s) => s.code === "NFL")?.pages ?? 0) >= 4, "Tuesday NFL still has a front and reference desks");
+assert((tuesdayPaper.sections.find((s) => s.code === "NFL")?.pages ?? 0) >= 3, "Tuesday NFL still has a front and reference desks");
 const tuesdayNfl = tuesdayPaper.pages.find((page) => page.folio === "NFL1");
 assert(tuesdayNfl?.kind === "sport-front", "Tuesday still opens a football section");
 const tuesdayFront = tuesdayPaper.pages[0];
@@ -517,15 +526,8 @@ if (cont?.kind === "favorites-continue") {
     "front jump lands on the continuation folio",
   );
 }
-assert(
-  withJump.pages[1]?.kind === "favorites-clubs" && withJump.pages[1].weatherPart === "today",
-  "A2 is today's weather so the 10-day chart does not stretch the folio",
-);
-assert(
-  withJump.pages[2]?.kind === "favorites-clubs" && withJump.pages[2].weatherPart === "outlook",
-  "A3 is the outlook and clubs desk",
-);
-assert(cont?.folio === "A4", "the A1 jump continues on A4 after weather and clubs");
+assert(withJump.pages[1]?.kind === "favorites-clubs", "A2 is the weather page");
+assert(cont?.folio === "A3", "the A1 jump continues on A3, right after the weather");
 
 const twice = buildEdition({
   stories: [lionsNote, { ...lionsNote, id: "wrap-lions-note" }],
@@ -2004,8 +2006,8 @@ assert(
   "regular-season MLB keeps standings and the bracket at the back",
 );
 assert(
-  sportSectionFocuses({ path: "baseball/mlb", postseason: true }).join() === "front,recaps,news,playoffs,schedule",
-  "postseason MLB drops regular-season standings; the bracket replaces them",
+  sportSectionFocuses({ path: "baseball/mlb", postseason: true }).join() === "front,recaps,news,playoffs",
+  "postseason MLB drops regular-season standings; the bracket replaces them and carries the schedule",
 );
 assert(
   sportSectionFocuses({ path: "hockey/nhl", postseason: true }).includes("teams") === false,
@@ -2467,25 +2469,26 @@ const cfbEdition = buildEdition({
   edition: "2026-10-05-evening",
 });
 const cfbPaged = paginateEditionDesks(cfbEdition, {
-  "football/college-football": Array.from({ length: 12 }, () => ({ length: 14 })),
+  "football/college-football": Array.from({ length: 12 }, () => ({ rows: Array.from({ length: 14 }) })),
 });
 const cfbTeams = cfbPaged.pages.filter((p) => p.kind === "sport-front" && p.section === "CFB" && p.focus === "teams");
-assert(cfbTeams.length >= 4, "twelve CFB tables become four standings folios");
+assert(cfbTeams.length === 2, "twelve CFB tables set in three columns fill two standings folios");
 assert(
-  cfbTeams.every((p) => p.kind === "sport-front" && (p.standSlice?.count ?? 0) <= 3),
-  "each CFB standings folio holds at most three tables",
+  cfbTeams.every((p) => p.kind === "sport-front" && (p.standSlice?.count ?? 0) <= 8),
+  "each CFB standings folio holds what its columns hold",
 );
 const cfbFollowedOnly = paginateEditionDesks(cfbEdition, {
-  "football/college-football": Array.from({ length: 2 }, () => ({ length: 14 })),
+  "football/college-football": Array.from({ length: 2 }, () => ({ rows: Array.from({ length: 14 }) })),
 });
 const cfbFollowedTeams = cfbFollowedOnly.pages.filter(
   (p) => p.kind === "sport-front" && p.section === "CFB" && p.focus === "teams",
 );
 assert(cfbFollowedTeams.length === 1, "two followed CFB tables stay on one folio");
 const cfbNone = paginateEditionDesks(cfbEdition, { "football/college-football": [] });
+const cfbNoneTeams = cfbNone.pages.filter((p) => p.kind === "sport-front" && p.focus === "teams");
 assert(
-  !cfbNone.pages.some((p) => p.kind === "sport-front" && p.focus === "teams"),
-  "no standings folio when that desk has no tables",
+  cfbNoneTeams.length === 1 && cfbNoneTeams.every((p) => p.kind === "sport-front" && p.standSlice?.count === 0),
+  "with no tables on file, the standings folio carries only the club form",
 );
 
 const copy = (s: string) => s.repeat(8);

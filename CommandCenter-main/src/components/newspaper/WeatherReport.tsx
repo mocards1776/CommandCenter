@@ -12,6 +12,7 @@ import {
   type WxDay,
   type WxHour,
 } from "@/lib/newspaper-weather";
+import { cn } from "@/lib/utils";
 
 const CLOUD = "M14 34H34A7 7 0 0 0 34 20A10 10 0 0 0 15 18A8 8 0 0 0 14 34Z";
 
@@ -383,13 +384,9 @@ export function WeatherReport({
         </ol>
       ) : null}
 
-      {showOutlook ? (
-        <div className="wx-bottom" data-tt-keep="">
-          <TenDayChart days={days} />
-        </div>
-      ) : null}
-
-      {showToday ? (
+      <div className={cn("wx-bottom", showOutlook && showToday && "both")} data-tt-keep="">
+        {showOutlook ? <TenDayChart days={days} /> : null}
+        {showToday ? (
         <aside className="wx-almanac">
           <h3>Almanac</h3>
           <div className="wx-sunline">
@@ -433,7 +430,8 @@ export function WeatherReport({
             </table>
           ) : null}
         </aside>
-      ) : null}
+        ) : null}
+      </div>
       <p className="wx-credit">Forecast data: Open-Meteo</p>
     </section>
   );

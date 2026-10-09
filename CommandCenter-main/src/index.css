@@ -10814,3 +10814,312 @@ body:has(.tt-phone-shot) {
 .newspaper-root .wsj-sheet .tt-bs-col .wsj-byline {
   display: none;
 }
+
+/* ── The redesign: reference pages set as agate ─────────────────────────
+   Team boxes, standings, schedules: small type in ruled columns, the way a
+   sports section prints its back pages. No cards, no tiles. */
+.newspaper-root .wsj-sheet .tt-tboxes {
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+  gap: 22px 28px;
+  align-items: start;
+}
+.newspaper-root .wsj-sheet .tt-tbox {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding-top: 8px;
+  border-top: 4px solid var(--tt-team, var(--w-rule));
+}
+.newspaper-root .wsj-sheet .tt-tbox-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--w-rule);
+}
+.newspaper-root .wsj-sheet .tt-tbox-head h3 {
+  margin: 0;
+  font-family: var(--w-head);
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.05;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.newspaper-root .wsj-sheet .tt-tbox-head b {
+  font-family: var(--w-cond);
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.newspaper-root .wsj-sheet .tt-tbox-head p {
+  grid-column: 2 / -1;
+  margin: 0;
+  font-family: var(--w-label);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+}
+.newspaper-root .wsj-sheet .tt-tbox-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+  margin: 0;
+  border-bottom: 1px solid var(--w-hair);
+}
+.newspaper-root .wsj-sheet .tt-tbox-stats > div {
+  padding: 4px 6px 5px 0;
+  border-top: 1px solid var(--w-hair);
+}
+.newspaper-root .wsj-sheet .tt-tbox-stats > div:nth-child(-n + 3) {
+  border-top: 0;
+}
+.newspaper-root .wsj-sheet .tt-tbox-stats dd {
+  margin: 0;
+  font-family: var(--w-cond);
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.newspaper-root .wsj-sheet .tt-tbox-stats dt {
+  font-family: var(--w-label);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+}
+.newspaper-root .wsj-sheet .tt-tbox-stats dt > * {
+  display: block;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.newspaper-root .wsj-sheet .tt-tbox-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--w-label);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.newspaper-root .wsj-sheet .tt-tbox-table caption {
+  caption-side: top;
+  padding-bottom: 3px;
+  text-align: left;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--w-rule);
+}
+.newspaper-root .wsj-sheet .tt-tbox-table th,
+.newspaper-root .wsj-sheet .tt-tbox-table td {
+  height: 20px;
+  padding: 1px 0;
+  border-bottom: 1px solid var(--w-hair);
+  text-align: right;
+  white-space: nowrap;
+}
+.newspaper-root .wsj-sheet .tt-tbox-table th {
+  max-width: 0;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+  font-weight: 600;
+}
+.newspaper-root .wsj-sheet .tt-tbox-table td + td {
+  padding-left: 10px;
+  color: var(--w-muted);
+}
+.newspaper-root .wsj-sheet .tt-tbox-table tr.me th,
+.newspaper-root .wsj-sheet .tt-tbox-table tr.me td {
+  font-weight: 800;
+  color: var(--w-ink);
+  background: color-mix(in srgb, var(--tt-team, var(--w-red)) 12%, transparent);
+}
+.newspaper-root .wsj-sheet .tt-tbox-table.leaders th {
+  width: auto;
+  max-width: none;
+  padding-right: 8px;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+}
+.newspaper-root .wsj-sheet .tt-tbox-table.leaders td {
+  width: 100%;
+  max-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+.newspaper-root .wsj-sheet .tt-tbox-table.leaders td i {
+  color: var(--w-muted);
+}
+
+.newspaper-root .wsj-sheet .tt-stand-cols {
+  columns: var(--stand-cols, 2);
+  column-gap: 28px;
+  column-rule: 1px solid var(--w-hair);
+}
+.newspaper-root .wsj-sheet .tt-stand-cols > * {
+  break-inside: avoid;
+  margin-bottom: 16px;
+}
+.newspaper-root .wsj-sheet .tt-stand-cols .tt-stand th,
+.newspaper-root .wsj-sheet .tt-stand-cols .tt-stand td {
+  height: 22px;
+  padding: 1px 4px;
+  font-size: 12.5px;
+}
+.newspaper-root .wsj-sheet .tt-stand-cols .tt-stand thead th {
+  height: 18px;
+  font-size: 9px;
+}
+.newspaper-root .wsj-sheet .tt-stand-cols .tt-stand caption {
+  font-size: 16px;
+}
+.newspaper-root .wsj-sheet .tt-stand-form,
+.newspaper-root .wsj-sheet .tt-stand-sched {
+  flex: none;
+  margin-top: 14px;
+}
+
+.newspaper-root .wsj-sheet .tt-sched-desk {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.newspaper-root .wsj-sheet .tt-sched {
+  columns: var(--sched-cols, 3);
+  column-gap: 26px;
+  column-rule: 1px solid var(--w-hair);
+  font-family: var(--w-label);
+}
+.newspaper-root .wsj-sheet .tt-sched h3 {
+  break-after: avoid;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 2px;
+  padding: 6px 0 3px;
+  border-bottom: 2px solid var(--w-rule);
+  font-family: var(--w-head);
+  font-size: 15px;
+  font-weight: 800;
+}
+.newspaper-root .wsj-sheet .tt-sched section + section h3 {
+  margin-top: 10px;
+}
+.newspaper-root .wsj-sheet .tt-sched h3 em {
+  font-family: var(--w-label);
+  font-size: 9.5px;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+}
+.newspaper-root .wsj-sheet .tt-sched-game {
+  break-inside: avoid;
+  padding: 5px 0 6px;
+  border-bottom: 1px solid var(--w-hair);
+}
+.newspaper-root .wsj-sheet .tt-sched-game p {
+  margin: 0;
+}
+.newspaper-root .wsj-sheet .tt-sched-when {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.newspaper-root .wsj-sheet .tt-sched-when em {
+  font-style: normal;
+  font-weight: 600;
+  color: var(--w-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.newspaper-root .wsj-sheet .tt-sched-when span {
+  margin-left: auto;
+  color: var(--w-muted);
+}
+.newspaper-root .wsj-sheet .tt-sched-game.live .tt-sched-when time {
+  color: var(--w-red);
+}
+.newspaper-root .wsj-sheet .tt-sched-side {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.newspaper-root .wsj-sheet .tt-sched-side b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.newspaper-root .wsj-sheet .tt-sched-side i {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--w-muted);
+}
+.newspaper-root .wsj-sheet .tt-sched-side i.at {
+  margin-left: auto;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.newspaper-root .wsj-sheet .tt-sched-side strong {
+  margin-left: auto;
+  font-family: var(--w-cond);
+  font-size: 15px;
+}
+.newspaper-root .wsj-sheet .tt-sched-side.won b,
+.newspaper-root .wsj-sheet .tt-sched-side.won strong {
+  font-weight: 800;
+}
+.newspaper-root .wsj-sheet .tt-sched-note {
+  font-family: var(--w-body);
+  font-size: 11.5px;
+  font-style: italic;
+  line-height: 1.3;
+  color: var(--w-ink-soft);
+}
+.newspaper-root .wsj-sheet .tt-sched-snap {
+  flex: none;
+}
+.newspaper-root .wsj-sheet .tt-stand-band {
+  flex: none;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0 28px;
+  align-items: start;
+  margin-top: 6px;
+}
+.newspaper-root .wsj-sheet .tt-stand-band > .tt-stand-form,
+.newspaper-root .wsj-sheet .tt-stand-band > .tt-stand-sched {
+  min-width: 0;
+  margin-top: 8px;
+}
+.newspaper-root .wsj-sheet .tt-stand-band > .tt-stand-form + .tt-stand-sched:not([style*="1 / -1"]) {
+  padding-left: 28px;
+  margin-left: -14px;
+  border-left: 1px solid var(--w-hair);
+}
