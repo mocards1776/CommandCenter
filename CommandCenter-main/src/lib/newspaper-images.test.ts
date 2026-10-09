@@ -118,7 +118,9 @@ assert(other.fallback === "https://example.com/a.jpg?w=200", "non-BLOX art still
 const filedImage =
   "https://bloximages.newyork1.vip.townnews.com/stltoday.com/content/tncms/assets/v3/editorial/9/5c/95c783a9-3787-4edc-8940-5ddca6415928.image.jpg";
 const filed = storyImageCandidates(filedImage);
-assert(filed.src.includes(".image.jpg") && filed.fallback?.includes(".preview.jpg"), "a filed .image can fall back to .preview");
+assert(filed.src.includes(".preview.jpg") && filed.fallback?.includes(".image.jpg"), "a filed BLOX .image tries its .preview twin first");
+const composed = storyImageCandidates(upgradeStoryImageUrl(ampPreview));
+assert(composed.src.includes(".preview.jpg") && composed.fallback?.includes(".image.jpg"), "an upgraded BLOX .image still tries .preview first");
 
 const tree = { logo, note: "plain", nest: [shot] };
 const shrunk = rewriteEspnThumbs(tree);
