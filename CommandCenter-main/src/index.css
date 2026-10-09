@@ -10707,7 +10707,7 @@ body:has(.tt-phone-shot) {
   min-height: 0;
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  grid-template-rows: fit-content(60%) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) fit-content(40%);
   column-gap: 0;
   row-gap: 12px;
 }

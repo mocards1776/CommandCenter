@@ -251,12 +251,16 @@ export function packSheet(sheet: HTMLElement): PackResult {
           kid.scrollHeight > kid.clientHeight + SPILL_SLACK &&
           getComputedStyle(kid).overflowY === "visible";
         if (r.bottom <= limit + 1 && !spills) continue;
+        // Paragraphs set in columns are not in reading order top to bottom; the copy goes as one.
+        const cs = getComputedStyle(kid);
+        const setInColumns = kid.matches(COPY) && (cs.columnWidth !== "auto" || cs.columnCount !== "auto");
         const whole =
-          kid.matches(UNIT) &&
-          !kid.matches(ROWS) &&
-          !kept(kid) &&
-          r.height / scale < pageH * MAX_UNIT_SHARE &&
-          !(kid.matches(LISTY) && kid.children.length > 2);
+          setInColumns ||
+          (kid.matches(UNIT) &&
+            !kid.matches(ROWS) &&
+            !kept(kid) &&
+            r.height / scale < pageH * MAX_UNIT_SHARE &&
+            !(kid.matches(LISTY) && kid.children.length > 2));
         if (whole) {
           if (r.top > crossingTop) {
             crossing = kid;
