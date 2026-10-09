@@ -90,8 +90,8 @@ export const STAND_TABLE_GAP_PX = 16;
 export const STAND_TABLES_PER_PAGE_COLLEGE = 3;
 /** Pro divisions are shorter; four tables still sit under the soft cap. */
 export const STAND_TABLES_PER_PAGE_PRO = 4;
-/** League-news stories per folio after the section front. */
-export const NEWS_STORIES_PER_PAGE = 3;
+/** Stories on a broadsheet news folio: a lead, a rail and a band of three columns. */
+export const NEWS_STORIES_PER_PAGE = 9;
 
 export function estimateStandingsHeight(groups: { rows: unknown[] }[]): number {
   let h = 36;
@@ -115,10 +115,11 @@ export function planStandingsPages(
   return pages;
 }
 
+/** Folios of at most `perPage` stories, split evenly so the last is never a stub. */
 export function planNewsPages(storyCount: number, perPage = NEWS_STORIES_PER_PAGE): { offset: number; count: number }[] {
   const n = Math.max(storyCount, 0);
   if (n <= 0) return [{ offset: 0, count: 0 }];
-  const size = Math.max(perPage, 1);
+  const size = Math.ceil(n / Math.ceil(n / Math.max(perPage, 1)));
   const pages: { offset: number; count: number }[] = [];
   for (let offset = 0; offset < n; offset += size) {
     pages.push({ offset, count: Math.min(size, n - offset) });

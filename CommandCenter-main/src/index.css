@@ -1154,9 +1154,9 @@ mark.rss-hl {
 /* ═══════════════════════════════════════════════════════════════════════
    Thompson Times — a sports broadsheet that turns page to page
 
-   One page is one screen. Every sheet is set at --tt-page-w (1032 px, the
-   iPad Pro 13" in portrait) and --tt-page-h, which the pager derives from
-   the window alone; --tt-s scales the whole sheet to fit (1 in portrait).
+   One page is one screen. Every sheet is set at --tt-page-w (1280 px, a
+   broadsheet) and --tt-page-h, which the pager derives from the window
+   alone; --tt-s scales the whole sheet to fit (about 0.8 in portrait).
    Copy never changes a page's size: stories fill the room they are given
    and continue on a jump. Club colors drive the accents (kicker squares,
    drop caps, poster panels, card heads) through `--tt-team`, with
@@ -1183,8 +1183,8 @@ mark.rss-hl {
   --w-body: "Source Serif 4", Georgia, "Times New Roman", serif;
   --w-gutter: 20px;
 
-  --tt-page-w: 1032px;
-  --tt-page-h: 1218px;
+  --tt-page-w: 1280px;
+  --tt-page-h: 1565px;
   --tt-s: 1;
   --w-chrome: calc(44px + env(safe-area-inset-top, 0px));
   flex: 1 1 auto;
@@ -1352,7 +1352,7 @@ mark.rss-hl {
   scroll-snap-stop: always;
   box-sizing: border-box;
   content-visibility: auto;
-  contain-intrinsic-size: auto 1032px auto 1218px;
+  contain-intrinsic-size: auto 1032px auto 1262px;
 }
 .wsj-fit {
   position: relative;
@@ -1364,9 +1364,9 @@ mark.rss-hl {
 .wsj-sheet {
   box-sizing: border-box;
   flex: none;
-  width: var(--tt-page-w, 1032px);
-  min-width: var(--tt-page-w, 1032px);
-  max-width: var(--tt-page-w, 1032px);
+  width: var(--tt-page-w, 1280px);
+  min-width: var(--tt-page-w, 1280px);
+  max-width: var(--tt-page-w, 1280px);
   height: var(--tt-page-h);
   margin: 0;
   padding: 14px 18px 0;
@@ -10689,4 +10689,128 @@ body:has(.tt-phone-shot) {
 }
 .newspaper-root .wsj-sheet .wsj-prose[data-tt-grown] [data-tt-more] {
   display: block;
+}
+
+/* ── Broadsheet news page ───────────────────────────────────────────────
+   Six columns: the lead over four, a rail over two, and a band of three
+   columns under them. Each cell is a fixed box; the packer cuts the copy
+   inside it on a line, so the page prints edge to edge. */
+.newspaper-root .wsj-sheet .wsj-sport-news,
+.newspaper-root .wsj-sheet .tt-nat {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.newspaper-root .wsj-sheet .tt-bs {
+  flex: 1 1 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-rows: minmax(0, 1fr) fit-content(40%);
+  column-gap: 0;
+  row-gap: 12px;
+}
+.newspaper-root .wsj-sheet .tt-bs.no-band {
+  grid-template-rows: minmax(0, 1fr);
+}
+.newspaper-root .wsj-sheet .tt-bs-lead,
+.newspaper-root .wsj-sheet .tt-bs-rail,
+.newspaper-root .wsj-sheet .tt-bs-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+}
+.newspaper-root .wsj-sheet .tt-bs-lead {
+  grid-column: 1 / 5;
+  grid-row: 1;
+  padding-right: 20px;
+}
+.newspaper-root .wsj-sheet .tt-bs.no-rail .tt-bs-lead {
+  grid-column: 1 / -1;
+  padding-right: 0;
+}
+.newspaper-root .wsj-sheet .tt-bs-rail {
+  grid-column: 5 / 7;
+  grid-row: 1;
+  padding-left: 20px;
+  border-left: 1px solid var(--w-hair);
+}
+.newspaper-root .wsj-sheet .tt-bs-rail > .wsj-story + .wsj-story,
+.newspaper-root .wsj-sheet .tt-bs-col > .wsj-story + .wsj-story {
+  padding-top: 12px;
+  border-top: 1px solid var(--w-hair);
+}
+.newspaper-root .wsj-sheet .tt-bs-band {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  display: grid;
+  grid-template-columns: repeat(var(--tt-bs-cols, 3), minmax(0, 1fr));
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+  padding-top: 10px;
+  border-top: 2px solid var(--w-rule);
+}
+.newspaper-root .wsj-sheet .tt-bs-band:has(> .tt-bs-label) {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.newspaper-root .wsj-sheet .tt-bs-label {
+  grid-column: 1 / -1;
+  margin: 0 0 10px;
+}
+.newspaper-root .wsj-sheet .tt-bs-col {
+  padding: 0 20px;
+}
+.newspaper-root .wsj-sheet .tt-bs-col:first-of-type {
+  padding-left: 0;
+}
+.newspaper-root .wsj-sheet .tt-bs-col:last-child {
+  padding-right: 0;
+}
+.newspaper-root .wsj-sheet .tt-bs-col + .tt-bs-col {
+  border-left: 1px solid var(--w-hair);
+}
+.newspaper-root .wsj-sheet .tt-bs .wsj-story {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.newspaper-root .wsj-sheet .tt-bs .wsj-story-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.newspaper-root .wsj-sheet .tt-bs .wsj-story > *,
+.newspaper-root .wsj-sheet .tt-bs .wsj-story-copy > * {
+  flex: none;
+  min-height: auto;
+}
+.newspaper-root .wsj-sheet .tt-bs :is(.wsj-cut, .tt-recap-photo) img {
+  aspect-ratio: auto;
+  width: 100%;
+  max-height: none;
+  object-fit: cover;
+}
+.newspaper-root .wsj-sheet .tt-bs-lead :is(.wsj-cut, .tt-recap-photo) img { height: calc(var(--tt-page-h) * 0.22); }
+.newspaper-root .wsj-sheet .tt-bs-rail :is(.wsj-cut, .tt-recap-photo) img { height: calc(var(--tt-page-h) * 0.12); }
+.newspaper-root .wsj-sheet .tt-bs-col :is(.wsj-cut, .tt-recap-photo) img { height: calc(var(--tt-page-h) * 0.085); }
+.newspaper-root .wsj-sheet .tt-bs-col :is(.wsj-cut, .tt-recap-photo) figcaption { display: none; }
+.newspaper-root .wsj-sheet .tt-bs .wsj-hl.xl { font-size: 44px; line-height: 1.02; }
+.newspaper-root .wsj-sheet .tt-bs .wsj-hl.md { font-size: 26px; line-height: 1.08; }
+.newspaper-root .wsj-sheet .tt-bs .wsj-hl.sm { font-size: 20px; line-height: 1.12; }
+
+/* Body type keeps a newspaper measure on the broadsheet: copy long enough
+   for columns takes as many as its box holds at about 220 px, never a
+   page-wide line. */
+.newspaper-root .wsj-sheet .wsj-prose.measure {
+  columns: auto 220px;
+}
+.newspaper-root .wsj-sheet .tt-bs-rail .wsj-byline,
+.newspaper-root .wsj-sheet .tt-bs-col .wsj-byline {
+  display: none;
 }

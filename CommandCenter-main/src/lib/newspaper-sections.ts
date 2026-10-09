@@ -53,12 +53,12 @@ import { isPromoMissouriItem, type MissouriDesk, type MoItem } from "./newspaper
 import type { FavoritesDayPage } from "./newspaper-day-ahead.ts";
 import type { FavoritesBeezPage } from "./newspaper-beez.ts";
 import type { FavoritesRacesPage } from "./newspaper-races.ts";
-import { cleanNationalStories, packNationalPages, type NationalDesk, type NationalStory } from "./newspaper-national.ts";
+import { cleanNationalStories, type NationalDesk, type NationalStory } from "./newspaper-national.ts";
 import { printsFavoriteCoaches } from "./newspaper-favorite-coaches.ts";
 import {
   A2_CLUB_CARDS,
   clubFormIsThin,
-  NEWS_STORIES_PER_PAGE,
+  planNewsPages,
   planOutlookAndForm,
   planStandingsPages,
   STAND_TABLES_PER_PAGE_COLLEGE,
@@ -1968,13 +1968,13 @@ function sportPages(
     const pulledIds = new Set(pulled.map((card) => card.id));
     newsLeft = newsLeft.filter((card) => !pulledIds.has(card.id));
   }
+  const newsPlan = planNewsPages(newsLeft.length);
   const storyFocuses = focuses.flatMap((f) => {
     if (!isStoryFocus(f)) return [];
     if (f === "recaps") return recapsLeft.length > 0 ? (["recaps"] as const) : [];
     if (f === "news") {
       if (!newsLeft.length) return [];
-      const n = Math.max(1, Math.ceil(newsLeft.length / NEWS_STORIES_PER_PAGE));
-      return Array.from({ length: n }, () => "news" as const);
+      return newsPlan.map(() => "news" as const);
     }
     return [f];
   });
@@ -2058,7 +2058,7 @@ function sportPages(
       folio: sportFolioByStory[card.id] ?? fallbackDesk(focus),
     }));
 
-  let newsCursor = 0;
+  let newsPage = 0;
   const pages = numbered.map((page, i) => {
     if (page.kind !== "sport-front") return page;
     const nextFront = numbered.slice(i + 1).find((p) => p.kind === "sport-front");
@@ -2072,11 +2072,8 @@ function sportPages(
             ? recapsLeft
             : unique;
     if (page.focus === "news") {
-      const offset = newsCursor;
-      const count = Math.min(NEWS_STORIES_PER_PAGE, Math.max(newsLeft.length - offset, 0));
-      newsSlice = { offset, count };
-      pool = newsLeft.slice(offset, offset + count);
-      newsCursor += count;
+      newsSlice = newsPlan[newsPage++] ?? { offset: newsLeft.length, count: 0 };
+      pool = newsLeft.slice(newsSlice.offset, newsSlice.offset + newsSlice.count);
     }
     return {
       ...page,
@@ -2120,7 +2117,8 @@ function missouriPages(desk: MissouriDesk | null, code = "B"): MissouriPage[] {
 
 function nationalPages(desk: NationalDesk | null): NationalPage[] {
   if (!desk?.stories.length) return [];
-  const packed = packNationalPages(cleanNationalStories(desk.stories));
+  const clean = cleanNationalStories(desk.stories);
+  const packed = planNewsPages(clean.length).map(({ offset, count }) => ({ stories: clean.slice(offset, offset + count) }));
   return stampCounts(
     packed.map((page, i) => ({
       kind: "national" as const,

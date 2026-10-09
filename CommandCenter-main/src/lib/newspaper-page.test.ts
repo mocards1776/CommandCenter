@@ -112,8 +112,9 @@ assert(
   "standings slices cover every conference",
 );
 assert(planStandingsPages(2, STAND_TABLES_PER_PAGE_PRO).length === 1, "two pro tables stay on one folio");
-assert(planNewsPages(9).length === 3, "nine leftover news stories become three folios");
-assert(planNewsPages(6).length === 2, "six leftover news stories become two folios");
+assert(planNewsPages(9).length === 1, "nine news stories fill one broadsheet folio");
+assert(planNewsPages(14).map((p) => p.count).join() === "7,7", "fourteen split evenly, never nine and a stub");
+assert(planNewsPages(19).map((p) => p.count).join() === "7,7,5", "nineteen run three folios");
 assert(planNewsPages(0)[0]?.count === 0, "an empty news desk still has a placeholder slice");
 
 const a1H = estimateA1Height({ railItems: 2, hasLeadPhoto: true, fillRows: 3 });

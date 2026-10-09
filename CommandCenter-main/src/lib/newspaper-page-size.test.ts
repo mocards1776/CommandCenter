@@ -12,17 +12,22 @@ function ok(cond: unknown, msg = "") {
 }
 const assert = { deepEqual: same, equal: same, ok };
 
-// iPad Pro 13" portrait, Safari: full width, page is the window under the bar.
-assert.deepEqual(pageGeometry(1032, 1218), { height: 1218, scale: 1 });
+// iPad Pro 13" portrait, Safari: the broadsheet scales to the width and fills the window.
+{
+  const g = pageGeometry(1032, 1262);
+  assert.equal(g.scale, 0.8062);
+  assert.equal(g.height, 1565);
+  assert.ok(PAGE_W * g.scale <= 1032 && g.height * g.scale <= 1262);
+}
 
-// Home Screen app: a little taller, still true size.
-assert.deepEqual(pageGeometry(1032, 1288), { height: 1288, scale: 1 });
+// Home Screen app: a little taller page at the same scale.
+assert.equal(pageGeometry(1032, 1332).height, 1652);
 
 // Landscape: one page, scaled to the height, never wider than the screen.
 {
   const g = pageGeometry(1376, 896);
   assert.equal(g.height, PAGE_H_MIN);
-  assert.ok(g.scale < 1 && g.scale > 0.8);
+  assert.ok(g.scale < 1 && g.scale > 0.6);
   assert.ok(g.height * g.scale <= 896);
   assert.ok(PAGE_W * g.scale <= 1376);
 }

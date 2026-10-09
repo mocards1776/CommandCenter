@@ -1,13 +1,14 @@
 /**
- * One page is one screen. The sheet is always set at PAGE_W design pixels
- * (the iPad Pro 13" in portrait), so type and columns never reflow between
+ * One page is one screen. The sheet is always set at PAGE_W design pixels,
+ * a broadsheet wider than any screen, and scaled down to fit (about 0.8 on
+ * the iPad Pro 13" in portrait), so type and columns never reflow between
  * devices. Its height comes from the window alone, never from the copy:
  * a taller window gets a taller page, inside the [PAGE_H_MIN, PAGE_H_MAX]
  * band the templates are built for, and the whole page scales to fit.
  */
-export const PAGE_W = 1032;
-export const PAGE_H_MIN = 1100;
-export const PAGE_H_MAX = 1400;
+export const PAGE_W = 1280;
+export const PAGE_H_MIN = 1364;
+export const PAGE_H_MAX = 1736;
 
 export type PageGeometry = {
   /** Design height of the sheet, in px at scale 1. */
