@@ -221,12 +221,17 @@ async function pageFit(page) {
     if (!sheet) return null;
     const box = sheet.getBoundingClientRect();
     const clipped = [];
+    const scale = box.width / sheet.offsetWidth || 1;
+    let inkBottom = box.top;
     for (const el of sheet.querySelectorAll("*")) {
-      if (el.closest("[data-tt-clip]")) continue;
+      if (el.closest("[data-tt-clip], [data-tt-cut]")) continue;
       const style = getComputedStyle(el);
       if (style.display === "none" || style.visibility === "hidden") continue;
       const r = el.getBoundingClientRect();
       if (r.width < 2 || r.height < 2) continue;
+      if (el.children.length === 0 && ((el.textContent ?? "").trim() || el.tagName === "IMG")) {
+        inkBottom = Math.max(inkBottom, r.bottom);
+      }
       const past = r.bottom - box.bottom > 2 || r.right - box.right > 2 || box.left - r.left > 2;
       if (past && el.children.length === 0 && (el.textContent ?? "").trim()) {
         clipped.push(`${el.tagName.toLowerCase()}.${[...el.classList].join(".")} "${(el.textContent ?? "").trim().slice(0, 40)}"`);
@@ -238,8 +243,20 @@ async function pageFit(page) {
       sheet: [Math.round(box.left), Math.round(box.top), Math.round(box.width), Math.round(box.height)],
       offScreen: box.bottom - vh > 2 || box.right - vw > 2 || box.left < -2 || box.top < -2,
       scrolls: live.scrollHeight > live.clientHeight + 2,
+      /** Page px of ink past the foot (positive) or blank paper left at the foot (negative). */
+      overInk: Math.round((inkBottom - box.bottom) / scale),
       clipped: clipped.slice(0, 8),
       clippedCount: clipped.length,
+      packed: sheet.querySelectorAll("[data-tt-packed]").length,
+      cut: sheet.querySelectorAll("[data-tt-cut]").length,
+      overfull: Number(sheet.dataset.ttOverfull ?? 0),
+      sig: [...sheet.querySelectorAll("*")]
+        .filter((el) => el.children.length === 0 && el.getClientRects().length)
+        .map((el) => {
+          const r = el.getBoundingClientRect();
+          return `${Math.round(r.left)},${Math.round(r.top)},${Math.round(r.width)},${Math.round(r.height)}`;
+        })
+        .join(";"),
     };
   });
 }
@@ -320,6 +337,17 @@ async function main() {
   } catch {
     readyMs = null;
   }
+  if (process.env.TT_DEBUG_FOLIO) {
+    await page.evaluate((f) => (location.hash = f), process.env.TT_DEBUG_FOLIO);
+    await page.waitForTimeout(2500);
+    const { readFile } = await import("node:fs/promises");
+    const fn = await readFile(process.env.TT_DEBUG_JS, "utf8");
+    console.log(JSON.stringify(await page.evaluate(fn), null, 1));
+    await page.screenshot({ path: path.join(outDir, `debug-${process.env.TT_DEBUG_FOLIO}.png`) });
+    await browser.close();
+    server.close();
+    return;
+  }
   const at0 = await snapshotA1(page);
   await page.screenshot({ path: path.join(outDir, `${mode}-A1-at-ready.png`) });
   await page.waitForTimeout(2500);
@@ -331,15 +359,24 @@ async function main() {
   const pages = [];
   const turns = [];
   const fit0 = await pageFit(page);
-  if (fit0) pages.push(fit0);
+  if (fit0) {
+    delete fit0.sig;
+    pages.push(fit0);
+  }
   for (let i = 1; i < pageShots; i++) {
     const turn = await turnJank(page);
     turns.push(turn);
     await page.waitForTimeout(500);
     const fit = await pageFit(page);
     if (!fit) break;
-    pages.push(fit);
     await page.screenshot({ path: path.join(outDir, `${mode}-${String(i + 1).padStart(2, "0")}-${fit.folio}.png`) });
+    await page.waitForTimeout(1500);
+    const later = await pageFit(page);
+    const a = fit.sig.split(";");
+    const b = later?.sig.split(";") ?? [];
+    fit.movedAfterArrival = a.length === b.length ? a.filter((box, k) => box !== b[k]).length : Math.abs(a.length - b.length) || -1;
+    delete fit.sig;
+    pages.push(fit);
   }
 
   const report = {
@@ -353,7 +390,7 @@ async function main() {
     errors: errors.slice(0, 10),
   };
   await writeFile(path.join(outDir, `${mode}-report.json`), JSON.stringify(report, null, 2));
-  console.log(JSON.stringify({ ...report, pages: pages.map((p) => ({ folio: p.folio, offScreen: p.offScreen, scrolls: p.scrolls, clipped: p.clippedCount })) }, null, 2));
+  console.log(JSON.stringify({ ...report, pages: pages.map((p) => ({ folio: p.folio, offScreen: p.offScreen, scrolls: p.scrolls, overInk: p.overInk, clipped: p.clippedCount, packed: p.packed, cut: p.cut, overfull: p.overfull, moved: p.movedAfterArrival })) }, null, 2));
   await browser.close();
   server.close();
 }
