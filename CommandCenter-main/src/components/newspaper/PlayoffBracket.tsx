@@ -1,5 +1,6 @@
 import type { MlbPlayoffRoundId, MlbPlayoffSeries, MlbPlayoffSide, MlbPlayoffTree } from "@/lib/mlb";
 import { formatSeriesGameLine } from "@/lib/newspaper-playoff-dates";
+import { paperImgAttrs } from "@/lib/newspaper-img-attrs";
 import { cn } from "@/lib/utils";
 
 const ROUND_NAMES: Record<MlbPlayoffRoundId, string> = {
@@ -44,7 +45,7 @@ function Club({
   return (
     <div className={cn("tt-br-club", state, big && "big")}>
       <span className="tt-br-disc">
-        {src ? <img src={src} alt="" loading="lazy" /> : <i>{side.abbrev.split("/").join(" / ") || "TBD"}</i>}
+        {src ? <img src={src} alt="" {...paperImgAttrs()} /> : <i>{side.abbrev.split("/").join(" / ") || "TBD"}</i>}
       </span>
       <b>{side.placeholder ? "TBD" : side.abbrev}</b>
       <em>{side.placeholder ? "" : side.wins}</em>
@@ -137,7 +138,7 @@ function SeriesLog({ tree }: { tree: MlbPlayoffTree }) {
             <p className="tt-br-log-teams">
               {[s.away, s.home].map((side, i) => (
                 <span key={i} className={cn(s.completed && leader(s) === (i === 0 ? "away" : "home") && "won")}>
-                  {logo(side) ? <img src={logo(side)!} alt="" loading="lazy" /> : null}
+                  {logo(side) ? <img src={logo(side)!} alt="" {...paperImgAttrs()} /> : null}
                   {side.name}
                 </span>
               ))}

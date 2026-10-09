@@ -16,6 +16,7 @@ import {
   type StandGroup,
 } from "@/lib/newspaper-box";
 import { attachHeismanLogos, type HeismanBoard } from "@/lib/newspaper-heisman";
+import { paperImgAttrs } from "@/lib/newspaper-img-attrs";
 import { getCfbTeamInterestRating } from "@/lib/ruwt";
 
 function cfbWatch(game: BoxGame): number {
@@ -73,10 +74,10 @@ function CfbBlock({
               >
                 <time dateTime={game.startIso ?? undefined}>{rowWhen(game, kind)}</time>
                 <span className="tt-cfb-clubs">
-                  {game.away.logo ? <img src={game.away.logo} alt="" /> : null}
+                  {game.away.logo ? <img src={game.away.logo} alt="" {...paperImgAttrs()} /> : null}
                   {clubMark(game.away, kind === "results")}
                   <i>at</i>
-                  {game.home.logo ? <img src={game.home.logo} alt="" /> : null}
+                  {game.home.logo ? <img src={game.home.logo} alt="" {...paperImgAttrs()} /> : null}
                   {clubMark(game.home, kind === "results")}
                 </span>
                 {kind === "schedule" ? (
@@ -128,7 +129,7 @@ export function CfbFill({
                 {pollRows.map((row, i) => (
                   <li key={`${row.rank}-${row.abbrev}`} {...(i >= 15 ? { "data-tt-trim": 90 + i } : {})}>
                     <i>#{row.rank}</i>
-                    {row.logo ? <img src={row.logo} alt="" /> : null}
+                    {row.logo ? <img src={row.logo} alt="" {...paperImgAttrs()} /> : null}
                     <b>{row.abbrev}</b>
                     <em>{row.record || ""}</em>
                   </li>
@@ -143,7 +144,7 @@ export function CfbFill({
                 {odds.rows.map((row, i) => (
                   <li key={row.ticker}>
                     <i>{i + 1}</i>
-                    {row.logo ? <img src={row.logo} alt="" /> : <span className="tt-cfb-heisman-ph" />}
+                    {row.logo ? <img src={row.logo} alt="" {...paperImgAttrs()} /> : <span className="tt-cfb-heisman-ph" />}
                     <span className="tt-cfb-heisman-who">
                       <b>{row.name}</b>
                       <em>{row.school}</em>

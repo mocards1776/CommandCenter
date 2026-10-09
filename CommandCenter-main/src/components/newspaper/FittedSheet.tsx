@@ -2,8 +2,10 @@ import { createContext, useContext, useId, useLayoutEffect, useRef, useState, ty
 import {
   EMPTY_FIT_PLAN,
   hideCssForPlan,
+  peekPageFitPlan,
   planSheetFit,
   plansEqual,
+  rememberPageFit,
   type SheetFitPlan,
 } from "@/lib/newspaper-fit";
 
@@ -43,19 +45,38 @@ export function FittedSheet({
   folio,
   overflow,
   sparse,
+  pageId,
+  reservedHeight,
+  reservedTransform,
+  skipFit = false,
 }: {
   children: ReactNode;
   folio?: string;
   overflow?: boolean;
   sparse?: boolean;
+  /** Edition id + folio. A remembered plan skips the clone-and-pack pass. */
+  pageId?: string;
+  /** Known unzoomed height from the last time this page was mounted. */
+  reservedHeight?: number;
+  reservedTransform?: string;
+  /** This mount started with a finished fit. Do not clone the sheet again. */
+  skipFit?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [plan, setPlan] = useState<SheetFitPlan>(EMPTY_FIT_PLAN);
+  const cachedPlan = skipFit && pageId ? peekPageFitPlan(pageId) : null;
+  const [plan, setPlan] = useState<SheetFitPlan>(cachedPlan ?? EMPTY_FIT_PLAN);
+  const [planFor, setPlanFor] = useState(pageId);
+  if (planFor !== pageId) {
+    setPlanFor(pageId);
+    setPlan(cachedPlan ?? EMPTY_FIT_PLAN);
+  }
   const sheetId = useId().replace(/:/g, "");
 
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
+    // Remount of a page we already packed: keep the plan, do not clone the sheet.
+    if (skipFit && pageId && peekPageFitPlan(pageId)) return;
     let cancel = false;
     let raf = 0;
     let lastH = -1;
@@ -68,6 +89,7 @@ export function FittedSheet({
       lastH = h;
       const next = planSheetFit(el);
       setPlan((prev) => (plansEqual(prev, next) ? prev : next));
+      if (pageId && h > 80) rememberPageFit(pageId, { plan: next });
     };
     const schedule = () => {
       if (raf) cancelAnimationFrame(raf);
@@ -88,7 +110,7 @@ export function FittedSheet({
       if (raf) cancelAnimationFrame(raf);
       ro.disconnect();
     };
-  }, []);
+  }, [pageId, skipFit]);
 
   const hideCss = hideCssForPlan(sheetId, plan);
 
@@ -100,6 +122,16 @@ export function FittedSheet({
           ref={ref}
           className="wsj-sheet"
           data-tt-sheet={sheetId}
+          style={
+            reservedHeight
+              ? {
+                  minHeight: reservedHeight,
+                  ...(reservedTransform
+                    ? { transform: reservedTransform, transformOrigin: "top left" }
+                    : {}),
+                }
+              : undefined
+          }
           {...(folio != null ? { "data-folio": folio } : {})}
           {...(overflow != null ? { "data-overflow": overflow ? "1" : "0" } : {})}
           {...(sparse != null ? { "data-sparse": sparse ? "1" : "0" } : {})}

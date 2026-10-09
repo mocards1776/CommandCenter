@@ -16,6 +16,7 @@ import {
   type RecapGamePack,
   type RecapLeader,
 } from "@/lib/newspaper-recap";
+import { paperImgAttrs } from "@/lib/newspaper-img-attrs";
 import { cn } from "@/lib/utils";
 import { PersonName } from "./PlayerPop";
 
@@ -62,6 +63,7 @@ export function RecapChips({
               className={cn("tt-recap-chip-logo", compact && "sm")}
               src={l.headshot || teamLogoFor(pack, l) || ""}
               alt=""
+              {...paperImgAttrs()}
               onError={(e) => {
                 e.currentTarget.style.visibility = "hidden";
               }}
@@ -95,10 +97,13 @@ export function RecapPhoto({
   url,
   width,
   caption,
+  eager = false,
 }: {
   url: string | null | undefined;
   width?: number | null;
   caption?: string | null;
+  /** A1's lead cut. Everything else stays lazy. */
+  eager?: boolean;
 }) {
   const [measured, setMeasured] = useState<number | null>(null);
   const native = typeof width === "number" && width > 0 ? width : measured;
@@ -112,8 +117,7 @@ export function RecapPhoto({
       <img
         src={url}
         alt=""
-        loading="lazy"
-        decoding="async"
+        {...paperImgAttrs(eager)}
         onLoad={(e) => {
           const w = e.currentTarget.naturalWidth;
           if (w > 0) setMeasured((prev) => (prev && prev <= w ? prev : w));

@@ -5,10 +5,15 @@
 import {
   HARD_PAGE_H,
   SOFT_PAGE_H,
+  cachedFitBoxPx,
+  clearPageFits,
   hideCssForPlan,
   fitMeasureNeeded,
   pageFit,
+  peekPageFitPlan,
   plansEqual,
+  readPageFit,
+  rememberPageFit,
   scaledFitBox,
   sheetLayoutHeight,
   sheetNeedsTransformFit,
@@ -78,5 +83,29 @@ assert(
     `[data-tt-sheet="s1"] > :nth-child(3){display:none!important}`,
   "hide CSS targets the sheet by nth-child path, not by mutating live nodes",
 );
+
+const ipadFit = 768 / 1032;
+const cachedBox = cachedFitBoxPx(1032, 1600, ipadFit, true);
+assert(cachedBox.width === "768px", "cached iPad box reuses the visual width");
+assert(cachedBox.transform === `scale(${ipadFit})`, "cached box restores scale without measuring");
+assert(cachedBox.minHeight === "1600px", "cached box reserves the measured sheet height");
+assert(cachedBox.height === `${1600 * ipadFit}px`, "cached box height is sheet H × fit");
+assert(cachedFitBoxPx(1032, 1600, 1, false).transform === "", "desktop cache does not force a scale");
+
+clearPageFits();
+const plan = { hide: [":nth-child(2)"], cuts: { lead: "Packed." } };
+rememberPageFit("edition:A1", { plan });
+assert(peekPageFitPlan("edition:A1")?.cuts.lead === "Packed.", "a plan can be stored before the height");
+assert(readPageFit("edition:A1") === null, "a plan alone is not enough to skip the fit pass");
+rememberPageFit("edition:A1", { fit: ipadFit, layoutH: 40 });
+assert(readPageFit("edition:A1") === null, "a collapsed remount must not lock a tiny height");
+rememberPageFit("edition:A1", { fit: ipadFit, layoutH: 1510 });
+const again = readPageFit("edition:A1");
+assert(again?.layoutH === 1510 && again.fit === ipadFit && again.plan.hide[0] === ":nth-child(2)", "a finished fit is reused on the next mount");
+rememberPageFit("edition:A1", { layoutH: 1540 });
+assert(readPageFit("edition:A1")?.layoutH === 1540, "a later real measurement updates the reserved height");
+assert(readPageFit("edition:A1")?.plan.cuts.lead === "Packed.", "updating the height keeps the plan");
+clearPageFits();
+assert(readPageFit("edition:A1") === null, "cleared fits are measured again");
 
 console.log("newspaper-fit ok");
