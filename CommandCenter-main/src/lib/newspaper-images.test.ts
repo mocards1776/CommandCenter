@@ -111,8 +111,10 @@ assert(
 const ampPreview =
   "https://bloximages.newyork1.vip.townnews.com/stltoday.com/content/tncms/assets/v3/editorial/9/5c/95c783a9-3787-4edc-8940-5ddca6415928.preview.jpg?crop=1&amp;resize=200%2C133";
 const amp = storyImageCandidates(ampPreview);
-assert(amp.src.includes(".image.jpg") && !amp.src.includes("&amp;") && !amp.src.includes("amp;"), "preview upgrades and &amp; becomes &");
-assert(amp.fallback?.includes(".preview.jpg") && !amp.fallback.includes("&amp;"), "fallback is the stored preview");
+assert(amp.src.includes(".preview.jpg") && !amp.src.includes("&amp;") && !amp.src.includes("amp;"), "BLOX tries the stored preview first and &amp; becomes &");
+assert(amp.fallback?.includes(".image.jpg") && !amp.fallback.includes("&amp;"), "fallback is the upgraded .image");
+const other = storyImageCandidates("https://example.com/a.jpg?w=200");
+assert(other.fallback === "https://example.com/a.jpg?w=200", "non-BLOX art still falls back to the stored URL");
 const filedImage =
   "https://bloximages.newyork1.vip.townnews.com/stltoday.com/content/tncms/assets/v3/editorial/9/5c/95c783a9-3787-4edc-8940-5ddca6415928.image.jpg";
 const filed = storyImageCandidates(filedImage);
