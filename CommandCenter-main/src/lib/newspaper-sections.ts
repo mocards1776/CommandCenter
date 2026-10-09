@@ -1287,13 +1287,18 @@ const FAVORITE_TEAM: Record<string, string> = {
   "mlb-stl": "cardinals",
 };
 
+const TEAM_ALIAS_RES: [string, RegExp][] = TEAM_ALIASES.map(([canon, aliases]) => [
+  canon,
+  new RegExp(`\\b(?:${aliases.join("|")})\\b`, "i"),
+]);
+
 function namedTeams(card: GameWrapCard): Set<string> {
   const text = `${card.headline} ${card.dek ?? ""} ${card.teamName ?? ""}`.toLowerCase();
   const out = new Set<string>();
   const fav = card.favoriteKey ? FAVORITE_TEAM[card.favoriteKey] : null;
   if (fav) out.add(fav);
-  for (const [canon, aliases] of TEAM_ALIASES) {
-    if (aliases.some((alias) => new RegExp(`\\b${alias}\\b`, "i").test(text))) out.add(canon);
+  for (const [canon, re] of TEAM_ALIAS_RES) {
+    if (re.test(text)) out.add(canon);
   }
   return out;
 }
@@ -1411,48 +1416,64 @@ const SUBJECT_STOP = new Set([
   "sunday", "saturday", "night", "analysis", "tips", "prop", "plays", "preview",
 ]);
 
-function distinctiveSubjects(card: GameWrapCard): string[] {
-  return headlineTokens(card).filter((word) => word.length >= 6 && !SUBJECT_STOP.has(word));
-}
-
 function seriesGameKey(headline: string): string | null {
   const m = headline.match(/\b((?:al|nl)ds)\s+game\s+(\d)\b/i);
   return m ? `${m[1]!.toLowerCase()}-${m[2]}` : null;
 }
 
-/** Same person / same package: Tyreek Hill twice, Chourio twice, ALDS Game 3 twice. */
-function sameNamedPackage(a: GameWrapCard, b: GameWrapCard): boolean {
-  if (a.leaguePath && b.leaguePath && a.leaguePath !== b.leaguePath) return false;
-  const seriesA = seriesGameKey(a.headline);
-  const seriesB = seriesGameKey(b.headline);
-  if (seriesA && seriesB && seriesA === seriesB) return true;
-  const left = distinctiveSubjects(a);
-  const right = distinctiveSubjects(b);
-  if (!left.length || !right.length) return false;
-  const shared = left.filter((w) => right.includes(w));
-  return shared.length >= 1;
+type StoryFacts = {
+  url: string | null;
+  source: string | null;
+  column: boolean;
+  game: string | null;
+  recapCopy: boolean;
+  main: boolean;
+  tokens: string[];
+  teams: Set<string>;
+  series: string | null;
+  subjects: string[];
+};
+
+/** Derived once per card. Dedupe compares every pair, so re-deriving these was most of the open. */
+const FACTS = new WeakMap<GameWrapCard, StoryFacts>();
+
+function storyFacts(card: GameWrapCard): StoryFacts {
+  let f = FACTS.get(card);
+  if (!f) {
+    const tokens = headlineTokens(card);
+    f = {
+      url: storyUrlKey(card),
+      source: sourceStoryId(card),
+      column: isColumnStory(card),
+      game: storyGameId(card),
+      recapCopy: isGameRecapCopy(card),
+      main: isMainGameStory(card),
+      tokens,
+      teams: namedTeams(card),
+      series: seriesGameKey(card.headline),
+      subjects: tokens.filter((word) => word.length >= 6 && !SUBJECT_STOP.has(word)),
+    };
+    FACTS.set(card, f);
+  }
+  return f;
 }
 
 export function sameSectionAStory(a: GameWrapCard, b: GameWrapCard): boolean {
   if (a.id && a.id === b.id) return true;
-  const urlA = storyUrlKey(a);
-  const urlB = storyUrlKey(b);
-  if (urlA && urlB && urlA === urlB) return true;
-  const srcA = sourceStoryId(a);
-  const srcB = sourceStoryId(b);
-  if (srcA && srcB && srcA === srcB) return true;
-  if (isColumnStory(a) || isColumnStory(b)) {
-    return sameStory(headlineTokens(a), headlineTokens(b));
+  const fa = storyFacts(a);
+  const fb = storyFacts(b);
+  if (fa.url && fb.url && fa.url === fb.url) return true;
+  if (fa.source && fb.source && fa.source === fb.source) return true;
+  if (fa.column || fb.column) return sameStory(fa.tokens, fb.tokens);
+  if (fa.game && fb.game && fa.game === fb.game) return true;
+  if (fa.recapCopy && fb.recapCopy && [...fa.teams].filter((team) => fb.teams.has(team)).length >= 2) return true;
+  if (fa.main && fb.main && sameStory(fa.tokens, fb.tokens)) return true;
+  // Same person / same package: Tyreek Hill twice, Chourio twice, ALDS Game 3 twice.
+  if (!(a.leaguePath && b.leaguePath && a.leaguePath !== b.leaguePath)) {
+    if (fa.series && fb.series && fa.series === fb.series) return true;
+    if (fa.subjects.length && fb.subjects.length && fa.subjects.some((w) => fb.subjects.includes(w))) return true;
   }
-  const gameA = storyGameId(a);
-  const gameB = storyGameId(b);
-  if (gameA && gameB && gameA === gameB) return true;
-  if (isGameRecapCopy(a) && isGameRecapCopy(b) && shareMatchup(a, b)) return true;
-  if (isMainGameStory(a) && isMainGameStory(b) && sameStory(headlineTokens(a), headlineTokens(b))) {
-    return true;
-  }
-  if (sameNamedPackage(a, b)) return true;
-  return sameStory(headlineTokens(a), headlineTokens(b));
+  return sameStory(fa.tokens, fb.tokens);
 }
 
 function pickBetterStory(cards: GameWrapCard[]): GameWrapCard {
