@@ -145,20 +145,16 @@ export async function clearTimesOffline(userId?: string | null): Promise<void> {
   }
 }
 
-/** Download one edition (stories, desks, sharp art) into this user's cache. */
+/** Download one edition (stories and desks) into this user's cache. */
 export async function prefetchFiledEdition(id: string, userId: string | null): Promise<PrintedIssue | null> {
   const local = await readLocalIssue(id, userId);
-  if (local) {
-    void prefetchEditionImages(collectEditionImageUrls(local));
-    return local;
-  }
+  if (local) return local;
   const { readRemoteIssueShell, readRemoteQueries } = await import("./newspaper-issue-remote.ts");
   const shell = await readRemoteIssueShell(id).catch(() => null);
   if (!shell) return null;
   const queries = await readRemoteQueries(id).catch(() => null);
   const issue: PrintedIssue = { ...shell, queries: queries ?? [] };
   await writeLocalIssue(issue, userId);
-  void prefetchEditionImages(collectEditionImageUrls(issue));
   return issue;
 }
 
