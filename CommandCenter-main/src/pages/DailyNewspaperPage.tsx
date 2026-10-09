@@ -156,8 +156,6 @@ import {
 import { frontPrefixLength, yieldToPaint } from "@/lib/newspaper-front-load";
 import {
   cacheTimesShell,
-  collectEditionImageUrls,
-  prefetchEditionImages,
   prefetchFiledEdition,
   postTimesPrecache,
   registerTimesWorker,
@@ -5330,7 +5328,6 @@ function NewspaperDesk() {
         loadedRef.current = issue.id;
         if (opts?.persist !== false) {
           void writeLocalIssue({ ...issue, companions: extra }, cacheUserRef.current);
-          void prefetchEditionImages(collectEditionImageUrls({ ...issue, companions: extra }));
         }
       };
 
@@ -5393,7 +5390,6 @@ function NewspaperDesk() {
         seedQueries(issue.queries, "light");
         releaseHeavy(["tt-board"]);
         void writeLocalIssue({ ...issue, companions: extra }, cacheUserRef.current);
-        void prefetchEditionImages(collectEditionImageUrls({ ...issue, companions: extra }));
         const idle = window.requestIdleCallback?.bind(window);
         const run = () => {
           if (loadedRef.current === issue.id) seedQueries(issue.queries, "all");
