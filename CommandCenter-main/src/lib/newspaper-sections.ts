@@ -57,6 +57,7 @@ import { cleanNationalStories, packNationalPages, type NationalDesk, type Nation
 import { printsFavoriteCoaches } from "./newspaper-favorite-coaches.ts";
 import {
   A2_CLUB_CARDS,
+  clubFormIsThin,
   NEWS_STORIES_PER_PAGE,
   planOutlookAndForm,
   planStandingsPages,
@@ -1787,9 +1788,10 @@ function favoritePages(
     thirdTeaser: thirdJump.teaser,
   };
 
-  const orderedClubs = [...clubs].sort(
-    (a, b) => favoriteDeskWeight(b.key) - favoriteDeskWeight(a.key),
-  );
+  // A club with a slate and no numbers yet takes no form card; it rides the clubs strip.
+  const orderedClubs = [...clubs]
+    .filter((club) => !clubFormIsThin(club))
+    .sort((a, b) => favoriteDeskWeight(b.key) - favoriteDeskWeight(a.key));
   const packed = planOutlookAndForm(orderedClubs.length);
 
   const weatherToday: FavoritesClubsPage = {
