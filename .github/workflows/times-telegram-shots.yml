@@ -27,18 +27,23 @@ name: Times Telegram image alert
 # If that edition's alert already went out, the shoot job peeks and skips, and
 # only the print job runs.
 on:
-  schedule:
-    # Backup only. Every 10 minutes around each press (6 a.m., noon, 5 p.m.
-    # Central), in UTC for both CDT and CST.
-    - cron: "2-59/10 10-13 * * *"
-    - cron: "2-59/10 16-19 * * *"
-    - cron: "2-59/10 21-23 * * *"
-    - cron: "2-59/10 0 * * *"
+  # schedule:
+  #   # Backup only. Every 10 minutes around each press (6 a.m., noon, 5 p.m.
+  #   # Central), in UTC for both CDT and CST.
+  #   - cron: "2-59/10 10-13 * * *"
+  #   - cron: "2-59/10 16-19 * * *"
+  #   - cron: "2-59/10 21-23 * * *"
+  #   - cron: "2-59/10 0 * * *"
   workflow_dispatch:
     inputs:
       issue_id:
         description: Edition id to screenshot and print (optional on a schedule run)
         required: false
+        type: string
+      publish:
+        description: Preview storage name. Empty publishes under the edition id.
+        required: false
+        default: ""
         type: string
 
 permissions:
@@ -158,6 +163,7 @@ jobs:
         working-directory: ${{ runner.temp }}/flat-print
         env:
           ISSUE_ID: ${{ steps.edition.outputs.issue }}
+          TIMES_FLAT_PUBLISH: ${{ inputs.publish }}
           TIMES_SESSION_FILE: ${{ runner.temp }}/flat-print/session.json
           TIMES_LAYOUT_FILE: ${{ runner.temp }}/flat-print/layout.json
           TIMES_SUPABASE_FILE: ${{ runner.temp }}/flat-print/supabase.json
