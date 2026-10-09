@@ -259,6 +259,7 @@ import {
 import { cn } from "@/lib/utils";
 import { prefersNewspaperHome } from "@/lib/newspaper-home";
 import { pageGeometry } from "@/lib/newspaper-page-size";
+import { packSheet } from "@/lib/newspaper-pack";
 
 /** Desk data is observed already rewritten to ESPN combiner thumbs. */
 function useQuery<
@@ -836,9 +837,20 @@ function Headline({
   );
 }
 
-function ReadOn({ card, game, label = "Read the full story" }: { card: GameWrapCard; game?: BoxGame | null; label?: string }) {
+function ReadOn({
+  card,
+  game,
+  label = "Read the full story",
+  whenCut,
+}: {
+  card: GameWrapCard;
+  game?: BoxGame | null;
+  label?: string;
+  /** Held invisible unless the page cuts this story's copy short. */
+  whenCut?: boolean;
+}) {
   return (
-    <p className="wsj-jump">
+    <p className={cn("wsj-jump", whenCut && "when-cut")}>
       <StoryLink card={card} game={game} className="wsj-jump-btn">
         {label} <span aria-hidden="true">→</span>
       </StoryLink>
@@ -879,9 +891,12 @@ function Prose({
   color,
   inset,
   ended,
+  more,
 }: {
   card: GameWrapCard;
   text: string;
+  /** The rest of the story, set hidden; the page lets it run on when a column has room. */
+  more?: string;
   cols: 1 | 2 | 3;
   drop?: boolean;
   max?: number;
@@ -950,6 +965,13 @@ function Prose({
         </Fragment>
       ))}
       {insetAt >= paras.length ? inset : null}
+      {more
+        ? proseParas(more).map((p, i) => (
+            <p key={`more-${i}`} data-tt-more="">
+              <NamedText text={p} seen={seen} />
+            </p>
+          ))
+        : null}
     </div>
   );
 }
@@ -983,7 +1005,6 @@ function Cut({ card, shape = "wide" }: { card: GameWrapCard; shape?: "wide" | "t
   return (
     <figure
       className={cn("wsj-cut", shape, kind === "fit" && "fit", card.photoStyle === "cutout" && "cutout")}
-      style={native && kind === "fit" ? { maxWidth: native } : undefined}
     >
       <img
         src={photo.src}
@@ -1172,7 +1193,7 @@ function Story({
       style={tint(teamColor(team))}
       data-tt-keys={storyReadKeys(card).join("|")}
       data-tt-title={card.headline}
-      {...(className?.includes("lead") ? { "data-tt-lead": "" } : {})}
+      {...(className?.split(" ").includes("lead") ? { "data-tt-lead": "" } : {})}
       {...(trim != null ? { "data-tt-trim": trim } : {})}
     >
       {artNode ? <div className="wsj-story-art">{artNode}</div> : null}
@@ -1197,14 +1218,24 @@ function Story({
             color={teamColor(team)}
             inset={inset}
             ended={!partial}
+            more={partial ? restOfCopy(full, storyCopy) : undefined}
           />
         ) : (
           inset
         )}
-        {(storyCopy || jump) && partial ? <ReadOn card={card} game={game} label="Click for full story" /> : null}
+        {storyCopy || jump ? <ReadOn card={card} game={game} label="Click for full story" whenCut={!partial} /> : null}
       </div>
     </article>
   );
+}
+
+/** What follows `shown` in the full story, when the page set a straight cut of it. */
+function restOfCopy(full: string, shown: string): string | undefined {
+  const a = full.replace(/\s+/g, " ").trim();
+  const b = shown.replace(/\s+/g, " ").trim();
+  if (!b || a.length <= b.length + 40 || !a.startsWith(b)) return undefined;
+  // Enough to fill a column to the foot; the reader holds the rest.
+  return splitStoryCopy(a.slice(b.length).trim(), 2400).teaser || undefined;
 }
 
 /** Wide photo for long copy; photo beside the type when the copy is short. */
@@ -2080,7 +2111,9 @@ function InsidePage({
               inset={game ? null : <StoryNames card={card} />}
             />
             {game || (isSingleGameRecap(card) && card.recapGame) ? (
-              <RecapBox card={card} game={game ?? null} compact />
+              <div data-tt-flow>
+                <RecapBox card={card} game={game ?? null} compact />
+              </div>
             ) : null}
           </div>
         );
@@ -2218,7 +2251,9 @@ function ContinuePage({
               inset={game ? null : <StoryNames card={card} />}
             />
             {game || (isSingleGameRecap(card) && card.recapGame) ? (
-              <RecapBox card={card} game={game ?? null} compact />
+              <div data-tt-flow>
+                <RecapBox card={card} game={game ?? null} compact />
+              </div>
             ) : null}
           </div>
         );
@@ -5007,14 +5042,52 @@ const FolioSlot = memo(function FolioSlot({
   const [shown, setShown] = useState(false);
   const near = Math.abs(index - current) <= NEAR_PAGES;
   if (near && !shown) setShown(true);
+  const mounted = shown || near;
+  const sheetRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const sheet = sheetRef.current;
+    if (!mounted || !sheet) return;
+    return keepSheetPacked(sheet);
+  }, [mounted]);
   return (
     <section className="wsj-page" aria-label={`Page ${folio}`} data-kind={kind} data-folio={folio}>
       <div className="wsj-fit">
-        <div className="wsj-sheet">{shown || near ? <FolioBody render={render} /> : null}</div>
+        <div className="wsj-sheet" ref={sheetRef}>
+          {mounted ? <FolioBody render={render} /> : null}
+        </div>
       </div>
     </section>
   );
 });
+
+/**
+ * Packs the sheet now, before it paints, and again only when its height, its
+ * printed content, or the type it is set in changes. Every re-pack runs
+ * inside the same frame as its cause, so a reader never sees one.
+ */
+function keepSheetPacked(sheet: HTMLElement): () => void {
+  let height = sheet.clientHeight;
+  packSheet(sheet);
+  const ro = new ResizeObserver(() => {
+    if (sheet.clientHeight === height) return;
+    height = sheet.clientHeight;
+    packSheet(sheet);
+  });
+  ro.observe(sheet);
+  const mo = new MutationObserver(() => packSheet(sheet));
+  mo.observe(sheet, { childList: true, subtree: true, characterData: true });
+  let live = true;
+  if (document.fonts && document.fonts.status !== "loaded") {
+    void document.fonts.ready.then(() => {
+      if (live) packSheet(sheet);
+    });
+  }
+  return () => {
+    live = false;
+    ro.disconnect();
+    mo.disconnect();
+  };
+}
 
 /* ───────────────────────── page ───────────────────────── */
 

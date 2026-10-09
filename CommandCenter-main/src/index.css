@@ -5163,6 +5163,15 @@ li.counting .tt-count.card {
   gap: 6px;
   margin: 6px 0 8px;
 }
+.tt-recap-chrome-part {
+  display: flex;
+  flex-direction: column;
+  gap: inherit;
+  min-width: 0;
+}
+.tt-recap-chrome-part:empty {
+  display: none;
+}
 .tt-recap-linehead {
   display: flex;
   justify-content: space-between;
@@ -10618,4 +10627,66 @@ body:has(.tt-phone-shot) {
   .gm-alert-ring {
     animation: gm-alert-veil 180ms ease both;
   }
+}
+
+/* Times art never sizes the page: a photo holds its box before, after and
+   without its load, so a late picture or a 404 can't move the type. */
+.newspaper-root .wsj-sheet .tt-recap-photo.wide img,
+.newspaper-root .wsj-sheet .tt-recap-photo.inset img,
+.newspaper-root .wsj-sheet .tt-recap-photo.fit img,
+.newspaper-root .wsj-sheet .wsj-cut.fit img {
+  width: 100% !important;
+  height: auto;
+  aspect-ratio: 3 / 2 !important;
+}
+.newspaper-root .wsj-sheet .tt-recap-photo.fit img,
+.newspaper-root .wsj-sheet .wsj-cut.fit img {
+  object-fit: cover !important;
+}
+.newspaper-root .wsj-sheet .tt-recap-photo.fit,
+.newspaper-root .wsj-sheet .wsj-cut.fit {
+  width: 100%;
+  max-width: 100% !important;
+}
+/* The A1 lead photo and the under-lead's side cut leave the column room for both stories. */
+.newspaper-root .wsj-sheet .wsj-front-main .wsj-story.lead img {
+  max-height: 280px !important;
+}
+.newspaper-root .wsj-sheet .wsj-front-under .wsj-story.art-side {
+  grid-template-columns: 220px minmax(0, 1fr);
+}
+
+/* The bookmark sits at the headline's end instead of on a line of its own. */
+.newspaper-root .wsj-sheet :is(h2, h3, h4):has(> .tt-hl-save) {
+  position: relative;
+  padding-right: 30px;
+}
+.newspaper-root .wsj-sheet :is(h2, h3, h4) > .tt-hl-save > .tt-save {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  margin: 0;
+}
+
+/* Set by the packer (newspaper-pack.ts): blocks that leave the page, and copy cut on a line. */
+.newspaper-root .wsj-sheet [data-tt-packed],
+.wsj-sheet [data-tt-packed][data-tt-packed] {
+  display: none !important;
+}
+.newspaper-root .wsj-sheet [data-tt-cut] {
+  overflow: hidden !important;
+  column-fill: auto !important;
+  max-height: none !important;
+}
+.newspaper-root .wsj-sheet .wsj-jump.when-cut {
+  visibility: hidden;
+}
+.newspaper-root .wsj-sheet .wsj-story:has([data-tt-cut]) .wsj-jump.when-cut {
+  visibility: visible;
+}
+.newspaper-root .wsj-sheet .wsj-prose [data-tt-more] {
+  display: none;
+}
+.newspaper-root .wsj-sheet .wsj-prose[data-tt-grown] [data-tt-more] {
+  display: block;
 }

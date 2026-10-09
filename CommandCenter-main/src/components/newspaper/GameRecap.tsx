@@ -110,7 +110,6 @@ export function RecapPhoto({
   return (
     <figure
       className={cn("tt-recap-photo", kind)}
-      style={native && kind === "fit" ? { maxWidth: native } : undefined}
     >
       <img
         src={photo.src}
@@ -146,12 +145,16 @@ export function RecapChrome({
   return (
     <section className={cn("tt-recap-chrome", compact && "compact")}>
       <ScoreMast game={box} shortNames={shortNames} />
-      <header className="tt-recap-linehead">
-        <b>{gameClock(box)}</b>
-        <span>{[box.round, box.series, pack?.venue || box.venue].filter(Boolean).join(" · ")}</span>
-      </header>
-      <Linescore game={box} compact={compact} />
-      {pack ? <RecapChips pack={pack} path={box.path} compact={compact} /> : <Leaders game={box} max={3} />}
+      <div className="tt-recap-chrome-part" data-tt-yield="">
+        <header className="tt-recap-linehead">
+          <b>{gameClock(box)}</b>
+          <span>{[box.round, box.series, pack?.venue || box.venue].filter(Boolean).join(" · ")}</span>
+        </header>
+        <Linescore game={box} compact={compact} />
+      </div>
+      <div className="tt-recap-chrome-part" data-tt-yield="">
+        {pack ? <RecapChips pack={pack} path={box.path} compact={compact} /> : <Leaders game={box} max={3} />}
+      </div>
     </section>
   );
 }
