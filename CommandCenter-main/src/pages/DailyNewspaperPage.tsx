@@ -61,6 +61,7 @@ import {
 import { cleanStoryCopy, proseParas, tidy, truncateAtSentence } from "@/lib/newspaper-copy";
 import { applyScaledFitBox, fitMeasureNeeded, pageFit, prefetchSrc, sheetNeedsTransformFit } from "@/lib/newspaper-fit";
 import { FitCopy, FittedSheet } from "@/components/newspaper/FittedSheet";
+import { heldCard, registerHeldCard, useA1Held } from "@/lib/newspaper-a1-held";
 import { TimesCommitBoundary } from "@/components/newspaper/TimesCommitBoundary";
 import { recapBodyForPage, recapDropLead, recapIsScoreOnly, recapPhotoKind, recapShouldDropCap, splitApDateline } from "@/lib/newspaper-recap";
 import {
@@ -1247,6 +1248,8 @@ function Brief({
       style={tint(color)}
       data-tt-keys={storyReadKeys(card).join("|")}
       data-tt-title={card.headline}
+      data-tt-story={card.id}
+      {...(folio ? {} : { "data-tt-relocate": "1" })}
       {...(trim != null ? { "data-tt-trim": trim } : {})}
     >
       {card.photo ? (
@@ -1306,6 +1309,7 @@ function BriefGrid({
       <div className="wsj-briefs" style={{ ["--cols" as string]: String(cols) }}>
         {cards.map((c, i) => {
           const folio = folios?.[c.id];
+          registerHeldCard(c);
           return (
             <Brief
               key={c.id}
@@ -1787,6 +1791,8 @@ function FrontPage({
       : flowCard && flowCard.id === second?.id
         ? pageSecondTeaser
         : undefined;
+  if (flowCard) registerHeldCard(flowCard);
+  if (scout) registerHeldCard(moCard(scout));
 
   return (
     <div className="wsj-front">
@@ -1828,7 +1834,12 @@ function FrontPage({
             </div>
           ) : null}
           {flowCard ? (
-            <div className="wsj-front-row one" data-tt-flow="">
+            <div
+              className="wsj-front-row one"
+              data-tt-flow=""
+              data-tt-story={flowCard.id}
+              data-tt-relocate="1"
+            >
               <Story
                 card={flowCard}
                 team={teamForCard(teams, flowCard)}
@@ -1847,7 +1858,11 @@ function FrontPage({
         {rail}
       </div>
       <ClubTicker teams={teams} editionDay={editionDay} onTurn={onTurn} />
-      {scoutBand ? <div data-tt-flow="">{scoutBand}</div> : null}
+      {scoutBand ? (
+        <div data-tt-flow="" data-tt-story={scout?.id} data-tt-relocate={scout ? "1" : undefined}>
+          {scoutBand}
+        </div>
+      ) : null}
       <div data-tt-flow="">
       <BriefGrid
         cards={pageBriefs}
@@ -2181,6 +2196,35 @@ function initials(name: string): string {
     .join("");
 }
 
+/** Stories the A1 fit lock pulled off the front, printed in full at the top of A2. */
+function HeldFromA1({ teams }: { teams: TeamInfobox[] }) {
+  const ids = useA1Held();
+  const cards = ids
+    .map((id) => heldCard(id))
+    .filter((card): card is GameWrapCard => Boolean(card));
+  if (!cards.length) return null;
+  return (
+    <div className="wsj-a1-held" data-tt-keep="">
+      {cards.map((card) => {
+        const text = cardCopy(card);
+        return (
+          <Story
+            key={card.id}
+            className="primary"
+            card={card}
+            team={teamForCard(teams, card)}
+            text={text}
+            size="lg"
+            cols={text.length > 1400 ? 2 : 1}
+            art={card.photo ? "top" : "none"}
+            drop
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 /** Destination of a front-page jump — the rest of the article. */
 function ContinuePage({
   jumps,
@@ -2196,9 +2240,11 @@ function ContinuePage({
   onTurn: (folio: string) => void;
 }) {
   const lookup = useContext(GameLookup);
+  const held = useA1Held();
+  const printed = jumps.filter((jump) => !held.includes(jump.card.id));
   return (
     <div className="wsj-continue">
-      {jumps.map(({ card, rest }, i) => {
+      {printed.map(({ card, rest }, i) => {
         const game = isSingleGameRecap(card) ? lookup(card) : null;
         return (
           <div key={card.id} className="wsj-inside-story">
@@ -7066,6 +7112,7 @@ function NewspaperDesk() {
                 />
               ) : page.kind === "favorites-clubs" ? (
                 <>
+                  {page.weatherPart === "today" ? <HeldFromA1 teams={teams} /> : null}
                   <WeatherReport
                     weather={weatherQ.data}
                     part={page.weatherPart === "outlook" ? "outlook" : page.weatherPart === "today" ? "today" : "all"}
@@ -7310,6 +7357,7 @@ function NewspaperDesk() {
   return (
     <div
       className="newspaper-root wsj-shell"
+      data-edition={pressId}
       data-times-ready={revealed ? "1" : "0"}
       data-times-folios={pages.length > 0 && filled.size >= pages.length ? "1" : "0"}
     >

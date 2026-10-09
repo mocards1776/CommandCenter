@@ -8,6 +8,7 @@ import {
   hideCssForPlan,
   fitMeasureNeeded,
   pageFit,
+  pickBottomFlow,
   plansEqual,
   scaledFitBox,
   sheetLayoutHeight,
@@ -72,6 +73,25 @@ assert(
 assert(
   !plansEqual({ hide: ["f1"], cuts: {} }, { hide: ["f1", "f2"], cuts: {} }),
   "fit plans differ when hide lists differ",
+);
+assert(
+  !plansEqual({ hide: ["f1"], cuts: {}, moved: ["a"] }, { hide: ["f1"], cuts: {}, moved: ["b"] }),
+  "fit plans differ when a different story is moved inside",
+);
+assert(
+  pickBottomFlow([
+    { id: "lead", bottom: 900, lead: true },
+    { id: "rail", bottom: 400 },
+    { id: "briefs", bottom: 700 },
+  ])?.id === "briefs",
+  "the lowest block drops first and the lead never drops",
+);
+assert(
+  pickBottomFlow([
+    { id: "lead", bottom: 2000, lead: true },
+    { id: "keep", bottom: 1800, keep: true },
+  ]) == null,
+  "a sheet of only the lead and kept blocks drops nothing",
 );
 assert(
   hideCssForPlan("s1", { hide: [":nth-child(3)"], cuts: {} }) ===

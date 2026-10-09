@@ -17,9 +17,29 @@ export type SheetFitPlan = {
   /** nth-child paths from the sheet, e.g. ":nth-child(3) > :nth-child(1)" */
   hide: string[];
   cuts: Record<string, string>;
+  /**
+   * Story ids whose A1 block was dropped. Callers print these on the next
+   * page; the hide list only keeps them off A1.
+   */
+  moved?: string[];
 };
 
-export const EMPTY_FIT_PLAN: SheetFitPlan = { hide: [], cuts: {} };
+export const EMPTY_FIT_PLAN: SheetFitPlan = { hide: [], cuts: {}, moved: [] };
+
+/**
+ * Among droppable blocks, the one furthest down the sheet goes first.
+ * The lead (`lead`) and anything marked `keep` are never chosen.
+ */
+export function pickBottomFlow<T extends { bottom: number; lead?: boolean; keep?: boolean }>(
+  nodes: readonly T[],
+): T | null {
+  let best: T | null = null;
+  for (const node of nodes) {
+    if (node.lead || node.keep) continue;
+    if (!best || node.bottom > best.bottom) best = node;
+  }
+  return best;
+}
 
 export function sheetZoom(sheet: Element): number {
   const z = Number.parseFloat(getComputedStyle(sheet).zoom || "1");
@@ -128,11 +148,16 @@ export function sheetLocalBottom(el: HTMLElement, sheet: Element): number {
   return unzoomedPx(el.getBoundingClientRect().bottom - sheet.getBoundingClientRect().top, zoom);
 }
 
+function sameIds(a: readonly string[] = [], b: readonly string[] = []): boolean {
+  if (a.length !== b.length) return false;
+  const left = [...a].sort();
+  const right = [...b].sort();
+  return left.every((id, i) => id === right[i]);
+}
+
 export function plansEqual(a: SheetFitPlan, b: SheetFitPlan): boolean {
-  if (a.hide.length !== b.hide.length) return false;
-  const hideA = [...a.hide].sort();
-  const hideB = [...b.hide].sort();
-  if (hideA.some((id, i) => id !== hideB[i])) return false;
+  if (!sameIds(a.hide, b.hide)) return false;
+  if (!sameIds(a.moved, b.moved)) return false;
   const keysA = Object.keys(a.cuts);
   const keysB = Object.keys(b.cuts);
   if (keysA.length !== keysB.length) return false;
@@ -166,20 +191,38 @@ function restoreFlow(root: HTMLElement): void {
   }
 }
 
+function protectsLead(node: HTMLElement): boolean {
+  return (
+    node.hasAttribute("data-tt-lead") ||
+    node.hasAttribute("data-tt-keep") ||
+    Boolean(node.closest("[data-tt-lead], [data-tt-keep]")) ||
+    Boolean(node.querySelector("[data-tt-lead]"))
+  );
+}
+
+/** Lowest on the sheet first. Never the lead, and never a block that contains it. */
 function hideLastPackChild(root: HTMLElement): boolean {
-  const flow = [...root.querySelectorAll<HTMLElement>(FLOW_SEL)].reverse().find((node) => !node.hidden);
-  if (flow) {
-    flow.hidden = true;
-    flow.dataset.ttFlowed = "1";
+  const flow = [...root.querySelectorAll<HTMLElement>(FLOW_SEL)].filter(
+    (node) => !node.hidden && !protectsLead(node),
+  );
+  const pick = pickBottomFlow(
+    flow.map((node) => ({
+      node,
+      bottom: node.getBoundingClientRect().bottom,
+      lead: false,
+      keep: false,
+    })),
+  );
+  if (pick) {
+    pick.node.hidden = true;
+    pick.node.dataset.ttFlowed = "1";
     return true;
   }
+  // After every flow block is gone, hide the last unmarked sibling.
+  // Never a node that is or contains the lead.
   for (const pack of root.querySelectorAll<HTMLElement>(PACK_ROOTS)) {
     const kids = [...pack.children].reverse().filter(
-      (node): node is HTMLElement =>
-        node instanceof HTMLElement &&
-        !node.hidden &&
-        node.getAttribute("data-tt-keep") == null &&
-        node.getAttribute("data-tt-lead") == null,
+      (node): node is HTMLElement => node instanceof HTMLElement && !node.hidden && !protectsLead(node),
     );
     if (kids.length > 1) {
       kids[0]!.hidden = true;
@@ -222,12 +265,28 @@ function fitClone(root: HTMLElement): void {
   hideOverflowBlocks(root);
 }
 
+function relocateIds(node: HTMLElement): string[] {
+  const ids: string[] = [];
+  const take = (el: HTMLElement) => {
+    if (el.getAttribute("data-tt-relocate") !== "1") return;
+    const id = el.getAttribute("data-tt-story");
+    if (id && !ids.includes(id)) ids.push(id);
+  };
+  take(node);
+  for (const el of node.querySelectorAll<HTMLElement>("[data-tt-relocate='1']")) take(el);
+  return ids;
+}
+
 function readPlan(root: HTMLElement): SheetFitPlan {
   const hide: string[] = [];
+  const moved: string[] = [];
   for (const node of root.querySelectorAll<HTMLElement>("[data-tt-flowed], [hidden]")) {
     if (!node.hidden && !node.dataset.ttFlowed) continue;
     const path = childPath(node, root);
     if (path) hide.push(path);
+    for (const id of relocateIds(node)) {
+      if (!moved.includes(id)) moved.push(id);
+    }
   }
   const cuts: Record<string, string> = {};
   for (const node of root.querySelectorAll<HTMLElement>("[data-tt-cid]")) {
@@ -236,7 +295,60 @@ function readPlan(root: HTMLElement): SheetFitPlan {
     const text = node.textContent ?? "";
     if (cid && full && text !== full) cuts[cid] = text;
   }
-  return { hide, cuts };
+  return { hide, cuts, moved };
+}
+
+/**
+ * Once a sheet has dropped blocks for this edition and viewport width, later
+ * measures only add drops. A shorter remeasure must not put them back.
+ * The key changes when the edition id, the story ids on the sheet, or the
+ * pager width change.
+ */
+type DropLock = { key: string; hide: string[]; moved: string[] };
+const dropLocks = new Map<string, DropLock>();
+
+export function sheetDropKey(live: HTMLElement): string {
+  const pager = live.closest(".wsj-pager") as HTMLElement | null;
+  const pagerW = pager?.clientWidth ?? 0;
+  const width = Math.round(pagerW >= 40 ? pagerW : window.innerWidth || live.clientWidth || 0);
+  const edition = live.closest(".newspaper-root")?.getAttribute("data-edition") || "";
+  const stories = [...live.querySelectorAll("[data-tt-story]")]
+    .map((node) => node.getAttribute("data-tt-story") || "")
+    .filter(Boolean)
+    .sort()
+    .join(",");
+  return `${edition}|${width}|${stories}`;
+}
+
+function sheetFolio(live: HTMLElement): string {
+  return (
+    live.closest("[data-folio]")?.getAttribute("data-folio") ||
+    live.getAttribute("data-folio") ||
+    "sheet"
+  );
+}
+
+function unionIds(prev: readonly string[], next: readonly string[]): string[] {
+  const out = [...prev];
+  for (const id of next) if (!out.includes(id)) out.push(id);
+  return out;
+}
+
+function lockDrops(live: HTMLElement, measured: SheetFitPlan): SheetFitPlan {
+  const folio = sheetFolio(live);
+  const key = sheetDropKey(live);
+  const prev = dropLocks.get(folio);
+  const moved = measured.moved ?? [];
+  if (!prev || prev.key !== key) {
+    if (measured.hide.length || moved.length) dropLocks.set(folio, { key, hide: measured.hide, moved });
+    else dropLocks.delete(folio);
+    return measured;
+  }
+  const hide = unionIds(prev.hide, measured.hide);
+  const kept = unionIds(prev.moved, moved);
+  const plan: SheetFitPlan = { ...measured, hide, moved: kept };
+  dropLocks.set(folio, { key, hide, moved: kept });
+  return plan;
 }
 
 let measureHost: HTMLDivElement | null = null;
@@ -255,6 +367,10 @@ function getMeasureHost(): HTMLDivElement {
 function attachMeasureClone(live: HTMLElement): HTMLElement {
   const clone = live.cloneNode(true) as HTMLElement;
   clone.dataset.ttFitClone = "1";
+  // The live hide rule is `[data-tt-sheet="…"]`. Leaving it on the clone makes
+  // the next measure look already packed, return an empty plan, and the sheet
+  // grows back — then the following measure drops the block again.
+  clone.removeAttribute("data-tt-sheet");
   for (const node of clone.querySelectorAll("style")) node.remove();
   const width = live.clientWidth || live.offsetWidth || 1032;
   const cs = getComputedStyle(live);
@@ -282,7 +398,7 @@ export function planSheetFit(live: HTMLElement): SheetFitPlan {
   const clone = attachMeasureClone(live);
   try {
     fitClone(clone);
-    return readPlan(clone);
+    return lockDrops(live, readPlan(clone));
   } finally {
     clone.remove();
   }
