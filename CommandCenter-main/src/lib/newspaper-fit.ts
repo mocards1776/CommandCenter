@@ -10,7 +10,9 @@ const COPY_SEL = ".wsj-prose p, .wsj-dek, .wsj-brief-dek, .tt-under-story p, .tt
 export const SOFT_PAGE_H = 1480;
 export const HARD_PAGE_H = 1650;
 const FLOW_SEL = "[data-tt-flow]";
-const PACK_ROOTS = ".wsj-front, .tt-section-front, .tt-scores, .wsj-sport-solo, .wx, .tt-stand-grid";
+// `.wx` is the A2 weather section. It is not a pack root: hiding its children
+// leaves only the "The Weather" header. A long A2 keeps the weather and runs long.
+const PACK_ROOTS = ".wsj-front, .tt-section-front, .tt-scores, .wsj-sport-solo, .tt-stand-grid";
 const KEEP_COPY = "[data-tt-lead], [data-tt-keep]";
 
 export type SheetFitPlan = {
@@ -200,11 +202,18 @@ function protectsLead(node: HTMLElement): boolean {
   );
 }
 
-/** Lowest on the sheet first. Never the lead, and never a block that contains it. */
+/** The weather section, anything inside it, and any block that wraps it stay put. */
+function protectsWeather(node: HTMLElement): boolean {
+  return Boolean(node.closest(".wx") || node.querySelector(".wx"));
+}
+
+function canDrop(node: HTMLElement): boolean {
+  return !node.hidden && !protectsLead(node) && !protectsWeather(node);
+}
+
+/** Lowest on the sheet first. Never the lead, a kept block, or the weather. */
 function hideLastPackChild(root: HTMLElement): boolean {
-  const flow = [...root.querySelectorAll<HTMLElement>(FLOW_SEL)].filter(
-    (node) => !node.hidden && !protectsLead(node),
-  );
+  const flow = [...root.querySelectorAll<HTMLElement>(FLOW_SEL)].filter(canDrop);
   const pick = pickBottomFlow(
     flow.map((node) => ({
       node,
@@ -222,7 +231,7 @@ function hideLastPackChild(root: HTMLElement): boolean {
   // Never a node that is or contains the lead.
   for (const pack of root.querySelectorAll<HTMLElement>(PACK_ROOTS)) {
     const kids = [...pack.children].reverse().filter(
-      (node): node is HTMLElement => node instanceof HTMLElement && !node.hidden && !protectsLead(node),
+      (node): node is HTMLElement => node instanceof HTMLElement && canDrop(node),
     );
     if (kids.length > 1) {
       kids[0]!.hidden = true;
@@ -265,28 +274,33 @@ function fitClone(root: HTMLElement): void {
   hideOverflowBlocks(root);
 }
 
-function relocateIds(node: HTMLElement): string[] {
+function isDropped(node: HTMLElement): boolean {
+  return node.hidden || node.dataset.ttFlowed === "1";
+}
+
+/**
+ * Every story inside a dropped block, in sheet order (A1 rank: top first).
+ * A brief that already has an inside folio has `data-tt-story` and no
+ * `data-tt-relocate`; it still has to print. Hide-only is not a story plan.
+ */
+function movedStoryIds(root: HTMLElement): string[] {
   const ids: string[] = [];
-  const take = (el: HTMLElement) => {
-    if (el.getAttribute("data-tt-relocate") !== "1") return;
+  for (const el of root.querySelectorAll<HTMLElement>("[data-tt-story]")) {
+    const dropped = el.closest<HTMLElement>("[data-tt-flowed], [hidden]");
+    if (!dropped || dropped === root || !root.contains(dropped) || !isDropped(dropped)) continue;
     const id = el.getAttribute("data-tt-story");
     if (id && !ids.includes(id)) ids.push(id);
-  };
-  take(node);
-  for (const el of node.querySelectorAll<HTMLElement>("[data-tt-relocate='1']")) take(el);
+  }
   return ids;
 }
 
 function readPlan(root: HTMLElement): SheetFitPlan {
   const hide: string[] = [];
-  const moved: string[] = [];
+  const moved = movedStoryIds(root);
   for (const node of root.querySelectorAll<HTMLElement>("[data-tt-flowed], [hidden]")) {
-    if (!node.hidden && !node.dataset.ttFlowed) continue;
+    if (!isDropped(node)) continue;
     const path = childPath(node, root);
     if (path) hide.push(path);
-    for (const id of relocateIds(node)) {
-      if (!moved.includes(id)) moved.push(id);
-    }
   }
   const cuts: Record<string, string> = {};
   for (const node of root.querySelectorAll<HTMLElement>("[data-tt-cid]")) {
@@ -334,18 +348,35 @@ function unionIds(prev: readonly string[], next: readonly string[]): string[] {
   return out;
 }
 
+/** A1 rank: the order the stories sit on the sheet, top first. */
+function rankMoved(live: HTMLElement, ids: readonly string[]): string[] {
+  const want = new Set(ids);
+  const ordered: string[] = [];
+  for (const node of live.querySelectorAll("[data-tt-story]")) {
+    const id = node.getAttribute("data-tt-story") || "";
+    if (!id || !want.has(id) || ordered.includes(id)) continue;
+    ordered.push(id);
+  }
+  for (const id of ids) if (!ordered.includes(id)) ordered.push(id);
+  return ordered;
+}
+
+export function clearSheetDropLocks(): void {
+  dropLocks.clear();
+}
+
 function lockDrops(live: HTMLElement, measured: SheetFitPlan): SheetFitPlan {
   const folio = sheetFolio(live);
   const key = sheetDropKey(live);
   const prev = dropLocks.get(folio);
-  const moved = measured.moved ?? [];
+  const moved = rankMoved(live, measured.moved ?? []);
   if (!prev || prev.key !== key) {
     if (measured.hide.length || moved.length) dropLocks.set(folio, { key, hide: measured.hide, moved });
     else dropLocks.delete(folio);
-    return measured;
+    return { ...measured, moved };
   }
   const hide = unionIds(prev.hide, measured.hide);
-  const kept = unionIds(prev.moved, moved);
+  const kept = rankMoved(live, unionIds(prev.moved, moved));
   const plan: SheetFitPlan = { ...measured, hide, moved: kept };
   dropLocks.set(folio, { key, hide, moved: kept });
   return plan;
