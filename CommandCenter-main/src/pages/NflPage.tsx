@@ -3,15 +3,14 @@ import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, RefreshCw } from "lucide-react";
 import toast from "react-hot-toast";
-import LogoPlate from "@/components/sports/LogoPlate";
-import NflFieldMap, { NflScoreRow } from "@/components/sports/NflFieldMap";
+import NflFieldMap from "@/components/sports/NflFieldMap";
+import { NflScoreboardCard } from "@/components/sports/ScoreboardCard";
 import { useAuth } from "@/lib/auth-context";
 import { listFavoritePlayers } from "@/lib/favorite-players";
 import { fetchNflCurrentDrive, fetchNflScoreboard, pickNflHeroGame, rankNflRuwtGames } from "@/lib/nfl";
 import { nflInternationalMidfieldLogo } from "@/lib/nfl-venue";
 import { loadNflTeamInterest } from "@/lib/ruwt";
 import { markSportsSolo } from "@/lib/sports-home";
-import { cn } from "@/lib/utils";
 
 export default function NflPage() {
   const { user } = useAuth();
@@ -130,47 +129,31 @@ export default function NflPage() {
             <section className="space-y-3">
               <h3 className="rule-head">Live</h3>
               {featured && (
-                <Link
-                  to={`/sports/nfl/game/${featured.id}`}
-                  className="bg-panel block overflow-hidden rounded-xl border border-white/[0.1] transition hover:border-white/20"
-                >
-                  <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] px-4 py-3">
-                    <div className="flex items-center gap-4">
-                      {[featured.away, featured.home].map((s) => (
-                        <div key={s.teamId} className="flex items-center gap-2">
-                          {s.logo && <LogoPlate src={s.logo} className="h-8 w-8" />}
-                          <div>
-                            <p className="text-cream text-[14px] font-semibold">{s.abbrev}</p>
-                            <p className="text-chalk-dim text-[10px]">{s.record}</p>
-                          </div>
-                          <span className="numeral text-cream text-[26px]">{s.score ?? 0}</span>
-                        </div>
-                      ))}
+                <NflScoreboardCard
+                  game={featured}
+                  heat={heatById.get(String(featured.id))?.score}
+                  reasons={heatById.get(String(featured.id))?.reasons}
+                  footer={
+                    <div className="border-t border-white/[0.06] p-2">
+                      <NflFieldMap
+                        game={featured}
+                        branded
+                        homeYardLine={featured.situation?.yardLine ?? null}
+                        possessionTeamId={featured.situation?.possessionTeamId ?? null}
+                        downDistanceText={featured.situation?.downDistanceText}
+                        drive={featuredDrive.data}
+                        midfieldLogo={nflInternationalMidfieldLogo(featured)}
+                      />
                     </div>
-                    <p className={cn("text-[11px] font-semibold uppercase tracking-[0.14em]", "text-alert")}>
-                      {featured.shortDetail}
-                    </p>
-                  </div>
-                  <div className="p-3">
-                    <NflFieldMap
-                      game={featured}
-                      branded
-                      homeYardLine={featured.situation?.yardLine ?? null}
-                      possessionTeamId={featured.situation?.possessionTeamId ?? null}
-                      downDistanceText={featured.situation?.downDistanceText}
-                      drive={featuredDrive.data}
-                      midfieldLogo={nflInternationalMidfieldLogo(featured)}
-                    />
-                  </div>
-                </Link>
+                  }
+                />
               )}
               {liveRest.length > 0 && (
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
                   {liveRest.map((g) => (
-                    <NflScoreRow
+                    <NflScoreboardCard
                       key={g.id}
                       game={g}
-                      to={`/sports/nfl/game/${g.id}`}
                       heat={heatById.get(String(g.id))?.score}
                       reasons={heatById.get(String(g.id))?.reasons}
                     />
@@ -184,10 +167,9 @@ export default function NflPage() {
               <h3 className="rule-head mb-3">Upcoming</h3>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
                 {upcoming.map((g) => (
-                  <NflScoreRow
+                  <NflScoreboardCard
                     key={g.id}
                     game={g}
-                    to={`/sports/nfl/game/${g.id}`}
                     heat={heatById.get(String(g.id))?.score}
                     reasons={heatById.get(String(g.id))?.reasons}
                   />
@@ -200,10 +182,9 @@ export default function NflPage() {
               <h3 className="rule-head mb-3">Final</h3>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
                 {finals.map((g) => (
-                  <NflScoreRow
+                  <NflScoreboardCard
                     key={g.id}
                     game={g}
-                    to={`/sports/nfl/game/${g.id}`}
                     heat={heatById.get(String(g.id))?.score}
                     reasons={heatById.get(String(g.id))?.reasons}
                   />

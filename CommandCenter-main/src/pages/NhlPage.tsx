@@ -13,8 +13,8 @@ import {
   type NhlScoreGame,
 } from "@/lib/nhl";
 import LogoPlate from "@/components/sports/LogoPlate";
+import { NhlScoreboardCard } from "@/components/sports/ScoreboardCard";
 import { markSportsSolo } from "@/lib/sports-home";
-import { cn } from "@/lib/utils";
 
 export default function NhlPage() {
   useEffect(() => {
@@ -106,11 +106,11 @@ export default function NhlPage() {
           {live.length > 0 && (
             <section className="space-y-3">
               <h3 className="rule-head">Live</h3>
-              {featured && <NhlScoreCard game={featured} featured />}
+              {featured && <NhlScoreboardCard game={featured} />}
               {liveRest.length > 0 && (
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
                   {liveRest.map((g) => (
-                    <NhlScoreCard key={g.id} game={g} />
+                    <NhlScoreboardCard key={g.id} game={g} />
                   ))}
                 </div>
               )}
@@ -218,60 +218,9 @@ function GameSection({ title, games }: { title: string; games: NhlScoreGame[] })
       <h3 className="rule-head mb-3">{title}</h3>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
         {games.map((g) => (
-          <NhlScoreCard key={g.id} game={g} />
+          <NhlScoreboardCard key={g.id} game={g} />
         ))}
       </div>
     </section>
-  );
-}
-
-function NhlScoreCard({ game, featured = false }: { game: NhlScoreGame; featured?: boolean }) {
-  const periods = Math.max(game.away.linescores.length, game.home.linescores.length);
-  return (
-    <Link
-      to={`/sports/nhl/game/${game.id}`}
-      className={cn(
-        "bg-panel block rounded-xl border border-white/[0.08] p-3 transition hover:border-white/15 hover:bg-white/[0.03]",
-        featured && "border-white/[0.12] p-4",
-      )}
-    >
-      <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0 flex-1 space-y-1.5">
-          {[game.away, game.home].map((side) => (
-            <div key={side.teamId} className="flex items-center gap-2">
-              {side.logo ? <LogoPlate src={side.logo} className="h-6 w-6" /> : null}
-              <span className="text-cream min-w-0 flex-1 truncate text-[13px] font-medium">
-                {side.abbrev}
-              </span>
-              <span className="numeral text-cream text-[18px]">
-                {game.final || game.live ? (side.score ?? 0) : "—"}
-              </span>
-            </div>
-          ))}
-        </div>
-        <div className="shrink-0 text-right">
-          <p
-            className={cn(
-              "text-[10px] font-semibold uppercase tracking-[0.14em]",
-              game.live ? "text-alert" : "text-chalk-dim",
-            )}
-          >
-            {game.live ? "Live" : game.final ? "Final" : (game.whenShort ?? "Upcoming")}
-          </p>
-          <p className="text-chalk-dim mt-1 max-w-[8rem] text-[10px] leading-snug">
-            {game.shortDetail}
-          </p>
-        </div>
-      </div>
-      {periods > 0 && (
-        <div className="mt-2 flex justify-end gap-2 text-[10px] text-[#8b93a7]">
-          {Array.from({ length: periods }, (_, i) => (
-            <span key={i} className="numeral w-5 text-center">
-              {i < 3 ? i + 1 : i === 3 ? "OT" : `OT${i - 2}`}
-            </span>
-          ))}
-        </div>
-      )}
-    </Link>
   );
 }

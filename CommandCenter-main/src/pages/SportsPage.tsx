@@ -26,6 +26,7 @@ import {
   MlbTeamWinTrend,
 } from "@/components/sports/MlbTeamExtras";
 import LogoPlate from "@/components/sports/LogoPlate";
+import { ScoreboardCard, TeamLogo } from "@/components/sports/ScoreboardCard";
 import TeamMark from "@/components/sports/TeamMark";
 import { useAuth } from "@/lib/auth-context";
 import { fetchMlbFarmSystemRankings, fetchTeamCurrentGame, mlbHeadshot, teamPagePath } from "@/lib/mlb";
@@ -972,56 +973,39 @@ function YesterdayRecapPanel({
             Scores
           </h3>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {data.games.map((g) => {
-              const inner = (
-                <article className="bg-panel rounded-lg border border-white/[0.08] p-3 transition hover:border-accent/35">
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
-                      {g.sportLabel}
-                    </span>
-                    <span className="text-[10px] text-[#8b93a7]">{g.detail}</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    {g.away.logo ? <LogoPlate src={g.away.logo} className="h-8 w-8" /> : null}
-                    <div className="min-w-0 flex-1">
-                      <p
-                        className={cn(
-                          "text-[15px] font-semibold",
-                          g.away.winner ? "text-cream" : "text-[#a8b0c2]",
-                        )}
-                      >
-                        {g.away.abbrev}{" "}
-                        <span className="numeral">{g.away.score ?? "—"}</span>
-                      </p>
-                      <p
-                        className={cn(
-                          "text-[15px] font-semibold",
-                          g.home.winner ? "text-cream" : "text-[#a8b0c2]",
-                        )}
-                      >
-                        {g.home.abbrev}{" "}
-                        <span className="numeral">{g.home.score ?? "—"}</span>
-                      </p>
-                    </div>
-                    {g.home.logo ? <LogoPlate src={g.home.logo} className="h-8 w-8" /> : null}
-                  </div>
-                  {g.highlight ? (
-                    <p className="text-chalk mt-2 line-clamp-2 text-[12px]">
-                      {g.highlight.headline}
-                    </p>
-                  ) : null}
-                </article>
-              );
-              return g.href.startsWith("http") ? (
-                <a key={g.id} href={g.href} target="_blank" rel="noreferrer">
-                  {inner}
-                </a>
-              ) : (
-                <Link key={g.id} to={g.href}>
-                  {inner}
-                </Link>
-              );
-            })}
+            {data.games.map((g) => (
+              <ScoreboardCard
+                key={g.id}
+                to={g.href}
+                live={false}
+                final
+                status={g.detail || "Final"}
+                away={{
+                  abbrev: g.away.abbrev,
+                  logo: <TeamLogo src={g.away.logo} />,
+                  muted: !g.away.winner && g.home.winner,
+                }}
+                home={{
+                  abbrev: g.home.abbrev,
+                  logo: <TeamLogo src={g.home.logo} />,
+                  muted: !g.home.winner && g.away.winner,
+                }}
+                awayScore={g.away.score}
+                homeScore={g.home.score}
+                detail={g.detail || "Final"}
+                headerExtra={
+                  <span className="max-w-[7rem] truncate text-[9.5px] font-semibold uppercase tracking-[0.14em]">
+                    {g.sportLabel}
+                  </span>
+                }
+              >
+                {g.highlight?.headline ? (
+                  <p className="relative z-10 line-clamp-2 border-t border-white/[0.06] px-3 py-1.5 text-[12px] text-white/70">
+                    {g.highlight.headline}
+                  </p>
+                ) : null}
+              </ScoreboardCard>
+            ))}
           </div>
         </section>
       )}

@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
-import CfbRankLabel from "@/components/sports/CfbRankLabel";
 import LogoPlate from "@/components/sports/LogoPlate";
+import { CfbScoreboardCard } from "@/components/sports/ScoreboardCard";
 import {
   fetchCfbConferenceStandings,
   fetchCfbConferences,
@@ -462,87 +462,9 @@ function GameSection({
       <h3 className="rule-head mb-3">{title}</h3>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
         {games.map((g) => (
-          <CfbScoreRow key={g.id} game={g} heat={heatById.get(String(g.id))} />
+          <CfbScoreboardCard key={g.id} game={g} heat={heatById.get(String(g.id))} />
         ))}
       </div>
     </section>
-  );
-}
-
-function CfbScoreRow({ game, heat }: { game: CfbScoreGame; heat?: number }) {
-  return (
-    <div
-      className={cn(
-        "bg-panel relative overflow-hidden rounded-lg border transition hover:border-accent/40",
-        game.live ? "border-alert/45" : "border-white/[0.08]",
-      )}
-    >
-      <Link
-        to={`/sports/cfb/game/${game.id}`}
-        className="absolute inset-0 z-0"
-        aria-label={`${game.away.abbrev} at ${game.home.abbrev}`}
-      />
-      <div className="relative z-10 flex items-center justify-between gap-2 border-b border-white/[0.06] px-3 py-2 pointer-events-none">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-cream">
-          {game.live ? (
-            <span className="text-alert">
-              <span className="bg-alert mr-1.5 inline-block h-1.5 w-1.5 animate-pulse rounded-full" />
-              {game.shortDetail || "Live"}
-            </span>
-          ) : game.final ? (
-            "Final"
-          ) : (
-            game.whenShort ?? "Scheduled"
-          )}
-        </span>
-        {heat != null && heat > 0 ? (
-          <span className="text-[10px] text-[#8b93a7]">Heat {heat}</span>
-        ) : null}
-      </div>
-      <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-3">
-        <TeamSide side={game.away} align="start" />
-        <Link
-          to={`/sports/cfb/game/${game.id}`}
-          className="font-display relative z-10 text-center text-[24px] tabular-nums text-cream"
-        >
-          {game.live || game.final ? (
-            <>
-              {game.away.score ?? "—"}
-              <span className="mx-1 text-[14px] text-white/30">-</span>
-              {game.home.score ?? "—"}
-            </>
-          ) : (
-            <span className="text-[18px]">{game.whenShort ?? "TBD"}</span>
-          )}
-        </Link>
-        <TeamSide side={game.home} align="end" />
-      </div>
-    </div>
-  );
-}
-
-function TeamSide({
-  side,
-  align,
-}: {
-  side: CfbScoreGame["away"];
-  align: "start" | "end";
-}) {
-  return (
-    <Link
-      to={`/sports/cfb/team/${side.teamId}`}
-      onClick={(e) => e.stopPropagation()}
-      className={cn(
-        "relative z-10 flex min-w-0 flex-col gap-1 hover:opacity-90",
-        align === "end" ? "items-end text-right" : "items-start",
-      )}
-    >
-      {side.logo ? <LogoPlate src={side.logo} className="h-8 w-8" loading="lazy" /> : null}
-      <p className="text-cream text-[14px] font-semibold">
-        <CfbRankLabel pollRank={side.rank} fpiRank={side.fpiRank} />
-        {side.abbrev}
-      </p>
-      {side.record ? <p className="text-chalk-dim text-[10px]">{side.record}</p> : null}
-    </Link>
   );
 }

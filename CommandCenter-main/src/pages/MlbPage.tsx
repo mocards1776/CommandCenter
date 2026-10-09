@@ -45,8 +45,9 @@ import { loadTeamInterest, scoreRuwtGame } from "@/lib/ruwt";
 import { markSportsSolo } from "@/lib/sports-home";
 import { cn } from "@/lib/utils";
 import MlbPlayoffBracket from "@/components/sports/MlbPlayoffBracket";
-import MlbWorldSeriesOdds, { WsChampPct } from "@/components/sports/MlbWorldSeriesOdds";
-import { useMlbWorldSeriesOdds, wsPctFor } from "@/lib/mlb-ws-odds";
+import MlbWorldSeriesOdds from "@/components/sports/MlbWorldSeriesOdds";
+import { MlbScoreboardCard } from "@/components/sports/ScoreboardCard";
+import { useMlbWorldSeriesOdds } from "@/lib/mlb-ws-odds";
 
 const MLB_TABS = new Set<MlbPageTab>([
   "playoffs",
@@ -548,7 +549,12 @@ function ScoreboardSection({
       {live.length > 0 && (
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
           {live.map((g) => (
-            <ScoreCard key={g.id} game={g} ruwtScore={ruwtByGameId.get(g.id)} wsBoard={wsBoard} />
+            <MlbScoreboardCard
+              key={g.id}
+              game={g}
+              heat={ruwtByGameId.get(g.id)}
+              wsBoard={wsBoard}
+            />
           ))}
         </div>
       )}
@@ -557,221 +563,16 @@ function ScoreboardSection({
           {live.length > 0 && <h3 className="rule-head mb-3">Also today</h3>}
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
             {rest.map((g) => (
-              <ScoreCard key={g.id} game={g} ruwtScore={ruwtByGameId.get(g.id)} wsBoard={wsBoard} />
+              <MlbScoreboardCard
+              key={g.id}
+              game={g}
+              heat={ruwtByGameId.get(g.id)}
+              wsBoard={wsBoard}
+            />
             ))}
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function ScoreCard({
-  game,
-  ruwtScore,
-  wsBoard,
-}: {
-  game: MlbScoreGame;
-  ruwtScore?: number;
-  wsBoard: ReturnType<typeof useMlbWorldSeriesOdds>["data"];
-}) {
-  const awayWins =
-    game.final && (game.away.score ?? 0) > (game.home.score ?? 0);
-  const homeWins =
-    game.final && (game.home.score ?? 0) > (game.away.score ?? 0);
-  const pregame = !game.live && !game.final;
-
-  return (
-    <Link
-      to={`/sports/mlb/game/${game.id}`}
-      className={cn(
-        "relative block overflow-hidden rounded-lg border bg-[#07101d] transition hover:border-accent/40 hover:shadow-[0_12px_36px_rgba(0,0,0,0.35)]",
-        game.live ? "border-alert/45" : "border-white/[0.08]",
-      )}
-    >
-      <div
-        className="pointer-events-none absolute inset-y-0 left-0 w-1/2 opacity-80"
-        style={{
-          background: `radial-gradient(ellipse at 15% 50%, #${game.away.primaryColor}66, transparent 65%)`,
-        }}
-      />
-      <div
-        className="pointer-events-none absolute inset-y-0 right-0 w-1/2 opacity-80"
-        style={{
-          background: `radial-gradient(ellipse at 85% 50%, #${game.home.primaryColor}66, transparent 65%)`,
-        }}
-      />
-      {game.live && (
-        <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-alert to-transparent" />
-      )}
-      <div className="relative z-10 flex items-center justify-between gap-2 border-b border-white/[0.06] px-3 py-2">
-        <span
-          className={cn(
-            "text-[10px] font-bold uppercase tracking-[0.14em]",
-            game.live ? "text-alert" : game.final ? "text-cream" : "text-[#8b93a7]",
-          )}
-        >
-          {game.live ? (
-            <span className="inline-flex items-center gap-1.5">
-              <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-alert" />
-              {game.inning || "Live"}
-            </span>
-          ) : game.final ? (
-            "Final"
-          ) : (
-            "Preview"
-          )}
-        </span>
-        <span className="flex min-w-0 items-center gap-2 truncate text-[10.5px] text-[#8b93a7]">
-          {ruwtScore != null ? (
-            <span className="numeral shrink-0 font-semibold text-[#8b93a7]">Heat {ruwtScore}</span>
-          ) : null}
-          <span className="truncate">
-            {pregame ? game.whenShort ?? game.when : game.venue ?? "Box score"}
-          </span>
-        </span>
-      </div>
-
-      {pregame ? (
-        <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-3.5">
-          <ScorePreviewTeam side={game.away} align="left" wsPct={wsPctFor(wsBoard, game.away.teamId)} />
-          <div className="text-center">
-            <p className="font-display text-[28px] leading-none text-white">
-              {game.whenShort ?? "TBD"}
-            </p>
-          </div>
-          <ScorePreviewTeam side={game.home} align="right" wsPct={wsPctFor(wsBoard, game.home.teamId)} />
-        </div>
-      ) : (
-        <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-3.5">
-          <ScorePreviewTeam
-            side={game.away}
-            align="left"
-            muted={homeWins}
-            winner={awayWins}
-            wsPct={wsPctFor(wsBoard, game.away.teamId)}
-          />
-          <div className="text-center">
-            <p className="font-display text-[34px] leading-none tabular-nums text-white">
-              <span className={awayWins ? "text-white" : homeWins ? "text-white/45" : "text-white"}>
-                {game.away.score ?? "—"}
-              </span>
-              <span className="mx-1.5 text-[16px] text-white/30">-</span>
-              <span className={homeWins ? "text-white" : awayWins ? "text-white/45" : "text-white"}>
-                {game.home.score ?? "—"}
-              </span>
-            </p>
-            {(game.away.hits != null || game.home.hits != null) && (
-              <p className="mt-1.5 text-[10px] uppercase tracking-[0.12em] text-white/45">
-                H {game.away.hits ?? "–"}–{game.home.hits ?? "–"}
-              </p>
-            )}
-          </div>
-          <ScorePreviewTeam
-            side={game.home}
-            align="right"
-            muted={awayWins}
-            winner={homeWins}
-            wsPct={wsPctFor(wsBoard, game.home.teamId)}
-          />
-        </div>
-      )}
-
-      {(game.away.probablePitcher || game.home.probablePitcher || pregame) && pregame && (
-        <div className="relative z-10 border-t border-white/[0.06] px-3 py-2.5">
-          <p className="mb-2 text-center text-[9px] font-semibold uppercase tracking-[0.16em] text-white/45">
-            Probable pitchers
-          </p>
-          <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-2">
-            <ScorePitcherCard side={game.away} align="left" />
-            <span className="pb-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/35">
-              vs
-            </span>
-            <ScorePitcherCard side={game.home} align="right" />
-          </div>
-        </div>
-      )}
-    </Link>
-  );
-}
-
-function ScorePitcherCard({
-  side,
-  align,
-}: {
-  side: MlbScoreGame["away"];
-  align: "left" | "right";
-}) {
-  const name = side.probablePitcher ?? "TBD";
-  const parts = name.split(" ");
-  const last = parts.length > 1 ? parts[parts.length - 1] : name;
-  const first = parts.length > 1 ? parts.slice(0, -1).join(" ") : "";
-  return (
-    <div
-      className={cn(
-        "flex min-w-0 flex-col gap-1.5",
-        align === "right" ? "items-end text-right" : "items-start text-left",
-      )}
-    >
-      {side.probablePitcherId ? (
-        <div className="relative h-[72px] w-[58px] overflow-hidden rounded-lg bg-[#dfe6f2] ring-2 ring-white/25">
-          <img
-            src={mlbHeadshot(side.probablePitcherId, 213)}
-            alt=""
-            className="absolute inset-0 h-full w-full scale-[1.12] object-cover object-[center_12%]"
-          />
-        </div>
-      ) : (
-        <div className="grid h-[72px] w-[58px] place-items-center rounded-lg bg-white/10 text-[10px] text-white/40">
-          TBD
-        </div>
-      )}
-      {first ? (
-        <p className="truncate text-[10px] font-medium uppercase tracking-[0.08em] text-white/55">
-          {first}
-        </p>
-      ) : null}
-      <p className="font-display text-cream truncate text-[16px] leading-none">{last}</p>
-    </div>
-  );
-}
-
-function ScorePreviewTeam({
-  side,
-  align,
-  muted,
-  winner,
-  wsPct,
-}: {
-  side: MlbScoreGame["away"];
-  align: "left" | "right";
-  muted?: boolean;
-  winner?: boolean;
-  wsPct?: number | null;
-}) {
-  return (
-    <div
-      className={cn(
-        "flex min-w-0 flex-col items-center gap-1.5",
-        align === "left" ? "sm:items-start" : "sm:items-end",
-        muted && "opacity-60",
-      )}
-    >
-      {side.teamId ? <TeamMark teamId={side.teamId} size="md" /> : null}
-      <div className={cn("text-center", align === "left" ? "sm:text-left" : "sm:text-right")}>
-        <p
-          className={cn(
-            "text-[15px] font-bold tracking-wide",
-            winner ? "text-white" : "text-white",
-          )}
-        >
-          {side.abbrev}
-        </p>
-        {side.record && (
-          <p className="numeral mt-0.5 text-[12px] font-medium text-white/70">{side.record}</p>
-        )}
-        <WsChampPct pct={wsPct} muted={muted} />
-      </div>
     </div>
   );
 }
