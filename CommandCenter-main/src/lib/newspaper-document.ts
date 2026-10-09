@@ -2,14 +2,12 @@
  * Open the Times as a finished document: one hold, then the whole paper.
  */
 
-export const REVEAL_CAP_MS = 7_000;
+/** Once the edition is set, the cover waits at most this long for fonts and A1's pictures. */
+export const REVEAL_CAP_MS = 1_500;
 export const COMPANION_WAIT_MS = 3_000;
-export const ISSUE_WAIT_MS = 10_000;
-/** Filed shells carry hundreds of stories; give the first read time to land. */
-export const SHELL_WAIT_MS = 25_000;
 /** While the Times is visible, look for a newly ready press. */
 export const ISSUE_POLL_MS = 120_000;
-export const ATF_PAGES = 2;
+export const ATF_PAGES = 1;
 
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -74,14 +72,11 @@ export async function waitForAboveFoldImages(root: ParentNode | null, capMs: num
 }
 
 /**
- * Fonts, then above-the-fold pictures, then give the sheet back.
- * Always resolves by `capMs` so a hung image cannot hold the cover.
+ * Fonts and A1's pictures, together. Always resolves by `capMs` so a hung
+ * image cannot hold the cover; a late picture fills its reserved box.
  */
 export async function waitForPrintedReveal(root: ParentNode | null, capMs = REVEAL_CAP_MS): Promise<void> {
-  const started = Date.now();
-  const left = () => Math.max(0, capMs - (Date.now() - started));
-  await waitForFonts(left());
-  await waitForAboveFoldImages(root, left());
+  await Promise.all([waitForFonts(capMs), waitForAboveFoldImages(root, capMs)]);
 }
 
 export function queryNamed<T = unknown>(

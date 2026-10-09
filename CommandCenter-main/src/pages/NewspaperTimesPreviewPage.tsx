@@ -1,5 +1,4 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { FittedSheet } from "@/components/newspaper/FittedSheet";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { DeskSnap, ScoreCard, ScoreStrip, SlateLine } from "@/components/newspaper/BoxScore";
@@ -201,9 +200,9 @@ function LockedSheet({ folio, children }: { folio: string; children: ReactNode }
   }, [children]);
   return (
     <div ref={ref} data-canvas={`${PAGE_CANVAS.width}x${PAGE_CANVAS.height}`}>
-      <FittedSheet folio={folio} overflow={overflow} sparse={sparse}>
+      <div className="wsj-sheet" data-folio={folio} data-overflow={overflow ? "1" : "0"} data-sparse={sparse ? "1" : "0"}>
         {children}
-      </FittedSheet>
+      </div>
     </div>
   );
 }

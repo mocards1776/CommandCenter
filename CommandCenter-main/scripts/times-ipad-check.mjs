@@ -135,6 +135,8 @@ function tableRows(table, params) {
   }
 }
 
+let traceStart = Date.now();
+
 async function mockSupabase(route) {
   const req = route.request();
   const url = new URL(req.url());
@@ -150,7 +152,9 @@ async function mockSupabase(route) {
   }
   const rows = tableRows(rest[1], url.searchParams).map((row) => pick(row, url.searchParams.get("select")));
   const single = (req.headers()["accept"] ?? "").includes("vnd.pgrst.object");
-  if (process.env.TT_TRACE) console.error("mock", rest[1], url.search.slice(0, 120), single ? "single" : "array", rows.length);
+  if (process.env.TT_TRACE) {
+    console.error(`+${Date.now() - traceStart}ms mock`, rest[1], url.search.slice(0, 100), single ? "single" : "array", rows.length);
+  }
   if (single && !rows.length) {
     await route.fulfill({ status: 406, contentType: "application/json", body: '{"code":"PGRST116"}' });
     return;
@@ -300,6 +304,10 @@ async function main() {
   });
 
   const t0 = Date.now();
+  traceStart = t0;
+  if (process.env.TT_TRACE) {
+    page.on("console", (msg) => console.error(`+${Date.now() - t0}ms console`, msg.text().slice(0, 200)));
+  }
   await page.goto(`http://localhost:${port}/newspaper`, { waitUntil: "commit" });
   let readyMs = null;
   try {

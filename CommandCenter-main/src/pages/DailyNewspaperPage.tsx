@@ -30,7 +30,6 @@ import {
   editionDateline,
   editionIssue,
   editionNewsDay,
-  fileEditionStories,
   fileMissouriItems,
   missouriItemInEdition,
   msUntilNextPress,
@@ -42,7 +41,6 @@ import {
   splitStoryCopy,
   storyReadKeys,
 } from "@/lib/newspaper";
-import { fetchLeagueArticles, fetchTeamArticles } from "@/lib/newspaper-news";
 import {
   applyTableStandings,
   boxStoryCard,
@@ -65,8 +63,6 @@ import {
   type StandGroup,
 } from "@/lib/newspaper-box";
 import { cleanStoryCopy, proseParas, tidy, truncateAtSentence } from "@/lib/newspaper-copy";
-import { applyScaledFitBox, fitMeasureNeeded, pageFit, prefetchSrc, sheetNeedsTransformFit } from "@/lib/newspaper-fit";
-import { FitCopy, FittedSheet } from "@/components/newspaper/FittedSheet";
 import { TimesCommitBoundary } from "@/components/newspaper/TimesCommitBoundary";
 import { recapBodyForPage, recapDropLead, recapIsScoreOnly, recapPhotoKind, recapShouldDropCap, splitApDateline } from "@/lib/newspaper-recap";
 import {
@@ -98,8 +94,8 @@ import { NamedText, PlayerName, PlayerPopProvider } from "@/components/newspaper
 import { fetchClubSheet, type ClubSheet } from "@/lib/newspaper-clubsheet";
 import { enrichMissouriItems, fetchMissouriDesk, fetchMissouriScout } from "@/lib/newspaper-missouri-fetch";
 import type { MoItem } from "@/lib/newspaper-missouri";
-import { nameIndex, type Person } from "@/lib/newspaper-people";
-import { fetchPlayerFiles, imageLoads, storySubjects, type PlayerFile } from "@/lib/newspaper-subjects";
+import type { Person } from "@/lib/newspaper-people";
+import type { PlayerFile } from "@/lib/newspaper-subjects";
 import { fetchMarshfieldWeather, type MarshfieldWeather } from "@/lib/newspaper-weather";
 import { WeatherReport, WeatherStrip } from "@/components/newspaper/WeatherReport";
 import { storySource } from "@/lib/newspaper-source";
@@ -112,27 +108,16 @@ import {
   openerTime,
   type Opener,
 } from "@/lib/newspaper-openers";
-import {
-  fetchPlayerNights,
-  playerPageHref,
-  playerPath,
-  rankNights,
-  type FollowedPlayer,
-  type PlayerNight,
-} from "@/lib/newspaper-players";
-import { listFavoritePlayers } from "@/lib/favorite-players";
+import { playerPageHref, rankNights, type PlayerNight } from "@/lib/newspaper-players";
 import {
   asFavoriteCoachDesk,
   coachFactLines,
   fetchFavoriteCoachDesk,
-  printsFavoriteCoaches,
   slateLine,
   type FavoriteCoachTile,
 } from "@/lib/newspaper-favorite-coaches";
-import { fetchTaggedPlayerIds } from "@/lib/sports-player-tags";
-import { fileExtracts, gatherStories, sportPathsOf, urlsToExtract } from "@/lib/newspaper-compose";
+import { sportPathsOf } from "@/lib/newspaper-compose";
 import {
-  ISSUE_VERSION,
   listLocalIssues,
   peekProofIssue,
   readCacheUserId,
@@ -141,25 +126,14 @@ import {
   type PrintedIssue,
 } from "@/lib/newspaper-issue";
 import {
-  askRemoteEditor,
   listRecentIssues,
   readRemoteIssue,
-  readRemoteIssueFrontFirst,
+  readRemoteIssueShell,
   readRemoteQueries,
-  readRemoteStories,
   subscribeReadyIssues,
   writeDesk,
-  writeRemoteIssue,
 } from "@/lib/newspaper-issue-remote";
-import {
-  heavyDesksForPage,
-  heavyDesksForReader,
-  isHeavyDesk,
-  mergeQueries,
-  queryDeskName,
-  splitQueries,
-} from "@/lib/newspaper-payload";
-import { frontPrefixLength, yieldToPaint } from "@/lib/newspaper-front-load";
+import { mergeQueries, queryDeskName } from "@/lib/newspaper-payload";
 import {
   cacheTimesShell,
   prefetchFiledEdition,
@@ -180,14 +154,12 @@ import {
   COMPANION_WAIT_MS,
   ISSUE_POLL_MS,
   queryNamed,
-  SHELL_WAIT_MS,
   waitForPrintedReveal,
   withDeadline,
 } from "@/lib/newspaper-document";
 import { ElectionEar } from "@/components/newspaper/ElectionEar";
 import { electionEar } from "@/lib/newspaper-election";
 import { TimesHold, TimesHoldShell } from "@/components/newspaper/TimesHold";
-import { clearEditorStamps, editEdition } from "@/lib/newspaper-editor";
 import { fetchWatchList, WATCH_PAGE_GAMES } from "@/lib/newspaper-watch";
 import WatchGuide from "@/components/newspaper/WatchGuide";
 import DayAhead from "@/components/newspaper/DayAhead";
@@ -215,10 +187,8 @@ import {
 } from "@/lib/newspaper-national";
 import { readTimesNationalNews } from "@/lib/newspaper-national-fetch";
 import {
-  buildGameWrapCards,
   buildTeamInfoboxes,
   collectWrapFeeds,
-  enrichWrapBodies,
   leaguePathFromEspn,
   playerHref,
   storyMatchesFavorite,
@@ -235,7 +205,6 @@ import {
   essentialsFromDesks,
   a1ComingUp,
   isA1Muted,
-  isFavoriteStory,
   isGameWrap,
   isRecapStory,
   isSingleGameRecap,
@@ -274,9 +243,9 @@ import {
   type LeagueSlateGame,
   type WireGame,
 } from "@/lib/newspaper-wire";
-import { fetchMlbPeopleByIds, fetchMlbPlayoffTree, type MlbPlayoffTree } from "@/lib/mlb";
+import { fetchMlbPlayoffTree, type MlbPlayoffTree } from "@/lib/mlb";
 import { fillMlbPlayoffPlaceholders } from "@/lib/newspaper-playoff-tree";
-import { fetchRssArticle, fetchRssFeed, fetchRssReads, markRssReadMany, type RssArticle } from "@/lib/rss";
+import { fetchRssFeed, fetchRssReads, markRssReadMany } from "@/lib/rss";
 import {
   DEFAULT_FAVORITES,
   fetchTeamDetail,
@@ -288,7 +257,8 @@ import {
   type TeamSnapshot,
 } from "@/lib/sports";
 import { cn } from "@/lib/utils";
-import { fetchYesterdayRecap } from "@/lib/yesterday-recap";
+import { prefersNewspaperHome } from "@/lib/newspaper-home";
+import { pageGeometry } from "@/lib/newspaper-page-size";
 
 /** Desk data is observed already rewritten to ESPN combiner thumbs. */
 function useQuery<
@@ -305,6 +275,18 @@ function useQuery<
     select: (data: TQueryFnData) =>
       rewriteEspnThumbs(select ? select(data) : (data as unknown as TData)) as TData,
   });
+}
+
+/** A desk as the edition filed it: read from the seeded cache, never fetched by the reader. */
+function useFiledQuery<
+  TQueryFnData = unknown,
+  TError = Error,
+  TData = TQueryFnData,
+  TQueryKey extends QueryKey = QueryKey,
+>(
+  options: Omit<UseQueryOptions<TQueryFnData, TError, TData, TQueryKey>, "enabled">,
+): UseQueryResult<TData, TError> {
+  return useQuery({ ...options, enabled: false });
 }
 
 /** How many stories get a full ESPN story pull rather than the wire stub. */
@@ -928,17 +910,17 @@ function Prose({
           {i === insetAt ? inset : null}
           {i === quoteAt && quote ? (
             <blockquote className="wsj-pull" style={tint(color)}>
-              <FitCopy cid={`${card.id}:q`} full={quote}>
+              <p>
                 {quote}
-              </FitCopy>
+              </p>
             </blockquote>
           ) : null}
           {dress && i > 0 && i % 5 === 0 ? (
-            <FitCopy cid={`${card.id}:p${i}`} full={p} className="wsj-runin">
+            <p className="wsj-runin">
               <b>{runIn(p)[0]}</b> <NamedText text={runIn(p)[1]} seen={seen} />
-            </FitCopy>
+            </p>
           ) : (
-            <FitCopy cid={`${card.id}:p${i}`} full={plainProsePara(card, p, i, drop)}>
+            <p>
               {i === 0 && drop
                 ? (() => {
                     const lead = recapDropLead(card.dateline, p);
@@ -963,7 +945,7 @@ function Prose({
                       );
                     })()
                   : <NamedText text={p} seen={seen} />}
-            </FitCopy>
+            </p>
           )}
         </Fragment>
       ))}
@@ -972,19 +954,6 @@ function Prose({
   );
 }
 
-function plainProsePara(card: GameWrapCard, p: string, i: number, drop?: boolean): string {
-  if (i !== 0) return p;
-  if (drop) {
-    const lead = recapDropLead(card.dateline, p);
-    if (!lead) return p;
-    return `${lead.letter}${lead.datelineRest != null ? `${lead.datelineRest} — ` : ""}${lead.body}`;
-  }
-  const split = splitApDateline(p);
-  const city = card.dateline || split.dateline;
-  return city ? `${city} — ${split.body}` : p;
-}
-
-/** The story's own words, pulled out large: a quotation if it has one, else a strong line. */
 function pullQuote(paras: string[]): string | null {
   const body = paras.slice(1).join(" ");
   const quotes = [...body.matchAll(/[“"]([^”"]{50,180})[”"]/g)].map((m) => m[1]!.trim());
@@ -1210,9 +1179,9 @@ function Story({
       <div className="wsj-story-copy">
         <Headline card={card} size={size} game={game} />
         {dek && (!recap || chrome === false) ? (
-          <FitCopy cid={`${card.id}:dek`} full={dek} className="wsj-dek">
+          <p className="wsj-dek">
             {dek}
-          </FitCopy>
+          </p>
         ) : null}
         {recap ? null : <ScoreBug card={card} />}
         <Byline card={card} />
@@ -1295,9 +1264,9 @@ function Brief({
         </h3>
         <ScoreBug card={card} />
         {dek ? (
-          <FitCopy cid={`${card.id}:brief-dek`} full={dek} className="wsj-brief-dek">
+          <p className="wsj-brief-dek">
             {dek}
-          </FitCopy>
+          </p>
         ) : null}
         <ReadOn card={card} label="Click for full story" />
       </div>
@@ -3362,9 +3331,9 @@ function WrapBrief({
       </h3>
       {recap ? <RecapChrome card={card} game={game} compact /> : <ScoreBug card={card} />}
       {brief ? (
-        <FitCopy cid={`${card.id}:wrap`} full={brief} className="tt-wrap-copy">
+        <p className="tt-wrap-copy">
           {brief}
-        </FitCopy>
+        </p>
       ) : null}
       {recap ? null : <WrapPlayers card={card} />}
       {card.related?.length ? (
@@ -3564,9 +3533,9 @@ function ScoresDesk({
             )}
           </h2>
           {featured.recap?.blurb ? (
-            <FitCopy cid={`${card?.id ?? featured.id}:dek`} full={featured.recap.blurb} className="wsj-dek">
+            <p className="wsj-dek">
               <NamedText text={featured.recap.blurb} />
-            </FitCopy>
+            </p>
           ) : null}
           {showFeaturePhoto ? <ScoreHero game={featured} size="md" /> : null}
           <Linescore game={featured} />
@@ -5000,14 +4969,13 @@ function ScoutBand({ item, onTurn, deskFolio }: { item: MoItem; onTurn: (folio: 
 
 /* ───────────────────────── pager ───────────────────────── */
 
-/** Folios this close to the one in view stay painted and get their art fetched ahead of the swipe. */
+/** Folios this close to the one in view are mounted, so a swipe always lands on a printed page. */
 const NEAR_PAGES = 2;
 const NO_STORIES: GameWrapCard[] = [];
+const NO_NIGHTS: PlayerNight[] = [];
 
 /** The folio in view. Only near-page consumers read it, so turning a page doesn't re-render the edition. */
 const PagerIndexContext = createContext(0);
-/** Folios already filled after A1. A1 is in the set from the start. */
-const FolioFillContext = createContext<ReadonlySet<number>>(new Set([0]));
 
 const MemoSportFront = memo(SportFront);
 
@@ -5020,21 +4988,9 @@ const FolioBody = memo(function FolioBody({ render }: { render: () => ReactNode 
   return render();
 });
 
-function FolioGate({ index, onShow }: { index: number; onShow: () => void }) {
-  const current = useContext(PagerIndexContext);
-  const filled = useContext(FolioFillContext);
-  const want =
-    index === 0 || filled.has(index) || (current !== 0 && Math.abs(index - current) <= NEAR_PAGES);
-  useLayoutEffect(() => {
-    if (want) onShow();
-  }, [want, onShow]);
-  return null;
-}
-
 /**
- * A1 mounts with the first paint. Later folios fill backward in idle time,
- * or immediately when the reader turns to them. Once shown, the body stays
- * mounted — a pager-index change must not remount it.
+ * One screen of paper. It mounts when the reader comes within NEAR_PAGES of
+ * it and then stays mounted, so turning back never re-sets a page.
  */
 const FolioSlot = memo(function FolioSlot({
   index,
@@ -5047,65 +5003,35 @@ const FolioSlot = memo(function FolioSlot({
   kind: string;
   render: () => ReactNode;
 }) {
-  const [shown, setShown] = useState(index === 0);
-  const show = useCallback(() => setShown(true), []);
+  const current = useContext(PagerIndexContext);
+  const [shown, setShown] = useState(false);
+  const near = Math.abs(index - current) <= NEAR_PAGES;
+  if (near && !shown) setShown(true);
   return (
     <section className="wsj-page" aria-label={`Page ${folio}`} data-kind={kind} data-folio={folio}>
-      <FolioGate index={index} onShow={show} />
       <div className="wsj-fit">
-        <FittedSheet>{shown ? <FolioBody render={render} /> : null}</FittedSheet>
+        <div className="wsj-sheet">{shown || near ? <FolioBody render={render} /> : null}</div>
       </div>
     </section>
   );
 });
 
-function prefetchNearArt(pager: HTMLElement, index: number) {
-  const sheets = pager.children;
-  for (let i = 0; i < sheets.length; i++) {
-    if (Math.abs(i - index) > NEAR_PAGES) continue;
-    const sheet = sheets[i] as HTMLElement;
-    for (const img of sheet.querySelectorAll("img")) prefetchSrc(img.currentSrc || img.src);
-  }
-}
-
-/** Fetch the rest of the edition's art in idle time, a few at a time, so far folios open already printed. */
-function warmEdition(pager: HTMLElement, cap = 4): () => void {
-  const conn = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
-  if (conn?.saveData || /(^|-)2g$/.test(conn?.effectiveType ?? "")) return () => {};
-  const hasIdle = typeof window.requestIdleCallback === "function";
-  const idle = (cb: () => void) => (hasIdle ? window.requestIdleCallback(cb, { timeout: 2_000 }) : window.setTimeout(cb, 200));
-  const cancelIdle = (id: number) => (hasIdle ? window.cancelIdleCallback(id) : window.clearTimeout(id));
-  let stopped = false;
-  let inflight = 0;
-  let handle = 0;
-  const seen = new Set<string>();
-  const pump = () => {
-    handle = 0;
-    if (stopped) return;
-    for (const img of pager.querySelectorAll<HTMLImageElement>("img[src]")) {
-      if (inflight >= cap) break;
-      const src = img.currentSrc || img.src;
-      if (!src || seen.has(src) || img.complete) continue;
-      seen.add(src);
-      prefetchSrc(src);
-      inflight++;
-      window.setTimeout(() => {
-        inflight--;
-        schedule();
-      }, 800);
-    }
-  };
-  const schedule = () => {
-    if (!stopped && !handle) handle = idle(pump);
-  };
-  schedule();
-  return () => {
-    stopped = true;
-    if (handle) cancelIdle(handle);
-  };
-}
-
 /* ───────────────────────── page ───────────────────────── */
+
+type Companions = {
+  dayAhead: DaySchedule | null;
+  national: NationalDesk | null;
+  beez: BeezDesk | null;
+  races: RaceBriefsDesk | null;
+};
+
+/** The edition on the stand: stories as filed, companions read with it. Never re-set after it opens. */
+type OpenEdition = {
+  id: string;
+  stories: GameWrapCard[];
+  companions: Companions;
+  printedAt?: string;
+};
 
 function openingCandidateId(): string {
   if (typeof window === "undefined") return pressEdition().id;
@@ -5130,8 +5056,73 @@ function asStoredNational(value: unknown): NationalDesk | null {
   return asNationalDesk(value as Parameters<typeof asNationalDesk>[0]);
 }
 
-function asStoredBeez(value: unknown): BeezDesk | null {
-  return asBeezDesk(value);
+function asStoredRaces(value: unknown): RaceBriefsDesk | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as RaceBriefsDesk;
+  return typeof row.editionDate === "string" && Array.isArray(row.races) && row.races.length ? row : null;
+}
+
+/** A cached copy is complete once it carries the boards; older caches held only the light desks. */
+function hasAllDesks(issue: PrintedIssue): boolean {
+  return issue.queries.some((q) => queryDeskName(q) === "tt-board");
+}
+
+function storedCompanions(issue: PrintedIssue | null): Companions | null {
+  const c = issue?.companions as Partial<Record<keyof Companions, unknown>> | undefined;
+  if (!c || !("races" in c)) return null;
+  return {
+    dayAhead: asStoredSchedule(c.dayAhead),
+    national: asStoredNational(c.national),
+    beez: asBeezDesk(c.beez),
+    races: asStoredRaces(c.races),
+  };
+}
+
+function openedFromCache(issue: PrintedIssue | null, id: string): OpenEdition | null {
+  if (!issue || issue.id !== id || !hasAllDesks(issue)) return null;
+  const companions = storedCompanions(issue);
+  if (!companions) return null;
+  return { id, stories: issue.stories as GameWrapCard[], companions, printedAt: issue.printedAt };
+}
+
+/**
+ * Everything the edition prints, read at once: stories, desks and companions
+ * in parallel. The browser never sets copy; a missing edition returns null and
+ * the stand moves to the newest one filed.
+ */
+async function readEdition(
+  id: string,
+  userId: string | null,
+  latest: boolean,
+): Promise<{ issue: PrintedIssue; companions: Companions; fresh: boolean } | null> {
+  const local = await readLocalIssue(id, userId).catch(() => null);
+  const cached = local?.id === id ? local : null;
+  const stored = storedCompanions(cached);
+  if (cached && stored && hasAllDesks(cached)) return { issue: cached, companions: stored, fresh: false };
+  const date = scheduleDateFor(id);
+  const companion = <T,>(task: () => Promise<T | null>) =>
+    withDeadline(task().catch(() => null), COMPANION_WAIT_MS, null);
+  const [shell, queries, dayAhead, national, beez, races] = await Promise.all([
+    cached ?? readRemoteIssueShell(id).catch(() => null),
+    cached && hasAllDesks(cached) ? Promise.resolve(cached.queries) : readRemoteQueries(id).catch(() => null),
+    date ? companion(() => fetchDaySchedule(date)) : Promise.resolve(null),
+    asStoredNational(peekProofIssue(id)?.companions?.national)
+      ? Promise.resolve(asStoredNational(peekProofIssue(id)?.companions?.national))
+      : companion(() => readTimesNationalNews(id)),
+    companion(() => readTimesBeez()),
+    date ? companion(() => fetchRaceBriefs(date)) : Promise.resolve(null),
+  ]);
+  if (!shell || (!cached && !isIssueWithinLookback(shell))) return null;
+  let desks = mergeQueries(shell.queries, queries ?? []);
+  if (latest && queryNamed(desks, "tt-weather-marshfield") == null) {
+    const wx = await companion(() => fetchMarshfieldWeather());
+    if (wx) desks = [...desks, { key: [id, "tt-weather-marshfield"], data: wx }];
+  }
+  return {
+    issue: { ...shell, queries: desks },
+    companions: { dayAhead, national, beez, races },
+    fresh: true,
+  };
 }
 
 // The flat (page-image) paper is retired. Every /newspaper link opens the live reader.
@@ -5150,8 +5141,9 @@ function NewspaperDesk() {
   const nationalSample = import.meta.env.DEV && params.get("national_sample") === "1";
   const racesSample = import.meta.env.DEV && params.get("races_sample") === "1";
   const askedEdition = parsePressId(params.get("edition") ?? "")?.id ?? null;
+  const [doc, setDoc] = useState<OpenEdition | null>(() => openedFromCache(opened, openingPressId));
   const seeded = useRef<string | null>(null);
-  if (opened && seeded.current !== opened.id) {
+  if (opened && doc?.id === opened.id && seeded.current !== opened.id) {
     for (const q of opened.queries) queryClient.setQueryData(q.key, q.data);
     seeded.current = opened.id;
   }
@@ -5164,28 +5156,16 @@ function NewspaperDesk() {
   const pressId = viewId;
   const press = viewing;
   const latestId = recent?.[0]?.id ?? clockPress.id;
-  const [docPhase, setDocPhase] = useState<"boot" | "document" | "press">(() =>
-    opened?.id === openingPressId ? "document" : "boot",
-  );
-  const [lockedCopy, setLockedCopy] = useState<{ id: string; stories: GameWrapCard[] } | null>(() =>
-    opened?.id === openingPressId ? { id: opened.id, stories: opened.stories as GameWrapCard[] } : null,
-  );
-  const [companions, setCompanions] = useState<{
-    id: string;
-    dayAhead: DaySchedule | null;
-    national: NationalDesk | null;
-    beez: BeezDesk | null;
-    printedAt?: string;
-  } | null>(null);
   const [revealed, setRevealed] = useState(false);
   const [savedOpen, setSavedOpen] = useState(false);
-  const [newerEdition, setNewerEdition] = useState<string | null>(null);
+  const [missing, setMissing] = useState(false);
   const revealFor = useRef<string | null>(null);
   const layout = useMemo(() => loadSportsLayout(), []);
   const teamFavs = useMemo(
     () => visibleFavorites(layout).filter((f) => f.kind === "team"),
     [layout],
   );
+  const solo = params.get("solo") === "1" || prefersNewspaperHome();
 
   // Three presses a day. A slept iPad often drops the long timer and never
   // fires visibilitychange, so the stand also checks on focus, pageshow, and
@@ -5262,8 +5242,11 @@ function NewspaperDesk() {
     };
   }, []);
 
+  // Open the newest filed edition. If the clock's slot is still on the press,
+  // the last one filed stays up; a newer one only ever shows as the pill.
   useEffect(() => {
     if (!recent) return;
+    if (doc?.id === viewId) return;
     setViewId((current) => {
       if (recent.some((row) => row.id === current)) return current;
       return recent[0]?.id ?? current;
@@ -5275,19 +5258,15 @@ function NewspaperDesk() {
         setParams(next, { replace: true });
       }
     }
-  }, [recent, askedEdition, params, setParams]);
+  }, [recent, askedEdition, params, setParams, doc?.id, viewId]);
 
-  useEffect(() => {
-    const newest = recent?.[0]?.id;
-    setNewerEdition(newest && newest !== viewId ? newest : null);
-  }, [recent, viewId]);
+  const newerEdition = revealed && recent?.[0]?.id && recent[0].id !== viewId && !askedEdition ? recent[0].id : null;
 
   const selectEdition = useCallback(
     (id: string) => {
       if (id === viewId) return;
       setRevealed(false);
       revealFor.current = null;
-      setNewerEdition(null);
       setViewId(id);
       const next = new URLSearchParams(params);
       if (id === latestId) next.delete("edition");
@@ -5297,247 +5276,32 @@ function NewspaperDesk() {
     [viewId, params, setParams, latestId],
   );
 
-  // Stories and light desks first so A1 can print. Heavy desks (wrap bodies,
-  // raw board, league news) arrive after first paint or when a folio / reader asks.
-  const loadedRef = useRef<string | null>(null);
-  const latestRef = useRef(latestId);
-  latestRef.current = latestId;
-  const pendingHeavyRef = useRef<PrintedIssue["queries"]>([]);
   const cacheUser = user?.id ?? readCacheUserId();
   const cacheUserRef = useRef(cacheUser);
   cacheUserRef.current = cacheUser;
-  const dayRef = useRef(day);
-  dayRef.current = day;
-  const teamFavsRef = useRef(teamFavs);
-  teamFavsRef.current = teamFavs;
-  const clockPressIdRef = useRef(clockPress.id);
-  clockPressIdRef.current = clockPress.id;
-  const seedQueries = useCallback(
-    (queries: PrintedIssue["queries"], mode: "light" | "all") => {
-      const { light, heavy } = splitQueries(queries);
-      for (const q of mode === "all" ? queries : light) queryClient.setQueryData(q.key, q.data);
-      pendingHeavyRef.current = mode === "all" ? [] : heavy;
-    },
-    [queryClient],
-  );
-  const releaseHeavy = useCallback(
-    (names?: string[]) => {
-      const keep: PrintedIssue["queries"] = [];
-      for (const q of pendingHeavyRef.current) {
-        const name = queryDeskName(q);
-        if (!names || (name && names.includes(name))) queryClient.setQueryData(q.key, q.data);
-        else keep.push(q);
-      }
-      pendingHeavyRef.current = keep;
-    },
-    [queryClient],
-  );
+  const latestRef = useRef(latestId);
+  latestRef.current = latestId;
 
   useEffect(() => {
-    if (loadedRef.current === pressId) return;
+    if (doc?.id === pressId) return;
     let stale = false;
-    const fallToPress = () => {
-      if (stale || loadedRef.current === pressId || pressId !== clockPressIdRef.current) return;
-      setLockedCopy((prev) => (prev?.id === pressId ? prev : null));
-      setDocPhase("press");
-      loadedRef.current = pressId;
-    };
-    const bootEscape = window.setTimeout(fallToPress, SHELL_WAIT_MS + COMPANION_WAIT_MS);
+    setMissing(false);
     void (async () => {
-      const apply = (
-        issue: PrintedIssue,
-        extra: { dayAhead: DaySchedule | null; national: NationalDesk | null; beez: BeezDesk | null },
-        desks: "light" | "all",
-        opts?: { persist?: boolean },
-      ) => {
-        seedQueries(issue.queries, desks);
-        // A1's lead is last night's favorite result. It lives on tt-board.
-        releaseHeavy(["tt-board"]);
-        const date = scheduleDateFor(issue.id);
-        if (date) queryClient.setQueryData(["tt-day-ahead", date], extra.dayAhead);
-        queryClient.setQueryData([issue.id, "tt-national"], extra.national);
-        queryClient.setQueryData(["tt-beez"], extra.beez);
-        setLockedCopy({ id: issue.id, stories: issue.stories as GameWrapCard[] });
-        setCompanions({
-          id: issue.id,
-          dayAhead: extra.dayAhead,
-          national: extra.national,
-          beez: extra.beez,
-          printedAt: issue.printedAt,
-        });
-        setDocPhase("document");
-        loadedRef.current = issue.id;
-        if (opts?.persist !== false) {
-          void writeLocalIssue({ ...issue, companions: extra }, cacheUserRef.current);
-        }
-      };
-
-      const emptyCompanions = { dayAhead: null, national: null, beez: null };
-
-      /** A1 from the story prefix, then the rest of the folio after a paint. */
-      const paintFrontFirst = async (
-        issue: PrintedIssue,
-        extra: { dayAhead: DaySchedule | null; national: NationalDesk | null; beez: BeezDesk | null },
-      ) => {
-        const n = frontPrefixLength(issue.stories);
-        if (n < issue.stories.length) {
-          apply({ ...issue, stories: issue.stories.slice(0, n), queries: [] }, extra, "light", { persist: false });
-          await yieldToPaint();
-          if (stale) return;
-          startTransition(() => apply(issue, extra, "light"));
-          return;
-        }
-        apply(issue, extra, "light");
-      };
-
-      const loadCompanions = (cached?: {
-        dayAhead?: DaySchedule | null;
-        national?: NationalDesk | null;
-        beez?: BeezDesk | null;
-      }) => {
-        const date = scheduleDateFor(pressId);
-        const plantedNat = asStoredNational(peekProofIssue(pressId)?.companions?.national);
-        return Promise.all([
-          cached?.dayAhead ??
-            (date
-              ? withDeadline(fetchDaySchedule(date).catch(() => null), COMPANION_WAIT_MS, null)
-              : Promise.resolve(null)),
-          cached?.national ??
-            plantedNat ??
-            withDeadline(readTimesNationalNews(pressId).catch(() => null), COMPANION_WAIT_MS, null),
-          cached?.beez ?? withDeadline(readTimesBeez().catch(() => null), COMPANION_WAIT_MS, null),
-        ] as const);
-      };
-
-      const attachLiveDesks = async (issue: PrintedIssue) => {
-        const isLatest = latestRef.current === pressId;
-        let queries = issue.queries;
-        if (isLatest && queryNamed(queries, "tt-weather-marshfield") == null) {
-          const wx = await withDeadline(fetchMarshfieldWeather().catch(() => null), COMPANION_WAIT_MS, null);
-          if (wx) queries = [...queries, { key: [pressId, "tt-weather-marshfield"], data: wx }];
-        }
-        if (isLatest && queryNamed(queries, "tt-watch") == null) {
-          const watch = await withDeadline(
-            fetchWatchList(dayRef.current, { limit: WATCH_PAGE_GAMES, favorites: teamFavsRef.current }).catch(() => []),
-            COMPANION_WAIT_MS,
-            [],
-          );
-          queries = [...queries, { key: [pressId, "tt-watch", dayRef.current], data: watch }];
-        }
-        return { ...issue, queries };
-      };
-
-      const finishDesks = (issue: PrintedIssue, extra: { dayAhead: DaySchedule | null; national: NationalDesk | null; beez: BeezDesk | null }) => {
-        seedQueries(issue.queries, "light");
-        releaseHeavy(["tt-board"]);
-        void writeLocalIssue({ ...issue, companions: extra }, cacheUserRef.current);
-        const idle = window.requestIdleCallback?.bind(window);
-        const run = () => {
-          if (loadedRef.current === issue.id) seedQueries(issue.queries, "all");
-        };
-        if (idle) idle(run, { timeout: 4_000 });
-        else window.setTimeout(run, 800);
-      };
-
-      const local = await withDeadline(readLocalIssue(pressId, cacheUserRef.current).catch(() => null), COMPANION_WAIT_MS, null);
+      const got = await readEdition(pressId, cacheUserRef.current, latestRef.current === pressId);
       if (stale) return;
-      if (local?.id === pressId) {
-        const cachedDay = asStoredSchedule(local.companions?.dayAhead);
-        const cachedNat = asStoredNational(local.companions?.national);
-        const cachedBeez = asStoredBeez(local.companions?.beez);
-        await paintFrontFirst(local, {
-          dayAhead: cachedDay,
-          national: cachedNat,
-          beez: cachedBeez,
-        });
-        if (stale) return;
-        void loadCompanions({
-          dayAhead: cachedDay,
-          national: cachedNat,
-          beez: cachedBeez,
-        }).then(([dayAhead, national, beez]) => {
-          if (stale) return;
-          setCompanions((prev) =>
-            prev?.id === pressId
-              ? {
-                  ...prev,
-                  dayAhead: cachedDay ?? dayAhead,
-                  national: cachedNat ?? national,
-                  beez: cachedBeez ?? beez,
-                }
-              : prev,
-          );
-        });
-        const missingHeavy = !local.queries.some((q) => isHeavyDesk(queryDeskName(q)));
-        if (missingHeavy) {
-          void readRemoteQueries(pressId)
-            .then(async (queries) => {
-              if (loadedRef.current !== pressId || !queries) return;
-              const filled = await attachLiveDesks({ ...local, queries: mergeQueries(local.queries, queries) });
-              if (loadedRef.current !== pressId) return;
-              finishDesks(filled, {
-                dayAhead: cachedDay,
-                national: cachedNat,
-                beez: cachedBeez,
-              });
-            })
-            .catch(() => {});
-        } else {
-          finishDesks(local, {
-            dayAhead: cachedDay,
-            national: cachedNat,
-            beez: cachedBeez,
-          });
-        }
+      if (!got) {
+        setMissing(true);
         return;
       }
-
-      let paintedFront = false;
-      const shellP = readRemoteIssueFrontFirst(pressId, (partial) => {
-        if (stale || paintedFront || !isIssueWithinLookback(partial)) return;
-        paintedFront = true;
-        apply(partial, emptyCompanions, "light", { persist: false });
-      }).catch(() => null);
-      let shell = await withDeadline(shellP, SHELL_WAIT_MS, null);
-      if (!shell) shell = await shellP;
-      if (stale) return;
-      const opened = shell;
-      if (opened?.id === pressId && isIssueWithinLookback(opened)) {
-        if (!paintedFront) {
-          apply(opened, emptyCompanions, "light", { persist: false });
-        } else {
-          startTransition(() => {
-            setLockedCopy({ id: opened.id, stories: opened.stories as GameWrapCard[] });
-          });
-        }
-        const queriesP = readRemoteQueries(pressId).catch(() => null);
-        const [dayAhead, national, beez] = await loadCompanions();
-        if (stale || loadedRef.current !== pressId) return;
-        setCompanions({
-          id: opened.id,
-          dayAhead,
-          national,
-          beez,
-          printedAt: opened.printedAt,
-        });
-        const queries = await queriesP;
-        if (loadedRef.current !== pressId) return;
-        const filled = await attachLiveDesks({
-          ...opened,
-          queries: mergeQueries(opened.queries, queries ?? []),
-        });
-        if (loadedRef.current !== pressId) return;
-        finishDesks(filled, { dayAhead, national, beez });
-        return;
-      }
-
-      fallToPress();
+      const { issue, companions, fresh } = got;
+      for (const q of issue.queries) queryClient.setQueryData(q.key, q.data);
+      setDoc({ id: issue.id, stories: issue.stories as GameWrapCard[], companions, printedAt: issue.printedAt });
+      if (fresh) void writeLocalIssue({ ...issue, companions }, cacheUserRef.current);
     })();
     return () => {
       stale = true;
-      window.clearTimeout(bootEscape);
     };
-  }, [pressId, queryClient, seedQueries]);
+  }, [pressId, doc?.id, queryClient]);
 
   useEffect(() => {
     void registerTimesWorker().then(async () => {
@@ -5548,16 +5312,6 @@ function NewspaperDesk() {
   }, []);
 
   useEffect(() => {
-    const onNeed = (event: Event) => {
-      const names = (event as CustomEvent<string[]>).detail;
-      if (Array.isArray(names) && names.length) releaseHeavy(names);
-      else releaseHeavy(heavyDesksForReader());
-    };
-    window.addEventListener("tt-need-desks", onNeed);
-    return () => window.removeEventListener("tt-need-desks", onNeed);
-  }, [releaseHeavy]);
-
-  useEffect(() => {
     if (!user?.id) return;
     const onReady = (row: FiledIssueMeta) => {
       setRecent((prev) => filterRecentFiledIssues([row, ...(prev ?? [])]));
@@ -5566,19 +5320,6 @@ function NewspaperDesk() {
     const stop = subscribeReadyIssues(onReady);
     return () => stop();
   }, [user?.id]);
-
-  useEffect(() => {
-    const newest = recent?.[0]?.id;
-    if (!newest || newest === viewId) return;
-    let cancel = false;
-    void prefetchFiledEdition(newest, cacheUser).then((issue) => {
-      if (cancel || !issue) return;
-      if (!askedEdition) selectEdition(newest);
-    });
-    return () => {
-      cancel = true;
-    };
-  }, [recent, viewId, askedEdition, cacheUser, selectEdition]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -5592,14 +5333,6 @@ function NewspaperDesk() {
 
   const pagerRef = useRef<HTMLDivElement>(null);
   const [pageIndex, setPageIndex] = useState(0);
-  const [fillFor, setFillFor] = useState(pressId);
-  const [filled, setFilled] = useState<ReadonlySet<number>>(() => new Set([0]));
-  if (fillFor !== pressId) {
-    setFillFor(pressId);
-    setFilled(new Set([0]));
-  }
-  const filledRef = useRef(filled);
-  filledRef.current = filled;
   const pageIndexRef = useRef(0);
   pageIndexRef.current = pageIndex;
   const restoringRef = useRef(false);
@@ -5609,111 +5342,33 @@ function NewspaperDesk() {
     setPageIndex(idx);
   }, []);
 
+  // The page is the window. Only a window change (rotation, Split View) resizes it.
   useLayoutEffect(() => {
     const el = pagerRef.current;
     if (!el) return;
-    // Probed once. Calling this on every image/font used to append a DOM node
-    // and force layout. Width fit stays min(1, w / --tt-page-w).
-    const transformFit = sheetNeedsTransformFit();
-    const measured = new WeakMap<HTMLElement, { layoutH: number; fit: number }>();
+    let lastW = 0;
     const apply = () => {
       const w = el.clientWidth;
       const h = el.clientHeight;
       if (w < 40 || h < 40) return;
-      const root = el.closest(".newspaper-root") ?? el;
-      const cs = getComputedStyle(root);
-      // LOCKED: width-only fit at --tt-page-w 1032. Do not add height terms; owner requirement.
-      const pageW = parseFloat(cs.getPropertyValue("--tt-page-w")) || 1032;
-      const fit = pageFit(w, pageW);
-      el.style.setProperty("--tt-fit", String(fit));
-      // Height is the copy. Do not grow the sheet to the viewport or the 1290 fallback.
-      el.style.setProperty("--tt-page-min", "0px");
-      el.dataset.fit = "1";
-      // iPad: CSS zoom + sticky desyncs the columns (rail jumps, left goes white).
-      // Keep the same fit math; switch that device to a height-corrected scale wrapper.
-      const useTransform = fit < 1 && transformFit;
-      el.classList.toggle("tt-fit-scaled", fit < 1);
-      el.classList.toggle("tt-fit-transform", useTransform);
-      for (const page of el.querySelectorAll<HTMLElement>(".wsj-page")) {
-        const fitBox = page.querySelector<HTMLElement>(".wsj-fit");
-        const sheet = page.querySelector<HTMLElement>(".wsj-sheet");
-        if (!fitBox || !sheet || sheet.childElementCount === 0) continue;
-        const layoutH = sheet.offsetHeight;
-        const prev = measured.get(sheet);
-        if (!fitMeasureNeeded(prev?.layoutH ?? 0, layoutH, prev?.fit ?? -1, fit)) continue;
-        applyScaledFitBox(fitBox, sheet, pageW, fit, useTransform);
-        measured.set(sheet, { layoutH: sheet.offsetHeight, fit });
-      }
-    };
-    let raf = 0;
-    const schedule = () => {
-      if (raf) cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => {
-        raf = 0;
-        apply();
-      });
+      const g = pageGeometry(w, h);
+      el.style.setProperty("--tt-s", String(g.scale));
+      el.style.setProperty("--tt-page-h", `${g.height}px`);
+      if (lastW && lastW !== w) el.scrollTo({ left: pageIndexRef.current * w, behavior: "instant" });
+      lastW = w;
     };
     apply();
-    const ro = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const node = entry.target;
-        if (!(node instanceof HTMLElement)) continue;
-        if (node === el) {
-          schedule();
-          return;
-        }
-        const prev = measured.get(node);
-        const layoutH = node.offsetHeight;
-        if (!prev || prev.layoutH !== layoutH) {
-          schedule();
-          return;
-        }
-      }
-    });
+    const ro = new ResizeObserver(apply);
     ro.observe(el);
-    const seen = new Set<Element>();
-    const watchNewSheets = (records: MutationRecord[]) => {
-      let added = false;
-      for (const rec of records) {
-        for (const node of rec.addedNodes) {
-          if (!(node instanceof Element)) continue;
-          const sheets = node.classList.contains("wsj-sheet")
-            ? [node]
-            : [...node.querySelectorAll(".wsj-sheet")];
-          for (const sheet of sheets) {
-            if (seen.has(sheet)) continue;
-            seen.add(sheet);
-            ro.observe(sheet);
-            added = true;
-          }
-        }
-      }
-      if (added) schedule();
-    };
-    for (const sheet of el.querySelectorAll(".wsj-sheet")) {
-      seen.add(sheet);
-      ro.observe(sheet);
-    }
-    const mo = new MutationObserver(watchNewSheets);
-    mo.observe(el, { childList: true, subtree: true });
-    // Image load and font ready used to remeasure even when the sheet height
-    // did not change, clearing transform for a frame. ResizeObserver covers a
-    // real height change; apply() then skips an unchanged layout height.
-    void document.fonts?.ready.then(() => schedule());
-    return () => {
-      if (raf) cancelAnimationFrame(raf);
-      ro.disconnect();
-      mo.disconnect();
-    };
-  }, [docPhase]);
+    return () => ro.disconnect();
+  }, []);
+
+  const docReady = doc?.id === pressId;
+  const companions = docReady ? doc.companions : null;
 
   const favKeys = teamFavs.map((t) => t.key).join(",");
-  // "press" is the only time the desks go out for copy. A filed edition just opens.
-  const pressing = docPhase === "press";
-
-  const teamSnaps = useQuery({
+  const teamSnaps = useFiledQuery({
     queryKey: [pressId, "tt-team-snaps", day, favKeys],
-    enabled: pressing,
     queryFn: async () =>
       Promise.all(
         teamFavs.map(async (fav) => {
@@ -5741,7 +5396,7 @@ function NewspaperDesk() {
     refetchOnReconnect: false,
   });
 
-  const teamDetailsQ = useQuery({
+  const teamDetailsQ = useFiledQuery({
     queryKey: [pressId, "tt-team-details", day, favKeys],
     queryFn: async () => {
       const rows = await Promise.all(
@@ -5756,40 +5411,29 @@ function NewspaperDesk() {
       );
       return rows.filter(Boolean) as { fav: SportsFavorite; detail: TeamDetail }[];
     },
-    enabled: pressing && teamFavs.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
 
-  const wireQ = useQuery({
+  const wireQ = useFiledQuery({
     queryKey: [pressId, "tt-wire", day, favKeys],
     queryFn: async () => {
       const wire = await fetchNewspaperWire({ favs: teamFavs, day, pressId });
       const games = await enrichWireStories(wire.games, DEEP_STORIES);
       return { ...wire, games };
     },
-    enabled: pressing && teamFavs.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
 
-  const recap = useQuery({
-    queryKey: [pressId, "newspaper-yesterday-recap", day, user?.id ?? null],
-    enabled: pressing,
-    queryFn: () => fetchYesterdayRecap({ layout, userId: user?.id }),
-    staleTime: Infinity,
-    gcTime: 20 * 60 * 60_000,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  });
 
   const wrapFeedUrls = useMemo(() => wrapFeedsForFavorites(teamFavs), [teamFavs]);
 
-  const wrapsQ = useQuery({
+  const wrapsQ = useFiledQuery({
     queryKey: [pressId, "tt-wraps", day, wrapFeedUrls.join("|")],
     queryFn: async () => {
       const feeds = await Promise.all(
@@ -5804,7 +5448,6 @@ function NewspaperDesk() {
       );
       return collectWrapFeeds(feeds, teamFavs);
     },
-    enabled: pressing && wrapFeedUrls.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -5817,45 +5460,7 @@ function NewspaperDesk() {
   );
 
   const wrapPack = wrapsQ.data as { wraps?: MatchedWrap[]; athletic?: GameWrapCard[] } | MatchedWrap[] | undefined;
-  const wrapHits = Array.isArray(wrapPack) ? wrapPack : Array.isArray(wrapPack?.wraps) ? wrapPack.wraps : [];
   const athleticCards = Array.isArray(wrapPack) ? undefined : wrapPack?.athletic;
-
-  const teamCards = useMemo(
-    () =>
-      buildGameWrapCards({
-        favs: teamFavs,
-        details: teamDetailsQ.data ?? [],
-        recapGames: recap.data?.games ?? [],
-        wraps: wrapHits ?? [],
-        recapDate: recap.data?.date,
-      }),
-    [teamFavs, teamDetailsQ.data, recap.data, wrapHits],
-  );
-
-  const enrichedQ = useQuery({
-    queryKey: [
-      pressId,
-      "tt-wrap-bodies",
-      day,
-      teamCards.map((c) => `${c.id}:${c.gameId}`).join("|"),
-    ],
-    queryFn: () => enrichWrapBodies(teamCards, teamFavs),
-    enabled: pressing && teamCards.length > 0,
-    staleTime: Infinity,
-    gcTime: 20 * 60 * 60_000,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  });
-
-  const newsQ = useQuery({
-    queryKey: [pressId, "tt-news", day, favKeys],
-    queryFn: () => fetchTeamArticles(teamFavs, pressId),
-    enabled: pressing && teamFavs.length > 0,
-    staleTime: Infinity,
-    gcTime: 20 * 60 * 60_000,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  });
 
   const clubsRaw = useMemo<ClubDesk[]>(
     () =>
@@ -5923,137 +5528,13 @@ function NewspaperDesk() {
 
   const sportPaths = useMemo(() => sportPathsOf(teamFavs), [teamFavs]);
 
-  const leagueNewsQ = useQuery({
-    queryKey: [pressId, "tt-league-news", day, sportPaths.join("|")],
-    queryFn: () => fetchLeagueArticles(sportPaths, pressId),
-    enabled: pressing && sportPaths.length > 0,
-    staleTime: Infinity,
-    gcTime: 20 * 60 * 60_000,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  });
 
-  const rawStories = useMemo(
-    () =>
-      gatherStories({
-        wire: wireQ.data,
-        favs: teamFavs,
-        details: teamDetailsQ.data ?? [],
-        enriched: enrichedQ.data,
-        teamCards,
-        news: newsQ.data,
-        leagueNews: leagueNewsQ.data,
-        athletic: athleticCards,
-      }),
-    [wireQ.data, teamFavs, teamDetailsQ.data, enrichedQ.data, teamCards, newsQ.data, leagueNewsQ.data, athleticCards],
-  );
-
-  const prevPress = previousPressId(pressId);
-  const carriedIssueQ = useQuery({
-    queryKey: ["tt-prev-issue", prevPress],
-    queryFn: () => readRemoteIssue(prevPress!),
-    enabled: pressing && Boolean(prevPress),
-    staleTime: Infinity,
-    gcTime: 20 * 60 * 60_000,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  });
-  const readsQ = useQuery({
-    queryKey: ["rss-reads", user?.id ?? "anon"],
-    queryFn: () => fetchRssReads(),
-    enabled: pressing && Boolean(user?.id),
-    staleTime: 5 * 60_000,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  });
-
-  // Club feeds send a headline and a link. Dispatch's extractor sets the story
-  // (and its photo) so Section A prints copy instead of a crest.
-  const extractUrls = useMemo(() => urlsToExtract(rawStories), [rawStories]);
-  const extractsQ = useQuery({
-    queryKey: [pressId, "tt-extracts", day, extractUrls.join("|")],
-    queryFn: async () => {
-      const out: Record<string, RssArticle> = {};
-      let next = 0;
-      const worker = async () => {
-        while (next < extractUrls.length) {
-          const url = extractUrls[next++]!;
-          try {
-            out[url] = await queryClient.fetchQuery({
-              queryKey: [pressId, "rss-article-v3", url],
-              queryFn: () => fetchRssArticle(url),
-              staleTime: Infinity,
-              gcTime: 20 * 60 * 60_000,
-            });
-          } catch {
-            /* the brief runs as filed */
-          }
-        }
-      };
-      await Promise.all([worker(), worker(), worker()]);
-      return out;
-    },
-    enabled: pressing && extractUrls.length > 0,
-    staleTime: Infinity,
-    gcTime: 20 * 60 * 60_000,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  });
-
-  const filedStories = useMemo(
-    () =>
-      fileEditionStories({
-        fresh: fileExtracts(rawStories, extractsQ.data),
-        carried: (carriedIssueQ.data?.stories ?? []) as GameWrapCard[],
-        readKeys: new Set(readsQ.data ?? []),
-        pressId,
-      }),
-    [rawStories, extractsQ.data, carriedIssueQ.data, readsQ.data, pressId],
-  );
-
-  // One commit per press. A filed edition is already committed, so this only runs
-  // while the desk is actually setting a new one.
-  const queryIdle = (q: { isFetched: boolean; isFetching: boolean }, enabled: boolean) =>
-    !enabled || (q.isFetched && !q.isFetching);
-  const copyReady =
-    pressing &&
-    queryIdle(wrapsQ, wrapFeedUrls.length > 0) &&
-    queryIdle(newsQ, teamFavs.length > 0) &&
-    queryIdle(wireQ, teamFavs.length > 0) &&
-    queryIdle(recap, true) &&
-    queryIdle(enrichedQ, teamCards.length > 0) &&
-    queryIdle(leagueNewsQ, sportPaths.length > 0) &&
-    queryIdle(extractsQ, extractUrls.length > 0) &&
-    queryIdle(carriedIssueQ, Boolean(prevPress)) &&
-    queryIdle(readsQ, Boolean(user?.id));
-  const pressIdRef = useRef(pressId);
-  pressIdRef.current = pressId;
-  const editedRef = useRef<string | null>(null);
-  const signedIn = Boolean(user?.id);
-  useEffect(() => {
-    if (!copyReady || editedRef.current === pressId) return;
-    editedRef.current = pressId;
-    const id = pressId;
-    const filed = filedStories;
-    void (async () => {
-      // The scheduled press may have filed while this desk set copy. Its editor's front is the edition.
-      const pressed = await readRemoteStories(id).catch(() => null);
-      const stories = pressed
-        ? (pressed as GameWrapCard[])
-        : signedIn
-          ? (await editEdition(filed, id, askRemoteEditor)).stories
-          : clearEditorStamps(filed);
-      if (pressIdRef.current !== id) return;
-      setLockedCopy((prev) => (prev?.id === id ? prev : { id, stories }));
-    })();
-  }, [copyReady, pressId, filedStories, signedIn]);
-  const pressReady = lockedCopy?.id === pressId;
   const printedStories = useMemo(
-    () => rewriteEspnThumbs(lockedCopy?.stories ?? NO_STORIES),
-    [lockedCopy?.stories],
+    () => rewriteEspnThumbs(docReady ? doc.stories : NO_STORIES),
+    [docReady, doc?.stories],
   );
 
-  const leagueClubsQ = useQuery({
+  const leagueClubsQ = useFiledQuery({
     queryKey: [pressId, "tt-league-clubs", day, sportPaths.join("|")],
     queryFn: async () => {
       const entries = await Promise.all(
@@ -6064,14 +5545,13 @@ function NewspaperDesk() {
       );
       return Object.fromEntries(entries) as Record<string, LeagueClub[]>;
     },
-    enabled: pressing && sportPaths.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
 
-  const leagueSlateQ = useQuery({
+  const leagueSlateQ = useFiledQuery({
     queryKey: [pressId, "tt-league-slate", day, sportPaths.join("|")],
     queryFn: async () => {
       const entries = await Promise.all(
@@ -6079,17 +5559,15 @@ function NewspaperDesk() {
       );
       return Object.fromEntries(entries) as Record<string, LeagueSlateGame[]>;
     },
-    enabled: pressing && sportPaths.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
 
-  const mlbPlayoffsQ = useQuery({
+  const mlbPlayoffsQ = useFiledQuery({
     queryKey: [pressId, "tt-mlb-playoffs", day],
     queryFn: () => fetchMlbPlayoffTree(),
-    enabled: sportPaths.includes("baseball/mlb"),
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -6100,7 +5578,7 @@ function NewspaperDesk() {
     () => sportPaths.filter((path) => path === "football/college-football" || path === "baseball/mlb" || path === "football/nfl"),
     [sportPaths],
   );
-  const leadBoardQ = useQuery({
+  const leadBoardQ = useFiledQuery({
     queryKey: [pressId, "tt-lead-board", day, leadBoardPaths.join("|")],
     queryFn: async () => {
       const entries = await Promise.all(
@@ -6114,14 +5592,13 @@ function NewspaperDesk() {
       );
       return Object.fromEntries(entries) as Record<string, SectionBoard>;
     },
-    enabled: leadBoardPaths.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
 
-  const boardQ = useQuery({
+  const boardQ = useFiledQuery({
     queryKey: [pressId, "tt-board", day, sportPaths.join("|")],
     queryFn: async () => {
       const entries = await Promise.all(
@@ -6135,14 +5612,13 @@ function NewspaperDesk() {
       );
       return Object.fromEntries(entries) as Record<string, SectionBoard>;
     },
-    enabled: pressing && sportPaths.length > 0 && leadBoardQ.isFetched,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
 
-  const standingsQ = useQuery({
+  const standingsQ = useFiledQuery({
     queryKey: [pressId, "tt-standings", day, sportPaths.join("|")],
     queryFn: async () => {
       const entries = await Promise.all(
@@ -6150,7 +5626,6 @@ function NewspaperDesk() {
       );
       return Object.fromEntries(entries) as Record<string, StandGroup[]>;
     },
-    enabled: pressing && sportPaths.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -6171,7 +5646,7 @@ function NewspaperDesk() {
     return clubsRaw.map((club) => ({ ...club, standing: byKey.get(club.key) ?? club.standing }));
   }, [clubsRaw, teams]);
 
-  const leadersQ = useQuery({
+  const leadersQ = useFiledQuery({
     queryKey: [pressId, "tt-leaders", day, sportPaths.join("|")],
     queryFn: async () => {
       const entries = await Promise.all(
@@ -6179,16 +5654,14 @@ function NewspaperDesk() {
       );
       return Object.fromEntries(entries) as Record<string, LeagueLeaderGroup[]>;
     },
-    enabled: pressing && sportPaths.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
-  const heismanQ = useQuery({
+  const heismanQ = useFiledQuery({
     queryKey: [pressId, "tt-heisman", day],
     queryFn: fetchHeismanOdds,
-    enabled: pressing && sportPaths.includes("football/college-football"),
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -6253,81 +5726,9 @@ function NewspaperDesk() {
     [wireQ.data, day],
   );
 
-  const favPlayersQ = useQuery({
-    queryKey: [pressId, "tt-fav-players", user?.id],
-    queryFn: () => listFavoritePlayers(user!.id),
-    enabled: pressing && Boolean(user?.id),
-    staleTime: Infinity,
-    gcTime: 20 * 60 * 60_000,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  });
-
-  const taggedQ = useQuery({
-    queryKey: [pressId, "tt-tagged-players", user?.id],
-    queryFn: async () => {
-      const ids = await fetchTaggedPlayerIds();
-      if (!ids.length) return [];
-      return [...(await fetchMlbPeopleByIds(ids)).values()];
-    },
-    enabled: pressing && Boolean(user?.id),
-    staleTime: Infinity,
-    gcTime: 20 * 60 * 60_000,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  });
-
-  const followed = useMemo<FollowedPlayer[]>(() => {
-    const out: FollowedPlayer[] = [];
-    const seen = new Set<string>();
-    const add = (p: FollowedPlayer) => {
-      const k = `${p.path}:${p.id}`;
-      if (!p.id || seen.has(k)) return;
-      seen.add(k);
-      out.push(p);
-    };
-    for (const f of favPlayersQ.data ?? []) {
-      const path = playerPath(f.league, f.sport);
-      if (!path) continue;
-      add({ id: f.playerId, name: f.playerName, path, team: f.teamName, position: f.position, source: "favorite" });
-    }
-    for (const p of taggedQ.data ?? []) {
-      add({
-        id: String(p.id),
-        name: p.name,
-        path: "baseball/mlb",
-        team: p.teamName,
-        position: p.position,
-        source: "tagged",
-        sportId: p.sportId,
-      });
-    }
-    return out.filter((p) => sportPaths.includes(p.path));
-  }, [favPlayersQ.data, taggedQ.data, sportPaths]);
-
-  const nightsQ = useQuery({
-    queryKey: [pressId, "tt-player-nights", day, followed.map((p) => `${p.path}:${p.id}`).join("|")],
-    queryFn: () => {
-      const [y, m] = day.split("-").map(Number) as [number, number];
-      return fetchPlayerNights(followed, m < 3 ? y - 1 : y);
-    },
-    enabled: pressing && followed.length > 0,
-    staleTime: Infinity,
-    gcTime: 20 * 60 * 60_000,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  });
-
-  const nightsByPath = useMemo(() => {
-    const out: Record<string, PlayerNight[]> = {};
-    for (const n of nightsQ.data ?? []) (out[n.player.path] ??= []).push(n);
-    return out;
-  }, [nightsQ.data]);
-
-  const coachesQ = useQuery({
+  const coachesQ = useFiledQuery({
     queryKey: [pressId, "tt-favorite-coaches", day],
     queryFn: () => fetchFavoriteCoachDesk({ day }),
-    enabled: pressing && printsFavoriteCoaches(pressId),
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -6341,7 +5742,7 @@ function NewspaperDesk() {
   }, [coachDesk]);
   const coachPaths = useMemo(() => Object.keys(coachesByPath).sort(), [coachesByPath]);
 
-  const sheetsQ = useQuery({
+  const sheetsQ = useFiledQuery({
     queryKey: [pressId, "tt-club-sheets", day, favKeys],
     queryFn: async () => {
       const rows = await Promise.all(
@@ -6349,16 +5750,14 @@ function NewspaperDesk() {
       );
       return Object.fromEntries(rows.filter((r) => r[1])) as Record<string, ClubSheet>;
     },
-    enabled: pressing && teamFavs.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
 
-  const weatherQ = useQuery({
+  const weatherQ = useFiledQuery({
     queryKey: [pressId, "tt-weather-marshfield"],
-    enabled: true,
     queryFn: fetchMarshfieldWeather,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
@@ -6366,9 +5765,8 @@ function NewspaperDesk() {
     refetchOnReconnect: false,
   });
 
-  const watchQ = useQuery({
+  const watchQ = useFiledQuery({
     queryKey: [pressId, "tt-watch", day],
-    enabled: pressing,
     queryFn: () => fetchWatchList(day, { limit: WATCH_PAGE_GAMES, favorites: teamFavs }),
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
@@ -6376,43 +5774,11 @@ function NewspaperDesk() {
     refetchOnReconnect: false,
   });
 
-  // The Day Ahead: the schedule filed for the edition's date. During a live press
-  // the desk fetches it; a filed edition uses the companion loaded with the issue.
   const scheduleDate = scheduleDateFor(pressId);
-  const dayAheadQ = useQuery({
-    queryKey: ["tt-day-ahead", scheduleDate],
-    enabled: pressing && Boolean(user?.id) && Boolean(scheduleDate),
-    queryFn: () => fetchDaySchedule(scheduleDate!),
-    staleTime: 5 * 60_000,
-    gcTime: 20 * 60 * 60_000,
-    retry: 1,
-  });
 
-  // The Beez: one current row, reprinted in every edition. No row (or a failed
-  // read): the page stays out and Section A is unchanged.
-  const beezQ = useQuery({
-    queryKey: ["tt-beez"],
-    enabled: pressing && Boolean(user?.id),
-    queryFn: () => readTimesBeez(),
-    staleTime: 5 * 60_000,
-    gcTime: 20 * 60 * 60_000,
-    retry: 1,
-  });
 
-  // Races We're Tracking: one row per race for the edition date (or the newest
-  // filing inside two days). No rows: the page is omitted. Client-only.
-  const racesQ = useQuery({
-    queryKey: ["tt-race-briefs", scheduleDate],
-    enabled: Boolean(scheduleDate) && !racesSample,
-    queryFn: () => fetchRaceBriefs(scheduleDate!),
-    staleTime: 5 * 60_000,
-    gcTime: 20 * 60 * 60_000,
-    retry: 1,
-  });
-
-  const scoutQ = useQuery({
+  const scoutQ = useFiledQuery({
     queryKey: [pressId, "tt-mo-scout", day],
-    enabled: pressing,
     queryFn: async () => {
       const item = await fetchMissouriScout(pressId);
       return item ? ((await enrichMissouriItems([item], 1))[0] ?? item) : null;
@@ -6423,20 +5789,9 @@ function NewspaperDesk() {
     refetchOnReconnect: false,
   });
 
-  const nationalQ = useQuery({
-    queryKey: [pressId, "tt-national"],
-    enabled: pressing && Boolean(user?.id) && !nationalSample,
-    queryFn: () => readTimesNationalNews(pressId),
-    staleTime: Infinity,
-    gcTime: 20 * 60 * 60_000,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    retry: 1,
-  });
 
-  const missouriQ = useQuery({
+  const missouriQ = useFiledQuery({
     queryKey: [pressId, "tt-missouri", day],
-    enabled: pressing,
     queryFn: async () => {
       const desk = await fetchMissouriDesk(day, pressId);
       const enriched = await enrichMissouriItems(desk.items, 7);
@@ -6466,15 +5821,12 @@ function NewspaperDesk() {
     refetchOnReconnect: false,
   });
 
-  const playerPaths = useMemo(() => [...new Set(followed.map((p) => p.path))], [followed]);
-
-  const openersQ = useQuery({
+  const openersQ = useFiledQuery({
     queryKey: [pressId, "tt-openers", day, favKeys],
     queryFn: async () => {
       const rows = await Promise.all(teamFavs.map((fav) => fetchOpener(fav).catch(() => null)));
       return rows.filter((o): o is Opener => o != null);
     },
-    enabled: pressing && teamFavs.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -6483,7 +5835,7 @@ function NewspaperDesk() {
   const openers = useMemo(() => new Map((openersQ.data ?? []).map((o) => [o.key, o])), [openersQ.data]);
 
   // The farm system makes the Cardinals copy as often as the big club does.
-  const orgQ = useQuery({
+  const orgQ = useFiledQuery({
     queryKey: [pressId, "tt-org-rosters", day, favKeys],
     queryFn: async () => {
       const season = Number(day.slice(0, 4)) || new Date().getFullYear();
@@ -6504,7 +5856,6 @@ function NewspaperDesk() {
       );
       return rows.flat();
     },
-    enabled: pressing && teamFavs.some((fav) => fav.mlbTeamId),
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -6532,7 +5883,6 @@ function NewspaperDesk() {
       const href = id ? playerPageHref(path, id) : null;
       if (href && name) out.push({ name, href });
     };
-    for (const p of followed) push(p.path, p.id, p.name);
     for (const [path, board] of Object.entries(boardQ.data ?? {})) {
       for (const g of [...board.results, ...board.slate, ...(board.prior ?? [])]) {
         for (const d of g.decisions) push(path, d.person.id, d.person.name);
@@ -6552,53 +5902,8 @@ function NewspaperDesk() {
     }
     for (const p of orgQ.data ?? []) push("baseball/mlb", p.id, p.name);
     return out;
-  }, [followed, boardQ.data, clubs, sheetsQ.data, teams, orgQ.data]);
+  }, [boardQ.data, clubs, sheetsQ.data, teams, orgQ.data]);
 
-  // Who each story is about, so a story the wire sent bare can still run a picture of him.
-  const nameIdx = useMemo(() => nameIndex(people), [people]);
-  const subjects = useMemo(() => {
-    const out: Record<string, Person[]> = {};
-    for (const card of printedStories) {
-      if (!isFavoriteStory(card) && !card.id.startsWith("league-")) continue;
-      const named = storySubjects(card, nameIdx);
-      if (named.length) out[card.id] = named;
-    }
-    return out;
-  }, [printedStories, nameIdx]);
-  const subjectHrefs = useMemo(
-    () => [...new Set(Object.values(subjects).flatMap((list) => list.map((p) => p.href)))].sort().slice(0, 80),
-    [subjects],
-  );
-  const filesQ = useQuery({
-    queryKey: [pressId, "tt-player-files", day, subjectHrefs.join("|")],
-    queryFn: async () => {
-      const season = Number(day.slice(0, 4)) || new Date().getFullYear();
-      const files = await fetchPlayerFiles(subjectHrefs, season);
-      // Only pictures that actually load make the paper; prospects often have none.
-      await Promise.all(
-        Object.values(files).map(async (f) => {
-          const [action, headshot] = await Promise.all([imageLoads(f.action), imageLoads(f.headshot)]);
-          f.action = action ? f.action : null;
-          f.headshot = headshot ? f.headshot : null;
-        }),
-      );
-      return files;
-    },
-    enabled: pressing && subjectHrefs.length > 0,
-    staleTime: Infinity,
-    gcTime: 20 * 60 * 60_000,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  });
-  const storyFiles = useMemo(() => {
-    const files = filesQ.data ?? {};
-    const out: Record<string, PlayerFile[]> = {};
-    for (const [id, list] of Object.entries(subjects)) {
-      const got = list.map((p) => files[p.href]).filter((f): f is PlayerFile => Boolean(f));
-      if (got.length) out[id] = got;
-    }
-    return out;
-  }, [subjects, filesQ.data]);
   const boardRecaps = useMemo(() => {
     const boards = { ...(boardQ.data ?? {}), ...(leadBoardQ.data ?? {}) };
     const seen = new Set<string>();
@@ -6627,108 +5932,10 @@ function NewspaperDesk() {
       seen.add(card.id);
       merged.push(card);
     }
-    return merged.map((card) => {
-      if (card.photo) return card;
-      const lead = storyFiles[card.id]?.[0];
-      if (lead?.action) return { ...card, photo: lead.action, caption: lead.name };
-      if (lead?.headshot) return { ...card, photo: lead.headshot, caption: lead.name, photoStyle: "cutout" as const };
-      return card;
-    });
-  }, [boardRecaps, printedStories, storyFiles, athleticCards]);
+    return merged;
+  }, [boardRecaps, printedStories, athleticCards]);
 
-  const filedRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!pressing || !pressReady || filedRef.current === pressId) return;
-    const quiet = (q: { isFetched: boolean; isFetching: boolean }, enabled: boolean) =>
-      !enabled || (q.isFetched && !q.isFetching);
-    const deskQuiet =
-      quiet(teamSnaps, true) &&
-      quiet(teamDetailsQ, teamFavs.length > 0) &&
-      quiet(weatherQ, true) &&
-      quiet(watchQ, true) &&
-      quiet(sheetsQ, teamFavs.length > 0) &&
-      quiet(boardQ, sportPaths.length > 0) &&
-      quiet(standingsQ, sportPaths.length > 0) &&
-      quiet(leadersQ, sportPaths.length > 0) &&
-      quiet(heismanQ, sportPaths.includes("football/college-football")) &&
-      quiet(leagueSlateQ, sportPaths.length > 0) &&
-      quiet(leagueClubsQ, sportPaths.length > 0) &&
-      quiet(scoutQ, true) &&
-      quiet(missouriQ, true) &&
-      quiet(openersQ, teamFavs.length > 0) &&
-      quiet(filesQ, subjectHrefs.length > 0) &&
-      quiet(orgQ, teamFavs.some((fav) => fav.mlbTeamId)) &&
-      quiet(mlbPlayoffsQ, sportPaths.includes("baseball/mlb")) &&
-      quiet(coachesQ, printsFavoriteCoaches(pressId));
-    if (!deskQuiet) return;
-    const failed = [wrapsQ, newsQ, wireQ, recap, leagueNewsQ, extractsQ].some((q) => q.isError);
-    if (!stories.length && failed) return;
-    filedRef.current = pressId;
-    const queries = queryClient
-      .getQueryCache()
-      .getAll()
-      .flatMap((q) => {
-        if (!Array.isArray(q.queryKey) || q.queryKey[0] !== pressId || q.state.status !== "success") return [];
-        return [{ key: [...q.queryKey], data: q.state.data }];
-      });
-    const issue: PrintedIssue = {
-      version: ISSUE_VERSION,
-      id: pressId,
-      stories,
-      queries,
-      printedAt: new Date().toISOString(),
-      companions: {
-        dayAhead: dayAheadQ.data ?? companions?.dayAhead ?? null,
-        national: nationalQ.data ?? companions?.national ?? null,
-        beez: beezQ.data ?? companions?.beez ?? null,
-      },
-    };
-    void writeLocalIssue(issue, cacheUser);
-    void writeRemoteIssue(issue);
-  }, [
-    pressing,
-    pressReady,
-    pressId,
-    stories,
-    teamSnaps,
-    teamDetailsQ,
-    teamFavs,
-    weatherQ,
-    watchQ,
-    sheetsQ,
-    sportPaths,
-    boardQ,
-    standingsQ,
-    leadersQ,
-    heismanQ,
-    leagueSlateQ,
-    leagueClubsQ,
-    scoutQ,
-    missouriQ,
-    openersQ,
-    filesQ,
-    subjectHrefs,
-    orgQ,
-    mlbPlayoffsQ,
-    coachesQ,
-    wrapsQ,
-    newsQ,
-    wireQ,
-    recap,
-    leagueNewsQ,
-    extractsQ,
-    queryClient,
-    dayAheadQ.data,
-    nationalQ.data,
-    beezQ.data,
-    companions,
-  ]);
-
-  const nationalDesk = nationalSample
-    ? sampleNationalDesk(pressId)
-    : companions?.id === pressId
-      ? companions.national
-      : (nationalQ.data ?? null);
+  const nationalDesk = nationalSample ? sampleNationalDesk(pressId) : (companions?.national ?? null);
   const builtEdition = useMemo(() => {
     const extras = essentialsFromDesks(nationalDesk, missouriQ.data ?? null);
     const have = new Set(stories.map((card) => card.id));
@@ -6736,7 +5943,7 @@ function NewspaperDesk() {
       stories: [...stories, ...extras.filter((card) => !have.has(card.id))],
       clubs,
       edition: pressId,
-      playerPaths,
+      playerPaths: [],
       missouri: missouriQ.data ?? null,
       national: nationalDesk,
       offseason,
@@ -6744,17 +5951,12 @@ function NewspaperDesk() {
       postseasonPaths,
       coachPaths,
     });
-  }, [stories, clubs, pressId, playerPaths, missouriQ.data, nationalDesk, offseason, leaderPaths, postseasonPaths, coachPaths]);
+  }, [stories, clubs, pressId, missouriQ.data, nationalDesk, offseason, leaderPaths, postseasonPaths, coachPaths]);
   // No schedule row for the date (or not read yet): no page, never an older day's.
-  const daySchedule =
-    companions?.id === pressId && companions.dayAhead?.date === scheduleDate
-      ? companions.dayAhead
-      : dayAheadQ.data?.date === scheduleDate
-        ? dayAheadQ.data
-        : null;
-  const beezDesk = companions?.id === pressId ? companions.beez : (beezQ.data ?? null);
+  const daySchedule = companions?.dayAhead?.date === scheduleDate ? companions.dayAhead : null;
+  const beezDesk = companions?.beez ?? null;
   const raceDesk: RaceBriefsDesk | null =
-    racesSample && scheduleDate ? sampleRaceBriefs(scheduleDate) : (racesQ.data ?? null);
+    racesSample && scheduleDate ? sampleRaceBriefs(scheduleDate) : (companions?.races ?? null);
   const edition = useMemo(() => {
     const raw = standingsQ.data ?? {};
     const counted: Record<string, { length: number }> = {};
@@ -6796,51 +5998,7 @@ function NewspaperDesk() {
   const pagesRef = useRef(pages);
   pagesRef.current = pages;
 
-  // After A1 is up, mount the rest of the book from the back so the front
-  // stays put and the inside folios fill in idle slices.
-  useEffect(() => {
-    if (!revealed || pages.length <= 1) return;
-    let cancelled = false;
-    let cursor = pages.length - 1;
-    let cancelPump = () => {};
-    const pump = () => {
-      if (cancelled) return;
-      const have = filledRef.current;
-      const batch: number[] = [];
-      while (cursor >= 1 && batch.length < 4) {
-        if (!have.has(cursor)) batch.push(cursor);
-        cursor--;
-      }
-      if (batch.length) {
-        setFilled((prev) => {
-          const next = new Set(prev);
-          for (const index of batch) next.add(index);
-          return next;
-        });
-      }
-      if (cursor >= 1) schedulePump();
-    };
-    const schedulePump = () => {
-      const idle = window.requestIdleCallback?.bind(window);
-      if (idle) {
-        const id = idle(() => pump(), { timeout: 500 });
-        cancelPump = () => window.cancelIdleCallback(id);
-      } else {
-        const id = window.setTimeout(pump, 16);
-        cancelPump = () => window.clearTimeout(id);
-      }
-    };
-    schedulePump();
-    return () => {
-      cancelled = true;
-      cancelPump();
-    };
-  }, [revealed, pages.length, pressId]);
-  useEffect(() => {
-    const page = pages[pageIndex];
-    const names = heavyDesksForPage(page);
-    if (names.length) releaseHeavy(names);
-  }, [pageIndex, pages, releaseHeavy]);  const weatherFolio = useMemo(
+  const weatherFolio = useMemo(
     () => pages.find((p) => p.kind === "favorites-clubs" && (p.weatherPart ?? "today") === "today")?.folio ?? pages.find((p) => p.kind === "favorites-clubs")?.folio ?? null,
     [pages],
   );
@@ -6881,8 +6039,6 @@ function NewspaperDesk() {
       if (!el) return;
       const next = Math.max(0, Math.min(pages.length - 1, idx));
       const from = pageIndexRef.current;
-      const sheet = el.children[next] as HTMLElement | undefined;
-      if (sheet && next !== from) sheet.scrollTop = 0;
       // Gliding across a whole section paints every folio in between; long jumps cut straight there.
       el.scrollTo({ left: next * el.clientWidth, behavior: Math.abs(next - from) > NEAR_PAGES ? "instant" : "smooth" });
       setFolio(next);
@@ -7004,45 +6160,13 @@ function NewspaperDesk() {
     return () => window.removeEventListener("keydown", onKey);
   });
 
-  // The sheet scrolls vertically and eats a horizontal pan, so the pager never sees a swipe.
-  useEffect(() => {
-    const el = pagerRef.current;
-    if (!el) return;
-    let x0 = 0;
-    let y0 = 0;
-    let armed = false;
-    const start = (e: TouchEvent) => {
-      if (e.touches.length !== 1) {
-        armed = false;
-        return;
-      }
-      const t = e.touches[0]!;
-      x0 = t.clientX;
-      y0 = t.clientY;
-      armed = true;
-    };
-    const end = (e: TouchEvent) => {
-      if (!armed) return;
-      armed = false;
-      const t = e.changedTouches[0];
-      if (!t) return;
-      const dx = t.clientX - x0;
-      const dy = t.clientY - y0;
-      if (Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy) * 1.25) return;
-      goPage(pageIndexRef.current + (dx < 0 ? 1 : -1));
-    };
-    const cancel = () => {
-      armed = false;
-    };
-    el.addEventListener("touchstart", start, { capture: true, passive: true });
-    el.addEventListener("touchend", end, { capture: true, passive: true });
-    el.addEventListener("touchcancel", cancel, { capture: true });
-    return () => {
-      el.removeEventListener("touchstart", start, true);
-      el.removeEventListener("touchend", end, true);
-      el.removeEventListener("touchcancel", cancel, true);
-    };
-  }, [goPage]);
+  const printedAt = docReady ? doc.printedAt : recent?.find((row) => row.id === pressId)?.printedAt;
+  const readingNote =
+    recent?.[0] && recent[0].id !== pressId
+      ? backEditionNote(pressId, printedAt)
+      : clockPress.id !== pressId && !askedEdition
+        ? `The ${clockPress.label} is still on the press. ${backEditionNote(pressId, printedAt)}.`
+        : null;
 
   // Built once per edition/data change, never per page turn: re-rendering 60 folios on every
   // swipe was the slow part. Anything that must follow the folio in view reads PagerIndexContext.
@@ -7069,16 +6193,7 @@ function NewspaperDesk() {
                 editions={recent ?? []}
                 selectedId={pressId}
                 onSelectEdition={selectEdition}
-                readingNote={
-                  recent?.[0] && recent[0].id !== pressId
-                    ? backEditionNote(
-                        pressId,
-                        companions?.id === pressId
-                          ? companions.printedAt
-                          : recent.find((row) => row.id === pressId)?.printedAt,
-                      )
-                    : null
-                }
+                readingNote={readingNote}
               />
             ) : (
               <RunningHead day={day} page={page} />
@@ -7176,8 +6291,8 @@ function NewspaperDesk() {
                   slate={leagueSlateQ.data?.[page.path] ?? []}
                   playoffs={page.path === "baseball/mlb" ? mlbPlayoffsQ.data ?? null : null}
                   edition={day}
-                  hasPlayers={playerPaths.includes(page.path)}
-                  nights={nightsByPath[page.path] ?? []}
+                  hasPlayers={false}
+                  nights={NO_NIGHTS}
                   coaches={coachesByPath[page.path] ?? []}
                   sheets={sheetsQ.data ?? {}}
                   leaders={leadersQ.data?.[page.path] ?? []}
@@ -7240,8 +6355,6 @@ function NewspaperDesk() {
       standingsQ.data,
       leagueSlateQ.data,
       mlbPlayoffsQ.data,
-      playerPaths,
-      nightsByPath,
       coachesByPath,
       teamSnaps.data,
       weatherQ.data,
@@ -7250,28 +6363,13 @@ function NewspaperDesk() {
       recent,
       pressId,
       selectEdition,
-      companions,
+      readingNote,
     ],
   );
 
-  useEffect(() => {
-    const el = pagerRef.current;
-    if (el) prefetchNearArt(el, pageIndex);
-  }, [pageIndex, sheets]);
-
   useLayoutEffect(() => {
-    // A1's lead is enough to drop the cover. Boards and the rest of the folio
-    // fill in behind it; waiting on them held the paper for the whole file.
-    if (docPhase === "boot" || !sheets || revealFor.current === pressId) return;
-    const front = pages.find((p) => p.kind === "favorites-front");
-    const haveLead = front?.kind === "favorites-front" && Boolean(front.lead);
-    if (!haveLead) return;
+    if (!docReady || revealFor.current === pressId) return;
     let cancel = false;
-    const cap = window.setTimeout(() => {
-      if (cancel) return;
-      revealFor.current = pressId;
-      setRevealed(true);
-    }, 7_000);
     void (async () => {
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       await waitForPrintedReveal(pagerRef.current);
@@ -7281,9 +6379,8 @@ function NewspaperDesk() {
     })();
     return () => {
       cancel = true;
-      window.clearTimeout(cap);
     };
-  }, [docPhase, pressId, sheets, pages]);
+  }, [docReady, pressId]);
 
   // A story that sat on the sheet counts as read. The next press leaves it out.
   useEffect(() => {
@@ -7335,41 +6432,32 @@ function NewspaperDesk() {
     };
   }, [pageIndex, sheets, user?.id]);
 
-  useEffect(() => {
-    const el = pagerRef.current;
-    if (!el || !pages.length) return;
-    let stop = () => {};
-    const timer = window.setTimeout(() => {
-      stop = warmEdition(el);
-    }, 3_000);
-    return () => {
-      window.clearTimeout(timer);
-      stop();
-    };
-  }, [sheets, pages.length]);
-
   const current = pages[pageIndex];
   const sectionIdx = edition.sections.findIndex((s) => s.code === current?.section);
+  const holdLine = missing && recent && !recent.length ? "No edition filed in the last day" : "Today's edition";
 
   return (
     <div
       className="newspaper-root wsj-shell"
       data-times-ready={revealed ? "1" : "0"}
-      data-times-folios={pages.length > 0 && filled.size >= pages.length ? "1" : "0"}
+      data-times-folios={revealed && pages.length > 0 ? "1" : "0"}
     >
       <GameLookup.Provider value={findGame}>
       <OpenerContext.Provider value={openers}>
-      <SubjectsContext.Provider value={storyFiles}>
       <PlayerPopProvider people={people}>
       <SavedProvider edition={pressId}>
       <ReaderProvider>
       <div className="wsj-chrome print:hidden">
         <div className="wsj-chrome-l">
+          {solo ? null : (
+            <Link to="/dashboard" className="wsj-chrome-back" title="Back to Command Center">
+              <ChevronLeft size={14} />
+              <span>Command Center</span>
+            </Link>
+          )}
           <strong>Thompson Times</strong>
           <span>
-            {current
-              ? `Section ${current.section} · ${current.sectionTitle} · ${current.folio}`
-              : `Edition ${day}`}
+            {current ? `Section ${current.section} · ${current.sectionTitle}` : `Edition ${day}`}
           </span>
         </div>
         <div className="wsj-chrome-c">
@@ -7398,7 +6486,7 @@ function NewspaperDesk() {
           </button>
           <span className="wsj-pager-label">
             {current?.folio ?? "A1"}
-            <em>{current ? `${current.sectionPage}/${current.sectionCount}` : ""}</em>
+            <em>{current ? `${current.sectionPage} of ${current.sectionCount}` : ""}</em>
           </span>
           <button
             type="button"
@@ -7425,10 +6513,12 @@ function NewspaperDesk() {
           </button>
         </div>
         <div className="wsj-chrome-r">
-          <a href="/times.html" className="wsj-chrome-btn" title="Add to Home Screen">
-            <Share size={12} />
-            Home Screen
-          </a>
+          {solo ? null : (
+            <a href="/times.html" className="wsj-chrome-btn" title="Add to Home Screen">
+              <Share size={12} />
+              Home Screen
+            </a>
+          )}
           <button
             type="button"
             className={cn("wsj-chrome-btn", savedOpen && "is-on")}
@@ -7445,7 +6535,6 @@ function NewspaperDesk() {
         </div>
       </div>
 
-      <FolioFillContext.Provider value={filled}>
       <PagerIndexContext.Provider value={pageIndex}>
         <TimesCommitBoundary>
         <div className="tt-spread">
@@ -7455,31 +6544,29 @@ function NewspaperDesk() {
             style={{ visibility: revealed ? "visible" : "hidden" }}
             aria-hidden={revealed ? undefined : true}
           >
-            {docPhase === "boot" ? null : sheets}
+            {docReady ? sheets : null}
           </div>
           {!revealed ? (
             <div className="tt-hold" aria-busy="true">
-              <TimesHold line="Today's edition" day={day} />
+              <TimesHold line={holdLine} day={day} />
             </div>
           ) : null}
-          {revealed && newerEdition ? (
+          {newerEdition ? (
             <button
               type="button"
               className="tt-new-edition"
               onClick={() => selectEdition(newerEdition)}
             >
-              New edition available — tap to read
+              {`The ${parsePressId(newerEdition)?.label ?? "new edition"} is out — tap to read it`}
             </button>
           ) : null}
         </div>
         </TimesCommitBoundary>
       </PagerIndexContext.Provider>
-      </FolioFillContext.Provider>
       {savedOpen ? <SavedDrawer onClose={() => setSavedOpen(false)} /> : null}
       </ReaderProvider>
       </SavedProvider>
       </PlayerPopProvider>
-      </SubjectsContext.Provider>
       </OpenerContext.Provider>
       </GameLookup.Provider>
     </div>
