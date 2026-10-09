@@ -30,6 +30,7 @@ import {
   planStandingsPages,
   A2_CLUB_CARDS,
   FORM_CLUBS_PER_PACKED_PAGE,
+  FORM_PAGES_MAX,
   clubFormIsThin,
   clubOpensLabel,
   clubTickerRecord,
@@ -167,18 +168,22 @@ try {
 }
 
 assert(A2_CLUB_CARDS === 3, "A2 still prints three club cards under today's weather");
-assert(FORM_CLUBS_PER_PACKED_PAGE === 6, "club form packs six cards, two columns, three rows");
+assert(FORM_CLUBS_PER_PACKED_PAGE === 2, "a fixed page sets one row of two full form cards");
 const sixClubs = planOutlookAndForm(6);
 assert(sixClubs.leftoverCount === 0, "leftover club cards merge into A3 form — no sparse cards row");
-assert(sixClubs.formOnOutlook === 6, "six clubs fill the outlook folio");
-assert(sixClubs.formContinue.length === 0, "six clubs do not open a short A4/A5 form page");
+assert(sixClubs.formOnOutlook === 2, "A3 sets one row of form under the outlook");
+assert(
+  sixClubs.formContinue.length === 2 && sixClubs.formContinue.every((s) => s.count === 2),
+  "six clubs run two full form pages after A3",
+);
 const twoClubs = planOutlookAndForm(2);
 assert(twoClubs.formOnOutlook === 2 && twoClubs.formContinue.length === 0, "two clubs stay on A3");
-const twelve = planOutlookAndForm(12);
-assert(twelve.formOnOutlook === 6, "A3 takes the first six form cards");
+const threeClubs = planOutlookAndForm(3);
+assert(threeClubs.formContinue.length === 0, "a lone third club does not open a half-empty form page");
+const thirteen = planOutlookAndForm(13);
 assert(
-  twelve.formContinue.length === 1 && twelve.formContinue[0]!.count === 6,
-  "the next six clubs continue once, not as two three-card pages",
+  thirteen.formContinue.length === FORM_PAGES_MAX && thirteen.formContinue[1]!.offset === 4,
+  "Section A runs at most two form pages; the rest keep their cards in their own sections",
 );
 assert(planOutlookAndForm(0).formOnOutlook === 0, "no clubs means no form cards");
 assert(

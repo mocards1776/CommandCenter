@@ -210,10 +210,15 @@ export function formStatColumns(count: number): number {
 /** A2 keeps this many club cards under today's weather. */
 export const A2_CLUB_CARDS = 3;
 /**
- * Club-form cards in a 2-column grid: six cards are three rows and fill a
- * folio with the outlook chart. Three cards were one short row of cream.
+ * Club-form cards on one fixed page: a full card runs most of the page's
+ * height, so a page sets one row of two (A3 sets its row under the outlook).
  */
-export const FORM_CLUBS_PER_PACKED_PAGE = 6;
+export const FORM_CLUBS_PER_PACKED_PAGE = 2;
+/**
+ * Section A runs club form on at most this many pages after A3. It is the
+ * digest of the top clubs; every club keeps its card in its own section.
+ */
+export const FORM_PAGES_MAX = 2;
 
 export type OutlookFormPlan = {
   leftoverOffset: number;
@@ -223,8 +228,8 @@ export type OutlookFormPlan = {
 };
 
 /**
- * Pack leftover clubs and club form onto the outlook folio, then continue
- * in six-club slices. Never emit a one-row form page just to pad Section A.
+ * Pack club form onto the outlook folio, then continue a full row per page,
+ * up to FORM_PAGES_MAX. Never emit a half-empty form page to pad Section A.
  */
 export function planOutlookAndForm(clubCount: number): OutlookFormPlan {
   const n = Math.max(clubCount, 0);
@@ -233,8 +238,12 @@ export function planOutlookAndForm(clubCount: number): OutlookFormPlan {
   const leftoverCount = 0;
   const formOnOutlook = Math.min(n, FORM_CLUBS_PER_PACKED_PAGE);
   const formContinue: { offset: number; count: number }[] = [];
-  for (let offset = formOnOutlook; offset < n; offset += FORM_CLUBS_PER_PACKED_PAGE) {
-    formContinue.push({ offset, count: Math.min(FORM_CLUBS_PER_PACKED_PAGE, n - offset) });
+  for (
+    let offset = formOnOutlook;
+    offset + FORM_CLUBS_PER_PACKED_PAGE <= n && formContinue.length < FORM_PAGES_MAX;
+    offset += FORM_CLUBS_PER_PACKED_PAGE
+  ) {
+    formContinue.push({ offset, count: FORM_CLUBS_PER_PACKED_PAGE });
   }
   return { leftoverOffset, leftoverCount, formOnOutlook, formContinue };
 }

@@ -1152,11 +1152,13 @@ mark.rss-hl {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   Thompson Times — a sports broadsheet that swipes page to page
+   Thompson Times — a sports broadsheet that turns page to page
 
-   Every sheet is sized by its copy, not by the viewport: each page scrolls
-   on its own, columns balance, and a page closes on a desk board rather
-   than a stretched well. Club colors drive the accents (kicker squares,
+   One page is one screen. Every sheet is set at --tt-page-w (1032 px, the
+   iPad Pro 13" in portrait) and --tt-page-h, which the pager derives from
+   the window alone; --tt-s scales the whole sheet to fit (1 in portrait).
+   Copy never changes a page's size: stories fill the room they are given
+   and continue on a jump. Club colors drive the accents (kicker squares,
    drop caps, poster panels, card heads) through `--tt-team`, with
    `--tt-on` carrying the ink that reads on that color.
    ═══════════════════════════════════════════════════════════════════════ */
@@ -1181,15 +1183,10 @@ mark.rss-hl {
   --w-body: "Source Serif 4", Georgia, "Times New Roman", serif;
   --w-gutter: 20px;
 
-  /* One broadsheet, as wide as the iPad Pro 13" in portrait (1032 CSS px), so it
-     prints edge to edge there at true size. The fit is width-only: narrower
-     screens zoom the whole sheet down, wider ones get paper margins, and the
-     height is never fit. A sheet is at least one screen tall (--tt-page-min,
-     set by the pager; --tt-page-h before it measures) and grows with its copy;
-     the folio scrolls. Do not add a second canvas size. */
   --tt-page-w: 1032px;
-  --tt-page-h: 1290px;
-  --w-chrome: calc(61px + env(safe-area-inset-top, 0px));
+  --tt-page-h: 1218px;
+  --tt-s: 1;
+  --w-chrome: calc(44px + env(safe-area-inset-top, 0px));
   flex: 1 1 auto;
   height: 100%;
   max-height: 100%;
@@ -1202,12 +1199,6 @@ mark.rss-hl {
   color: var(--w-ink);
   background: #151b28;
 }
-@media (min-width: 768px) {
-  .newspaper-root.wsj-shell {
-    --w-chrome: calc(73px + env(safe-area-inset-top, 0px));
-  }
-}
-
 /* ── App chrome (never printed) ─────────────────────────────────────── */
 .wsj-chrome {
   display: flex;
@@ -1215,10 +1206,32 @@ mark.rss-hl {
   justify-content: space-between;
   gap: 0.5rem;
   flex-shrink: 0;
-  padding: 0.3rem 0.7rem;
+  box-sizing: border-box;
+  height: var(--w-chrome);
+  padding: env(safe-area-inset-top, 0px) max(0.75rem, env(safe-area-inset-right, 0px)) 0
+    max(0.75rem, env(safe-area-inset-left, 0px));
   background: #0b1730;
   color: rgba(237, 239, 245, 0.72);
   border-bottom: 1px solid rgba(0, 0, 0, 0.5);
+}
+.wsj-chrome-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  margin-right: 0.35rem;
+  padding: 0.25rem 0.5rem 0.25rem 0.3rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: inherit;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-decoration: none;
+  white-space: nowrap;
+  align-self: center;
+}
+.wsj-chrome-back:hover {
+  color: #fff;
+  border-color: #fff;
 }
 .wsj-chrome-l {
   display: flex;
@@ -1305,9 +1318,8 @@ mark.rss-hl {
   color: rgba(237, 239, 245, 0.55);
 }
 
-/* ── The spread: one folio per swipe, each scrolling on its own ─────── */
+/* ── The spread: one folio per screen, turned by a native swipe ─────── */
 .newspaper-edition.wsj-pager {
-  --tt-fit: 1;
   flex: 1 1 auto;
   height: 0;
   min-height: 0;
@@ -1316,11 +1328,13 @@ mark.rss-hl {
   align-items: stretch;
   overflow-x: auto;
   overflow-y: hidden;
+  overscroll-behavior: contain;
   scroll-snap-type: x mandatory;
   scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
-  touch-action: pan-x;
+  touch-action: pan-x pinch-zoom;
+  background: #151b28;
 }
 .newspaper-edition.wsj-pager::-webkit-scrollbar {
   display: none;
@@ -1330,27 +1344,22 @@ mark.rss-hl {
   width: 100%;
   min-width: 100%;
   height: 100%;
-  min-height: 0;
-  max-height: 100%;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
-  overflow-x: hidden;
-  overflow-y: auto;
-  overscroll-behavior: none;
-  touch-action: pan-y;
+  overflow: hidden;
   scroll-snap-align: start;
   scroll-snap-stop: always;
-  scrollbar-width: none;
   box-sizing: border-box;
-  background: #151b28;
-}
-.wsj-page::-webkit-scrollbar {
-  display: none;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 1032px auto 1218px;
 }
 .wsj-fit {
   position: relative;
   flex: none;
+  width: calc(var(--tt-page-w) * var(--tt-s));
+  height: calc(var(--tt-page-h) * var(--tt-s));
+  overflow: hidden;
 }
 .wsj-sheet {
   box-sizing: border-box;
@@ -1358,29 +1367,24 @@ mark.rss-hl {
   width: var(--tt-page-w, 1032px);
   min-width: var(--tt-page-w, 1032px);
   max-width: var(--tt-page-w, 1032px);
-  min-height: var(--tt-page-min, var(--tt-page-h, 1290px));
-  zoom: var(--tt-fit, 1);
+  height: var(--tt-page-h);
   margin: 0;
-  padding: 14px 18px 18px;
-  /* visible, not clip/hidden: those make overflow-y compute to auto and
-     create a nested iOS scroller that blanks the left column. */
-  overflow: visible;
-  touch-action: pan-y;
+  padding: 14px 18px 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   background:
     radial-gradient(120% 60% at 50% 0%, rgba(255, 255, 255, 0.7), transparent 70%),
     var(--w-paper);
   color: var(--w-ink);
-  box-shadow: 0 0 40px rgba(0, 0, 0, 0.35);
 }
-.wsj-pager.tt-fit-transform .wsj-sheet {
-  zoom: 1;
-}
-.newspaper-root .wsj-pager.tt-fit-scaled .wsj-rail {
-  position: static !important;
-  top: auto;
+.wsj-fit > .wsj-sheet {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: scale(var(--tt-s));
+  transform-origin: 0 0;
 }
 
 .tt-spread {
@@ -1465,8 +1469,9 @@ mark.rss-hl {
   flex: 1;
   min-height: 0;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
+  overflow: hidden;
 }
 
 .tt-editions {
@@ -2783,8 +2788,6 @@ li.counting .tt-count.card {
 
 /* ── Front rail ─────────────────────────────────────────────────────── */
 .wsj-rail {
-  position: sticky;
-  top: 0;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -5160,6 +5163,15 @@ li.counting .tt-count.card {
   gap: 6px;
   margin: 6px 0 8px;
 }
+.tt-recap-chrome-part {
+  display: flex;
+  flex-direction: column;
+  gap: inherit;
+  min-width: 0;
+}
+.tt-recap-chrome-part:empty {
+  display: none;
+}
 .tt-recap-linehead {
   display: flex;
   justify-content: space-between;
@@ -7002,7 +7014,7 @@ li.counting .tt-count.card {
   flex-direction: column;
   flex: 1 1 auto;
   gap: 18px;
-  min-height: calc(var(--tt-page-min, var(--tt-page-h, 1290px)) - 88px);
+  min-height: 0;
 }
 .tt-nat-hero h3 {
   font-family: var(--w-head);
@@ -8054,8 +8066,6 @@ li.counting .tt-count.card {
 .newspaper-root .tt-cover-edition { font-size: 34px; }
 .newspaper-root .wsj-front-grid { grid-template-columns: minmax(0, 1fr) 296px !important; }
 .newspaper-root .wsj-rail {
-  position: sticky !important;
-  top: 0;
   display: flex !important;
   flex-direction: column !important;
   grid-template-columns: none !important;
@@ -8334,16 +8344,6 @@ li.counting .tt-count.card {
 .newspaper-root .tt-hero-id strong { font-size: 22px; }
 .newspaper-root .wsj-sport-hero { padding: 14px 18px; }
 
-/* One frame for every folio. The sheet is the broadsheet; the frame is the screen.
-   Zoom, not a transform, so a sheet taller than the screen scrolls its full height. */
-@supports not (zoom: 1) {
-  .wsj-page {
-    overflow-x: hidden;
-  }
-  .wsj-sheet {
-    zoom: 1;
-  }
-}
 .newspaper-root .wsj-shelved {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -8938,7 +8938,8 @@ li.counting .tt-count.card {
     overflow: visible !important;
   }
   .newspaper-root .wsj-fit .wsj-sheet {
-    zoom: 1 !important;
+    position: static !important;
+    transform: none !important;
     height: auto !important;
     min-height: 0 !important;
     max-height: none !important;
@@ -10626,4 +10627,66 @@ body:has(.tt-phone-shot) {
   .gm-alert-ring {
     animation: gm-alert-veil 180ms ease both;
   }
+}
+
+/* Times art never sizes the page: a photo holds its box before, after and
+   without its load, so a late picture or a 404 can't move the type. */
+.newspaper-root .wsj-sheet .tt-recap-photo.wide img,
+.newspaper-root .wsj-sheet .tt-recap-photo.inset img,
+.newspaper-root .wsj-sheet .tt-recap-photo.fit img,
+.newspaper-root .wsj-sheet .wsj-cut.fit img {
+  width: 100% !important;
+  height: auto;
+  aspect-ratio: 3 / 2 !important;
+}
+.newspaper-root .wsj-sheet .tt-recap-photo.fit img,
+.newspaper-root .wsj-sheet .wsj-cut.fit img {
+  object-fit: cover !important;
+}
+.newspaper-root .wsj-sheet .tt-recap-photo.fit,
+.newspaper-root .wsj-sheet .wsj-cut.fit {
+  width: 100%;
+  max-width: 100% !important;
+}
+/* The A1 lead photo and the under-lead's side cut leave the column room for both stories. */
+.newspaper-root .wsj-sheet .wsj-front-main .wsj-story.lead img {
+  max-height: 280px !important;
+}
+.newspaper-root .wsj-sheet .wsj-front-under .wsj-story.art-side {
+  grid-template-columns: 220px minmax(0, 1fr);
+}
+
+/* The bookmark sits at the headline's end instead of on a line of its own. */
+.newspaper-root .wsj-sheet :is(h2, h3, h4):has(> .tt-hl-save) {
+  position: relative;
+  padding-right: 30px;
+}
+.newspaper-root .wsj-sheet :is(h2, h3, h4) > .tt-hl-save > .tt-save {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  margin: 0;
+}
+
+/* Set by the packer (newspaper-pack.ts): blocks that leave the page, and copy cut on a line. */
+.newspaper-root .wsj-sheet [data-tt-packed],
+.wsj-sheet [data-tt-packed][data-tt-packed] {
+  display: none !important;
+}
+.newspaper-root .wsj-sheet [data-tt-cut] {
+  overflow: hidden !important;
+  column-fill: auto !important;
+  max-height: none !important;
+}
+.newspaper-root .wsj-sheet .wsj-jump.when-cut {
+  visibility: hidden;
+}
+.newspaper-root .wsj-sheet .wsj-story:has([data-tt-cut]) .wsj-jump.when-cut {
+  visibility: visible;
+}
+.newspaper-root .wsj-sheet .wsj-prose [data-tt-more] {
+  display: none;
+}
+.newspaper-root .wsj-sheet .wsj-prose[data-tt-grown] [data-tt-more] {
+  display: block;
 }

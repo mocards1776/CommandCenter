@@ -17,6 +17,7 @@ import { formatRecapWhen, recapBodyForPage, recapDropLead, recapIsScoreOnly, rec
 import { isSingleGameRecap } from "@/lib/newspaper-sections";
 import { cleanStoryCopy, isNavSoup, proseParas, readableCopy } from "@/lib/newspaper-copy";
 import { isBoilerplateDek, storySource } from "@/lib/newspaper-source";
+import { readerLinks } from "@/lib/reader-links";
 import { fetchRssArticle, scrubReaderChrome, stripDuplicateContentImages } from "@/lib/rss";
 import { cn } from "@/lib/utils";
 import { ReaderContext, type ReaderStory } from "@/components/newspaper/reader-context";
@@ -72,9 +73,6 @@ function PaperReader({ story, onClose }: { story: ReaderStory; onClose: () => vo
   const { card, game } = story;
   const queryClient = useQueryClient();
   const sheetRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    window.dispatchEvent(new CustomEvent("tt-need-desks", { detail: ["tt-wrap-bodies", "tt-board"] }));
-  }, [card.id]);
   const source = httpUrl(card.wrapHref) ?? httpUrl(game?.recap?.url) ?? httpUrl(card.gameHref);
   const espnEvent = espnEventOf(story);
   const path = game?.path ?? card.leaguePath;
@@ -152,8 +150,8 @@ function PaperReader({ story, onClose }: { story: ReaderStory; onClose: () => vo
   const html = useMemo(() => {
     const raw = body.data?.html;
     if (!raw) return null;
-    return stripDuplicateContentImages(scrubReaderChrome(raw), photo);
-  }, [body.data?.html, photo]);
+    return readerLinks(stripDuplicateContentImages(scrubReaderChrome(raw), photo), source);
+  }, [body.data?.html, photo, source]);
   const paras = useMemo(() => {
     const text = recapBodyForPage(body.data?.text ?? "");
     return text ? proseParas(text) : [];
