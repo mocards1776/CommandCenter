@@ -59,7 +59,18 @@ import {
   type StandGroup,
 } from "@/lib/newspaper-box";
 import { cleanStoryCopy, proseParas, tidy, truncateAtSentence } from "@/lib/newspaper-copy";
-import { applyScaledFitBox, fitMeasureNeeded, pageFit, prefetchSrc, sheetNeedsTransformFit } from "@/lib/newspaper-fit";
+import {
+  applyScaledFitBox,
+  cachedFitBoxPx,
+  fitMeasureNeeded,
+  pageFit,
+  paintCachedFitBox,
+  readPageFit,
+  rememberPageFit,
+  sheetNeedsTransformFit,
+} from "@/lib/newspaper-fit";
+import { paperImgAttrs } from "@/lib/newspaper-img-attrs";
+import { PAGE_WINDOW, pageShouldMount } from "@/lib/newspaper-window";
 import { FitCopy, FittedSheet } from "@/components/newspaper/FittedSheet";
 import { TimesCommitBoundary } from "@/components/newspaper/TimesCommitBoundary";
 import { recapBodyForPage, recapDropLead, recapIsScoreOnly, recapPhotoKind, recapShouldDropCap, splitApDateline } from "@/lib/newspaper-recap";
@@ -339,8 +350,7 @@ function TeamLogo({
       src={src}
       alt={alt ?? ""}
       className={cn("wsj-logo", size)}
-      loading="lazy"
-      decoding="async"
+      {...paperImgAttrs()}
       onError={(e) => {
         (e.currentTarget as HTMLImageElement).style.visibility = "hidden";
       }}
@@ -549,9 +559,9 @@ function Countdown({
           {opener.billing}
         </em>
         <strong>
-          {logo ? <img src={logo} alt="" aria-hidden="true" /> : null}
+          {logo ? <img src={logo} alt="" aria-hidden="true" {...paperImgAttrs()} /> : null}
           {openerMatchup(opener)}
-          {opener.opponentLogo ? <img src={opener.opponentLogo} alt="" aria-hidden="true" /> : null}
+          {opener.opponentLogo ? <img src={opener.opponentLogo} alt="" aria-hidden="true" {...paperImgAttrs()} /> : null}
         </strong>
         <span>
           {openerDate(opener)}
@@ -979,7 +989,15 @@ function runIn(text: string): [string, string] {
   return [words.slice(0, n).join(" "), words.slice(n).join(" ")];
 }
 
-function Cut({ card, shape = "wide" }: { card: GameWrapCard; shape?: "wide" | "tall" | "square" }) {
+function Cut({
+  card,
+  shape = "wide",
+  eager = false,
+}: {
+  card: GameWrapCard;
+  shape?: "wide" | "tall" | "square";
+  eager?: boolean;
+}) {
   const [measured, setMeasured] = useState<number | null>(null);
   if (!card.photo) return null;
   const caption =
@@ -994,7 +1012,7 @@ function Cut({ card, shape = "wide" }: { card: GameWrapCard; shape?: "wide" | "t
       <img
         src={card.photo}
         alt=""
-        loading="lazy"
+        {...paperImgAttrs(eager)}
         onLoad={(e) => {
           const w = e.currentTarget.naturalWidth;
           if (w > 0) setMeasured((prev) => (prev && prev <= w ? prev : w));
@@ -1043,11 +1061,11 @@ function StatPoster({
   const record = clubRecord(team);
   return (
     <figure className={cn("wsj-poster", layout, opener && "counting")} style={tint(teamColor(team))}>
-      {logo ? <img className="wsj-poster-mark" src={logo} alt="" aria-hidden="true" /> : null}
+      {logo ? <img className="wsj-poster-mark" src={logo} alt="" aria-hidden="true" {...paperImgAttrs()} /> : null}
       <div className="wsj-poster-id">
         {logo ? (
           <span className="wsj-poster-disc">
-            <img src={logo} alt="" />
+            <img src={logo} alt="" {...paperImgAttrs()} />
           </span>
         ) : null}
         <div>
@@ -1154,13 +1172,14 @@ function Story({
   const photoKind = recapPhotoKind(card.photo, card.photoWidth);
   const narrowArt =
     photoKind === "fit" || (Boolean(card.photo) && isNarrowStoryImage(card.photo));
+  const eagerArt = Boolean(className?.includes("lead"));
   const artNode =
     art === "none"
       ? null
       : card.photo
         ? recap
-          ? <RecapPhoto url={card.photo} width={card.photoWidth} caption={card.caption} />
-          : <Cut card={card} shape={art === "side" && copy.length > 450 ? "square" : "wide"} />
+          ? <RecapPhoto url={card.photo} width={card.photoWidth} caption={card.caption} eager={eagerArt} />
+          : <Cut card={card} shape={art === "side" && copy.length > 450 ? "square" : "wide"} eager={eagerArt} />
         : poster
           ? <StatPoster team={team ?? null} card={card} layout={poster === "band" ? "band" : "block"} />
           : null;
@@ -1250,10 +1269,10 @@ function Brief({
       {...(trim != null ? { "data-tt-trim": trim } : {})}
     >
       {card.photo ? (
-        <img className="wsj-brief-photo" src={card.photo} alt="" loading="lazy" />
+        <img className="wsj-brief-photo" src={card.photo} alt="" {...paperImgAttrs()} />
       ) : crest ? (
         <span className="wsj-brief-crest">
-          <img src={crest} alt="" loading="lazy" />
+          <img src={crest} alt="" {...paperImgAttrs()} />
         </span>
       ) : null}
       <div className="wsj-brief-copy">
@@ -2112,7 +2131,7 @@ function InsideFlag({ card, team }: { card: GameWrapCard; team: TeamInfobox | nu
   const logo = team?.snap.logo || team?.detail?.logo || null;
   return (
     <header className="wsj-inside-flag">
-      {logo ? <img src={logo} alt="" aria-hidden="true" /> : null}
+      {logo ? <img src={logo} alt="" aria-hidden="true" {...paperImgAttrs()} /> : null}
       <span>{team?.fav.shortName || card.teamName || card.sportLabel}</span>
       <em>{[card.sportLabel, team ? clubRecord(team) : null, team?.snap.standing].filter(Boolean).join(" · ")}</em>
     </header>
@@ -2149,7 +2168,7 @@ function StoryNames({ card }: { card: GameWrapCard }) {
             {files.map((f) => (
               <li key={f.href}>
                 <span className="tt-files-face">
-                  {f.headshot ? <img src={f.headshot} alt="" loading="lazy" /> : <b>{initials(f.name)}</b>}
+                  {f.headshot ? <img src={f.headshot} alt="" {...paperImgAttrs()} /> : <b>{initials(f.name)}</b>}
                 </span>
                 <span className="tt-files-copy">
                   <strong>
@@ -2307,7 +2326,7 @@ function OpenerDesk({ page, onTurn }: { page: SportFrontPage; onTurn: (folio: st
         return (
           <article key={club.key} className="tt-open" style={tint(club.color ?? null)}>
             <header>
-              {club.logo ? <img src={club.logo} alt="" aria-hidden="true" /> : null}
+              {club.logo ? <img src={club.logo} alt="" aria-hidden="true" {...paperImgAttrs()} /> : null}
               <h4>{club.shortName}</h4>
               {played ? <span>Last season {club.record}</span> : null}
             </header>
@@ -2325,7 +2344,7 @@ function OpenerDesk({ page, onTurn }: { page: SportFrontPage; onTurn: (folio: st
                       <li key={g.iso + g.opponentShort} className={g.home ? "home" : "away"}>
                         <b>{openerDay(g)}</b>
                         <span>
-                          {g.opponentLogo ? <img src={g.opponentLogo} alt="" aria-hidden="true" /> : null}
+                          {g.opponentLogo ? <img src={g.opponentLogo} alt="" aria-hidden="true" {...paperImgAttrs()} /> : null}
                           {openerMatchup(g)}
                         </span>
                         <em>{openerTime(g)}</em>
@@ -2360,7 +2379,7 @@ function OpenerDesk({ page, onTurn }: { page: SportFrontPage; onTurn: (folio: st
                             <td>{r.rank}</td>
                             <th scope="row">
                               <span>
-                                {r.logo ? <img src={r.logo} alt="" aria-hidden="true" /> : null}
+                                {r.logo ? <img src={r.logo} alt="" aria-hidden="true" {...paperImgAttrs()} /> : null}
                                 {r.team}
                               </span>
                             </th>
@@ -3007,7 +3026,7 @@ function SportSectionFront({
                   <ol>
                     {group.rows.slice(0, 5).map((row) => (
                       <li key={`${group.category}-${row.name}`}>
-                        {row.headshot ? <img src={row.headshot} alt="" /> : <span className="tt-lleaders-ph" />}
+                        {row.headshot ? <img src={row.headshot} alt="" {...paperImgAttrs()} /> : <span className="tt-lleaders-ph" />}
                         <span className="tt-lleaders-who">
                           <strong>{row.name}</strong>
                           <em>{row.team}</em>
@@ -3177,7 +3196,7 @@ function ScoreHero({ game, size = "lg" }: { game: BoxGame; size?: "lg" | "md" })
           className={cn("tt-hero-side", side.winner && "won", game.final && !side.winner && "lost")}
           style={tint(hexColor(side.color) ?? "#1f2a44")}
         >
-          {side.logo ? <img className="tt-hero-ghost" src={side.logo} alt="" aria-hidden="true" /> : null}
+          {side.logo ? <img className="tt-hero-ghost" src={side.logo} alt="" aria-hidden="true" {...paperImgAttrs()} /> : null}
           <span className="tt-hero-disc">
             <TeamLogo src={side.logo} size="lg" />
           </span>
@@ -3269,7 +3288,7 @@ function WrapPlayers({ card }: { card: GameWrapCard }) {
               ? files.slice(0, 4).map((f) => (
                   <li key={f.href}>
                     <span className="tt-files-face">
-                      {f.headshot ? <img src={f.headshot} alt="" loading="lazy" /> : <b>{initials(f.name)}</b>}
+                      {f.headshot ? <img src={f.headshot} alt="" {...paperImgAttrs()} /> : <b>{initials(f.name)}</b>}
                     </span>
                     <span className="tt-files-copy">
                       <strong>
@@ -3503,7 +3522,7 @@ function ScoresDesk({
       >
         {photo ? (
           <figure className="tt-feature-photo">
-            <img src={photo} alt="" loading="lazy" />
+            <img src={photo} alt="" {...paperImgAttrs()} />
             <figcaption>
               {featured.away.name} at {featured.home.name}
               {featured.venue ? `, ${featured.venue}` : ""}.
@@ -3885,7 +3904,7 @@ function LeadersDesk({ groups }: { groups: LeagueLeaderGroup[] }) {
                   {...(i > 0 ? { "data-tt-trim": 35 + i } : {})}
                 >
                   <i>{i + 1}</i>
-                  {row.headshot ? <img src={row.headshot} alt="" /> : <span className="tt-lleaders-ph" />}
+                  {row.headshot ? <img src={row.headshot} alt="" {...paperImgAttrs()} /> : <span className="tt-lleaders-ph" />}
                   <span className="tt-lleaders-who">
                     <strong>{row.name}</strong>
                     <em>{row.team}</em>
@@ -4092,7 +4111,7 @@ function PlayersDesk({ nights, newsDay }: { nights: PlayerNight[]; newsDay: stri
       <article key={`${n.player.path}-${n.player.id}`} className={cn("tt-pl", big && "big", n.day === newsDay && "played")}>
         <header>
           <span className="tt-pl-face">
-            {n.headshot ? <img src={n.headshot} alt="" loading="lazy" /> : null}
+            {n.headshot ? <img src={n.headshot} alt="" {...paperImgAttrs()} /> : null}
           </span>
           <span className="tt-pl-id">
             <em>
@@ -4107,7 +4126,7 @@ function PlayersDesk({ nights, newsDay }: { nights: PlayerNight[]; newsDay: stri
         </header>
         {n.opponent ? (
           <p className="tt-pl-opp">
-            {n.opponentLogo ? <img src={n.opponentLogo} alt="" loading="lazy" /> : null}
+            {n.opponentLogo ? <img src={n.opponentLogo} alt="" {...paperImgAttrs()} /> : null}
             <span>
               {n.homeAway ?? "vs"} {n.opponent}
             </span>
@@ -4220,7 +4239,7 @@ function CoachesDesk({ tiles }: { tiles: FavoriteCoachTile[] }) {
               <div className="tt-coach-story">
                 {last ? (
                   <p className={cn("tt-coach-last", tile.lastGame?.result === "W" && "w", tile.lastGame?.result === "L" && "l")}>
-                    {tile.lastGame?.opponentLogo ? <img src={tile.lastGame.opponentLogo} alt="" /> : null}
+                    {tile.lastGame?.opponentLogo ? <img src={tile.lastGame.opponentLogo} alt="" {...paperImgAttrs()} /> : null}
                     <span>{last}</span>
                   </p>
                 ) : null}
@@ -4257,10 +4276,10 @@ function CoachShot({ tile }: { tile: FavoriteCoachTile }) {
   if (!photo && !logo) return null;
   return (
     <span className="tt-coach-shot">
-      <img className={photo ? "portrait" : "portrait logo-only"} src={photo || logo || ""} alt="" />
+      <img className={photo ? "portrait" : "portrait logo-only"} src={photo || logo || ""} alt="" {...paperImgAttrs()} />
       {photo && logo ? (
         <span className="tt-coach-badge">
-          <img src={logo} alt="" />
+          <img src={logo} alt="" {...paperImgAttrs()} />
         </span>
       ) : null}
     </span>
@@ -4271,7 +4290,7 @@ function CoachLeadMark({ tile }: { tile: FavoriteCoachTile }) {
   if (!tile.teamLogo) return null;
   return (
     <span className="tt-coach-mark">
-      <img src={tile.teamLogo} alt="" />
+      <img src={tile.teamLogo} alt="" {...paperImgAttrs()} />
     </span>
   );
 }
@@ -4486,7 +4505,7 @@ function ClubFormGrid({
                   <ul className="wsj-form-leaders">
                     {leaders.slice(0, 4).map((l) => (
                       <li key={l.key}>
-                        {l.headshot ? <img src={l.headshot} alt="" loading="lazy" className="tt-face md" /> : null}
+                        {l.headshot ? <img src={l.headshot} alt="" {...paperImgAttrs()} className="tt-face md" /> : null}
                         <span>
                           {l.label ? <em>{l.label}</em> : null}
                           <strong>
@@ -4639,7 +4658,7 @@ function NatPhoto({
       <img
         src={story.imageUrl}
         alt=""
-        loading={size === "lead" ? "eager" : "lazy"}
+        {...paperImgAttrs()}
         onError={onFail}
       />
       {credit ? <figcaption>Photo: {credit}</figcaption> : null}
@@ -4813,7 +4832,7 @@ function MoStory({ item, size, trim }: { item: MoItem; size: "xl" | "md" | "sm";
     >
       {item.photo && size !== "sm" ? (
         <button type="button" className="tt-mo-photo" onClick={() => open({ card })} aria-label={item.headline}>
-          <img src={item.photo} alt="" loading="lazy" />
+          <img src={item.photo} alt="" {...paperImgAttrs()} />
         </button>
       ) : null}
       <div className="tt-mo-copy">
@@ -4932,7 +4951,7 @@ function ScoutBand({ item, onTurn, deskFolio }: { item: MoItem; onTurn: (folio: 
         <strong>Missouri Scout</strong>
         <em>{moWhen(item.when) || "Latest"}</em>
       </div>
-      {item.photo ? <img className="tt-scout-photo" src={item.photo} alt="" loading="lazy" /> : null}
+      {item.photo ? <img className="tt-scout-photo" src={item.photo} alt="" {...paperImgAttrs()} /> : null}
       <div className="tt-scout-copy">
         <h3 className="wsj-hl md">
           <HeadlineSave card={card}>
@@ -4959,14 +4978,12 @@ function ScoutBand({ item, onTurn, deskFolio }: { item: MoItem; onTurn: (folio: 
 
 /* ───────────────────────── pager ───────────────────────── */
 
-/** Folios this close to the one in view stay painted and get their art fetched ahead of the swipe. */
-const NEAR_PAGES = 2;
 const NO_STORIES: GameWrapCard[] = [];
 
 /** The folio in view. Only near-page consumers read it, so turning a page doesn't re-render the edition. */
 const PagerIndexContext = createContext(0);
-/** Folios already filled after A1. A1 is in the set from the start. */
-const FolioFillContext = createContext<ReadonlySet<number>>(new Set([0]));
+/** False until A1 has painted. Neighbors stay unmounted so the front is built first. */
+const NeighborsContext = createContext(false);
 
 const MemoSportFront = memo(SportFront);
 
@@ -4979,90 +4996,72 @@ const FolioBody = memo(function FolioBody({ render }: { render: () => ReactNode 
   return render();
 });
 
-function FolioGate({ index, onShow }: { index: number; onShow: () => void }) {
-  const current = useContext(PagerIndexContext);
-  const filled = useContext(FolioFillContext);
-  const want =
-    index === 0 || filled.has(index) || (current !== 0 && Math.abs(index - current) <= NEAR_PAGES);
-  useLayoutEffect(() => {
-    if (want) onShow();
-  }, [want, onShow]);
-  return null;
-}
-
 /**
- * A1 mounts with the first paint. Later folios fill backward in idle time,
- * or immediately when the reader turns to them. Once shown, the body stays
- * mounted — a pager-index change must not remount it.
+ * Mount the current folio and the two on either side. Every other slot stays
+ * a same-width placeholder so the pager's scroll index does not move.
+ * A remembered fit is painted immediately; the pack pass does not run again.
  */
 const FolioSlot = memo(function FolioSlot({
   index,
   folio,
   kind,
+  pageId,
   render,
 }: {
   index: number;
   folio: string;
   kind: string;
+  pageId: string;
   render: () => ReactNode;
 }) {
-  const [shown, setShown] = useState(index === 0);
-  const show = useCallback(() => setShown(true), []);
+  const current = useContext(PagerIndexContext);
+  const neighborsOn = useContext(NeighborsContext);
+  const mount = pageShouldMount(index, current, neighborsOn);
+  const cached = readPageFit(pageId);
+  // Reuse the fit only when this visit starts with a finished measurement.
+  // A plan that lands mid-visit must still be allowed to change the height.
+  const wasMounted = useRef(false);
+  const reuseFit = useRef(false);
+  if (mount && !wasMounted.current) reuseFit.current = Boolean(cached);
+  if (!mount) reuseFit.current = false;
+  wasMounted.current = mount;
+  const held = reuseFit.current && cached ? cached : null;
+  const box = held ? cachedFitBoxPx(1032, held.layoutH, held.fit, held.fit < 1) : null;
   return (
-    <section className="wsj-page" aria-label={`Page ${folio}`} data-kind={kind} data-folio={folio}>
-      <FolioGate index={index} onShow={show} />
-      <div className="wsj-fit">
-        <FittedSheet>{shown ? <FolioBody render={render} /> : null}</FittedSheet>
+    <section
+      className="wsj-page"
+      aria-label={`Page ${folio}`}
+      data-kind={kind}
+      data-folio={folio}
+      data-page-id={pageId}
+      data-mounted={mount ? "1" : "0"}
+      data-tt-fit-held={held ? "1" : "0"}
+    >
+      <div
+        className="wsj-fit"
+        style={box?.width ? { width: box.width, height: box.height, overflow: "hidden" } : undefined}
+      >
+        {mount ? (
+          <FittedSheet
+            pageId={pageId}
+            folio={folio}
+            skipFit={Boolean(held)}
+            reservedHeight={held?.layoutH}
+            reservedTransform={box?.transform || undefined}
+          >
+            <FolioBody render={render} />
+          </FittedSheet>
+        ) : (
+          <div
+            className="wsj-sheet wsj-sheet-hold"
+            aria-hidden="true"
+            style={cached ? { height: cached.layoutH, minHeight: cached.layoutH } : undefined}
+          />
+        )}
       </div>
     </section>
   );
 });
-
-function prefetchNearArt(pager: HTMLElement, index: number) {
-  const sheets = pager.children;
-  for (let i = 0; i < sheets.length; i++) {
-    if (Math.abs(i - index) > NEAR_PAGES) continue;
-    const sheet = sheets[i] as HTMLElement;
-    for (const img of sheet.querySelectorAll("img")) prefetchSrc(img.currentSrc || img.src);
-  }
-}
-
-/** Fetch the rest of the edition's art in idle time, a few at a time, so far folios open already printed. */
-function warmEdition(pager: HTMLElement, cap = 4): () => void {
-  const conn = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
-  if (conn?.saveData || /(^|-)2g$/.test(conn?.effectiveType ?? "")) return () => {};
-  const hasIdle = typeof window.requestIdleCallback === "function";
-  const idle = (cb: () => void) => (hasIdle ? window.requestIdleCallback(cb, { timeout: 2_000 }) : window.setTimeout(cb, 200));
-  const cancelIdle = (id: number) => (hasIdle ? window.cancelIdleCallback(id) : window.clearTimeout(id));
-  let stopped = false;
-  let inflight = 0;
-  let handle = 0;
-  const seen = new Set<string>();
-  const pump = () => {
-    handle = 0;
-    if (stopped) return;
-    for (const img of pager.querySelectorAll<HTMLImageElement>("img[src]")) {
-      if (inflight >= cap) break;
-      const src = img.currentSrc || img.src;
-      if (!src || seen.has(src) || img.complete) continue;
-      seen.add(src);
-      prefetchSrc(src);
-      inflight++;
-      window.setTimeout(() => {
-        inflight--;
-        schedule();
-      }, 800);
-    }
-  };
-  const schedule = () => {
-    if (!stopped && !handle) handle = idle(pump);
-  };
-  schedule();
-  return () => {
-    stopped = true;
-    if (handle) cancelIdle(handle);
-  };
-}
 
 /* ───────────────────────── page ───────────────────────── */
 
@@ -5551,14 +5550,12 @@ function NewspaperDesk() {
 
   const pagerRef = useRef<HTMLDivElement>(null);
   const [pageIndex, setPageIndex] = useState(0);
-  const [fillFor, setFillFor] = useState(pressId);
-  const [filled, setFilled] = useState<ReadonlySet<number>>(() => new Set([0]));
-  if (fillFor !== pressId) {
-    setFillFor(pressId);
-    setFilled(new Set([0]));
+  const [neighborFor, setNeighborFor] = useState(pressId);
+  const [neighborsOn, setNeighborsOn] = useState(false);
+  if (neighborFor !== pressId) {
+    setNeighborFor(pressId);
+    setNeighborsOn(false);
   }
-  const filledRef = useRef(filled);
-  filledRef.current = filled;
   const pageIndexRef = useRef(0);
   pageIndexRef.current = pageIndex;
   const restoringRef = useRef(false);
@@ -5596,12 +5593,22 @@ function NewspaperDesk() {
       for (const page of el.querySelectorAll<HTMLElement>(".wsj-page")) {
         const fitBox = page.querySelector<HTMLElement>(".wsj-fit");
         const sheet = page.querySelector<HTMLElement>(".wsj-sheet");
-        if (!fitBox || !sheet || sheet.childElementCount === 0) continue;
+        if (!fitBox || !sheet || sheet.classList.contains("wsj-sheet-hold") || sheet.childElementCount === 0) continue;
+        const pageId = page.dataset.pageId ?? "";
+        const cached = pageId ? readPageFit(pageId) : null;
+        // A page that already has a fit paints the remembered box. Do not
+        // clear transform and measure again — that flash blanks the sheet.
+        if (cached && page.dataset.ttFitHeld === "1") {
+          paintCachedFitBox(fitBox, sheet, pageW, cached.layoutH, fit, useTransform);
+          measured.set(sheet, { layoutH: cached.layoutH, fit });
+          continue;
+        }
         const layoutH = sheet.offsetHeight;
         const prev = measured.get(sheet);
         if (!fitMeasureNeeded(prev?.layoutH ?? 0, layoutH, prev?.fit ?? -1, fit)) continue;
-        applyScaledFitBox(fitBox, sheet, pageW, fit, useTransform);
+        const measuredH = applyScaledFitBox(fitBox, sheet, pageW, fit, useTransform);
         measured.set(sheet, { layoutH: sheet.offsetHeight, fit });
+        if (pageId && measuredH > 80) rememberPageFit(pageId, { fit, layoutH: measuredH });
       }
     };
     let raf = 0;
@@ -6752,51 +6759,25 @@ function NewspaperDesk() {
   const pagesRef = useRef(pages);
   pagesRef.current = pages;
 
-  // After A1 is up, mount the rest of the book from the back so the front
-  // stays put and the inside folios fill in idle slices.
+  // A1 is in the first commit. Neighbors mount on the next frame, after that paint.
   useEffect(() => {
-    if (!revealed || pages.length <= 1) return;
-    let cancelled = false;
-    let cursor = pages.length - 1;
-    let cancelPump = () => {};
-    const pump = () => {
-      if (cancelled) return;
-      const have = filledRef.current;
-      const batch: number[] = [];
-      while (cursor >= 1 && batch.length < 4) {
-        if (!have.has(cursor)) batch.push(cursor);
-        cursor--;
-      }
-      if (batch.length) {
-        setFilled((prev) => {
-          const next = new Set(prev);
-          for (const index of batch) next.add(index);
-          return next;
-        });
-      }
-      if (cursor >= 1) schedulePump();
-    };
-    const schedulePump = () => {
-      const idle = window.requestIdleCallback?.bind(window);
-      if (idle) {
-        const id = idle(() => pump(), { timeout: 500 });
-        cancelPump = () => window.cancelIdleCallback(id);
-      } else {
-        const id = window.setTimeout(pump, 16);
-        cancelPump = () => window.clearTimeout(id);
-      }
-    };
-    schedulePump();
+    if (!revealed) return;
+    let cancel = false;
+    const id = requestAnimationFrame(() => {
+      if (!cancel) setNeighborsOn(true);
+    });
     return () => {
-      cancelled = true;
-      cancelPump();
+      cancel = true;
+      cancelAnimationFrame(id);
     };
-  }, [revealed, pages.length, pressId]);
+  }, [revealed, pressId]);
+
   useEffect(() => {
     const page = pages[pageIndex];
     const names = heavyDesksForPage(page);
     if (names.length) releaseHeavy(names);
-  }, [pageIndex, pages, releaseHeavy]);  const weatherFolio = useMemo(
+  }, [pageIndex, pages, releaseHeavy]);
+  const weatherFolio = useMemo(
     () => pages.find((p) => p.kind === "favorites-clubs" && (p.weatherPart ?? "today") === "today")?.folio ?? pages.find((p) => p.kind === "favorites-clubs")?.folio ?? null,
     [pages],
   );
@@ -6840,7 +6821,7 @@ function NewspaperDesk() {
       const sheet = el.children[next] as HTMLElement | undefined;
       if (sheet && next !== from) sheet.scrollTop = 0;
       // Gliding across a whole section paints every folio in between; long jumps cut straight there.
-      el.scrollTo({ left: next * el.clientWidth, behavior: Math.abs(next - from) > NEAR_PAGES ? "instant" : "smooth" });
+      el.scrollTo({ left: next * el.clientWidth, behavior: Math.abs(next - from) > PAGE_WINDOW ? "instant" : "smooth" });
       setFolio(next);
       markFolio(next);
     },
@@ -7006,10 +6987,11 @@ function NewspaperDesk() {
     () =>
       pages.map((page, index) => (
           <FolioSlot
-            key={page.folio}
+            key={`${pressId}:${page.folio}`}
             index={index}
             folio={page.folio}
             kind={page.kind}
+            pageId={`${pressId}:${page.folio}`}
             render={() => (
             <>
             {index === 0 ? (
@@ -7210,11 +7192,6 @@ function NewspaperDesk() {
     ],
   );
 
-  useEffect(() => {
-    const el = pagerRef.current;
-    if (el) prefetchNearArt(el, pageIndex);
-  }, [pageIndex, sheets]);
-
   useLayoutEffect(() => {
     // A1's lead is enough to drop the cover. Boards and the rest of the folio
     // fill in behind it; waiting on them held the paper for the whole file.
@@ -7291,19 +7268,6 @@ function NewspaperDesk() {
     };
   }, [pageIndex, sheets, user?.id]);
 
-  useEffect(() => {
-    const el = pagerRef.current;
-    if (!el || !pages.length) return;
-    let stop = () => {};
-    const timer = window.setTimeout(() => {
-      stop = warmEdition(el);
-    }, 3_000);
-    return () => {
-      window.clearTimeout(timer);
-      stop();
-    };
-  }, [sheets, pages.length]);
-
   const current = pages[pageIndex];
   const sectionIdx = edition.sections.findIndex((s) => s.code === current?.section);
 
@@ -7311,7 +7275,7 @@ function NewspaperDesk() {
     <div
       className="newspaper-root wsj-shell"
       data-times-ready={revealed ? "1" : "0"}
-      data-times-folios={pages.length > 0 && filled.size >= pages.length ? "1" : "0"}
+      data-times-folios={neighborsOn ? "1" : "0"}
     >
       <GameLookup.Provider value={findGame}>
       <OpenerContext.Provider value={openers}>
@@ -7401,7 +7365,7 @@ function NewspaperDesk() {
         </div>
       </div>
 
-      <FolioFillContext.Provider value={filled}>
+      <NeighborsContext.Provider value={neighborsOn}>
       <PagerIndexContext.Provider value={pageIndex}>
         <TimesCommitBoundary>
         <div className="tt-spread">
@@ -7430,7 +7394,7 @@ function NewspaperDesk() {
         </div>
         </TimesCommitBoundary>
       </PagerIndexContext.Provider>
-      </FolioFillContext.Provider>
+      </NeighborsContext.Provider>
       {savedOpen ? <SavedDrawer onClose={() => setSavedOpen(false)} /> : null}
       </ReaderProvider>
       </SavedProvider>

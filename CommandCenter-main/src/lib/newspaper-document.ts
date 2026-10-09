@@ -1,5 +1,6 @@
 /**
- * Open the Times as a finished document: one hold, then the whole paper.
+ * Open the Times as a finished document: one hold, then A1.
+ * Later folios mount as the reader turns to them.
  */
 
 export const REVEAL_CAP_MS = 7_000;
@@ -27,9 +28,10 @@ function pageIndexOf(img: Element): number {
   return [...pager.children].indexOf(page);
 }
 
-/** Images on the first view (A1 and the next folio), not the whole book. */
+/** Eager images on the first view (A1's lead). Lazy logos and later photos must not hold the cover. */
 export function aboveFoldImages(root: ParentNode, pages = ATF_PAGES): HTMLImageElement[] {
   return [...root.querySelectorAll("img")].filter((img) => {
+    if (img.loading === "lazy") return false;
     const idx = pageIndexOf(img);
     return idx >= 0 && idx < pages;
   });

@@ -1,4 +1,5 @@
 import { Bookmark, X } from "lucide-react";
+import { paperImgAttrs } from "@/lib/newspaper-img-attrs";
 import { useReader } from "./reader-context";
 import { SaveMark } from "./SaveMark";
 import { useSavedArticles } from "./saved-context";
@@ -43,7 +44,7 @@ export function SavedDrawer({ onClose }: { onClose: () => void }) {
                         aria-label={row.headline}
                       >
                         {row.image ? (
-                          <img src={row.image} alt="" />
+                          <img src={row.image} alt="" {...paperImgAttrs()} />
                         ) : (
                           <span className="tt-saved-thumb">
                             <Bookmark size={18} strokeWidth={1.5} />

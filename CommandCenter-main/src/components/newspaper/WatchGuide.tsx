@@ -16,12 +16,13 @@ import {
   type WatchNetwork,
   type WatchSide,
 } from "@/lib/newspaper-watch";
+import { paperImgAttrs } from "@/lib/newspaper-img-attrs";
 import "./WatchGuide.css";
 
 function Crest({ side, league, size }: { side: WatchSide; league: WatchListing["league"]; size: "lg" | "md" | "sm" }) {
   const src = watchLogo(side, league);
   return src ? (
-    <img className={`tt-watch-crest ${size}`} src={src} alt="" loading="lazy" />
+    <img className={`tt-watch-crest ${size}`} src={src} alt="" {...paperImgAttrs()} />
   ) : (
     <span className={`tt-watch-crest ${size} blank`}>{side.abbrev.slice(0, 3)}</span>
   );
@@ -69,7 +70,7 @@ function BannerSide({
       style={watchTint(watchTeamColor(side, league)) as CSSProperties}
     >
       {watchLogo(side, league) ? (
-        <img className="tt-watch-ghost" src={watchLogo(side, league)!} alt="" aria-hidden="true" />
+        <img className="tt-watch-ghost" src={watchLogo(side, league)!} alt="" aria-hidden="true" {...paperImgAttrs()} />
       ) : null}
       <span className="tt-watch-disc">
         <Crest side={side} league={league} size="lg" />

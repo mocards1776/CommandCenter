@@ -82,15 +82,77 @@ export function sheetNeedsTransformFit(
   return layout > 90;
 }
 
-/** Size the fit wrapper to the visual sheet when using transform:scale (not CSS zoom). */
+/** Size the fit wrapper to the visual sheet when using transform:scale (not CSS zoom). Returns the unzoomed height it locked. */
 export function applyScaledFitBox(
   fitBox: HTMLElement,
   sheet: HTMLElement,
   pageW: number,
   fit: number,
   useTransform: boolean,
-): void {
+): number {
   if (!useTransform || fit >= 1) {
+    fitBox.classList.remove("tt-fit-transform");
+    fitBox.style.width = "";
+    fitBox.style.height = "";
+    fitBox.style.overflow = "";
+    sheet.style.transform = "";
+    sheet.style.transformOrigin = "";
+    return sheetLayoutHeight(sheet);
+  }
+  fitBox.classList.add("tt-fit-transform");
+  // Measure the unscaled sheet, then lock the wrapper to the visual box.
+  // A stale overflow:hidden height makes offsetHeight lie; transform makes
+  // scrollHeight balloon. Clear both before reading.
+  sheet.style.transform = "none";
+  fitBox.style.height = "auto";
+  fitBox.style.overflow = "visible";
+  const layoutH = sheetLayoutHeight(sheet);
+  const box = scaledFitBox(pageW, layoutH, fit);
+  const nextW = `${box.width}px`;
+  const nextH = `${box.height}px`;
+  sheet.style.transform = `scale(${fit})`;
+  sheet.style.transformOrigin = "top left";
+  if (fitBox.style.width !== nextW) fitBox.style.width = nextW;
+  if (fitBox.style.height !== nextH) fitBox.style.height = nextH;
+  fitBox.style.overflow = "hidden";
+  return layoutH;
+}
+
+/** Visual box for a page whose fit was already measured. Does not read layout. */
+export function cachedFitBoxPx(
+  pageW: number,
+  layoutH: number,
+  fit: number,
+  useTransform: boolean,
+): { width: string; height: string; transform: string; minHeight: string } {
+  const minHeight = `${layoutH}px`;
+  if (!useTransform || !(fit > 0) || fit >= 1) {
+    return { width: "", height: "", transform: "", minHeight };
+  }
+  const box = scaledFitBox(pageW, layoutH, fit);
+  return {
+    width: `${box.width}px`,
+    height: `${box.height}px`,
+    transform: `scale(${fit})`,
+    minHeight,
+  };
+}
+
+/**
+ * Put a remembered fit back on the wrapper. Unlike `applyScaledFitBox`, this
+ * never clears `transform` to remeasure — that clear is the blank flash.
+ */
+export function paintCachedFitBox(
+  fitBox: HTMLElement,
+  sheet: HTMLElement,
+  pageW: number,
+  layoutH: number,
+  fit: number,
+  useTransform: boolean,
+): void {
+  const box = cachedFitBoxPx(pageW, layoutH, fit, useTransform);
+  sheet.style.minHeight = box.minHeight;
+  if (!box.transform) {
     fitBox.classList.remove("tt-fit-transform");
     fitBox.style.width = "";
     fitBox.style.height = "";
@@ -100,20 +162,53 @@ export function applyScaledFitBox(
     return;
   }
   fitBox.classList.add("tt-fit-transform");
-  // Measure the unscaled sheet, then lock the wrapper to the visual box.
-  // A stale overflow:hidden height makes offsetHeight lie; transform makes
-  // scrollHeight balloon. Clear both before reading.
-  sheet.style.transform = "none";
-  fitBox.style.height = "auto";
-  fitBox.style.overflow = "visible";
-  const box = scaledFitBox(pageW, sheetLayoutHeight(sheet), fit);
-  const nextW = `${box.width}px`;
-  const nextH = `${box.height}px`;
-  sheet.style.transform = `scale(${fit})`;
+  sheet.style.transform = box.transform;
   sheet.style.transformOrigin = "top left";
-  if (fitBox.style.width !== nextW) fitBox.style.width = nextW;
-  if (fitBox.style.height !== nextH) fitBox.style.height = nextH;
+  if (fitBox.style.width !== box.width) fitBox.style.width = box.width;
+  if (fitBox.style.height !== box.height) fitBox.style.height = box.height;
   fitBox.style.overflow = "hidden";
+}
+
+export type PageFitRecord = {
+  plan: SheetFitPlan;
+  /** Width-only scale (`pageFit`) that was on screen when the sheet was measured. */
+  fit: number;
+  /** Unzoomed sheet height. */
+  layoutH: number;
+};
+
+type PageFitPartial = {
+  plan?: SheetFitPlan;
+  fit?: number;
+  layoutH?: number;
+};
+
+const pageFits = new Map<string, PageFitPartial>();
+
+export function clearPageFits(): void {
+  pageFits.clear();
+}
+
+/** Merge a measured plan and/or box into the cache for `pageId` (edition id + folio). */
+export function rememberPageFit(pageId: string, patch: PageFitPartial): void {
+  if (!pageId) return;
+  const prev = pageFits.get(pageId) ?? {};
+  const next: PageFitPartial = { ...prev };
+  if (patch.plan) next.plan = patch.plan;
+  if (patch.fit != null && patch.fit > 0) next.fit = patch.fit;
+  if (patch.layoutH != null && patch.layoutH > 80) next.layoutH = patch.layoutH;
+  pageFits.set(pageId, next);
+}
+
+export function peekPageFitPlan(pageId: string): SheetFitPlan | null {
+  return pageFits.get(pageId)?.plan ?? null;
+}
+
+/** Both the pack plan and a real sheet height. A remount may reuse this and skip the fit pass. */
+export function readPageFit(pageId: string): PageFitRecord | null {
+  const row = pageFits.get(pageId);
+  if (!row?.plan || row.fit == null || !(row.fit > 0) || row.layoutH == null || !(row.layoutH > 80)) return null;
+  return { plan: row.plan, fit: row.fit, layoutH: row.layoutH };
 }
 
 /** Convert a zoomed viewport distance into unzoomed sheet CSS pixels. */
