@@ -1449,9 +1449,10 @@ function DeskBoard({
   onTurn?: (folio: string) => void;
 }) {
   if (!teams.length) return null;
-  const cols = teams.length < 4 ? 4 : balancedCols(teams.length, [6, 5, 4, 3, 2]);
+  // Rows of six at most: the page drops whole tiles from the end when the board runs long.
+  const cols = Math.min(6, Math.max(4, teams.length));
   return (
-    <section className="wsj-deskboard">
+    <section className="wsj-deskboard" data-tt-rows="">
       <h3 className="wsj-band-title">{title}</h3>
       <ul style={{ ["--cols" as string]: String(cols) }}>
         {teams.map((t) => (
@@ -5067,25 +5068,34 @@ const FolioSlot = memo(function FolioSlot({
  */
 function keepSheetPacked(sheet: HTMLElement): () => void {
   let height = sheet.clientHeight;
+  let live = true;
+  let queued = false;
+  // Coalesced into one pass that still runs before the next paint.
+  const repack = () => {
+    if (queued) return;
+    queued = true;
+    queueMicrotask(() => {
+      queued = false;
+      if (live) packSheet(sheet);
+    });
+  };
   packSheet(sheet);
   const ro = new ResizeObserver(() => {
     if (sheet.clientHeight === height) return;
     height = sheet.clientHeight;
-    packSheet(sheet);
+    repack();
   });
   ro.observe(sheet);
-  const mo = new MutationObserver(() => packSheet(sheet));
+  const mo = new MutationObserver(repack);
   mo.observe(sheet, { childList: true, subtree: true, characterData: true });
-  let live = true;
-  if (document.fonts && document.fonts.status !== "loaded") {
-    void document.fonts.ready.then(() => {
-      if (live) packSheet(sheet);
-    });
-  }
+  // A face first used after fonts.ready reflows type without a mutation.
+  document.fonts?.addEventListener("loadingdone", repack);
+  if (document.fonts && document.fonts.status !== "loaded") void document.fonts.ready.then(repack);
   return () => {
     live = false;
     ro.disconnect();
     mo.disconnect();
+    document.fonts?.removeEventListener("loadingdone", repack);
   };
 }
 
@@ -6241,6 +6251,18 @@ function NewspaperDesk() {
         ? `The ${clockPress.label} is still on the press. ${backEditionNote(pressId, printedAt)}.`
         : null;
 
+  const formInSectionA = useMemo(
+    () =>
+      new Set(
+        pages
+          .flatMap((p) =>
+            p.kind === "favorites-form" ? p.clubs : p.kind === "favorites-clubs" ? (p.formClubs ?? []) : [],
+          )
+          .map((club) => club.key),
+      ),
+    [pages],
+  );
+
   // Built once per edition/data change, never per page turn: re-rendering 60 folios on every
   // swipe was the slow part. Anything that must follow the folio in view reads PagerIndexContext.
   const sheets = useMemo(
@@ -6302,12 +6324,10 @@ function NewspaperDesk() {
                     weather={weatherQ.data}
                     part={page.weatherPart === "outlook" ? "outlook" : page.weatherPart === "today" ? "today" : "all"}
                   />
-                  {(page.clubLimit ?? (page.weatherPart === "today" ? 3 : 0)) > 0 ? (
-                    <ClubsDesk
-                      teams={teams}
-                      offset={page.clubOffset ?? (page.weatherPart === "today" ? 0 : 3)}
-                      limit={page.clubLimit ?? (page.weatherPart === "today" ? 3 : 0)}
-                    />
+                  {page.weatherPart === "today" ? (
+                    <DeskBoard teams={teams} title="Your Clubs" onTurn={goFolio} />
+                  ) : (page.clubLimit ?? 0) > 0 ? (
+                    <ClubsDesk teams={teams} offset={page.clubOffset ?? 3} limit={page.clubLimit} />
                   ) : null}
                   {page.formClubs?.length ? (
                     <div className="wsj-clubs-desk">
@@ -6326,6 +6346,13 @@ function NewspaperDesk() {
                     <p>{page.clubs.length} clubs · standings, numbers, leaders and what’s next</p>
                   </header>
                   <ClubFormGrid clubs={page.clubs} sheets={sheetsQ.data ?? {}} columns={2} />
+                  {pages.findLast((p) => p.kind === "favorites-form") === page ? (
+                    <DeskBoard
+                      teams={teams.filter((t) => !formInSectionA.has(t.fav.key))}
+                      title="More clubs · full form in each section"
+                      onTurn={goFolio}
+                    />
+                  ) : null}
                 </div>
               ) : page.kind === "favorites-watch" ? (
                 <WatchGuide games={watchQ.data ?? []} editionLabel={press.label} />
@@ -6437,6 +6464,7 @@ function NewspaperDesk() {
       pressId,
       selectEdition,
       readingNote,
+      formInSectionA,
     ],
   );
 

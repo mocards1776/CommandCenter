@@ -12,7 +12,8 @@
  *    copy goes whole, the story's own [data-tt-yield] furniture goes.
  * 2. [data-tt-keep] blocks go the same way, last. [data-tt-lead] never does.
  * 3. Anything else wholly below the foot goes, then the lowest whole unit
- *    (story, card, row, item, paragraph) still crossing it.
+ *    (story, card, row, item, paragraph) still crossing it. A [data-tt-rows]
+ *    board is never a unit: it loses its last tiles instead.
  * Each dropped block is then offered the room back, and stories that carry
  * the rest of their copy run on into whatever room is left.
  */
@@ -23,6 +24,8 @@ const KEEP = "[data-tt-keep]";
 const LEAD = "[data-tt-lead]";
 const COPY = ".wsj-prose, [data-tt-clip]";
 const YIELD = "[data-tt-yield]";
+/** Boards that lose their last tiles or rows rather than going whole. */
+const ROWS = "[data-tt-rows]";
 const UNIT =
   "article, li, tr, p, figure, section, aside, table, ul, ol, dl, dl > div, blockquote, h1, h2, h3, h4, h5, h6, header, footer, [data-tt-flow], [data-tt-keep]";
 const LISTY = "ul, ol, table, tbody, dl";
@@ -248,6 +251,7 @@ export function packSheet(sheet: HTMLElement): PackResult {
         if (r.bottom <= limit + 1 && !spills) continue;
         const whole =
           kid.matches(UNIT) &&
+          !kid.matches(ROWS) &&
           !kept(kid) &&
           r.height / scale < pageH * MAX_UNIT_SHARE &&
           !(kid.matches(LISTY) && kid.children.length > 2);
@@ -298,7 +302,7 @@ export function packSheet(sheet: HTMLElement): PackResult {
         if (![...list.querySelectorAll("li, dd")].some(shows)) gone(list);
       }
       for (const box of sheet.querySelectorAll<HTMLElement>(
-        "section, aside, [data-tt-flow], [data-tt-keep], .tt-agate-group, .tt-agate-wrap, .wsj-inside-story",
+        "section, aside, [data-tt-flow], [data-tt-keep], .tt-agate-group, .tt-agate-wrap, .wsj-inside-story, .wsj-clubs-desk",
       )) {
         if (isHidden(box) || holdsLead(box) || !box.children.length) continue;
         const kids = [...box.children].filter(shows);
@@ -419,9 +423,14 @@ export function packSheet(sheet: HTMLElement): PackResult {
     held = next;
     settle();
     held = null;
-    if (over() > 0 || settled.size > before.settled.size || stories() < told || !substantive(next)) restore(before);
+    if (over() > 0 || settled.size > before.settled.size || stories() < told || !substantive(next)) {
+      restore(before);
+      // WebKit can lay the restored page out taller than it measured before the try.
+      if (over() > 0) settle();
+    }
   }
   dropOrphans();
+  if (over() > 0) settle();
 
   // A story carrying the rest of its copy runs on, a line at a time, into room nothing else wants.
   for (const el of copies) {
