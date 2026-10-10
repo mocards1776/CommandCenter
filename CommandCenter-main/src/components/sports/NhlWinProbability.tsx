@@ -53,10 +53,12 @@ export default function NhlWinProbability({
   return (
     <section className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#07101d] shadow-[0_12px_40px_rgba(0,0,0,0.22)]">
       <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
-        <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">
-          Win probability
-          <span className="ml-2 text-[9px] font-semibold tracking-[0.14em] text-white/35">Score · time</span>
-        </h2>
+        <div className="min-w-0">
+          <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">
+            Win probability
+          </h2>
+          <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/35">Score · time</p>
+        </div>
         <CfbWinProbBadge homeWinPct={current.homeWinPct} away={awayTeam} home={homeTeam} />
       </div>
 
