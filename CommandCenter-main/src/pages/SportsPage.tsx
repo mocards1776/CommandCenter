@@ -30,6 +30,7 @@ import { ScoreboardCard, TeamLogo } from "@/components/sports/ScoreboardCard";
 import TeamMark from "@/components/sports/TeamMark";
 import { useAuth } from "@/lib/auth-context";
 import { fetchMlbFarmSystemRankings, fetchTeamCurrentGame, mlbHeadshot, teamPagePath } from "@/lib/mlb";
+import { mlbGlowColor } from "@/lib/mlb-team-glow";
 import { fetchMlbTeamStatLeagueRanks } from "@/lib/mlb-team-page";
 import {
   DEFAULT_FAVORITES,
@@ -984,11 +985,23 @@ function YesterdayRecapPanel({
                   abbrev: g.away.abbrev,
                   logo: <TeamLogo src={g.away.logo} />,
                   muted: !g.away.winner && g.home.winner,
+                  color: g.away.color,
+                  alternateColor: g.away.alternateColor,
+                  wash:
+                    g.sport === "mlb"
+                      ? mlbGlowColor(g.away.teamId ? Number(g.away.teamId) : null, g.away.color)
+                      : undefined,
                 }}
                 home={{
                   abbrev: g.home.abbrev,
                   logo: <TeamLogo src={g.home.logo} />,
                   muted: !g.home.winner && g.away.winner,
+                  color: g.home.color,
+                  alternateColor: g.home.alternateColor,
+                  wash:
+                    g.sport === "mlb"
+                      ? mlbGlowColor(g.home.teamId ? Number(g.home.teamId) : null, g.home.color)
+                      : undefined,
                 }}
                 awayScore={g.away.score}
                 homeScore={g.home.score}

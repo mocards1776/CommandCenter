@@ -35,6 +35,9 @@ export type YesterdayRecapGame = {
     logo: string | null;
     score: string | null;
     winner: boolean;
+    teamId: string | null;
+    color: string | null;
+    alternateColor: string | null;
   };
   home: {
     name: string;
@@ -42,6 +45,9 @@ export type YesterdayRecapGame = {
     logo: string | null;
     score: string | null;
     winner: boolean;
+    teamId: string | null;
+    color: string | null;
+    alternateColor: string | null;
   };
   highlight: YesterdayRecapHighlight | null;
   favoriteKeys: string[];
@@ -162,6 +168,8 @@ type EspnBoardEvent = {
         abbreviation?: string;
         logo?: string;
         logos?: { href?: string }[];
+        color?: string;
+        alternateColor?: string;
       };
     }[];
   }[];
@@ -258,6 +266,9 @@ export async function fetchYesterdayRecap(opts: {
             logo: c.team?.logo ?? c.team?.logos?.[0]?.href ?? null,
             score: c.score ?? null,
             winner: Boolean(c.winner),
+            teamId: c.team?.id ?? null,
+            color: c.team?.color ?? null,
+            alternateColor: c.team?.alternateColor ?? null,
           });
           const away = side(awayC);
           const home = side(homeC);

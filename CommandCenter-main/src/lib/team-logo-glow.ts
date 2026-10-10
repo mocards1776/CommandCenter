@@ -160,6 +160,16 @@ export function readEspnTeamColors(
 }
 
 /**
+ * Wide per-half wash used on game-detail headers.
+ * One ellipse on the left or right half, fading out — not a logo disc.
+ */
+export function halfWashBackground(hex: string, side: "left" | "right"): string {
+  const clean = hex.replace(/^#/, "");
+  const at = side === "left" ? "20% 45%" : "80% 45%";
+  return `radial-gradient(ellipse at ${at}, #${clean}88, transparent 58%)`;
+}
+
+/**
  * Concentrated radial glow (CSS background) centered on the logo.
  * Strong at the mark, fading to transparent — light, not a disc.
  */
