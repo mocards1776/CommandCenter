@@ -3,7 +3,6 @@
  * from CommandCenter-main/.
  */
 import {
-  GLOW_LIFT_LIGHTNESS,
   GLOW_MIN_LIGHTNESS,
   hslToRgb,
   logoGlowBackground,
@@ -30,7 +29,6 @@ function test(name: string, fn: () => void) {
   console.log(`ok - ${name}`);
 }
 const lightness = (hex: string) => rgbToHsl(parseHex(hex)!)[2];
-const hue = (hex: string) => rgbToHsl(parseHex(hex)!)[0];
 
 test("parseHex", () => {
   assert.equal(JSON.stringify(parseHex("#0c2340")), JSON.stringify([12, 35, 64]));
@@ -47,17 +45,10 @@ test("hsl round-trip", () => {
   }
 });
 
-test("bright primaries that match the logo are lifted off the mark", () => {
-  for (const [id, hex] of [
-    [144, "ce1141"],
-    [139, "8fbce6"],
-    [137, "fd5a1e"],
-  ] as const) {
-    const out = mlbGlowColor(id, hex);
-    assert.ok(out !== hex, `${id} ${out}`);
-    assert.ok(lightness(out) >= 0.4 && lightness(out) <= 0.75, `${id} ${out}`);
-    assert.ok(Math.abs(hue(out) - hue(hex)) < 12, `${id} ${out}`);
-  }
+test("bright primaries stay the ESPN color", () => {
+  assert.equal(mlbGlowColor(144, "ce1141"), "ce1141", "ATL");
+  assert.equal(mlbGlowColor(139, "8fbce6"), "8fbce6", "TB");
+  assert.equal(mlbGlowColor(137, "fd5a1e"), "fd5a1e", "SF");
 });
 
 test("navy/black clubs use a brighter secondary", () => {
@@ -67,18 +58,15 @@ test("navy/black clubs use a brighter secondary", () => {
   assert.equal(mlbGlowColor(135, "2f241d"), "ffc425", "SD gold");
 });
 
-test("other dark primaries are lifted, same hue", () => {
+test("other dark primaries stay the ESPN color", () => {
   for (const [id, hex] of [
     [147, "0c2340"],
     [119, "005a9c"],
     [115, "33006f"],
     [112, "0e3386"],
   ] as const) {
-    const out = mlbGlowColor(id, hex);
     assert.ok(lightness(hex) < GLOW_MIN_LIGHTNESS, `${hex} is dark`);
-    assert.ok(lightness(out) >= GLOW_LIFT_LIGHTNESS - 0.02, `${id} ${out} lifted`);
-    assert.ok(lightness(out) > lightness(hex) + 0.2, `${id} separates from the mark`);
-    assert.ok(Math.abs(hue(out) - hue(hex)) < 8, `${id} keeps hue`);
+    assert.equal(mlbGlowColor(id, hex), hex, `${id}`);
   }
 });
 

@@ -5,7 +5,6 @@ import { Loader2 } from "lucide-react";
 import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
 import AppleScoreCluster from "@/components/sports/AppleScoreCluster";
 import LogoPlate from "@/components/sports/LogoPlate";
-import TeamLogoGlow from "@/components/sports/TeamLogoGlow";
 import { teamGlowColor } from "@/lib/team-logo-glow";
 import TeamStatsLogos from "@/components/sports/TeamStatsLogos";
 import NflFieldMap from "@/components/sports/NflFieldMap";
@@ -831,14 +830,7 @@ function MatchupSide({
       )}
     >
       {side.logo ? (
-        <TeamLogoGlow
-          primaryColor={side.color}
-          alternateColor={side.alternateColor}
-          spread={4.4}
-          dim={loser}
-        >
-          <LogoPlate src={side.logo} className={cn("h-12 w-12 sm:h-14 sm:w-14", loser && "opacity-40")} />
-        </TeamLogoGlow>
+        <LogoPlate src={side.logo} className={cn("h-12 w-12 sm:h-14 sm:w-14", loser && "opacity-40")} />
       ) : null}
       <div className="min-w-0">
         <p

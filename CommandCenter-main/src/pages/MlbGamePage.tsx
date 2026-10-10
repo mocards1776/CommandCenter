@@ -21,7 +21,6 @@ import { WsChampPct } from "@/components/sports/MlbWorldSeriesOdds";
 import { useMlbWorldSeriesOdds, wsPctFor } from "@/lib/mlb-ws-odds";
 import MlbTeamLogo from "@/components/sports/MlbTeamLogo";
 import { mlbGlowColor } from "@/lib/mlb-team-glow";
-import MlbLogoGlow from "@/components/sports/MlbLogoGlow";
 import { TeamFormChips, TeamStandingLine } from "@/components/sports/TeamFormChips";
 import { fetchMlbTeamForm, type TeamFormStrip } from "@/lib/team-form";
 import {
@@ -1338,12 +1337,10 @@ function EspnTeam({
       )}
     >
       {side.teamId > 0 ? (
-        <MlbLogoGlow teamId={side.teamId} primaryColor={side.primaryColor} spread={4.4} dim={loser}>
-          <MlbTeamLogo
-            teamId={side.teamId}
-            className={cn("h-14 w-14 sm:h-20 sm:w-20", loser && "opacity-40")}
-          />
-        </MlbLogoGlow>
+        <MlbTeamLogo
+          teamId={side.teamId}
+          className={cn("h-14 w-14 sm:h-20 sm:w-20", loser && "opacity-40")}
+        />
       ) : null}
       <div
         className={cn(

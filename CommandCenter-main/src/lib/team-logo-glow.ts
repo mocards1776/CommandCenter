@@ -1,9 +1,10 @@
 /**
- * Shared team-color glow behind logos, and the same color for football end zones.
- * ESPN `color` is the logo's dominant color unless a caller passes a different one.
- * The glow has to separate from that mark and from the dark card. A dark or
- * too-similar primary yields to alternateColor, then a lighter tint of the team hue.
- * Cream, white, discs, and plates are never used.
+ * Shared team color for logo glows and football end zones.
+ * Only ESPN `color` and `alternateColor` — never a generated tint.
+ * The primary is the logo's dominant color unless a caller passes a different one.
+ * A real color that separates from the mark wins; otherwise the better of the
+ * two real colors is used. White and cream plates are not chosen over a real
+ * non-plate color. No discs or plates.
  */
 
 export const GLOW_MIN_LIGHTNESS = 0.4;
@@ -77,13 +78,12 @@ export function contrastRatio(a: Rgb, b: Rgb): number {
   return (hi + 0.05) / (lo + 0.05);
 }
 
-/** Cream, white, and beige fills read as a plate. Saturated gold does not. */
+/** Near-white fills read as a plate. Saturated gold, including a light alternate, does not. */
 export function isPlateColor(rgb: Rgb | null): boolean {
   if (!rgb) return true;
-  const [h, s, l] = rgbToHsl(rgb);
-  if (l >= 0.8) return true;
-  if (l >= 0.68 && s < 0.72 && h >= 20 && h <= 65) return true;
-  return l >= 0.72 && s < 0.35;
+  const [, s, l] = rgbToHsl(rgb);
+  if (l >= 0.84) return true;
+  return l >= 0.78 && s < 0.22;
 }
 
 function hueDelta(a: number, b: number): number {
@@ -91,55 +91,33 @@ function hueDelta(a: number, b: number): number {
   return d > 180 ? 360 - d : d;
 }
 
-/**
- * True when `glow` separates from the logo and still reads on the dark card.
- * Same-hue marks need a wide lightness gap; a different hue can sit closer.
- */
-function separates(glow: Rgb, logo: Rgb): boolean {
-  if (isPlateColor(glow)) return false;
-  const [gh, gs, gl] = rgbToHsl(glow);
+function closeToLogo(color: Rgb, logo: Rgb): boolean {
+  const [ch, cs, cl] = rgbToHsl(color);
   const [lh, ls, ll] = rgbToHsl(logo);
-  if (gl < 0.42 || gl > 0.78) return false;
+  if (contrastRatio(color, logo) < 1.7) return true;
+  return cs > 0.15 && ls > 0.15 && hueDelta(ch, lh) < 18 && Math.abs(cl - ll) < 0.18;
+}
+
+/** A real ESPN color that separates from the mark and is not a white/cream plate. */
+function contrastsWell(color: Rgb, logo: Rgb): boolean {
+  if (isPlateColor(color)) return false;
+  if (closeToLogo(color, logo)) return false;
   const card = parseHex(CARD_BG)!;
-  if (contrastRatio(glow, card) < 1.7) return false;
-  // A white or black mark separates from any saturated team color on this card.
-  if (ll > 0.86 || ll < 0.08) return gs >= 0.28;
-  const sameHue = gs > 0.2 && ls > 0.2 && hueDelta(gh, lh) < 28;
-  const gap = Math.abs(gl - ll);
-  if (sameHue && gap < 0.28) return false;
-  if (!sameHue && gap < 0.12 && hueDelta(gh, lh) < 18) return false;
-  if (contrastRatio(glow, logo) < 2.2) return false;
-  return true;
+  return contrastRatio(color, card) >= 1.25;
+}
+
+/** Higher is a better real color when neither one contrasts cleanly. */
+function realColorScore(color: Rgb, logo: Rgb): number {
+  const card = parseHex(CARD_BG)!;
+  let score = contrastRatio(color, logo) + Math.min(contrastRatio(color, card), 6);
+  if (isPlateColor(color)) score -= 30;
+  if (closeToLogo(color, logo)) score -= 5;
+  return score;
 }
 
 /**
- * Tint of `source` that clears the logo. Dark marks land on a lighter step.
- * An already-light mark can't go lighter without turning into a plate, so the
- * best same-hue step may be a bit deeper.
- */
-function lighterTint(source: Rgb, logo: Rgb): Rgb {
-  const [h, s] = rgbToHsl(source);
-  const card = parseHex(CARD_BG)!;
-  if (s < 0.12) return hslToRgb(0, 0, 0.58);
-  const sat = Math.min(Math.max(s, 0.55), 0.85);
-  let best = hslToRgb(h, sat, GLOW_LIFT_LIGHTNESS);
-  let bestScore = -1;
-  for (const light of [0.48, 0.54, 0.58, 0.64, 0.7]) {
-    const rgb = hslToRgb(h, sat, light);
-    if (isPlateColor(rgb)) continue;
-    if (contrastRatio(rgb, card) < 1.7) continue;
-    const score = contrastRatio(rgb, logo);
-    if (score > bestScore) {
-      best = rgb;
-      bestScore = score;
-    }
-  }
-  return best;
-}
-
-/**
- * Glow / end-zone hex (no #).
- * `logoHex` is the mark's dominant color; it defaults to the ESPN primary.
+ * Glow / end-zone hex (no #). Only the ESPN primary or alternate.
+ * `logoHex` defaults to the primary.
  */
 export function teamGlowColor(
   primaryHex: string | null | undefined,
@@ -149,12 +127,18 @@ export function teamGlowColor(
   const primary = parseHex(primaryHex);
   const alternate = parseHex(alternateHex);
   const logo = parseHex(logoHex) ?? primary;
-  if (primary && logo && separates(primary, logo)) return toHex(primary);
-  if (alternate && logo && separates(alternate, logo)) return toHex(alternate);
-  const base = primary ?? alternate;
-  if (base && logo) return toHex(lighterTint(base, logo));
-  if (alternate && !isPlateColor(alternate)) return toHex(alternate);
-  return FALLBACK;
+  if (primary && logo && contrastsWell(primary, logo)) return toHex(primary);
+  if (alternate && logo && contrastsWell(alternate, logo)) return toHex(alternate);
+  const options = [primary, alternate].filter((c): c is Rgb => c != null);
+  if (!logo || options.length === 0) {
+    if (primary && !isPlateColor(primary)) return toHex(primary);
+    if (alternate && !isPlateColor(alternate)) return toHex(alternate);
+    if (primary) return toHex(primary);
+    if (alternate) return toHex(alternate);
+    return FALLBACK;
+  }
+  options.sort((a, b) => realColorScore(b, logo) - realColorScore(a, logo));
+  return toHex(options[0]!);
 }
 
 /** ESPN team `color` / `alternateColor`, hashes stripped. Invalid values drop out. */
