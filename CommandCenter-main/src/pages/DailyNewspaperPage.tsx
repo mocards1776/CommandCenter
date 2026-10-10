@@ -1165,6 +1165,8 @@ function Story({
     Boolean((card.scoreLine && /\d/.test(card.scoreLine)) || card.recapGame || game);
   const storyCopy = recap ? recapBodyForPage(copy) : copy;
   const partial = readOn ?? Boolean(jump || (storyCopy && storyCopy.length < full.length * 0.9));
+  // A story that continues on another page stops at its teaser, as a printed jump does.
+  const continues = Boolean(jump && onTurn);
   const dek = dekFor(card, storyCopy);
   const useDrop = Boolean(drop && storyCopy && recapShouldDropCap(storyCopy));
   const photoKind = recapPhotoKind(card.photo, card.photoWidth);
@@ -1222,12 +1224,20 @@ function Story({
             color={teamColor(team)}
             inset={inset}
             ended={!partial}
-            more={partial ? restOfCopy(full, storyCopy) : undefined}
+            more={partial && !continues ? restOfCopy(full, storyCopy) : undefined}
           />
         ) : (
           inset
         )}
-        {storyCopy || jump ? <ReadOn card={card} game={game} label="Click for full story" whenCut={!partial} /> : null}
+        {continues ? (
+          <p className="wsj-jump wsj-cont">
+            <button type="button" className="wsj-jump-btn" onClick={() => onTurn!(jump!)}>
+              Continued on page {jump} <span aria-hidden="true">→</span>
+            </button>
+          </p>
+        ) : storyCopy || jump ? (
+          <ReadOn card={card} game={game} label="Click for full story" whenCut={!partial} />
+        ) : null}
       </div>
     </article>
   );
@@ -1845,9 +1855,13 @@ function FrontPage({
   const pageSecond = pool[1] ?? null;
   const pageThird = pool[2] ?? null;
   const pageBriefs = pool.slice(3, 6);
-  const pageLeadContinue = pageLead && pageLead.id === lead?.id ? leadContinue : folios[pageLead?.id ?? ""];
-  const pageSecondContinue = pageSecond && pageSecond.id === second?.id ? secondContinue : folios[pageSecond?.id ?? ""];
-  const pageThirdContinue = pageThird && pageThird.id === third?.id ? thirdContinue : folios[pageThird?.id ?? ""];
+  const elsewhere = (id?: string) => {
+    const folio = folios[id ?? ""];
+    return folio && folio !== "A1" ? folio : undefined;
+  };
+  const pageLeadContinue = pageLead && pageLead.id === lead?.id ? leadContinue : elsewhere(pageLead?.id);
+  const pageSecondContinue = pageSecond && pageSecond.id === second?.id ? secondContinue : elsewhere(pageSecond?.id);
+  const pageThirdContinue = pageThird && pageThird.id === third?.id ? thirdContinue : elsewhere(pageThird?.id);
   const pageLeadTeaser = pageLead && pageLead.id === lead?.id ? leadTeaser : undefined;
   const pageSecondTeaser = pageSecond && pageSecond.id === second?.id ? secondTeaser : undefined;
   const pageThirdTeaser = pageThird && pageThird.id === third?.id ? thirdTeaser : undefined;
@@ -1887,7 +1901,7 @@ function FrontPage({
       ? pageSecondContinue
       : underLead && underLead.id === third?.id
         ? pageThirdContinue
-        : folios[underLead?.id ?? ""];
+        : elsewhere(underLead?.id);
   const underTeaser =
     underLead && underLead.id === second?.id
       ? pageSecondTeaser
@@ -1903,7 +1917,7 @@ function FrontPage({
       ? pageThirdContinue
       : flowCard && flowCard.id === second?.id
         ? pageSecondContinue
-        : folios[flowCard?.id ?? ""];
+        : elsewhere(flowCard?.id);
   const flowTeaser =
     flowCard && flowCard.id === third?.id
       ? pageThirdTeaser
@@ -1963,6 +1977,7 @@ function FrontPage({
                 jump={flowContinue}
                 onTurn={onTurn}
                 trim={24}
+                yieldArt
               />
             </div>
           ) : null}
@@ -2323,6 +2338,7 @@ function ContinuePage({
   onTurn: (folio: string) => void;
 }) {
   const lookup = useContext(GameLookup);
+  // Every promised continuation sets before the club bands, so a full page gives those up first.
   return (
     <div className="wsj-continue">
       {jumps.map(({ card, rest }, i) => {
@@ -2345,14 +2361,10 @@ function ContinuePage({
               art="none"
               dress
               readOn={false}
-              game={boxed ? null : game}
+              game={game}
+              compactBox
               inset={boxed ? null : <StoryNames card={card} />}
             />
-            {boxed ? (
-              <div data-tt-flow>
-                <RecapBox card={card} game={game ?? null} compact />
-              </div>
-            ) : null}
           </div>
         );
       })}
@@ -2865,7 +2877,7 @@ function SportSectionFront({
   const railSeconds = rest.slice(underLead.length, underLead.length + (cfb || mlb ? 1 : 3));
   const more = rest.slice(underLead.length + railSeconds.length, underLead.length + railSeconds.length + (cfb || mlb ? 3 : 5));
   const leadGame = lead ? gameForCard(lead, recent, page.clubs) : null;
-  const recapsFolio = deskFolio(page, "recaps", `${page.section}2`);
+  const recapsFolio = page.sectionDesks?.find((d) => d.focus === "recaps")?.folio ?? null;
   const crestFor = (card: GameWrapCard) =>
     leagueClubs.find((c) => c.short && card.teamName?.toLowerCase().includes(c.short.toLowerCase()))?.logo ?? null;
   const frontStrips = strips.slice(0, cfb || mlb ? 1 : 2).map((strip) => ({
@@ -2978,16 +2990,18 @@ function SportSectionFront({
                   <section className="tt-front-rail" aria-label={strip.title} key={strip.title}>
                     <h3 className="wsj-band-title">
                       {strip.title}
-                      <button type="button" className="tt-band-link" onClick={() => onTurn(recapsFolio)}>
-                        Recaps, page {recapsFolio} →
-                      </button>
+                      {recapsFolio ? (
+                        <button type="button" className="tt-band-link" onClick={() => onTurn(recapsFolio)}>
+                          Recaps, page {recapsFolio} →
+                        </button>
+                      ) : null}
                     </h3>
                     <ScoreStrip
                       games={strip.games}
                       onOpen={(g) => {
                         const card = stampBoardCard(g, page.clubs);
                         if (card) open({ card, game: g });
-                        else onTurn(recapsFolio);
+                        else if (recapsFolio) onTurn(recapsFolio);
                       }}
                     />
                   </section>
@@ -3018,16 +3032,18 @@ function SportSectionFront({
                     <section className="tt-front-rail" aria-label={strip.title} key={strip.title}>
                       <h3 className="wsj-band-title">
                         {strip.title}
-                        <button type="button" className="tt-band-link" onClick={() => onTurn(recapsFolio)}>
-                          Recaps, page {recapsFolio} →
-                        </button>
+                        {recapsFolio ? (
+                          <button type="button" className="tt-band-link" onClick={() => onTurn(recapsFolio)}>
+                            Recaps, page {recapsFolio} →
+                          </button>
+                        ) : null}
                       </h3>
                       <ScoreStrip
                         games={strip.games}
                         onOpen={(g) => {
                           const card = stampBoardCard(g, page.clubs);
                           if (card) open({ card, game: g });
-                          else onTurn(recapsFolio);
+                          else if (recapsFolio) onTurn(recapsFolio);
                         }}
                       />
                     </section>
@@ -3137,8 +3153,8 @@ function SportSectionFront({
                 <div key={group.category} className="tt-lleaders-cat">
                   <h4>{leaderCategoryLabel(group.category)}</h4>
                   <ol>
-                    {group.rows.slice(0, 5).map((row) => (
-                      <li key={`${group.category}-${row.name}`}>
+                    {group.rows.slice(0, 10).map((row, i) => (
+                      <li key={`${group.category}-${row.name}`} {...(i >= 5 ? { "data-tt-trim": 30 + i } : {})}>
                         {row.headshot ? <img src={row.headshot} alt="" /> : <span className="tt-lleaders-ph" />}
                         <span className="tt-lleaders-who">
                           <strong>{row.name}</strong>
@@ -3776,9 +3792,9 @@ function ScheduleDesk({
       const finals = (board?.week ?? board?.results ?? []).filter((g) => g.final);
       return (
         <div className="tt-sched-desk">
-          <ScheduleAgate games={[...finals, ...games]} dayLabel={label} columns={4} />
+          <ScheduleAgate games={[...finals, ...games]} dayLabel={label} columns={3} roomy />
           {standings.length ? (
-            <section className="tt-sched-snap" data-tt-flow="">
+            <section className="tt-sched-snap roomy" data-tt-flow="">
               <h3 className="wsj-band-title">The standings</h3>
               <DeskSnap tables={standings} />
             </section>
@@ -3788,7 +3804,7 @@ function ScheduleDesk({
     }
     return (
       <div className="tt-sched-desk">
-        <ScheduleAgate games={games} dayLabel={label} columns={page.path === "baseball/mlb" ? 3 : 4} />
+        <ScheduleAgate games={games} dayLabel={label} columns={3} roomy={games.length <= 24} />
       </div>
     );
   }
@@ -3875,7 +3891,7 @@ function StandingsDesk({
         {boxes ? (
           <section className="tt-stand-form" style={{ gridColumn: `span ${boxes}` }}>
             <h3 className="wsj-band-title">
-              Your clubs <em>numbers, leaders and what’s next</em>
+              Your clubs {boxes > 1 ? <em>numbers, leaders and what’s next</em> : null}
             </h3>
             <ClubFormGrid clubs={page.clubs} sheets={sheets} columns={boxes} />
           </section>
@@ -3909,7 +3925,7 @@ function StandingsDesk({
   const cols = Math.min(standColumns(page.path), shown.length);
   return (
     <>
-      <div className="tt-stand-cols" style={{ ["--stand-cols" as string]: String(cols) }}>
+      <div className={cn("tt-stand-cols", cols === 1 && "single")} style={{ ["--stand-cols" as string]: String(cols) }}>
         {shown.map((group) => (
           <div key={group.name} data-tt-flow="">
             <StandingsTable group={group} mine={mine} />

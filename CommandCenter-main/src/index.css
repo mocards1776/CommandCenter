@@ -11006,7 +11006,6 @@ body:has(.tt-phone-shot) {
   font-family: var(--w-label);
 }
 .newspaper-root .wsj-sheet .tt-sched h3 {
-  break-after: avoid;
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -11018,8 +11017,11 @@ body:has(.tt-phone-shot) {
   font-size: 15px;
   font-weight: 800;
 }
+.newspaper-root .wsj-sheet .tt-sched-game > h3 {
+  margin: -5px 0 5px;
+}
 .newspaper-root .wsj-sheet .tt-sched section + section h3 {
-  margin-top: 10px;
+  margin-top: 4px;
 }
 .newspaper-root .wsj-sheet .tt-sched h3 em {
   font-family: var(--w-label);
@@ -11122,4 +11124,106 @@ body:has(.tt-phone-shot) {
   padding-left: 28px;
   margin-left: -14px;
   border-left: 1px solid var(--w-hair);
+}
+
+.newspaper-root .wsj-sheet .tt-sched.roomy {
+  column-gap: 34px;
+}
+.newspaper-root .wsj-sheet .tt-sched.roomy h3 {
+  padding: 10px 0 5px;
+  border-bottom-width: 3px;
+  font-size: 22px;
+}
+.newspaper-root .wsj-sheet .tt-sched.roomy h3 em {
+  font-size: 11px;
+}
+.newspaper-root .wsj-sheet .tt-sched.roomy .tt-sched-game > h3 {
+  margin: -10px 0 10px;
+}
+.newspaper-root .wsj-sheet .tt-sched.roomy section + section h3 {
+  margin-top: 8px;
+}
+.newspaper-root .wsj-sheet .tt-sched.roomy .tt-sched-game {
+  padding: 10px 0 12px;
+}
+.newspaper-root .wsj-sheet .tt-sched.roomy .tt-sched-when {
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+.newspaper-root .wsj-sheet .tt-sched.roomy .tt-sched-side {
+  gap: 10px;
+  height: 32px;
+  font-size: 19px;
+}
+.newspaper-root .wsj-sheet .tt-sched.roomy .tt-sched-side b {
+  font-family: var(--w-head);
+}
+.newspaper-root .wsj-sheet .tt-sched.roomy .tt-sched-side i {
+  font-size: 13px;
+}
+.newspaper-root .wsj-sheet .tt-sched.roomy .tt-sched-side i.at {
+  font-size: 10px;
+}
+.newspaper-root .wsj-sheet .tt-sched.roomy .tt-sched-side strong {
+  font-size: 22px;
+}
+.newspaper-root .wsj-sheet .tt-sched.roomy .tt-sched-note {
+  margin-top: 3px;
+  font-size: 13.5px;
+}
+.newspaper-root .wsj-sheet .tt-sched-snap.roomy .tt-desk-tables {
+  gap: 14px 28px;
+}
+.newspaper-root .wsj-sheet .tt-sched-snap.roomy .tt-desk-div h4 {
+  padding-bottom: 4px;
+  border-bottom: 2px solid var(--w-rule);
+  font-size: 13px;
+}
+.newspaper-root .wsj-sheet .tt-sched-snap.roomy .tt-desk-div li {
+  padding: 5px 0;
+  border-bottom: 1px solid var(--w-hair);
+  font-size: 15px;
+}
+
+.newspaper-root .wsj-sheet .wsj-deskboard ul {
+  gap: 0;
+  background: none;
+  border-width: 1px 0 0 1px;
+}
+.newspaper-root .wsj-sheet .wsj-deskboard li {
+  border-right: 1px solid var(--w-hair);
+  border-bottom: 1px solid var(--w-hair);
+}
+.newspaper-root .wsj-sheet .tt-stand-cols.single .tt-stand th,
+.newspaper-root .wsj-sheet .tt-stand-cols.single .tt-stand td {
+  height: 30px;
+  font-size: 15px;
+}
+.newspaper-root .wsj-sheet .tt-stand-cols.single .tt-stand thead th {
+  height: 22px;
+  font-size: 10.5px;
+}
+.newspaper-root .wsj-sheet .tt-stand-cols.single .tt-stand caption {
+  font-size: 20px;
+}
+
+/* Inside story pages: a side photograph runs the depth of its story's copy
+   (up to a portrait crop) instead of leaving cream under the picture. */
+.newspaper-root .wsj-sheet .wsj-inside .wsj-story.art-side {
+  align-items: stretch;
+}
+.newspaper-root .wsj-sheet .wsj-inside .wsj-story.art-side > .wsj-story-art,
+.newspaper-root .wsj-sheet .wsj-inside .wsj-story.art-side > .wsj-story-art > .wsj-cut:not(.fit):not(.cutout) {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.newspaper-root .wsj-sheet .wsj-inside .wsj-story.art-side > .wsj-story-art > .wsj-cut:not(.fit):not(.cutout) {
+  flex: 1 1 auto;
+}
+.newspaper-root .wsj-sheet .wsj-inside .wsj-story.art-side > .wsj-story-art > .wsj-cut:not(.fit):not(.cutout) img {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 620px;
+  object-fit: cover;
 }

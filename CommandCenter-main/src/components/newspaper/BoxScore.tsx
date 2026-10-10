@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import {
   boxLeaderLabel,
   fetchMlbAgate,
@@ -688,7 +689,7 @@ export function SlateLine({ game, clockOnly }: { game: BoxGame; clockOnly?: bool
 }
 
 /** One game as a schedule entry: time and TV, the two clubs, then probables or the venue in small type. */
-function ScheduleEntry({ game }: { game: BoxGame }) {
+function ScheduleEntry({ game, roomy, head }: { game: BoxGame; roomy?: boolean; head?: ReactNode }) {
   const played = game.final || game.live;
   const when = played ? gameClock(game) : slateClock(game) || game.status;
   const tv = shortBroadcast(game.broadcasts.filter(Boolean)[0]) || "";
@@ -696,6 +697,7 @@ function ScheduleEntry({ game }: { game: BoxGame }) {
   const note = [game.round, game.series].filter(Boolean).join(" · ");
   return (
     <article className={cn("tt-sched-game", game.live && "live")} data-tt-trim={60}>
+      {head}
       <p className="tt-sched-when">
         <time dateTime={game.startIso ?? undefined}>{when}</time>
         {note ? <em>{note}</em> : null}
@@ -703,7 +705,7 @@ function ScheduleEntry({ game }: { game: BoxGame }) {
       </p>
       {[game.away, game.home].map((side, i) => (
         <p key={i} className={cn("tt-sched-side", played && side.winner && "won")}>
-          <Mark src={side.logo} size="xs" />
+          <Mark src={side.logo} size={roomy ? "sm" : "xs"} />
           <b>{side.short || side.abbrev}</b>
           {side.record ? <i>{side.record}</i> : null}
           {played ? <strong>{side.score ?? ""}</strong> : i === 1 ? <i className="at">home</i> : null}
@@ -729,10 +731,13 @@ export function ScheduleAgate({
   games,
   dayLabel,
   columns = 3,
+  roomy = false,
 }: {
   games: BoxGame[];
   dayLabel: (day: string) => string;
   columns?: number;
+  /** Larger type for a schedule that has the page to itself. */
+  roomy?: boolean;
 }) {
   if (!games.length) return null;
   const days: [string, BoxGame[]][] = [];
@@ -742,14 +747,22 @@ export function ScheduleAgate({
     else days.push([g.day, [g]]);
   }
   return (
-    <div className="tt-sched" style={{ ["--sched-cols" as string]: String(columns) }}>
+    <div className={cn("tt-sched", roomy && "roomy")} style={{ ["--sched-cols" as string]: String(columns) }}>
       {days.map(([day, list]) => (
         <section key={day}>
-          <h3>
-            {dayLabel(day)} <em>{list.length === 1 ? "1 game" : `${list.length} games`}</em>
-          </h3>
-          {list.map((g) => (
-            <ScheduleEntry key={g.id} game={g} />
+          {list.map((g, i) => (
+            <ScheduleEntry
+              key={g.id}
+              game={g}
+              roomy={roomy}
+              head={
+                i === 0 ? (
+                  <h3>
+                    {dayLabel(day)} <em>{list.length === 1 ? "1 game" : `${list.length} games`}</em>
+                  </h3>
+                ) : null
+              }
+            />
           ))}
         </section>
       ))}

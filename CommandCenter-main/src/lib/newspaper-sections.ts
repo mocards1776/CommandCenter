@@ -42,6 +42,7 @@ import { storySource } from "./newspaper-source.ts";
 import type { GameWrapCard } from "./newspaper-sports";
 import { favoriteKeyFitsPath, storyMatchesFavorite } from "./newspaper-favorite-match.ts";
 import {
+  alreadyOnSectionA,
   isInjuryNote,
   isSportFiller,
   orderSportRecaps,
@@ -1905,6 +1906,8 @@ function sportPages(
   postseason = false,
   withCoaches = false,
   alreadyOnA1: GameWrapCard[] = [],
+  /** Section A's front stories, printed whole there (A1 and its jump page). */
+  inSectionA: GameWrapCard[] = [],
 ): {
   pages: (SportFrontPage | SportInsidePage)[];
   sportFolioByStory: Record<string, string>;
@@ -1982,7 +1985,7 @@ function sportPages(
     : [
         ...recapPool.filter(hasStoryCopy),
         ...newsPool.filter(hasStoryCopy).slice(0, NEWS_INSIDE_CAP),
-      ];
+      ].filter((card) => !alreadyOnSectionA(card, inSectionA));
   for (let i = 0; i < full.length; i += 2) {
     const primary = full[i]!;
     const secondary = full[i + 1];
@@ -2244,6 +2247,7 @@ export function buildEdition(opts: {
       id.path.includes("college-football")
         ? a1Ran.filter((card) => card.leaguePath === id.path)
         : [],
+      a1Ran,
     ),
   }));
   const sportFolioByStory: Record<string, string> = {};

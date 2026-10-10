@@ -629,7 +629,6 @@
   break-inside: auto;
 }
 .tt-tv-slot h3 {
-  break-after: avoid;
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -647,6 +646,9 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--w-muted);
+}
+.tt-tv-game > h3 {
+  margin: -6px 0 6px;
 }
 .tt-tv-slot ol {
   margin: 0;
@@ -706,4 +708,85 @@
   font-style: italic;
   line-height: 1.3;
   color: var(--w-ink-soft);
+}
+
+.tt-tv-timeline.roomy {
+  columns: 3;
+  column-gap: 32px;
+}
+.tt-tv-timeline.roomy .tt-tv-game {
+  padding: 10px 0 12px;
+}
+.tt-tv-timeline.roomy .tt-tv-game > h3 {
+  margin: -10px 0 10px;
+  padding-top: 12px;
+  font-size: 26px;
+}
+.tt-tv-timeline.roomy .tt-tv-game-top .tt-watch-chip {
+  font-size: 10.5px;
+}
+.tt-tv-timeline.roomy .tt-tv-game-side {
+  gap: 10px;
+  height: 32px;
+  font-size: 19px;
+}
+.tt-tv-timeline.roomy .tt-tv-game-side strong {
+  font-family: var(--w-head);
+}
+.tt-tv-timeline.roomy .tt-tv-game-side em {
+  font-size: 13px;
+}
+.tt-tv-timeline.roomy .tt-tv-game-side b {
+  font-size: 22px;
+}
+.tt-tv-timeline.roomy .tt-tv-game-side .tt-watch-crest.sm {
+  width: 26px;
+  height: 26px;
+}
+.tt-tv-timeline.roomy .tt-tv-game-why {
+  margin-top: 4px !important;
+  font-size: 14px;
+}
+.tt-watch[data-density="light"] .tt-tv-feature {
+  padding: 18px 0 22px;
+}
+.tt-watch[data-density="light"] .tt-tv-feature-side strong {
+  font-size: 58px;
+}
+.tt-watch[data-density="light"] .tt-tv-feature-side em {
+  margin-top: 4px;
+  font-size: 13px;
+}
+.tt-watch[data-density="light"] .tt-tv-feature-side .tt-watch-crest.lg {
+  width: 84px;
+  height: 84px;
+}
+.tt-watch[data-density="light"] .tt-tv-at {
+  font-size: 30px;
+}
+.tt-watch[data-density="light"] .tt-tv-feature-meta {
+  margin-top: 16px;
+  font-size: 13px;
+}
+.tt-watch[data-density="light"] .tt-tv-feature-why {
+  margin-top: 6px;
+  font-size: 19px;
+}
+.tt-watch[data-density="light"] .tt-tv-timeline.roomy .tt-tv-game {
+  padding: 14px 0 16px;
+}
+.tt-watch[data-density="light"] .tt-tv-timeline.roomy .tt-tv-game > h3 {
+  margin: -14px 0 14px;
+  font-size: 30px;
+}
+.tt-watch[data-density="light"] .tt-tv-timeline.roomy .tt-tv-game-side {
+  height: 40px;
+  font-size: 22px;
+}
+.tt-watch[data-density="light"] .tt-tv-timeline.roomy .tt-tv-game-side .tt-watch-crest.sm {
+  width: 30px;
+  height: 30px;
+}
+.tt-watch[data-density="light"] .tt-tv-timeline.roomy .tt-tv-game-why {
+  font-size: 15px;
 }
