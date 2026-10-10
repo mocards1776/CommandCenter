@@ -1,6 +1,14 @@
 /** NHL via ESPN site API — scoreboard, standings, teams, games, players. */
 
 import { parseEspnBroadcasts, type GameBroadcast } from "./game-broadcasts";
+import {
+  buildNhlWinProbability,
+  parseNhlLiveClock,
+  type NhlWinProbPoint,
+  type NhlWpPlay,
+  type NhlWpStrength,
+} from "./nhl-win-probability";
+import { readEspnTeamColors } from "./team-logo-glow";
 import { seriesLineFromEspn } from "./playoff-series";
 import { espnBirthDate, espnBirthPlace, formatSportsDateLong } from "./utils";
 
@@ -115,6 +123,8 @@ export type NhlScoreSide = {
   points?: number | null;
   logo: string | null;
   color: string;
+  /** ESPN `alternateColor` when the feed sends one. */
+  alternateColor?: string | null;
   linescores: number[];
 };
 
@@ -150,6 +160,7 @@ type EspnCompetitor = {
     displayName?: string;
     abbreviation?: string;
     color?: string;
+    alternateColor?: string;
     logos?: { href?: string }[];
     logo?: string;
   };
@@ -203,6 +214,7 @@ function sideFromCompetitor(c: EspnCompetitor): NhlScoreSide {
       : Number.isFinite(Number(scoreRaw))
         ? Number(scoreRaw)
         : null;
+  const colors = readEspnTeamColors(team.color, team.alternateColor, "002f87");
   return {
     teamId: Number(team.id ?? 0),
     name: team.displayName ?? "Team",
@@ -210,7 +222,8 @@ function sideFromCompetitor(c: EspnCompetitor): NhlScoreSide {
     score,
     record,
     logo: team.logos?.[0]?.href ?? team.logo ?? (team.abbreviation ? nhlTeamLogo(team.abbreviation) : null),
-    color: (team.color ?? "002f87").replace(/^#/, ""),
+    color: colors.color,
+    alternateColor: colors.alternateColor,
     linescores,
   };
 }
@@ -628,6 +641,11 @@ export type NhlGameDetail = NhlScoreGame & {
     away: { id: string; name: string } | null;
     home: { id: string; name: string } | null;
   };
+  /**
+   * Score/clock/strength model over ESPN plays. Empty when the summary has
+   * no play clock to hang a chart on (pregame, or a feed with no plays).
+   */
+  winProbability: NhlWinProbPoint[];
 };
 
 function sanitizeNhlStoryHtml(html: string | null | undefined): string | null {
@@ -1266,6 +1284,34 @@ export async function fetchNhlGameDetail(eventId: string): Promise<NhlGameDetail
     starters: { away: awayGoalie, home: homeGoalie },
   });
 
+  const awayWpId = String(base.away.teamId);
+  const homeWpId = String(base.home.teamId);
+  const wpPlays: NhlWpPlay[] = (raw.plays ?? []).map((p, i) => ({
+    id: String(p.id ?? i),
+    period: typeof p.period?.number === "number" ? p.period.number : null,
+    elapsedInPeriod: nhlClockSeconds(p.clock?.displayValue ?? ""),
+    awayScore: typeof p.awayScore === "number" ? p.awayScore : null,
+    homeScore: typeof p.homeScore === "number" ? p.homeScore : null,
+    powerPlay: nhlPlayPowerPlay(p.strength?.text, p.team?.id, awayWpId, homeWpId),
+  }));
+  const awayOnIce = (raw.onIce ?? []).find((b) => String(b.teamId) === awayWpId)?.entries?.length;
+  const homeOnIce = (raw.onIce ?? []).find((b) => String(b.teamId) === homeWpId)?.entries?.length;
+  const nowPowerPlay: NhlWpStrength =
+    awayOnIce != null && homeOnIce != null && homeOnIce >= awayOnIce + 1
+      ? "home"
+      : awayOnIce != null && homeOnIce != null && awayOnIce >= homeOnIce + 1
+        ? "away"
+        : null;
+  const winProbability = buildNhlWinProbability({
+    plays: wpPlays,
+    live: base.live,
+    final: base.final,
+    awayScore: base.away.score,
+    homeScore: base.home.score,
+    now: base.live ? parseNhlLiveClock(base.shortDetail) ?? parseNhlLiveClock(base.status) : null,
+    nowPowerPlay,
+  });
+
   return {
     ...base,
     teamStats,
@@ -1286,7 +1332,29 @@ export async function fetchNhlGameDetail(eventId: string): Promise<NhlGameDetail
     lastFive,
     venueDetail: venueBits.length ? venueBits.join(" · ") : null,
     goalieStarters: { away: awayGoalie, home: homeGoalie },
+    winProbability,
   };
+}
+
+/** ESPN tags the team that took the action. Power play → that team; shorthanded → the other. */
+function nhlPlayPowerPlay(
+  strength: string | null | undefined,
+  teamId: string | null | undefined,
+  awayId: string,
+  homeId: string,
+): NhlWpStrength {
+  const team = teamId != null ? String(teamId) : "";
+  if (!team) return null;
+  if (/power play/i.test(strength ?? "")) {
+    if (team === homeId) return "home";
+    if (team === awayId) return "away";
+    return null;
+  }
+  if (/short/i.test(strength ?? "")) {
+    if (team === homeId) return "away";
+    if (team === awayId) return "home";
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------

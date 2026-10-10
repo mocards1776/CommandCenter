@@ -1,5 +1,6 @@
 /** ESPN soccer game summary → typed preview/detail for Dispatch reader. */
 
+import { readEspnTeamColors } from "@/lib/team-logo-glow";
 import { formatSportsDateLong, fmtTime } from "@/lib/utils";
 
 /** Same CDN path as `soccerTeamLogo` — kept local to avoid pulling supabase via soccer.ts. */
@@ -13,6 +14,8 @@ export type SoccerGameSide = {
   shortName: string;
   abbrev: string;
   logo: string | null;
+  color?: string | null;
+  alternateColor?: string | null;
   record: string | null;
   form: string | null;
   score: string | null;
@@ -195,6 +198,8 @@ type EspnCompetition = {
       abbreviation?: string;
       logo?: string;
       logos?: { href?: string }[];
+      color?: string;
+      alternateColor?: string;
     };
   }[];
 };
@@ -336,12 +341,15 @@ function parseSide(
     c?.team?.logo ||
     c?.team?.logos?.[0]?.href ||
     (id ? teamLogo(id) : null);
+  const colors = readEspnTeamColors(c?.team?.color, c?.team?.alternateColor, "555555");
   return {
     id,
     name: c?.team?.displayName || c?.team?.shortDisplayName || "Team",
     shortName: c?.team?.shortDisplayName || c?.team?.abbreviation || "Team",
     abbrev: c?.team?.abbreviation || "—",
     logo,
+    color: c?.team?.color || c?.team?.alternateColor ? colors.color : null,
+    alternateColor: colors.alternateColor,
     record: pickRecord(c?.record),
     form: c?.form?.trim() || null,
     score: c?.score != null && c.score !== "" ? String(c.score) : null,

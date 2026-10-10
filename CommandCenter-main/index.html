@@ -75,7 +75,9 @@
           if (path === "/" || path === "") {
             for (var j = 0; j < SOLO.length; j++) {
               if (localStorage.getItem(SOLO[j][1]) === "1") {
-                location.replace(SOLO[j][0] + "?solo=1");
+                var dest =
+                  SOLO[j][1] === "sports-solo" ? "/sports/ruwt?solo=1" : SOLO[j][0] + "?solo=1";
+                location.replace(dest);
                 return;
               }
             }

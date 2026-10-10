@@ -4,6 +4,7 @@ import AppleScoreCluster, { type MlbScoreNest } from "@/components/sports/AppleS
 import CfbRankLabel, { CfbFpiCaption } from "@/components/sports/CfbRankLabel";
 import { WsChampPct } from "@/components/sports/MlbWorldSeriesOdds";
 import MlbLogoGlow from "@/components/sports/MlbLogoGlow";
+import TeamLogoGlow from "@/components/sports/TeamLogoGlow";
 import PlayoffSeriesLine from "@/components/sports/PlayoffSeriesLine";
 import PossessionFootball from "@/components/sports/PossessionFootball";
 import TeamMark from "@/components/sports/TeamMark";
@@ -45,9 +46,15 @@ export function centralStartLabel(iso: string | null | undefined, fallback?: str
 
 export function TeamLogo({
   src,
+  color,
+  alternateColor,
+  dim = false,
   className,
 }: {
   src: string | null | undefined;
+  color?: string | null;
+  alternateColor?: string | null;
+  dim?: boolean;
   className?: string;
 }) {
   const dark = src ? espnDarkLogo(src) : null;
@@ -56,16 +63,18 @@ export function TeamLogo({
   const failedDark = failedFor === src;
   const shown = dark && !failedDark ? dark : src;
   return (
-    <img
-      src={shown}
-      alt=""
-      loading="lazy"
-      decoding="async"
-      className={cn("h-9 w-9 shrink-0 object-contain", className)}
-      onError={() => {
-        if (dark && !failedDark) setFailedFor(src);
-      }}
-    />
+    <TeamLogoGlow primaryColor={color} alternateColor={alternateColor} spread={5.2} dim={dim}>
+      <img
+        src={shown}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        className={cn("h-9 w-9 shrink-0 object-contain", className)}
+        onError={() => {
+          if (dark && !failedDark) setFailedFor(src);
+        }}
+      />
+    </TeamLogoGlow>
   );
 }
 
@@ -502,14 +511,28 @@ export const NflScoreboardCard = memo(function NflScoreboardCard({
         record: game.away.record,
         hasBall: Boolean(game.live && ballOn(game.away.teamId, poss)),
         muted: loserMuted(game.final, game.away.score, game.home.score, "away"),
-        logo: <TeamLogo src={game.away.logo} />,
+        logo: (
+          <TeamLogo
+            src={game.away.logo}
+            color={game.away.color}
+            alternateColor={game.away.alternateColor}
+            dim={loserMuted(game.final, game.away.score, game.home.score, "away")}
+          />
+        ),
       }}
       home={{
         abbrev: game.home.abbrev,
         record: game.home.record,
         hasBall: Boolean(game.live && ballOn(game.home.teamId, poss)),
         muted: loserMuted(game.final, game.away.score, game.home.score, "home"),
-        logo: <TeamLogo src={game.home.logo} />,
+        logo: (
+          <TeamLogo
+            src={game.home.logo}
+            color={game.home.color}
+            alternateColor={game.home.alternateColor}
+            dim={loserMuted(game.final, game.away.score, game.home.score, "home")}
+          />
+        ),
       }}
       awayScore={pregame ? null : game.away.score}
       homeScore={pregame ? null : game.home.score}
@@ -577,13 +600,27 @@ export const NhlScoreboardCard = memo(function NhlScoreboardCard({
         abbrev: game.away.abbrev,
         record: game.away.record,
         muted: loserMuted(game.final, game.away.score, game.home.score, "away"),
-        logo: <TeamLogo src={game.away.logo} />,
+        logo: (
+          <TeamLogo
+            src={game.away.logo}
+            color={game.away.color}
+            alternateColor={game.away.alternateColor}
+            dim={loserMuted(game.final, game.away.score, game.home.score, "away")}
+          />
+        ),
       }}
       home={{
         abbrev: game.home.abbrev,
         record: game.home.record,
         muted: loserMuted(game.final, game.away.score, game.home.score, "home"),
-        logo: <TeamLogo src={game.home.logo} />,
+        logo: (
+          <TeamLogo
+            src={game.home.logo}
+            color={game.home.color}
+            alternateColor={game.home.alternateColor}
+            dim={loserMuted(game.final, game.away.score, game.home.score, "home")}
+          />
+        ),
       }}
       awayScore={pregame ? null : game.away.score}
       homeScore={pregame ? null : game.home.score}
@@ -658,7 +695,14 @@ export const CfbScoreboardCard = memo(function CfbScoreboardCard({
         caption: <CfbFpiCaption pollRank={game.away.rank} fpiRank={game.away.fpiRank} />,
         hasBall: Boolean(game.live && ballOn(game.away.teamId, poss)),
         muted: loserMuted(game.final, game.away.score, game.home.score, "away"),
-        logo: <TeamLogo src={game.away.logo} />,
+        logo: (
+          <TeamLogo
+            src={game.away.logo}
+            color={game.away.color}
+            alternateColor={game.away.alternateColor}
+            dim={loserMuted(game.final, game.away.score, game.home.score, "away")}
+          />
+        ),
       }}
       home={{
         abbrev: game.home.abbrev,
@@ -667,7 +711,14 @@ export const CfbScoreboardCard = memo(function CfbScoreboardCard({
         caption: <CfbFpiCaption pollRank={game.home.rank} fpiRank={game.home.fpiRank} />,
         hasBall: Boolean(game.live && ballOn(game.home.teamId, poss)),
         muted: loserMuted(game.final, game.away.score, game.home.score, "home"),
-        logo: <TeamLogo src={game.home.logo} />,
+        logo: (
+          <TeamLogo
+            src={game.home.logo}
+            color={game.home.color}
+            alternateColor={game.home.alternateColor}
+            dim={loserMuted(game.final, game.away.score, game.home.score, "home")}
+          />
+        ),
       }}
       awayScore={pregame ? null : game.away.score}
       homeScore={pregame ? null : game.home.score}
@@ -723,13 +774,27 @@ export const SoccerScoreboardCard = memo(function SoccerScoreboardCard({
         abbrev: game.away.abbrev,
         record: game.away.record,
         muted: loserMuted(game.final, Number.isFinite(awayN) ? awayN : null, Number.isFinite(homeN) ? homeN : null, "away"),
-        logo: <TeamLogo src={game.away.logo} />,
+        logo: (
+          <TeamLogo
+            src={game.away.logo}
+            color={game.away.color}
+            alternateColor={game.away.alternateColor}
+            dim={loserMuted(game.final, Number.isFinite(awayN) ? awayN : null, Number.isFinite(homeN) ? homeN : null, "away")}
+          />
+        ),
       }}
       home={{
         abbrev: game.home.abbrev,
         record: game.home.record,
         muted: loserMuted(game.final, Number.isFinite(awayN) ? awayN : null, Number.isFinite(homeN) ? homeN : null, "home"),
-        logo: <TeamLogo src={game.home.logo} />,
+        logo: (
+          <TeamLogo
+            src={game.home.logo}
+            color={game.home.color}
+            alternateColor={game.home.alternateColor}
+            dim={loserMuted(game.final, Number.isFinite(awayN) ? awayN : null, Number.isFinite(homeN) ? homeN : null, "home")}
+          />
+        ),
       }}
       awayScore={pregame ? null : game.away.score}
       homeScore={pregame ? null : game.home.score}

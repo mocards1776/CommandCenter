@@ -9,6 +9,7 @@ import AppleScoreCluster from "@/components/sports/AppleScoreCluster";
 import NflFieldMap from "@/components/sports/NflFieldMap";
 import { CfbWinProbCaption } from "@/components/sports/CfbWinProbability";
 import LogoPlate from "@/components/sports/LogoPlate";
+import TeamLogoGlow from "@/components/sports/TeamLogoGlow";
 import PossessionFootball from "@/components/sports/PossessionFootball";
 import TeamMark from "@/components/sports/TeamMark";
 import MlbLogoGlow from "@/components/sports/MlbLogoGlow";
@@ -41,7 +42,10 @@ import {
 import {
   fetchCfbCurrentWinProbability,
   fetchNflCurrentWinProbability,
+  type CfbWinProbTeam,
 } from "@/lib/cfb-win-probability";
+import { nhlWinProbFromScoreboard } from "@/lib/nhl-win-probability";
+import { teamGlowColor } from "@/lib/team-logo-glow";
 import CfbRankLabel, { CfbFpiCaption } from "@/components/sports/CfbRankLabel";
 import type { GameBroadcast } from "@/lib/game-broadcasts";
 import {
@@ -67,6 +71,36 @@ import {
 } from "@/lib/ruwt";
 import { markSportsSolo } from "@/lib/sports-home";
 import { cn } from "@/lib/utils";
+
+function GlowMark({
+  src,
+  color,
+  alternateColor,
+}: {
+  src: string;
+  color?: string | null;
+  alternateColor?: string | null;
+}) {
+  return (
+    <TeamLogoGlow primaryColor={color} alternateColor={alternateColor} spread={5.2}>
+      <LogoPlate src={src} className="h-8 w-8" />
+    </TeamLogoGlow>
+  );
+}
+
+function barTeam(side: {
+  abbrev: string;
+  color?: string | null;
+  alternateColor?: string | null;
+  logo?: string | null;
+}): CfbWinProbTeam {
+  return {
+    abbrev: side.abbrev,
+    color: teamGlowColor(side.color, side.alternateColor),
+    alternateColor: side.alternateColor,
+    logo: side.logo ?? null,
+  };
+}
 
 function ordinalPlace(n: number): string {
   const mod100 = n % 100;
@@ -786,7 +820,9 @@ function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
       </div>
       <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-3.5">
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-start">
-          {game.away.logo && <LogoPlate src={game.away.logo} className="h-8 w-8" />}
+          {game.away.logo ? (
+            <GlowMark src={game.away.logo} color={game.away.color} alternateColor={game.away.alternateColor} />
+          ) : null}
           <p
             className={cn(
               "inline-flex items-center gap-1 text-[15px] font-bold text-white",
@@ -816,7 +852,9 @@ function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
           />
         </div>
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-end">
-          {game.home.logo && <LogoPlate src={game.home.logo} className="h-8 w-8" />}
+          {game.home.logo ? (
+            <GlowMark src={game.home.logo} color={game.home.color} alternateColor={game.home.alternateColor} />
+          ) : null}
           <p
             className={cn(
               "inline-flex items-center gap-1 text-[15px] font-bold text-white",
@@ -923,7 +961,9 @@ function NflRuwtCard({ game, rank }: { game: NflScoredGame; rank: number }) {
       </div>
       <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-3.5">
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-start">
-          {game.away.logo && <LogoPlate src={game.away.logo} className="h-8 w-8" />}
+          {game.away.logo ? (
+            <GlowMark src={game.away.logo} color={game.away.color} alternateColor={game.away.alternateColor} />
+          ) : null}
           <p
             className={cn(
               "inline-flex items-center gap-1 text-[15px] font-bold text-white",
@@ -946,7 +986,9 @@ function NflRuwtCard({ game, rank }: { game: NflScoredGame; rank: number }) {
           preview={game.whenShort}
         />
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-end">
-          {game.home.logo && <LogoPlate src={game.home.logo} className="h-8 w-8" />}
+          {game.home.logo ? (
+            <GlowMark src={game.home.logo} color={game.home.color} alternateColor={game.home.alternateColor} />
+          ) : null}
           <p
             className={cn(
               "inline-flex items-center gap-1 text-[15px] font-bold text-white",
@@ -995,6 +1037,7 @@ function NflRuwtCard({ game, rank }: { game: NflScoredGame; rank: number }) {
 }
 
 function NhlRuwtCard({ game, rank }: { game: NhlScoredGame; rank: number }) {
+  const winProb = nhlWinProbFromScoreboard(game);
   const diff =
     game.away.score != null && game.home.score != null
       ? Math.abs(game.away.score - game.home.score)
@@ -1033,7 +1076,9 @@ function NhlRuwtCard({ game, rank }: { game: NhlScoredGame; rank: number }) {
       </div>
       <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-3.5">
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-start">
-          {game.away.logo && <LogoPlate src={game.away.logo} className="h-8 w-8" />}
+          {game.away.logo ? (
+            <GlowMark src={game.away.logo} color={game.away.color} alternateColor={game.away.alternateColor} />
+          ) : null}
           <p className="text-[15px] font-bold text-white">{game.away.abbrev}</p>
         </div>
         <AppleScoreCluster
@@ -1046,10 +1091,23 @@ function NhlRuwtCard({ game, rank }: { game: NhlScoredGame; rank: number }) {
           preview={game.whenShort}
         />
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-end">
-          {game.home.logo && <LogoPlate src={game.home.logo} className="h-8 w-8" />}
+          {game.home.logo ? (
+            <GlowMark src={game.home.logo} color={game.home.color} alternateColor={game.home.alternateColor} />
+          ) : null}
           <p className="text-[15px] font-bold text-white">{game.home.abbrev}</p>
         </div>
       </div>
+      {winProb ? (
+        <div className="relative z-10 px-3 pb-2">
+          <CfbWinProbCaption
+            homeWinPct={winProb.homeWinPct}
+            awayWinPct={winProb.awayWinPct}
+            tiePct={winProb.tiePct}
+            away={barTeam(game.away)}
+            home={barTeam(game.home)}
+          />
+        </div>
+      ) : null}
       <RuwtBroadcasts broadcasts={game.broadcasts} />
       <PlayoffSeriesLine
         line={game.seriesLine}
@@ -1093,7 +1151,7 @@ function SoccerRuwtCard({ game, rank }: { game: SoccerScoredGame; rank: number }
       <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-3.5">
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-start">
           {game.away.logo ? (
-            <LogoPlate src={game.away.logo} className="h-8 w-8" />
+            <GlowMark src={game.away.logo} color={game.away.color} alternateColor={game.away.alternateColor} />
           ) : null}
           <p className="text-[15px] font-bold text-white">{game.away.abbrev}</p>
         </div>
@@ -1108,7 +1166,7 @@ function SoccerRuwtCard({ game, rank }: { game: SoccerScoredGame; rank: number }
         />
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-end">
           {game.home.logo ? (
-            <LogoPlate src={game.home.logo} className="h-8 w-8" />
+            <GlowMark src={game.home.logo} color={game.home.color} alternateColor={game.home.alternateColor} />
           ) : null}
           <p className="text-[15px] font-bold text-white">{game.home.abbrev}</p>
         </div>

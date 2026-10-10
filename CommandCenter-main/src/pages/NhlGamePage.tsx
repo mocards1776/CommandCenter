@@ -8,6 +8,9 @@ import EspnVideoEmbed from "@/components/sports/EspnVideoEmbed";
 import AppleScoreCluster from "@/components/sports/AppleScoreCluster";
 import PlayoffSeriesLine from "@/components/sports/PlayoffSeriesLine";
 import LogoPlate from "@/components/sports/LogoPlate";
+import TeamLogoGlow from "@/components/sports/TeamLogoGlow";
+import NhlWinProbability from "@/components/sports/NhlWinProbability";
+import { teamGlowColor } from "@/lib/team-logo-glow";
 import HighlightReel, { type ReelHighlight } from "@/components/sports/HighlightReel";
 import NhlBoxScore from "@/components/sports/NhlBoxScore";
 import NhlGameLeaders from "@/components/sports/NhlGameLeaders";
@@ -171,7 +174,7 @@ export default function NhlGamePage() {
                 winner === "home" ? "opacity-40" : "opacity-90",
               )}
               style={{
-                background: `radial-gradient(ellipse at 20% 45%, #${g.away.color}88, transparent 58%)`,
+                background: `radial-gradient(ellipse at 20% 45%, #${teamGlowColor(g.away.color, g.away.alternateColor)}88, transparent 58%)`,
               }}
             />
             <div
@@ -180,7 +183,7 @@ export default function NhlGamePage() {
                 winner === "away" ? "opacity-40" : "opacity-90",
               )}
               style={{
-                background: `radial-gradient(ellipse at 80% 45%, #${g.home.color}88, transparent 58%)`,
+                background: `radial-gradient(ellipse at 80% 45%, #${teamGlowColor(g.home.color, g.home.alternateColor)}88, transparent 58%)`,
               }}
             />
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(255,255,255,0.06),transparent_45%)]" />
@@ -294,6 +297,10 @@ export default function NhlGamePage() {
               </div>
             )}
           </header>
+
+          {g.winProbability.length > 0 ? (
+            <NhlWinProbability away={g.away} home={g.home} points={g.winProbability} />
+          ) : null}
 
           {g.final ? (
             <>
@@ -456,7 +463,9 @@ function TeamBlock({
       )}
     >
       {side.logo ? (
-        <LogoPlate src={side.logo} className={cn("h-14 w-14 sm:h-20 sm:w-20", dim && "opacity-40")} />
+        <TeamLogoGlow primaryColor={side.color} alternateColor={side.alternateColor} spread={4.4} dim={dim}>
+          <LogoPlate src={side.logo} className={cn("h-14 w-14 sm:h-20 sm:w-20", dim && "opacity-40")} />
+        </TeamLogoGlow>
       ) : null}
       <div className="min-w-0">
         <p

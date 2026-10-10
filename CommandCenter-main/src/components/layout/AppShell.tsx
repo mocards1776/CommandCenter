@@ -91,7 +91,7 @@ const NAV = [
   },
 ];
 const SPORTS_NAV = [
-  { to: "/sports?solo=1", match: (p: string) => p === "/sports", label: "Teams", Icon: Users },
+  { to: "/sports?solo=1&teams=1", match: (p: string) => p === "/sports", label: "Teams", Icon: Users },
   {
     to: "/sports/mlb?solo=1",
     match: (p: string) =>

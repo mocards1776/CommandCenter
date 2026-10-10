@@ -91,7 +91,7 @@
         // Home Screen launch → straight into Sports (not Dashboard).
         // Stay put in Safari so Share → Add captures /sports.html.
         if (standalone) {
-          location.replace("/sports?solo=1");
+          location.replace("/sports/ruwt?solo=1");
         }
       })();
     </script>
@@ -105,7 +105,7 @@
       </p>
       <p class="url" id="url"></p>
       <p>If the URL still says /dashboard, you’re on the wrong page. Stay here.</p>
-      <a class="btn" href="/sports?solo=1">Open Sports</a>
+      <a class="btn" href="/sports/ruwt?solo=1">Open Sports</a>
     </div>
     <script>
       document.getElementById("url").textContent = location.href;

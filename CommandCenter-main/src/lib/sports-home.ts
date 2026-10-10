@@ -26,3 +26,15 @@ export function prefersSportsHome(): boolean {
     return false;
   }
 }
+
+/**
+ * Where `/sports` should send a visit that is just opening the app.
+ * Team pages, the golf drawer, and the explicit teams board stay on `/sports`.
+ * Returns null when this visit should render the teams board.
+ */
+export function sportsHomeRedirect(search: string): string | null {
+  const params = new URLSearchParams(search.replace(/^\?/, ""));
+  if (params.has("team") || params.get("golf") === "1" || params.get("teams") === "1") return null;
+  const q = params.toString();
+  return q ? `/sports/ruwt?${q}` : "/sports/ruwt";
+}
