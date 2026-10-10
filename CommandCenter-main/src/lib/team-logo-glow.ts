@@ -1,16 +1,15 @@
 /**
- * Shared team-color glow behind logos on scoreboard cards and game headers.
- * ESPN `color` / `alternateColor` when the feed has them; dark primaries take
- * a readable secondary or a same-hue lift so the glow still shows on navy.
- * No disc, plate, or cream fill — the CSS is a radial gradient that fades out.
+ * Shared team-color glow behind logos, and the same color for football end zones.
+ * ESPN `color` is the logo's dominant color unless a caller passes a different one.
+ * The glow has to separate from that mark and from the dark card. A dark or
+ * too-similar primary yields to alternateColor, then a lighter tint of the team hue.
+ * Cream, white, discs, and plates are never used.
  */
 
 export const GLOW_MIN_LIGHTNESS = 0.4;
-export const GLOW_LIFT_LIGHTNESS = 0.47;
-const ALT_MIN_LIGHTNESS = 0.32;
-const ALT_MAX_LIGHTNESS = 0.72;
-const ALT_MIN_SATURATION = 0.28;
+export const GLOW_LIFT_LIGHTNESS = 0.58;
 const FALLBACK = "d9515c";
+const CARD_BG = "07101d";
 
 type Rgb = [number, number, number];
 
@@ -60,33 +59,101 @@ export function hslToRgb(h: number, s: number, l: number): Rgb {
   return [ch(hh + 1 / 3) * 255, ch(hh) * 255, ch(hh - 1 / 3) * 255];
 }
 
-function usableAlternate(rgb: Rgb | null): rgb is Rgb {
-  if (!rgb) return false;
-  const [, s, l] = rgbToHsl(rgb);
-  return l >= ALT_MIN_LIGHTNESS && l <= ALT_MAX_LIGHTNESS && s >= ALT_MIN_SATURATION;
+function channelLum(c: number): number {
+  const x = c / 255;
+  return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+}
+
+function luminance(rgb: Rgb): number {
+  return 0.2126 * channelLum(rgb[0]) + 0.7152 * channelLum(rgb[1]) + 0.0722 * channelLum(rgb[2]);
+}
+
+/** WCAG contrast ratio. */
+export function contrastRatio(a: Rgb, b: Rgb): number {
+  const l1 = luminance(a);
+  const l2 = luminance(b);
+  const hi = Math.max(l1, l2);
+  const lo = Math.min(l1, l2);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+/** Cream, white, and beige fills read as a plate. Saturated gold does not. */
+export function isPlateColor(rgb: Rgb | null): boolean {
+  if (!rgb) return true;
+  const [h, s, l] = rgbToHsl(rgb);
+  if (l >= 0.8) return true;
+  if (l >= 0.68 && s < 0.72 && h >= 20 && h <= 65) return true;
+  return l >= 0.72 && s < 0.35;
+}
+
+function hueDelta(a: number, b: number): number {
+  const d = Math.abs(a - b) % 360;
+  return d > 180 ? 360 - d : d;
 }
 
 /**
- * Glow hex (no #). Bright primaries pass through. A dark primary uses ESPN's
- * alternate when that secondary is a real team color (not white or cream).
- * Otherwise the primary is lifted in lightness. Near-black with no hue stays
- * a neutral gray so it does not pick up a fake red cast.
+ * True when `glow` separates from the logo and still reads on the dark card.
+ * Same-hue marks need a wide lightness gap; a different hue can sit closer.
+ */
+function separates(glow: Rgb, logo: Rgb): boolean {
+  if (isPlateColor(glow)) return false;
+  const [gh, gs, gl] = rgbToHsl(glow);
+  const [lh, ls, ll] = rgbToHsl(logo);
+  if (gl < 0.42 || gl > 0.78) return false;
+  const card = parseHex(CARD_BG)!;
+  if (contrastRatio(glow, card) < 1.7) return false;
+  // A white or black mark separates from any saturated team color on this card.
+  if (ll > 0.86 || ll < 0.08) return gs >= 0.28;
+  const sameHue = gs > 0.2 && ls > 0.2 && hueDelta(gh, lh) < 28;
+  const gap = Math.abs(gl - ll);
+  if (sameHue && gap < 0.28) return false;
+  if (!sameHue && gap < 0.12 && hueDelta(gh, lh) < 18) return false;
+  if (contrastRatio(glow, logo) < 2.2) return false;
+  return true;
+}
+
+/**
+ * Tint of `source` that clears the logo. Dark marks land on a lighter step.
+ * An already-light mark can't go lighter without turning into a plate, so the
+ * best same-hue step may be a bit deeper.
+ */
+function lighterTint(source: Rgb, logo: Rgb): Rgb {
+  const [h, s] = rgbToHsl(source);
+  const card = parseHex(CARD_BG)!;
+  if (s < 0.12) return hslToRgb(0, 0, 0.58);
+  const sat = Math.min(Math.max(s, 0.55), 0.85);
+  let best = hslToRgb(h, sat, GLOW_LIFT_LIGHTNESS);
+  let bestScore = -1;
+  for (const light of [0.48, 0.54, 0.58, 0.64, 0.7]) {
+    const rgb = hslToRgb(h, sat, light);
+    if (isPlateColor(rgb)) continue;
+    if (contrastRatio(rgb, card) < 1.7) continue;
+    const score = contrastRatio(rgb, logo);
+    if (score > bestScore) {
+      best = rgb;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
+/**
+ * Glow / end-zone hex (no #).
+ * `logoHex` is the mark's dominant color; it defaults to the ESPN primary.
  */
 export function teamGlowColor(
   primaryHex: string | null | undefined,
   alternateHex?: string | null,
+  logoHex?: string | null,
 ): string {
   const primary = parseHex(primaryHex);
   const alternate = parseHex(alternateHex);
-  if (primary) {
-    const [h, s, l] = rgbToHsl(primary);
-    if (l >= GLOW_MIN_LIGHTNESS && l <= 0.86) return toHex(primary);
-    if (usableAlternate(alternate)) return toHex(alternate);
-    if (l > 0.86) return toHex(hslToRgb(h, Math.min(s, 0.35), 0.62));
-    if (s < 0.12) return toHex(hslToRgb(0, 0, GLOW_LIFT_LIGHTNESS));
-    return toHex(hslToRgb(h, Math.max(s, 0.55), GLOW_LIFT_LIGHTNESS));
-  }
-  if (usableAlternate(alternate)) return toHex(alternate);
+  const logo = parseHex(logoHex) ?? primary;
+  if (primary && logo && separates(primary, logo)) return toHex(primary);
+  if (alternate && logo && separates(alternate, logo)) return toHex(alternate);
+  const base = primary ?? alternate;
+  if (base && logo) return toHex(lighterTint(base, logo));
+  if (alternate && !isPlateColor(alternate)) return toHex(alternate);
   return FALLBACK;
 }
 
@@ -117,5 +184,5 @@ export function logoGlowBackground(hex: string, strength = 1): string {
   const k = Math.min(Math.max(strength, 0), 1.2);
   const a = (n: number) => Math.round(Math.min(n * k, 1) * 100) / 100;
   const c = rgb.join(",");
-  return `radial-gradient(circle closest-side, rgba(${c},${a(0.66)}) 0%, rgba(${c},${a(0.5)}) 18%, rgba(${c},${a(0.3)}) 40%, rgba(${c},${a(0.13)}) 64%, rgba(${c},${a(0.04)}) 84%, rgba(${c},0) 100%)`;
+  return `radial-gradient(circle closest-side, rgba(${c},${a(0.22)}) 0%, rgba(${c},${a(0.82)}) 28%, rgba(${c},${a(0.5)}) 48%, rgba(${c},${a(0.2)}) 70%, rgba(${c},${a(0.05)}) 86%, rgba(${c},0) 100%)`;
 }

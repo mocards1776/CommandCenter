@@ -11,11 +11,24 @@ import { NflScoreboardCard } from "@/components/sports/ScoreboardCard";
 import { isBreakStatus } from "@/lib/apple-score";
 import { cn } from "@/lib/utils";
 import PossessionFootball from "@/components/sports/PossessionFootball";
+import { teamGlowColor } from "@/lib/team-logo-glow";
 
 /** Minimal shape for NFL / CFB live field maps on RUWT cards. */
 export type FootballFieldGame = {
-  away: { teamId: string | number; abbrev: string; color?: string; logo?: string | null };
-  home: { teamId: string | number; abbrev: string; color?: string; logo?: string | null };
+  away: {
+    teamId: string | number;
+    abbrev: string;
+    color?: string;
+    alternateColor?: string | null;
+    logo?: string | null;
+  };
+  home: {
+    teamId: string | number;
+    abbrev: string;
+    color?: string;
+    alternateColor?: string | null;
+    logo?: string | null;
+  };
   situation?: {
     downDistanceText?: string | null;
     lastPlayText?: string | null;
@@ -151,8 +164,10 @@ export default function NflFieldMap({
   const homeHasBall = poss != null && String(poss) === String(game.home.teamId);
   const awayHasBall = poss != null && String(poss) === String(game.away.teamId);
 
-  const awayColor = teamHex(game.away.color, "1e3a5f");
-  const homeColor = teamHex(game.home.color, "7a1f1f");
+  const awayChip = teamHex(game.away.color, "1e3a5f");
+  const homeChip = teamHex(game.home.color, "7a1f1f");
+  const awayZone = teamHex(teamGlowColor(game.away.color, game.away.alternateColor), "1e3a5f");
+  const homeZone = teamHex(teamGlowColor(game.home.color, game.home.alternateColor), "7a1f1f");
 
   const ddText = downDistanceText || game.situation?.downDistanceText || null;
   const ticks = [10, 20, 30, 40, 50, 40, 30, 20, 10];
@@ -186,7 +201,7 @@ export default function NflFieldMap({
             "inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5",
             awayHasBall ? "text-white" : "text-white/45",
           )}
-          style={awayHasBall ? { backgroundColor: `${awayColor}cc` } : undefined}
+          style={awayHasBall ? { backgroundColor: `${awayChip}cc`, color: "#fff" } : undefined}
         >
           {game.away.abbrev}
           {awayHasBall ? <PossessionFootball className="h-2.5 w-4" /> : null}
@@ -199,7 +214,7 @@ export default function NflFieldMap({
             "inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5",
             homeHasBall ? "text-white" : "text-white/45",
           )}
-          style={homeHasBall ? { backgroundColor: `${homeColor}cc` } : undefined}
+          style={homeHasBall ? { backgroundColor: `${homeChip}cc`, color: "#fff" } : undefined}
         >
           {homeHasBall ? <PossessionFootball className="h-2.5 w-4" /> : null}
           {game.home.abbrev}
@@ -216,7 +231,7 @@ export default function NflFieldMap({
       >
         <EndZoneMark
           abbrev={game.away.abbrev}
-          color={awayColor}
+          color={awayZone}
           logo={game.away.logo}
           branded={branded}
           side="away"
@@ -267,7 +282,7 @@ export default function NflFieldMap({
         </div>
         <EndZoneMark
           abbrev={game.home.abbrev}
-          color={homeColor}
+          color={homeZone}
           logo={game.home.logo}
           branded={branded}
           side="home"

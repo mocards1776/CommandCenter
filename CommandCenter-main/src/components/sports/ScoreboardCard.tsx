@@ -121,12 +121,7 @@ function SideColumn({ side, align }: { side: ScoreboardSide; align: "left" | "ri
       )}
     >
       {side.logo}
-      <p
-        className={cn(
-          "inline-flex max-w-full items-center gap-1 text-[15px] font-bold tracking-wide text-white",
-          side.hasBall && "text-cream",
-        )}
-      >
+      <p className="relative z-10 inline-flex max-w-full items-center gap-1 text-[15px] font-bold tracking-wide text-white">
         {align === "right" ? ball : null}
         <span className="min-w-0 truncate">
           {side.rank}
