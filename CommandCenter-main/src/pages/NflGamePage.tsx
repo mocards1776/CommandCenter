@@ -7,7 +7,6 @@ import { liveScoreHeader } from "@/lib/apple-score";
 import AppleScoreCluster from "@/components/sports/AppleScoreCluster";
 import PlayoffSeriesLine from "@/components/sports/PlayoffSeriesLine";
 import LogoPlate from "@/components/sports/LogoPlate";
-import TeamLogoGlow from "@/components/sports/TeamLogoGlow";
 import { teamGlowColor } from "@/lib/team-logo-glow";
 import TeamStatsLogos from "@/components/sports/TeamStatsLogos";
 import NflFieldMap from "@/components/sports/NflFieldMap";
@@ -838,18 +837,11 @@ function NflMatchupSide({
       )}
     >
       {side.logo ? (
-        <TeamLogoGlow
-          primaryColor={side.color}
-          alternateColor={side.alternateColor}
-          spread={4.4}
-          dim={loser}
-        >
-          <LogoPlate
-            src={side.logo}
-            className={cn("h-16 w-16 sm:h-[4.5rem] sm:w-[4.5rem]", loser && "opacity-40")}
-            imgClassName={winner ? "drop-shadow-[0_0_12px_rgba(255,255,255,0.35)]" : undefined}
-          />
-        </TeamLogoGlow>
+        <LogoPlate
+          src={side.logo}
+          className={cn("h-16 w-16 sm:h-[4.5rem] sm:w-[4.5rem]", loser && "opacity-40")}
+          imgClassName={winner ? "drop-shadow-[0_0_12px_rgba(255,255,255,0.35)]" : undefined}
+        />
       ) : (
         <div className="grid h-16 w-16 place-items-center rounded-full bg-white/10 text-[12px] font-bold text-white">
           {side.abbrev}

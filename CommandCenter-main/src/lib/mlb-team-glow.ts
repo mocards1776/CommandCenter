@@ -1,7 +1,7 @@
 /**
- * MLB logo glow. Navy / black / brown clubs use a brighter secondary so the
- * glow reads on the navy cards; every other club goes through the shared
- * team-color glow (ESPN primary, lifted when it is too dark).
+ * MLB logo glow. Navy / black / brown clubs use a real secondary from the
+ * override map. Every other club uses the shared team color (ESPN primary
+ * or alternate only — no generated tint).
  */
 import { teamGlowColor } from "./team-logo-glow.ts";
 

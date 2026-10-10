@@ -8,7 +8,6 @@ import EspnVideoEmbed from "@/components/sports/EspnVideoEmbed";
 import AppleScoreCluster from "@/components/sports/AppleScoreCluster";
 import PlayoffSeriesLine from "@/components/sports/PlayoffSeriesLine";
 import LogoPlate from "@/components/sports/LogoPlate";
-import TeamLogoGlow from "@/components/sports/TeamLogoGlow";
 import NhlWinProbability from "@/components/sports/NhlWinProbability";
 import { teamGlowColor } from "@/lib/team-logo-glow";
 import HighlightReel, { type ReelHighlight } from "@/components/sports/HighlightReel";
@@ -463,9 +462,7 @@ function TeamBlock({
       )}
     >
       {side.logo ? (
-        <TeamLogoGlow primaryColor={side.color} alternateColor={side.alternateColor} spread={4.4} dim={dim}>
-          <LogoPlate src={side.logo} className={cn("h-14 w-14 sm:h-20 sm:w-20", dim && "opacity-40")} />
-        </TeamLogoGlow>
+        <LogoPlate src={side.logo} className={cn("h-14 w-14 sm:h-20 sm:w-20", dim && "opacity-40")} />
       ) : null}
       <div className="min-w-0">
         <p
