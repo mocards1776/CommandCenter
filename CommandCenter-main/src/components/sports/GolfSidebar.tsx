@@ -222,7 +222,7 @@ export default function GolfSidebar({
                     Favorites
                   </h3>
                   <Link
-                    to="/sports?solo=1"
+                    to="/sports?solo=1&teams=1"
                     className="text-[10px] uppercase tracking-[0.14em] text-white/35 hover:text-white/60"
                   >
                     Board

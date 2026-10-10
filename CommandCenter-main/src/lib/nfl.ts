@@ -11,6 +11,7 @@ import {
 import { cfbPossessionTeamId } from "./cfb-possession";
 import { mapCfbWinProbability, type CfbWinProbPoint } from "./cfb-win-probability";
 import { parseEspnBroadcasts, type GameBroadcast } from "./game-broadcasts";
+import { readEspnTeamColors } from "./team-logo-glow";
 import { seriesLineFromEspn } from "./playoff-series";
 import { supabase } from "./supabase";
 import { espnBirthDate, espnBirthPlace, formatSportsDateLong } from "./utils";
@@ -83,6 +84,8 @@ export type NflScoreSide = {
   record: string | null;
   logo: string | null;
   color: string;
+  /** ESPN `alternateColor` when the feed sends one. */
+  alternateColor?: string | null;
   /** Quarter / OT points from ESPN linescores (Q1…Q4, then OT). */
   linescores: number[];
 };
@@ -338,12 +341,14 @@ function sideFromCompetitor(c: {
     shortDisplayName?: string;
     abbreviation?: string;
     color?: string;
+    alternateColor?: string;
     logos?: { href?: string }[];
   };
 }): NflScoreSide {
   const team = c.team ?? {};
   const abbrev = team.abbreviation ?? "—";
   const overall = (c.records ?? []).find((r) => r.type === "total")?.summary ?? null;
+  const colors = readEspnTeamColors(team.color, team.alternateColor, "555555");
   return {
     teamId: Number(team.id) || 0,
     name: team.displayName ?? team.shortDisplayName ?? abbrev,
@@ -351,7 +356,8 @@ function sideFromCompetitor(c: {
     score: parseScore(c.score),
     record: overall,
     logo: team.logos?.[0]?.href ?? nflTeamLogo(abbrev),
-    color: (team.color ?? "555555").replace(/^#/, ""),
+    color: colors.color,
+    alternateColor: colors.alternateColor,
     linescores: readLinescores(c.linescores),
   };
 }

@@ -7,6 +7,8 @@ import { liveScoreHeader } from "@/lib/apple-score";
 import AppleScoreCluster from "@/components/sports/AppleScoreCluster";
 import PlayoffSeriesLine from "@/components/sports/PlayoffSeriesLine";
 import LogoPlate from "@/components/sports/LogoPlate";
+import TeamLogoGlow from "@/components/sports/TeamLogoGlow";
+import { teamGlowColor } from "@/lib/team-logo-glow";
 import TeamStatsLogos from "@/components/sports/TeamStatsLogos";
 import NflFieldMap from "@/components/sports/NflFieldMap";
 import CfbWinProbability from "@/components/sports/CfbWinProbability";
@@ -246,7 +248,7 @@ export function NflGameDetailView({
             homeWins ? "opacity-40" : "opacity-90",
           )}
           style={{
-            background: `radial-gradient(ellipse at 20% 45%, #${g.away.color}88, transparent 58%)`,
+            background: `radial-gradient(ellipse at 20% 45%, #${teamGlowColor(g.away.color, g.away.alternateColor)}88, transparent 58%)`,
           }}
         />
         <div
@@ -255,7 +257,7 @@ export function NflGameDetailView({
             awayWins ? "opacity-40" : "opacity-90",
           )}
           style={{
-            background: `radial-gradient(ellipse at 80% 45%, #${g.home.color}88, transparent 58%)`,
+            background: `radial-gradient(ellipse at 80% 45%, #${teamGlowColor(g.home.color, g.home.alternateColor)}88, transparent 58%)`,
           }}
         />
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(255,255,255,0.06),transparent_45%)]" />
@@ -836,11 +838,18 @@ function NflMatchupSide({
       )}
     >
       {side.logo ? (
-        <LogoPlate
-          src={side.logo}
-          className={cn("h-16 w-16 sm:h-[4.5rem] sm:w-[4.5rem]", loser && "opacity-40")}
-          imgClassName={winner ? "drop-shadow-[0_0_12px_rgba(255,255,255,0.35)]" : undefined}
-        />
+        <TeamLogoGlow
+          primaryColor={side.color}
+          alternateColor={side.alternateColor}
+          spread={4.4}
+          dim={loser}
+        >
+          <LogoPlate
+            src={side.logo}
+            className={cn("h-16 w-16 sm:h-[4.5rem] sm:w-[4.5rem]", loser && "opacity-40")}
+            imgClassName={winner ? "drop-shadow-[0_0_12px_rgba(255,255,255,0.35)]" : undefined}
+          />
+        </TeamLogoGlow>
       ) : (
         <div className="grid h-16 w-16 place-items-center rounded-full bg-white/10 text-[12px] font-bold text-white">
           {side.abbrev}

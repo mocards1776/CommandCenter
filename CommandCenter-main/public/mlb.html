@@ -25,7 +25,7 @@
         var standalone =
           (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) ||
           window.navigator.standalone === true;
-        location.replace(standalone ? "/sports?solo=1" : "/sports.html");
+        location.replace(standalone ? "/sports?solo=1&teams=1" : "/sports.html");
       })();
     </script>
   </head>

@@ -9,7 +9,7 @@ import AppShell from "@/components/layout/AppShell";
 import LoginPage from "@/pages/LoginPage";
 import { TimesHoldShell } from "@/components/newspaper/TimesHold";
 import { homePath, markReadingSolo, safeNextPath } from "@/lib/reading-home";
-import { markSportsSolo } from "@/lib/sports-home";
+import { markSportsSolo, sportsHomeRedirect } from "@/lib/sports-home";
 import { markRssSolo } from "@/lib/rss-home";
 
 const DailyNewspaperPage = lazy(() => import("@/pages/DailyNewspaperPage"));
@@ -132,6 +132,14 @@ function HomeRedirect() {
   return <Navigate to={homePath()} replace />;
 }
 
+/** `/sports` opens RUWT. Team, golf, and the teams board stay on this route. */
+function SportsHome() {
+  const [params] = useSearchParams();
+  const target = sportsHomeRedirect(params.toString());
+  if (target) return <Navigate to={target} replace />;
+  return <SportsPage />;
+}
+
 export default function App() {
   captureSoloFromUrl();
 
@@ -190,7 +198,7 @@ export default function App() {
               <Route path="/habits" element={<HabitsPage />} />
               <Route path="/reading" element={<ReadingPage />} />
               <Route path="/finance" element={<FinancePage />} />
-              <Route path="/sports" element={<SportsPage />} />
+              <Route path="/sports" element={<SportsHome />} />
               <Route path="/sports/mlb" element={<MlbPage />} />
               <Route path="/sports/ruwt" element={<RuwtPage />} />
               <Route path="/sports/mlb/prospects" element={<CardinalsProspectsPage />} />

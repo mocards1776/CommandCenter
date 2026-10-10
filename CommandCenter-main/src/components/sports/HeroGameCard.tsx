@@ -1,6 +1,7 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import LiveSituationStrip from "@/components/sports/LiveSituationStrip";
+import MlbLogoGlow from "@/components/sports/MlbLogoGlow";
 import TeamMark from "@/components/sports/TeamMark";
 import {
   fetchPitcherSeasonLines,
@@ -330,17 +331,13 @@ function HeroSide({
         onClick={(e) => e.stopPropagation()}
         className="relative transition hover:scale-[1.03]"
       >
-        <span
-          className="pointer-events-none absolute -inset-4 rounded-full opacity-80 blur-2xl"
-          style={{
-            background: `radial-gradient(circle, #${side.primaryColor}cc, transparent 70%)`,
-          }}
-        />
-        <TeamMark
-          teamId={side.teamId}
-          size="xl"
-          className="relative drop-shadow-[0_10px_24px_rgba(0,0,0,0.5)]"
-        />
+        <MlbLogoGlow teamId={side.teamId} primaryColor={side.primaryColor} spread={4.4}>
+          <TeamMark
+            teamId={side.teamId}
+            size="xl"
+            className="relative drop-shadow-[0_10px_24px_rgba(0,0,0,0.5)]"
+          />
+        </MlbLogoGlow>
       </Link>
       <div
         className={cn(

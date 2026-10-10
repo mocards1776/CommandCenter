@@ -12,6 +12,7 @@ import {
   type SoccerGameSide,
 } from "@/lib/soccer-game";
 import LogoPlate from "@/components/sports/LogoPlate";
+import TeamLogoGlow from "@/components/sports/TeamLogoGlow";
 import TeamStatsLogos from "@/components/sports/TeamStatsLogos";
 import { soccerTeamLogo } from "@/lib/soccer";
 import { cn } from "@/lib/utils";
@@ -212,7 +213,9 @@ function MatchupSide({
       )}
     >
       {logo ? (
-        <LogoPlate src={logo} className="h-14 w-14 sm:h-16 sm:w-16" />
+        <TeamLogoGlow primaryColor={side.color} alternateColor={side.alternateColor} spread={4.4} dim={loser}>
+          <LogoPlate src={logo} className="h-14 w-14 sm:h-16 sm:w-16" />
+        </TeamLogoGlow>
       ) : (
         <div className="bg-white/5 h-14 w-14 rounded-full sm:h-16 sm:w-16" />
       )}

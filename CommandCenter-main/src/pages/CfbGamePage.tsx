@@ -5,6 +5,8 @@ import { Loader2 } from "lucide-react";
 import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
 import AppleScoreCluster from "@/components/sports/AppleScoreCluster";
 import LogoPlate from "@/components/sports/LogoPlate";
+import TeamLogoGlow from "@/components/sports/TeamLogoGlow";
+import { teamGlowColor } from "@/lib/team-logo-glow";
 import TeamStatsLogos from "@/components/sports/TeamStatsLogos";
 import NflFieldMap from "@/components/sports/NflFieldMap";
 import CfbWinProbability from "@/components/sports/CfbWinProbability";
@@ -270,7 +272,7 @@ export function CfbGameDetailView({
             homeWins ? "opacity-40" : "opacity-90",
           )}
           style={{
-            background: `radial-gradient(ellipse at 20% 45%, #${g.away.color}88, transparent 58%)`,
+            background: `radial-gradient(ellipse at 20% 45%, #${teamGlowColor(g.away.color, g.away.alternateColor)}88, transparent 58%)`,
           }}
         />
         <div
@@ -279,7 +281,7 @@ export function CfbGameDetailView({
             awayWins ? "opacity-40" : "opacity-90",
           )}
           style={{
-            background: `radial-gradient(ellipse at 80% 45%, #${g.home.color}88, transparent 58%)`,
+            background: `radial-gradient(ellipse at 80% 45%, #${teamGlowColor(g.home.color, g.home.alternateColor)}88, transparent 58%)`,
           }}
         />
         <div className="relative z-10 flex items-center justify-between gap-2 border-b border-white/[0.07] px-3 py-2 sm:px-4">
@@ -829,7 +831,14 @@ function MatchupSide({
       )}
     >
       {side.logo ? (
-        <LogoPlate src={side.logo} className={cn("h-12 w-12 sm:h-14 sm:w-14", loser && "opacity-40")} />
+        <TeamLogoGlow
+          primaryColor={side.color}
+          alternateColor={side.alternateColor}
+          spread={4.4}
+          dim={loser}
+        >
+          <LogoPlate src={side.logo} className={cn("h-12 w-12 sm:h-14 sm:w-14", loser && "opacity-40")} />
+        </TeamLogoGlow>
       ) : null}
       <div className="min-w-0">
         <p

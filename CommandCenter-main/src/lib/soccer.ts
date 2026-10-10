@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { parseEspnBroadcasts } from "@/lib/game-broadcasts";
 import type { GameBroadcast } from "@/lib/game-broadcasts";
 import { notifyRuwtInterestChanged } from "@/lib/ruwt";
+import { readEspnTeamColors } from "@/lib/team-logo-glow";
 
 export function soccerTeamLogo(teamId: string | number): string {
   return `https://a.espncdn.com/i/teamlogos/soccer/500/${teamId}.png`;
@@ -14,6 +15,8 @@ export type SoccerScoreSide = {
   name: string;
   abbrev: string;
   logo: string | null;
+  color?: string | null;
+  alternateColor?: string | null;
   score: string | null;
   record: string | null;
 };
@@ -165,14 +168,19 @@ function sideFromCompetitor(c: {
     shortDisplayName?: string;
     logo?: string;
     logos?: { href?: string }[];
+    color?: string;
+    alternateColor?: string;
   };
 }): SoccerScoreSide {
   const rec = (c.records ?? []).find((r) => r.type === "total")?.summary ?? null;
+  const colors = readEspnTeamColors(c.team?.color, c.team?.alternateColor, "555555");
   return {
     teamId: String(c.team?.id ?? ""),
     name: c.team?.displayName ?? c.team?.shortDisplayName ?? "Team",
     abbrev: c.team?.abbreviation ?? "—",
     logo: c.team?.logo ?? c.team?.logos?.[0]?.href ?? null,
+    color: c.team?.color || c.team?.alternateColor ? colors.color : null,
+    alternateColor: colors.alternateColor,
     score: c.score != null ? String(c.score) : null,
     record: rec,
   };

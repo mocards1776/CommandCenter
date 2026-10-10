@@ -35,7 +35,7 @@ export function homePath(): string {
       localStorage.getItem("sports-solo") === "1" ||
       sessionStorage.getItem("sports-solo") === "1"
     ) {
-      return "/sports?solo=1";
+      return "/sports/ruwt?solo=1";
     }
     if (
       localStorage.getItem("rss-solo") === "1" ||

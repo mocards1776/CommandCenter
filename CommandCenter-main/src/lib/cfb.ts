@@ -16,6 +16,7 @@ import {
   type CfbPlayTone,
 } from "./cfb-play-text";
 import { parseEspnBroadcasts, type GameBroadcast } from "./game-broadcasts";
+import { readEspnTeamColors } from "./team-logo-glow";
 import {
   espnRateToPct,
   fetchCfbCurrentWinProbability,
@@ -183,6 +184,8 @@ export type CfbScoreSide = {
   record: string | null;
   logo: string | null;
   color: string;
+  /** ESPN `alternateColor` when the feed sends one. */
+  alternateColor?: string | null;
   /** Official poll rank (1–25 only). ESPN uses 99 as unranked sentinel. */
   rank: number | null;
   /** ESPN FPI ordinal across FBS (can be 26–130+). */
@@ -1116,6 +1119,7 @@ type EspnCompetitor = {
     shortDisplayName?: string;
     abbreviation?: string;
     color?: string;
+    alternateColor?: string;
     logos?: { href?: string }[];
   };
 };
@@ -1149,6 +1153,7 @@ function sideFromCompetitor(
     })
     .filter((n): n is number => n != null);
 
+  const colors = readEspnTeamColors(team.color, team.alternateColor, "555555");
   return {
     teamId,
     name: team.displayName ?? team.shortDisplayName ?? abbrev,
@@ -1156,7 +1161,8 @@ function sideFromCompetitor(
     score: parseScore(c.score),
     record: overall,
     logo: team.logos?.[0]?.href ?? cfbTeamLogo(team.id ?? 0),
-    color: (team.color ?? "555555").replace(/^#/, ""),
+    color: colors.color,
+    alternateColor: colors.alternateColor,
     rank: mergeCfbPollRank(
       c.curatedRank?.current,
       teamId && pollByTeam ? pollByTeam.get(teamId) : null,
