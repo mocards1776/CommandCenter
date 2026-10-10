@@ -3,8 +3,7 @@ import { Link } from "react-router-dom";
 import AppleScoreCluster, { type MlbScoreNest } from "@/components/sports/AppleScoreCluster";
 import CfbRankLabel, { CfbFpiCaption } from "@/components/sports/CfbRankLabel";
 import { WsChampPct } from "@/components/sports/MlbWorldSeriesOdds";
-import MlbLogoGlow from "@/components/sports/MlbLogoGlow";
-import TeamLogoGlow from "@/components/sports/TeamLogoGlow";
+import TeamHalfWash from "@/components/sports/TeamHalfWash";
 import PlayoffSeriesLine from "@/components/sports/PlayoffSeriesLine";
 import PossessionFootball from "@/components/sports/PossessionFootball";
 import TeamMark from "@/components/sports/TeamMark";
@@ -17,7 +16,9 @@ import { wsPctFor } from "@/lib/mlb-ws-odds";
 import type { NflScoreGame } from "@/lib/nfl";
 import type { NhlScoreGame } from "@/lib/nhl";
 import { ruwtWhyReasons } from "@/lib/ruwt-slate";
+import { mlbGlowColor } from "@/lib/mlb-team-glow";
 import { espnDarkLogo, RUWT_SPORT_LABEL } from "@/lib/ruwt-score-tab";
+import { teamGlowColor } from "@/lib/team-logo-glow";
 import type { SoccerScoreGame } from "@/lib/soccer";
 import { cn } from "@/lib/utils";
 
@@ -46,15 +47,9 @@ export function centralStartLabel(iso: string | null | undefined, fallback?: str
 
 export function TeamLogo({
   src,
-  color,
-  alternateColor,
-  dim = false,
   className,
 }: {
   src: string | null | undefined;
-  color?: string | null;
-  alternateColor?: string | null;
-  dim?: boolean;
   className?: string;
 }) {
   const dark = src ? espnDarkLogo(src) : null;
@@ -63,18 +58,16 @@ export function TeamLogo({
   const failedDark = failedFor === src;
   const shown = dark && !failedDark ? dark : src;
   return (
-    <TeamLogoGlow primaryColor={color} alternateColor={alternateColor} spread={5.2} dim={dim}>
-      <img
-        src={shown}
-        alt=""
-        loading="lazy"
-        decoding="async"
-        className={cn("h-9 w-9 shrink-0 object-contain", className)}
-        onError={() => {
-          if (dark && !failedDark) setFailedFor(src);
-        }}
-      />
-    </TeamLogoGlow>
+    <img
+      src={shown}
+      alt=""
+      loading="lazy"
+      decoding="async"
+      className={cn("h-9 w-9 shrink-0 object-contain", className)}
+      onError={() => {
+        if (dark && !failedDark) setFailedFor(src);
+      }}
+    />
   );
 }
 
@@ -87,6 +80,11 @@ export type ScoreboardSide = {
   caption?: ReactNode;
   hasBall?: boolean;
   muted?: boolean;
+  /** ESPN primary. The card wash uses teamGlowColor unless `wash` is set. */
+  color?: string | null;
+  alternateColor?: string | null;
+  /** Resolved wash hex (no #). MLB club overrides go here so they win. */
+  wash?: string | null;
 };
 
 export type ScoreboardCardProps = {
@@ -165,6 +163,12 @@ function ScoreboardCardInner({
   );
   const body = (
     <>
+      <TeamHalfWash
+        awayHex={away.wash || (away.color || away.alternateColor ? teamGlowColor(away.color, away.alternateColor) : null)}
+        homeHex={home.wash || (home.color || home.alternateColor ? teamGlowColor(home.color, home.alternateColor) : null)}
+        awayDim={away.muted}
+        homeDim={home.muted}
+      />
       <div className="relative z-10 flex items-center justify-between gap-2 border-b border-white/[0.06] px-3 py-2">
         <span className="min-w-0 truncate text-[10px] font-bold uppercase tracking-[0.14em] text-cream">
           {live ? (
@@ -373,11 +377,8 @@ function mlbSide(
     muted,
     record: side.record,
     caption: <WsChampPct pct={wsPctFor(wsBoard, side.teamId)} muted={muted} />,
-    logo: side.teamId ? (
-      <MlbLogoGlow teamId={side.teamId} primaryColor={side.primaryColor} spread={5.2} dim={muted}>
-        <TeamMark teamId={side.teamId} size="md" />
-      </MlbLogoGlow>
-    ) : null,
+    wash: mlbGlowColor(side.teamId, side.primaryColor),
+    logo: side.teamId ? <TeamMark teamId={side.teamId} size="md" /> : null,
   };
 }
 
@@ -506,28 +507,18 @@ export const NflScoreboardCard = memo(function NflScoreboardCard({
         record: game.away.record,
         hasBall: Boolean(game.live && ballOn(game.away.teamId, poss)),
         muted: loserMuted(game.final, game.away.score, game.home.score, "away"),
-        logo: (
-          <TeamLogo
-            src={game.away.logo}
-            color={game.away.color}
-            alternateColor={game.away.alternateColor}
-            dim={loserMuted(game.final, game.away.score, game.home.score, "away")}
-          />
-        ),
+        color: game.away.color,
+        alternateColor: game.away.alternateColor,
+        logo: <TeamLogo src={game.away.logo} />,
       }}
       home={{
         abbrev: game.home.abbrev,
         record: game.home.record,
         hasBall: Boolean(game.live && ballOn(game.home.teamId, poss)),
         muted: loserMuted(game.final, game.away.score, game.home.score, "home"),
-        logo: (
-          <TeamLogo
-            src={game.home.logo}
-            color={game.home.color}
-            alternateColor={game.home.alternateColor}
-            dim={loserMuted(game.final, game.away.score, game.home.score, "home")}
-          />
-        ),
+        color: game.home.color,
+        alternateColor: game.home.alternateColor,
+        logo: <TeamLogo src={game.home.logo} />,
       }}
       awayScore={pregame ? null : game.away.score}
       homeScore={pregame ? null : game.home.score}
@@ -595,27 +586,17 @@ export const NhlScoreboardCard = memo(function NhlScoreboardCard({
         abbrev: game.away.abbrev,
         record: game.away.record,
         muted: loserMuted(game.final, game.away.score, game.home.score, "away"),
-        logo: (
-          <TeamLogo
-            src={game.away.logo}
-            color={game.away.color}
-            alternateColor={game.away.alternateColor}
-            dim={loserMuted(game.final, game.away.score, game.home.score, "away")}
-          />
-        ),
+        color: game.away.color,
+        alternateColor: game.away.alternateColor,
+        logo: <TeamLogo src={game.away.logo} />,
       }}
       home={{
         abbrev: game.home.abbrev,
         record: game.home.record,
         muted: loserMuted(game.final, game.away.score, game.home.score, "home"),
-        logo: (
-          <TeamLogo
-            src={game.home.logo}
-            color={game.home.color}
-            alternateColor={game.home.alternateColor}
-            dim={loserMuted(game.final, game.away.score, game.home.score, "home")}
-          />
-        ),
+        color: game.home.color,
+        alternateColor: game.home.alternateColor,
+        logo: <TeamLogo src={game.home.logo} />,
       }}
       awayScore={pregame ? null : game.away.score}
       homeScore={pregame ? null : game.home.score}
@@ -690,14 +671,9 @@ export const CfbScoreboardCard = memo(function CfbScoreboardCard({
         caption: <CfbFpiCaption pollRank={game.away.rank} fpiRank={game.away.fpiRank} />,
         hasBall: Boolean(game.live && ballOn(game.away.teamId, poss)),
         muted: loserMuted(game.final, game.away.score, game.home.score, "away"),
-        logo: (
-          <TeamLogo
-            src={game.away.logo}
-            color={game.away.color}
-            alternateColor={game.away.alternateColor}
-            dim={loserMuted(game.final, game.away.score, game.home.score, "away")}
-          />
-        ),
+        color: game.away.color,
+        alternateColor: game.away.alternateColor,
+        logo: <TeamLogo src={game.away.logo} />,
       }}
       home={{
         abbrev: game.home.abbrev,
@@ -706,14 +682,9 @@ export const CfbScoreboardCard = memo(function CfbScoreboardCard({
         caption: <CfbFpiCaption pollRank={game.home.rank} fpiRank={game.home.fpiRank} />,
         hasBall: Boolean(game.live && ballOn(game.home.teamId, poss)),
         muted: loserMuted(game.final, game.away.score, game.home.score, "home"),
-        logo: (
-          <TeamLogo
-            src={game.home.logo}
-            color={game.home.color}
-            alternateColor={game.home.alternateColor}
-            dim={loserMuted(game.final, game.away.score, game.home.score, "home")}
-          />
-        ),
+        color: game.home.color,
+        alternateColor: game.home.alternateColor,
+        logo: <TeamLogo src={game.home.logo} />,
       }}
       awayScore={pregame ? null : game.away.score}
       homeScore={pregame ? null : game.home.score}
@@ -769,27 +740,17 @@ export const SoccerScoreboardCard = memo(function SoccerScoreboardCard({
         abbrev: game.away.abbrev,
         record: game.away.record,
         muted: loserMuted(game.final, Number.isFinite(awayN) ? awayN : null, Number.isFinite(homeN) ? homeN : null, "away"),
-        logo: (
-          <TeamLogo
-            src={game.away.logo}
-            color={game.away.color}
-            alternateColor={game.away.alternateColor}
-            dim={loserMuted(game.final, Number.isFinite(awayN) ? awayN : null, Number.isFinite(homeN) ? homeN : null, "away")}
-          />
-        ),
+        color: game.away.color,
+        alternateColor: game.away.alternateColor,
+        logo: <TeamLogo src={game.away.logo} />,
       }}
       home={{
         abbrev: game.home.abbrev,
         record: game.home.record,
         muted: loserMuted(game.final, Number.isFinite(awayN) ? awayN : null, Number.isFinite(homeN) ? homeN : null, "home"),
-        logo: (
-          <TeamLogo
-            src={game.home.logo}
-            color={game.home.color}
-            alternateColor={game.home.alternateColor}
-            dim={loserMuted(game.final, Number.isFinite(awayN) ? awayN : null, Number.isFinite(homeN) ? homeN : null, "home")}
-          />
-        ),
+        color: game.home.color,
+        alternateColor: game.home.alternateColor,
+        logo: <TeamLogo src={game.home.logo} />,
       }}
       awayScore={pregame ? null : game.away.score}
       homeScore={pregame ? null : game.home.score}

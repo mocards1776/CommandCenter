@@ -7,6 +7,7 @@ import {
   teamGlowColor,
   readEspnTeamColors,
   logoGlowBackground,
+  halfWashBackground,
   isPlateColor,
 } from "./team-logo-glow.ts";
 
@@ -61,6 +62,13 @@ test("readEspnTeamColors", () => {
   assert.equal(readEspnTeamColors("#33006F", "E8D3A2", "555555").alternateColor, "e8d3a2");
   assert.equal(readEspnTeamColors(undefined, "nope", "555555").color, "555555");
   assert.equal(readEspnTeamColors(undefined, "nope", "555555").alternateColor, null);
+});
+
+test("half wash matches the game-detail header", () => {
+  const away = halfWashBackground(teamGlowColor("231f20", "fcd116"), "left");
+  const home = halfWashBackground(teamGlowColor("33006f", "e8d3a2"), "right");
+  assert.equal(away, "radial-gradient(ellipse at 20% 45%, #fcd11688, transparent 58%)");
+  assert.equal(home, "radial-gradient(ellipse at 80% 45%, #e8d3a288, transparent 58%)");
 });
 
 test("glow background fades out", () => {
