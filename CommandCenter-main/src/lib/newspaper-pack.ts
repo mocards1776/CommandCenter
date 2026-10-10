@@ -200,6 +200,13 @@ export function packSheet(sheet: HTMLElement): PackResult {
       if (fit.lines < MIN_CUT_LINES && !furnitureAbove(el)) continue;
       out.push({ el, top: fit.top, copy: true, trim: 0 });
     }
+    // Furniture that itself crosses the foot goes before its story, even a story with no copy.
+    for (const el of sheet.querySelectorAll<HTMLElement>(YIELD)) {
+      if (!box.contains(el) || isHidden(el)) continue;
+      const r = el.getBoundingClientRect();
+      if (r.height < 1 || r.top >= limit - 1 || r.bottom <= limit + 1) continue;
+      out.push({ el, top: r.top, copy: false, trim: 0 });
+    }
     return out.sort((a, b) => b.top - a.top || b.trim - a.trim)[0];
   };
 

@@ -82,7 +82,7 @@ import {
   ScheduleAgate,
 } from "@/components/newspaper/BoxScore";
 import { RecapBox, RecapChrome, RecapPhoto } from "@/components/newspaper/GameRecap";
-import { clubFormIsThin, clubOpensLabel, clubTickerRecord, formStatColumns, frontPageLeftover, groupByDay, planSchedulePages, printableFormStat } from "@/lib/newspaper-page";
+import { clubFormIsThin, clubOpensLabel, clubTickerRecord, frontPageLeftover, printableFormStat } from "@/lib/newspaper-page";
 import { ReaderProvider } from "@/components/newspaper/PaperReader";
 import { useReader } from "@/components/newspaper/reader-context";
 import { CfbFill, CfbScheduleDesk } from "@/components/newspaper/CfbScheduleDesk";
@@ -507,13 +507,6 @@ function doubleWide(n: number, cols: number): number {
   return Math.min(empty, n);
 }
 
-function daysUntilIso(iso: string | null | undefined): number | null {
-  if (!iso) return null;
-  const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return null;
-  return Math.ceil((t - Date.now()) / 86_400_000);
-}
-
 const OpenerContext = createContext<Map<string, Opener>>(new Map());
 
 function useOpener(key: string | null | undefined): Opener | null {
@@ -561,38 +554,6 @@ function Countdown({
       </div>
     </div>
   );
-}
-
-/** Clubs with no slate, or next tip more than six weeks out, print compact. */
-function clubIsOffseason(team: TeamInfobox, opener?: Opener | null): boolean {
-  if (opener && daysUntil(opener.iso, Date.now(), opener.timeValid) > 7) return true;
-  const hasSlate = Boolean(team.snap.nextGame) || (team.detail?.upcoming?.length ?? 0) > 0;
-  if (hasSlate) {
-    const soon =
-      team.detail?.upcoming?.find((g) => g.startIso)?.startIso ??
-      team.detail?.upcoming?.[0]?.startIso ??
-      null;
-    const days = daysUntilIso(soon);
-    // Only shelve when we know the wait is long — missing ISO keeps the full card.
-    return days != null && days > 45;
-  }
-  return team.seasonState === "complete" || team.seasonState === "upcoming";
-}
-
-function clubCountdown(team: TeamInfobox): string {
-  const next = team.detail?.upcoming?.[0] ?? null;
-  const chip = team.snap.nextGame;
-  const days = daysUntilIso(next?.startIso);
-  if (days != null && days > 0) {
-    const label = next?.label || chip?.label || "next tip";
-    if (days === 1) return `Opens tomorrow · ${label}`;
-    if (days < 14) return `${days} days · ${label}`;
-    if (days < 60) return `${Math.round(days / 7)} weeks · ${label}`;
-    return `${Math.round(days / 30)} months · ${label}`;
-  }
-  if (chip) return `Next ${chip.label}${chip.when ? ` · ${chip.when}` : ""}`;
-  if (next) return `Next ${next.label}${next.when ? ` · ${next.when}` : ""}`;
-  return "Offseason";
 }
 
 function nextLine(team: TeamInfobox): string {
@@ -2025,145 +1986,6 @@ function TurnBar({
         </b>
       </button>
     </p>
-  );
-}
-
-/* ───────────────────────── clubs desk ───────────────────────── */
-
-function ClubsDesk({
-  teams,
-  offset = 0,
-  limit,
-}: {
-  teams: TeamInfobox[];
-  offset?: number;
-  limit?: number;
-}) {
-  const openers = useContext(OpenerContext);
-  const allActive = teams.filter((t) => !clubIsOffseason(t, openers.get(t.fav.key)));
-  const active = allActive.slice(offset, limit != null ? offset + limit : undefined);
-  const shelved = offset > 0 ? [] : teams.filter((t) => clubIsOffseason(t, openers.get(t.fav.key)));
-  const cols = balancedCols(active.length, [5, 4, 3, 6, 2]);
-  return (
-    <div className="wsj-clubs-desk">
-      <header className="wsj-desk-head">
-        <h2>Your Clubs</h2>
-        <p>
-          {active.length} in season · {shelved.length} between seasons · next games, tables and
-          leaders
-        </p>
-      </header>
-      {active.length ? (
-        <ul className="wsj-clubs-grid" style={{ ["--cols" as string]: String(cols) }}>
-          {active.map((t, i) => {
-            const slate = (t.detail?.upcoming ?? []).slice(0, 4);
-            const table = tableWindow(
-              (t.detail?.division ?? []).map((row) => ({
-                rank: row.rank,
-                team: row.team,
-                record: row.record,
-                me: row.isMe,
-              })),
-              5,
-            );
-            const leaders = teamLeaders(t).slice(0, 3);
-            return (
-              <li key={t.fav.key} {...(i > 0 ? { "data-tt-flow": "" } : {})}>
-                <ExternalOrLink href={t.href} className="wsj-club-card wsj-a" style={tint(teamColor(t))}>
-                  <header className="wsj-club-card-head">
-                    <span className="wsj-disc">
-                      <TeamLogo src={t.snap.logo || t.detail?.logo} size="md" />
-                    </span>
-                    <span className="wsj-club-card-id">
-                      <em>{t.fav.league}</em>
-                      <strong>{t.fav.shortName}</strong>
-                    </span>
-                    <b>{clubRecord(t) || "—"}</b>
-                  </header>
-                  <div className="wsj-club-card-body">
-                    <p className="wsj-club-card-standing">
-                      <span>{t.snap.standing || "—"}</span>
-                      <FormDots form={t.form} />
-                    </p>
-                    {t.odds ? <p className="wsj-club-odds">Playoff odds {t.odds}</p> : null}
-                    {slate.length || t.snap.nextGame ? (
-                      <div className="wsj-club-card-sec">
-                        <h4>Next up</h4>
-                        <ul className="wsj-club-slate">
-                          {(slate.length
-                            ? slate
-                            : [{ id: "next", when: t.snap.nextGame!.when, label: t.snap.nextGame!.label, detail: null }]
-                          ).map((game, i) => (
-                            <li key={game.id || `${t.fav.key}-u-${i}`}>
-                              <strong>{game.label}</strong>
-                              <span>{game.when || "TBD"}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
-                    {table.length ? (
-                      <div className="wsj-club-card-sec">
-                        <h4>{tableTitle(t.snap.standing)}</h4>
-                        <ul className="wsj-club-table">
-                          {table.map((row) => (
-                            <li key={`${row.rank}-${row.team}`} className={cn(row.me && "me")}>
-                              <span>
-                                {row.rank}. {row.team}
-                              </span>
-                              <b>{row.record}</b>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
-                    {leaders.length ? (
-                      <div className="wsj-club-card-sec">
-                        <h4>Leaders</h4>
-                        <ul className="wsj-club-table">
-                          {leaders.map((leader) => (
-                            <li key={leader.name}>
-                              <span>{leader.name}</span>
-                              <em>{leader.line}</em>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
-                  </div>
-                </ExternalOrLink>
-              </li>
-            );
-          })}
-        </ul>
-      ) : null}
-      {shelved.length ? (
-        <section>
-          <h3 className="wsj-band-title">Between seasons</h3>
-          <ul className="wsj-shelved" style={{ ["--cols" as string]: "2" }}>
-            {shelved.map((t) => {
-              const opener = openers.get(t.fav.key);
-              return (
-                <li key={t.fav.key} style={tint(teamColor(t))}>
-                  <ExternalOrLink href={t.href} className={cn("wsj-shelved-card wsj-a", opener && "counting")}>
-                    <TeamLogo src={t.snap.logo || t.detail?.logo} size="lg" />
-                    <span>
-                      <strong>{t.fav.shortName}</strong>
-                      <span>
-                        {t.seasonState === "complete" ? "Final" : t.fav.league} · {clubRecord(t) || "—"}
-                        {t.snap.standing ? ` · ${t.snap.standing}` : ""}
-                      </span>
-                      {opener ? null : <em>{clubCountdown(t)}</em>}
-                    </span>
-                    {opener ? <Countdown opener={opener} variant="line" /> : null}
-                  </ExternalOrLink>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      ) : null}
-    </div>
   );
 }
 
