@@ -823,12 +823,7 @@ function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
           {game.away.logo ? (
             <GlowMark src={game.away.logo} color={game.away.color} alternateColor={game.away.alternateColor} />
           ) : null}
-          <p
-            className={cn(
-              "inline-flex items-center gap-1 text-[15px] font-bold text-white",
-              awayHasBall && "text-cream",
-            )}
-          >
+          <p className="relative z-10 inline-flex items-center gap-1 text-[15px] font-bold text-white">
             <CfbRankLabel pollRank={game.away.rank} fpiRank={null} />
             {game.away.abbrev}
             {game.live && awayHasBall ? (
@@ -855,12 +850,7 @@ function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
           {game.home.logo ? (
             <GlowMark src={game.home.logo} color={game.home.color} alternateColor={game.home.alternateColor} />
           ) : null}
-          <p
-            className={cn(
-              "inline-flex items-center gap-1 text-[15px] font-bold text-white",
-              homeHasBall && "text-cream",
-            )}
-          >
+          <p className="relative z-10 inline-flex items-center gap-1 text-[15px] font-bold text-white">
             {game.live && homeHasBall ? (
               <PossessionFootball className="h-3 w-5 shrink-0" />
             ) : null}
@@ -964,12 +954,7 @@ function NflRuwtCard({ game, rank }: { game: NflScoredGame; rank: number }) {
           {game.away.logo ? (
             <GlowMark src={game.away.logo} color={game.away.color} alternateColor={game.away.alternateColor} />
           ) : null}
-          <p
-            className={cn(
-              "inline-flex items-center gap-1 text-[15px] font-bold text-white",
-              awayHasBall && "text-cream",
-            )}
-          >
+          <p className="relative z-10 inline-flex items-center gap-1 text-[15px] font-bold text-white">
             {game.away.abbrev}
             {game.live && awayHasBall ? (
               <PossessionFootball className="h-3 w-5 shrink-0" />
@@ -989,12 +974,7 @@ function NflRuwtCard({ game, rank }: { game: NflScoredGame; rank: number }) {
           {game.home.logo ? (
             <GlowMark src={game.home.logo} color={game.home.color} alternateColor={game.home.alternateColor} />
           ) : null}
-          <p
-            className={cn(
-              "inline-flex items-center gap-1 text-[15px] font-bold text-white",
-              homeHasBall && "text-cream",
-            )}
-          >
+          <p className="relative z-10 inline-flex items-center gap-1 text-[15px] font-bold text-white">
             {game.live && homeHasBall ? (
               <PossessionFootball className="h-3 w-5 shrink-0" />
             ) : null}
@@ -1079,7 +1059,7 @@ function NhlRuwtCard({ game, rank }: { game: NhlScoredGame; rank: number }) {
           {game.away.logo ? (
             <GlowMark src={game.away.logo} color={game.away.color} alternateColor={game.away.alternateColor} />
           ) : null}
-          <p className="text-[15px] font-bold text-white">{game.away.abbrev}</p>
+          <p className="relative z-10 text-[15px] font-bold text-white">{game.away.abbrev}</p>
         </div>
         <AppleScoreCluster
           away={game.away.score}
@@ -1094,7 +1074,7 @@ function NhlRuwtCard({ game, rank }: { game: NhlScoredGame; rank: number }) {
           {game.home.logo ? (
             <GlowMark src={game.home.logo} color={game.home.color} alternateColor={game.home.alternateColor} />
           ) : null}
-          <p className="text-[15px] font-bold text-white">{game.home.abbrev}</p>
+          <p className="relative z-10 text-[15px] font-bold text-white">{game.home.abbrev}</p>
         </div>
       </div>
       {winProb ? (
@@ -1153,7 +1133,7 @@ function SoccerRuwtCard({ game, rank }: { game: SoccerScoredGame; rank: number }
           {game.away.logo ? (
             <GlowMark src={game.away.logo} color={game.away.color} alternateColor={game.away.alternateColor} />
           ) : null}
-          <p className="text-[15px] font-bold text-white">{game.away.abbrev}</p>
+          <p className="relative z-10 text-[15px] font-bold text-white">{game.away.abbrev}</p>
         </div>
         <AppleScoreCluster
           away={game.away.score}
@@ -1168,7 +1148,7 @@ function SoccerRuwtCard({ game, rank }: { game: SoccerScoredGame; rank: number }
           {game.home.logo ? (
             <GlowMark src={game.home.logo} color={game.home.color} alternateColor={game.home.alternateColor} />
           ) : null}
-          <p className="text-[15px] font-bold text-white">{game.home.abbrev}</p>
+          <p className="relative z-10 text-[15px] font-bold text-white">{game.home.abbrev}</p>
         </div>
       </div>
       <RuwtBroadcasts broadcasts={game.broadcasts} />

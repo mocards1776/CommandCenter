@@ -47,10 +47,17 @@ test("hsl round-trip", () => {
   }
 });
 
-test("bright primaries pass through unchanged", () => {
-  assert.equal(mlbGlowColor(144, "ce1141"), "ce1141", "ATL");
-  assert.equal(mlbGlowColor(139, "8fbce6"), "8fbce6", "TB");
-  assert.equal(mlbGlowColor(137, "fd5a1e"), "fd5a1e", "SF");
+test("bright primaries that match the logo are lifted off the mark", () => {
+  for (const [id, hex] of [
+    [144, "ce1141"],
+    [139, "8fbce6"],
+    [137, "fd5a1e"],
+  ] as const) {
+    const out = mlbGlowColor(id, hex);
+    assert.ok(out !== hex, `${id} ${out}`);
+    assert.ok(lightness(out) >= 0.4 && lightness(out) <= 0.75, `${id} ${out}`);
+    assert.ok(Math.abs(hue(out) - hue(hex)) < 12, `${id} ${out}`);
+  }
 });
 
 test("navy/black clubs use a brighter secondary", () => {
@@ -69,8 +76,9 @@ test("other dark primaries are lifted, same hue", () => {
   ] as const) {
     const out = mlbGlowColor(id, hex);
     assert.ok(lightness(hex) < GLOW_MIN_LIGHTNESS, `${hex} is dark`);
-    assert.ok(Math.abs(lightness(out) - GLOW_LIFT_LIGHTNESS) < 0.01, `${id} lifted to ~${GLOW_LIFT_LIGHTNESS}`);
-    assert.ok(Math.abs(hue(out) - hue(hex)) < 2, `${id} keeps hue`);
+    assert.ok(lightness(out) >= GLOW_LIFT_LIGHTNESS - 0.02, `${id} ${out} lifted`);
+    assert.ok(lightness(out) > lightness(hex) + 0.2, `${id} separates from the mark`);
+    assert.ok(Math.abs(hue(out) - hue(hex)) < 8, `${id} keeps hue`);
   }
 });
 
@@ -82,9 +90,10 @@ test("bad input falls back to the app red", () => {
 test("logoGlowBackground: concentrated radial, fades to transparent", () => {
   const bg = logoGlowBackground("ce1141");
   assert.ok(bg.startsWith("radial-gradient(circle closest-side"), bg);
-  assert.ok(bg.includes("rgba(206,17,65,0.66) 0%"), bg);
+  assert.ok(bg.includes("rgba(206,17,65,0.22) 0%"), bg);
+  assert.ok(bg.includes("rgba(206,17,65,0.82) 28%"), bg);
   assert.ok(bg.endsWith("rgba(206,17,65,0) 100%)"), bg);
-  assert.ok(logoGlowBackground("ce1141", 0.5).includes("rgba(206,17,65,0.33) 0%"));
+  assert.ok(logoGlowBackground("ce1141", 0.5).includes("rgba(206,17,65,0.41) 28%"));
   assert.ok(logoGlowBackground("nope").includes("rgba(217,81,92,"));
 });
 

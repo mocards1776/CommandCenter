@@ -27,18 +27,23 @@ export default function TeamLogoGlow({
   children: ReactNode;
 }) {
   const hex = color ?? teamGlowColor(primaryColor, alternateColor);
-  const pct = `${Math.round(spread * 100)}%`;
+  // Keep the halo on the mark. A 5× spread washes the abbreviation underneath
+  // and makes white type look team-colored.
+  const pad = Math.round(Math.min(Math.max(spread, 1), 2.6) * 6);
   return (
-    <span className={cn("relative isolate inline-grid shrink-0 place-items-center", className)}>
+    <span
+      className={cn("relative isolate inline-grid shrink-0 place-items-center overflow-hidden", className)}
+      style={{ padding: `${pad}px ${pad + 4}px` }}
+    >
       <span
         aria-hidden
         className={cn(
-          "pointer-events-none absolute left-1/2 top-1/2 -z-10 -translate-x-1/2 -translate-y-1/2 rounded-full transition-opacity",
+          "pointer-events-none absolute inset-0 transition-opacity",
           dim ? "opacity-40" : "opacity-100",
         )}
-        style={{ width: pct, height: pct, background: logoGlowBackground(hex, strength) }}
+        style={{ background: logoGlowBackground(hex, strength) }}
       />
-      {children}
+      <span className="relative z-10">{children}</span>
     </span>
   );
 }
