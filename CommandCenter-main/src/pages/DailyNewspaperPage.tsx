@@ -79,9 +79,10 @@ import {
   MlbAgate,
   SlateLine,
   DeskSnap,
+  ScheduleAgate,
 } from "@/components/newspaper/BoxScore";
 import { RecapBox, RecapChrome, RecapPhoto } from "@/components/newspaper/GameRecap";
-import { clubFormIsThin, clubOpensLabel, clubTickerRecord, formStatColumns, frontPageLeftover, groupByDay, planSchedulePages, printableFormStat } from "@/lib/newspaper-page";
+import { clubFormIsThin, clubOpensLabel, clubTickerRecord, frontPageLeftover, printableFormStat } from "@/lib/newspaper-page";
 import { ReaderProvider } from "@/components/newspaper/PaperReader";
 import { useReader } from "@/components/newspaper/reader-context";
 import { CfbFill, CfbScheduleDesk } from "@/components/newspaper/CfbScheduleDesk";
@@ -203,6 +204,7 @@ import {
   missouriStoryCard,
   nationalStoryCard,
   paginateEditionDesks,
+  standColumns,
   pickFrontUnderLead,
   sortComingUp,
   sportInSeason,
@@ -505,13 +507,6 @@ function doubleWide(n: number, cols: number): number {
   return Math.min(empty, n);
 }
 
-function daysUntilIso(iso: string | null | undefined): number | null {
-  if (!iso) return null;
-  const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return null;
-  return Math.ceil((t - Date.now()) / 86_400_000);
-}
-
 const OpenerContext = createContext<Map<string, Opener>>(new Map());
 
 function useOpener(key: string | null | undefined): Opener | null {
@@ -559,38 +554,6 @@ function Countdown({
       </div>
     </div>
   );
-}
-
-/** Clubs with no slate, or next tip more than six weeks out, print compact. */
-function clubIsOffseason(team: TeamInfobox, opener?: Opener | null): boolean {
-  if (opener && daysUntil(opener.iso, Date.now(), opener.timeValid) > 7) return true;
-  const hasSlate = Boolean(team.snap.nextGame) || (team.detail?.upcoming?.length ?? 0) > 0;
-  if (hasSlate) {
-    const soon =
-      team.detail?.upcoming?.find((g) => g.startIso)?.startIso ??
-      team.detail?.upcoming?.[0]?.startIso ??
-      null;
-    const days = daysUntilIso(soon);
-    // Only shelve when we know the wait is long — missing ISO keeps the full card.
-    return days != null && days > 45;
-  }
-  return team.seasonState === "complete" || team.seasonState === "upcoming";
-}
-
-function clubCountdown(team: TeamInfobox): string {
-  const next = team.detail?.upcoming?.[0] ?? null;
-  const chip = team.snap.nextGame;
-  const days = daysUntilIso(next?.startIso);
-  if (days != null && days > 0) {
-    const label = next?.label || chip?.label || "next tip";
-    if (days === 1) return `Opens tomorrow · ${label}`;
-    if (days < 14) return `${days} days · ${label}`;
-    if (days < 60) return `${Math.round(days / 7)} weeks · ${label}`;
-    return `${Math.round(days / 30)} months · ${label}`;
-  }
-  if (chip) return `Next ${chip.label}${chip.when ? ` · ${chip.when}` : ""}`;
-  if (next) return `Next ${next.label}${next.when ? ` · ${next.when}` : ""}`;
-  return "Offseason";
 }
 
 function nextLine(team: TeamInfobox): string {
@@ -1163,6 +1126,8 @@ function Story({
     Boolean((card.scoreLine && /\d/.test(card.scoreLine)) || card.recapGame || game);
   const storyCopy = recap ? recapBodyForPage(copy) : copy;
   const partial = readOn ?? Boolean(jump || (storyCopy && storyCopy.length < full.length * 0.9));
+  // A story that continues on another page stops at its teaser, as a printed jump does.
+  const continues = Boolean(jump && onTurn);
   const dek = dekFor(card, storyCopy);
   const useDrop = Boolean(drop && storyCopy && recapShouldDropCap(storyCopy));
   const photoKind = recapPhotoKind(card.photo, card.photoWidth);
@@ -1220,12 +1185,20 @@ function Story({
             color={teamColor(team)}
             inset={inset}
             ended={!partial}
-            more={partial ? restOfCopy(full, storyCopy) : undefined}
+            more={partial && !continues ? restOfCopy(full, storyCopy) : undefined}
           />
         ) : (
           inset
         )}
-        {storyCopy || jump ? <ReadOn card={card} game={game} label="Click for full story" whenCut={!partial} /> : null}
+        {continues ? (
+          <p className="wsj-jump wsj-cont">
+            <button type="button" className="wsj-jump-btn" onClick={() => onTurn!(jump!)}>
+              Continued on page {jump} <span aria-hidden="true">→</span>
+            </button>
+          </p>
+        ) : storyCopy || jump ? (
+          <ReadOn card={card} game={game} label="Click for full story" whenCut={!partial} />
+        ) : null}
       </div>
     </article>
   );
@@ -1843,9 +1816,13 @@ function FrontPage({
   const pageSecond = pool[1] ?? null;
   const pageThird = pool[2] ?? null;
   const pageBriefs = pool.slice(3, 6);
-  const pageLeadContinue = pageLead && pageLead.id === lead?.id ? leadContinue : folios[pageLead?.id ?? ""];
-  const pageSecondContinue = pageSecond && pageSecond.id === second?.id ? secondContinue : folios[pageSecond?.id ?? ""];
-  const pageThirdContinue = pageThird && pageThird.id === third?.id ? thirdContinue : folios[pageThird?.id ?? ""];
+  const elsewhere = (id?: string) => {
+    const folio = folios[id ?? ""];
+    return folio && folio !== "A1" ? folio : undefined;
+  };
+  const pageLeadContinue = pageLead && pageLead.id === lead?.id ? leadContinue : elsewhere(pageLead?.id);
+  const pageSecondContinue = pageSecond && pageSecond.id === second?.id ? secondContinue : elsewhere(pageSecond?.id);
+  const pageThirdContinue = pageThird && pageThird.id === third?.id ? thirdContinue : elsewhere(pageThird?.id);
   const pageLeadTeaser = pageLead && pageLead.id === lead?.id ? leadTeaser : undefined;
   const pageSecondTeaser = pageSecond && pageSecond.id === second?.id ? secondTeaser : undefined;
   const pageThirdTeaser = pageThird && pageThird.id === third?.id ? thirdTeaser : undefined;
@@ -1885,7 +1862,7 @@ function FrontPage({
       ? pageSecondContinue
       : underLead && underLead.id === third?.id
         ? pageThirdContinue
-        : folios[underLead?.id ?? ""];
+        : elsewhere(underLead?.id);
   const underTeaser =
     underLead && underLead.id === second?.id
       ? pageSecondTeaser
@@ -1901,7 +1878,7 @@ function FrontPage({
       ? pageThirdContinue
       : flowCard && flowCard.id === second?.id
         ? pageSecondContinue
-        : folios[flowCard?.id ?? ""];
+        : elsewhere(flowCard?.id);
   const flowTeaser =
     flowCard && flowCard.id === third?.id
       ? pageThirdTeaser
@@ -1961,6 +1938,7 @@ function FrontPage({
                 jump={flowContinue}
                 onTurn={onTurn}
                 trim={24}
+                yieldArt
               />
             </div>
           ) : null}
@@ -2008,145 +1986,6 @@ function TurnBar({
         </b>
       </button>
     </p>
-  );
-}
-
-/* ───────────────────────── clubs desk ───────────────────────── */
-
-function ClubsDesk({
-  teams,
-  offset = 0,
-  limit,
-}: {
-  teams: TeamInfobox[];
-  offset?: number;
-  limit?: number;
-}) {
-  const openers = useContext(OpenerContext);
-  const allActive = teams.filter((t) => !clubIsOffseason(t, openers.get(t.fav.key)));
-  const active = allActive.slice(offset, limit != null ? offset + limit : undefined);
-  const shelved = offset > 0 ? [] : teams.filter((t) => clubIsOffseason(t, openers.get(t.fav.key)));
-  const cols = balancedCols(active.length, [5, 4, 3, 6, 2]);
-  return (
-    <div className="wsj-clubs-desk">
-      <header className="wsj-desk-head">
-        <h2>Your Clubs</h2>
-        <p>
-          {active.length} in season · {shelved.length} between seasons · next games, tables and
-          leaders
-        </p>
-      </header>
-      {active.length ? (
-        <ul className="wsj-clubs-grid" style={{ ["--cols" as string]: String(cols) }}>
-          {active.map((t, i) => {
-            const slate = (t.detail?.upcoming ?? []).slice(0, 4);
-            const table = tableWindow(
-              (t.detail?.division ?? []).map((row) => ({
-                rank: row.rank,
-                team: row.team,
-                record: row.record,
-                me: row.isMe,
-              })),
-              5,
-            );
-            const leaders = teamLeaders(t).slice(0, 3);
-            return (
-              <li key={t.fav.key} {...(i > 0 ? { "data-tt-flow": "" } : {})}>
-                <ExternalOrLink href={t.href} className="wsj-club-card wsj-a" style={tint(teamColor(t))}>
-                  <header className="wsj-club-card-head">
-                    <span className="wsj-disc">
-                      <TeamLogo src={t.snap.logo || t.detail?.logo} size="md" />
-                    </span>
-                    <span className="wsj-club-card-id">
-                      <em>{t.fav.league}</em>
-                      <strong>{t.fav.shortName}</strong>
-                    </span>
-                    <b>{clubRecord(t) || "—"}</b>
-                  </header>
-                  <div className="wsj-club-card-body">
-                    <p className="wsj-club-card-standing">
-                      <span>{t.snap.standing || "—"}</span>
-                      <FormDots form={t.form} />
-                    </p>
-                    {t.odds ? <p className="wsj-club-odds">Playoff odds {t.odds}</p> : null}
-                    {slate.length || t.snap.nextGame ? (
-                      <div className="wsj-club-card-sec">
-                        <h4>Next up</h4>
-                        <ul className="wsj-club-slate">
-                          {(slate.length
-                            ? slate
-                            : [{ id: "next", when: t.snap.nextGame!.when, label: t.snap.nextGame!.label, detail: null }]
-                          ).map((game, i) => (
-                            <li key={game.id || `${t.fav.key}-u-${i}`}>
-                              <strong>{game.label}</strong>
-                              <span>{game.when || "TBD"}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
-                    {table.length ? (
-                      <div className="wsj-club-card-sec">
-                        <h4>{tableTitle(t.snap.standing)}</h4>
-                        <ul className="wsj-club-table">
-                          {table.map((row) => (
-                            <li key={`${row.rank}-${row.team}`} className={cn(row.me && "me")}>
-                              <span>
-                                {row.rank}. {row.team}
-                              </span>
-                              <b>{row.record}</b>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
-                    {leaders.length ? (
-                      <div className="wsj-club-card-sec">
-                        <h4>Leaders</h4>
-                        <ul className="wsj-club-table">
-                          {leaders.map((leader) => (
-                            <li key={leader.name}>
-                              <span>{leader.name}</span>
-                              <em>{leader.line}</em>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
-                  </div>
-                </ExternalOrLink>
-              </li>
-            );
-          })}
-        </ul>
-      ) : null}
-      {shelved.length ? (
-        <section>
-          <h3 className="wsj-band-title">Between seasons</h3>
-          <ul className="wsj-shelved" style={{ ["--cols" as string]: "2" }}>
-            {shelved.map((t) => {
-              const opener = openers.get(t.fav.key);
-              return (
-                <li key={t.fav.key} style={tint(teamColor(t))}>
-                  <ExternalOrLink href={t.href} className={cn("wsj-shelved-card wsj-a", opener && "counting")}>
-                    <TeamLogo src={t.snap.logo || t.detail?.logo} size="lg" />
-                    <span>
-                      <strong>{t.fav.shortName}</strong>
-                      <span>
-                        {t.seasonState === "complete" ? "Final" : t.fav.league} · {clubRecord(t) || "—"}
-                        {t.snap.standing ? ` · ${t.snap.standing}` : ""}
-                      </span>
-                      {opener ? null : <em>{clubCountdown(t)}</em>}
-                    </span>
-                    {opener ? <Countdown opener={opener} variant="line" /> : null}
-                  </ExternalOrLink>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      ) : null}
-    </div>
   );
 }
 
@@ -2321,10 +2160,12 @@ function ContinuePage({
   onTurn: (folio: string) => void;
 }) {
   const lookup = useContext(GameLookup);
+  // Every promised continuation sets before the club bands, so a full page gives those up first.
   return (
     <div className="wsj-continue">
       {jumps.map(({ card, rest }, i) => {
         const game = isSingleGameRecap(card) ? lookup(card) : null;
+        const boxed = Boolean(game || (isSingleGameRecap(card) && card.recapGame));
         return (
           <div key={card.id} className="wsj-inside-story">
             <p className="wsj-continued-from">
@@ -2343,13 +2184,9 @@ function ContinuePage({
               dress
               readOn={false}
               game={game}
-              inset={game ? null : <StoryNames card={card} />}
+              compactBox
+              inset={boxed ? null : <StoryNames card={card} />}
             />
-            {game || (isSingleGameRecap(card) && card.recapGame) ? (
-              <div data-tt-flow>
-                <RecapBox card={card} game={game ?? null} compact />
-              </div>
-            ) : null}
           </div>
         );
       })}
@@ -2862,7 +2699,7 @@ function SportSectionFront({
   const railSeconds = rest.slice(underLead.length, underLead.length + (cfb || mlb ? 1 : 3));
   const more = rest.slice(underLead.length + railSeconds.length, underLead.length + railSeconds.length + (cfb || mlb ? 3 : 5));
   const leadGame = lead ? gameForCard(lead, recent, page.clubs) : null;
-  const recapsFolio = deskFolio(page, "recaps", `${page.section}2`);
+  const recapsFolio = page.sectionDesks?.find((d) => d.focus === "recaps")?.folio ?? null;
   const crestFor = (card: GameWrapCard) =>
     leagueClubs.find((c) => c.short && card.teamName?.toLowerCase().includes(c.short.toLowerCase()))?.logo ?? null;
   const frontStrips = strips.slice(0, cfb || mlb ? 1 : 2).map((strip) => ({
@@ -2975,16 +2812,18 @@ function SportSectionFront({
                   <section className="tt-front-rail" aria-label={strip.title} key={strip.title}>
                     <h3 className="wsj-band-title">
                       {strip.title}
-                      <button type="button" className="tt-band-link" onClick={() => onTurn(recapsFolio)}>
-                        Recaps, page {recapsFolio} →
-                      </button>
+                      {recapsFolio ? (
+                        <button type="button" className="tt-band-link" onClick={() => onTurn(recapsFolio)}>
+                          Recaps, page {recapsFolio} →
+                        </button>
+                      ) : null}
                     </h3>
                     <ScoreStrip
                       games={strip.games}
                       onOpen={(g) => {
                         const card = stampBoardCard(g, page.clubs);
                         if (card) open({ card, game: g });
-                        else onTurn(recapsFolio);
+                        else if (recapsFolio) onTurn(recapsFolio);
                       }}
                     />
                   </section>
@@ -3015,16 +2854,18 @@ function SportSectionFront({
                     <section className="tt-front-rail" aria-label={strip.title} key={strip.title}>
                       <h3 className="wsj-band-title">
                         {strip.title}
-                        <button type="button" className="tt-band-link" onClick={() => onTurn(recapsFolio)}>
-                          Recaps, page {recapsFolio} →
-                        </button>
+                        {recapsFolio ? (
+                          <button type="button" className="tt-band-link" onClick={() => onTurn(recapsFolio)}>
+                            Recaps, page {recapsFolio} →
+                          </button>
+                        ) : null}
                       </h3>
                       <ScoreStrip
                         games={strip.games}
                         onOpen={(g) => {
                           const card = stampBoardCard(g, page.clubs);
                           if (card) open({ card, game: g });
-                          else onTurn(recapsFolio);
+                          else if (recapsFolio) onTurn(recapsFolio);
                         }}
                       />
                     </section>
@@ -3134,8 +2975,8 @@ function SportSectionFront({
                 <div key={group.category} className="tt-lleaders-cat">
                   <h4>{leaderCategoryLabel(group.category)}</h4>
                   <ol>
-                    {group.rows.slice(0, 5).map((row) => (
-                      <li key={`${group.category}-${row.name}`}>
+                    {group.rows.slice(0, 10).map((row, i) => (
+                      <li key={`${group.category}-${row.name}`} {...(i >= 5 ? { "data-tt-trim": 30 + i } : {})}>
                         {row.headshot ? <img src={row.headshot} alt="" /> : <span className="tt-lleaders-ph" />}
                         <span className="tt-lleaders-who">
                           <strong>{row.name}</strong>
@@ -3768,67 +3609,24 @@ function ScheduleDesk({
     );
   }
   if (games.length) {
-    const days = new Map<string, BoxGame[]>();
-    for (const g of games) {
-      const list = days.get(g.day) ?? [];
-      list.push(g);
-      days.set(g.day, list);
-    }
-    const mlb = page.path === "baseball/mlb";
+    const label = (day: string) => dayHeading(day, edition);
     if (nfl) {
-      const pages = planSchedulePages(games);
-      const pack = pages[0] ?? games;
       const finals = (board?.week ?? board?.results ?? []).filter((g) => g.final);
       return (
-        <div className="tt-schedule tt-schedule-fill tt-slate-desk">
-          {pages.length > 1 ? (
-            <p className="wsj-band-title">
-              This week <em>folio 1 of {pages.length}</em>
-            </p>
-          ) : null}
-          {groupByDay(pack).map(([day, list]) => (
-            <section key={day} className={list.length >= 6 ? "tt-slate-heavy" : undefined}>
-              <h3 className="wsj-band-title">
-                {dayHeading(day, edition)} <em>{list.length} {list.length === 1 ? "game" : "games"}</em>
-              </h3>
-              <div className="tt-slate-list">
-                {list.map((g) => (
-                  <SlateLine key={g.id} game={g} clockOnly />
-                ))}
-              </div>
+        <div className="tt-sched-desk">
+          <ScheduleAgate games={[...finals, ...games]} dayLabel={label} columns={3} roomy />
+          {standings.length ? (
+            <section className="tt-sched-snap roomy" data-tt-flow="">
+              <h3 className="wsj-band-title">The standings</h3>
+              <DeskSnap tables={standings} />
             </section>
-          ))}
-          <div className="tt-slate-fill">
-            <DeskSnap tables={standings} />
-            {finals.length ? (
-              <section aria-label="Last week">
-                <h3 className="wsj-band-title">
-                  Finals <em>{finals.length} games</em>
-                </h3>
-                <ScoreStrip games={finals} />
-              </section>
-            ) : null}
-          </div>
+          ) : null}
         </div>
       );
     }
     return (
-      <div className="tt-schedule tt-schedule-fill">
-        {[...days.entries()].map(([day, list]) => (
-          <section key={day}>
-            <h3 className="wsj-band-title">
-              {dayHeading(day, edition)} <em>{list.length} {list.length === 1 ? "game" : "games"}</em>
-            </h3>
-            <div
-              className="tt-matchups"
-              style={{ ["--cols" as string]: String(mlb ? 2 : balancedCols(list.length, [2, 3, 2])) }}
-            >
-              {list.map((g) => (
-                <MatchupCard key={g.id} game={g} />
-              ))}
-            </div>
-          </section>
-        ))}
+      <div className="tt-sched-desk">
+        <ScheduleAgate games={games} dayLabel={label} columns={3} roomy={games.length <= 24} />
       </div>
     );
   }
@@ -3888,6 +3686,7 @@ function StandingsDesk({
   leagueClubs,
   board,
   edition,
+  sheets,
   onTurn,
 }: {
   page: SportFrontPage;
@@ -3895,56 +3694,67 @@ function StandingsDesk({
   leagueClubs: LeagueClub[];
   board: SectionBoard | null;
   edition: string;
+  sheets: Record<string, ClubSheet>;
   onTurn: (folio: string) => void;
 }) {
   const scheduleFolio = deskFolio(page, "schedule", `${page.section}${isDeskPress(edition) ? 3 : 4}`);
-  const college = page.path.includes("college-football");
+  const college = page.path.includes("college");
   const upcoming = (board?.slate ?? []).filter((g) => !g.final && !g.live);
-  const schedule =
-    !college && upcoming.length ? (
-      <section className="tt-stand-fill">
-        <h3 className="wsj-band-title">
-          On the schedule
-          <button type="button" className="tt-band-link" onClick={() => onTurn(scheduleFolio)}>
-            Matchups and probables, page {scheduleFolio} →
-          </button>
-        </h3>
-        <div
-          className="tt-matchups"
-          style={{ ["--cols" as string]: String(page.path === "baseball/mlb" ? 2 : balancedCols(upcoming.length, [2, 3, 2])) }}
-        >
-          {upcoming.slice(0, page.path === "baseball/mlb" ? 8 : 6).map((g) => (
-            <MatchupCard key={g.id} game={g} />
-          ))}
-        </div>
-      </section>
+  const ordered = rankStandings(standings);
+  const slice = page.standSlice;
+  const shown = slice ? ordered.slice(slice.offset, slice.offset + slice.count) : ordered;
+  const last = !slice || slice.offset + slice.count >= ordered.length;
+  const ownSchedule = page.sectionDesks?.some((d) => d.focus === "schedule") ?? false;
+  const boxes = last && !page.offseason ? Math.min(3, page.clubs.filter((c) => !clubFormIsThin(c)).length) : 0;
+  const slate = last && !college ? (ownSchedule ? upcoming.slice(0, boxes ? 12 : 16) : upcoming) : [];
+  const band =
+    boxes || slate.length ? (
+      <div className="tt-stand-band">
+        {boxes ? (
+          <section className="tt-stand-form" style={{ gridColumn: `span ${boxes}` }}>
+            <h3 className="wsj-band-title">
+              Your clubs {boxes > 1 ? <em>numbers, leaders and what’s next</em> : null}
+            </h3>
+            <ClubFormGrid clubs={page.clubs} sheets={sheets} columns={boxes} />
+          </section>
+        ) : null}
+        {slate.length ? (
+          <section className="tt-stand-sched" style={{ gridColumn: boxes && boxes < 3 ? `span ${3 - boxes}` : "1 / -1" }}>
+            <h3 className="wsj-band-title">
+              {ownSchedule ? "On the schedule" : "The schedule"}
+              {ownSchedule ? (
+                <button type="button" className="tt-band-link" onClick={() => onTurn(scheduleFolio)}>
+                  Every game, page {scheduleFolio} →
+                </button>
+              ) : null}
+            </h3>
+            <ScheduleAgate
+              games={slate}
+              dayLabel={(day) => dayHeading(day, edition)}
+              columns={boxes === 1 ? 3 : boxes === 2 ? 1 : 4}
+            />
+          </section>
+        ) : null}
+      </div>
     ) : null;
-  if (!standings.length) {
-    return (
-      <>
-        {leagueClubs.length ? <LeagueFormGrid clubs={leagueClubs} /> : <ClubFormGrid clubs={page.clubs} />}
-        {schedule}
-      </>
-    );
+  if (!shown.length) {
+    return band ?? (leagueClubs.length ? <LeagueFormGrid clubs={leagueClubs} /> : <ClubFormGrid clubs={page.clubs} sheets={sheets} />);
   }
   const favIds = new Set(leagueClubs.filter((c) => c.favorite).map((c) => c.id));
   const favNames = page.clubs.map((c) => squash(c.shortName));
   const mine = (row: { id: string; name: string }) =>
     favIds.has(row.id) || favNames.some((n) => n && squash(row.name) === n);
-  const ordered = rankStandings(standings);
-  const slice = page.standSlice;
-  const shown = slice ? ordered.slice(slice.offset, slice.offset + slice.count) : ordered;
-  const single = shown.length === 1;
+  const cols = Math.min(standColumns(page.path), shown.length);
   return (
     <>
-      <div className={cn("tt-stand-grid", single && "single")}>
+      <div className={cn("tt-stand-cols", cols === 1 && "single")} style={{ ["--stand-cols" as string]: String(cols) }}>
         {shown.map((group) => (
           <div key={group.name} data-tt-flow="">
             <StandingsTable group={group} mine={mine} />
           </div>
         ))}
       </div>
-      {schedule}
+      {band}
     </>
   );
 }
@@ -4135,6 +3945,7 @@ function SportFront({
             leagueClubs={leagueClubs}
             board={page.offseason ? null : board}
             edition={edition}
+            sheets={sheets}
             onTurn={onTurn}
           />
         ) : page.focus === "leaders" ? (
@@ -4142,7 +3953,15 @@ function SportFront({
         ) : page.focus === "schedule" ? (
           <ScheduleDesk page={page} board={board} slate={slate} edition={edition} standings={standings} heisman={heisman} />
         ) : page.focus === "playoffs" ? (
-          <PlayoffDesk tree={playoffs} />
+          <>
+            <PlayoffDesk tree={playoffs} />
+            {!page.sectionDesks?.some((d) => d.focus === "schedule") && board?.slate.length ? (
+              <section className="tt-stand-sched">
+                <h3 className="wsj-band-title">The schedule</h3>
+                <ScheduleAgate games={board.slate} dayLabel={(day) => dayHeading(day, edition)} columns={4} />
+              </section>
+            ) : null}
+          </>
         ) : page.focus === "players" ? (
           <PlayersDesk nights={nights} newsDay={newsDay} />
         ) : page.focus === "coaches" ? (
@@ -4499,8 +4318,7 @@ function ClubFormGrid({
   if (!clubs.length) return <p className="wsj-empty">No clubs filed in this section yet.</p>;
   const thin = clubs.filter((club) => clubFormIsThin(club));
   const full = clubs.filter((club) => !clubFormIsThin(club));
-  const wide = full.length <= 2 && columns == null;
-  const cols = columns ?? (wide ? 1 : balancedCols(full.length, [3, 2, 4]));
+  const cols = columns ?? Math.min(3, Math.max(full.length, 1));
   return (
     <>
     {thin.length ? (
@@ -4519,20 +4337,16 @@ function ClubFormGrid({
       </ul>
     ) : null}
     {full.length ? (
-    <div
-      className={cn("wsj-form-grid", wide && "wide")}
-      style={{ ["--cols" as string]: String(cols) }}
-    >
+    <div className="tt-tboxes" style={{ ["--cols" as string]: String(cols) }}>
       {full.map((club, i) => {
         const sheet = sheets[club.key];
-        const stats = sheet?.stats.length ? sheet.stats : club.stats;
+        const stats = (sheet?.stats.length ? sheet.stats : club.stats).filter(printableFormStat).slice(0, 6);
         const leaders = sheet?.leaders.length
           ? sheet.leaders.map((l) => ({
               key: `${l.category}-${l.id}`,
               label: l.category,
               name: l.name,
               line: l.line,
-              headshot: l.headshot,
               href: club.leaguePath ? playerPageHref(club.leaguePath, l.id) : null,
             }))
           : club.leaders.map((l) => ({
@@ -4540,86 +4354,83 @@ function ClubFormGrid({
               label: null,
               name: l.name,
               line: l.line,
-              headshot: null,
               href: l.href && l.href.startsWith("/") ? l.href : null,
             }));
         return (
-          <article key={club.key} className="wsj-form-card" style={tint(club.color)} {...(i > 1 ? { "data-tt-flow": "" } : {})}>
-            <header className="wsj-club-card-head">
-              <span className="wsj-disc">
-                <TeamLogo src={club.logo} size="md" />
-              </span>
-              <span className="wsj-club-card-id">
-                <em>{club.standing || "—"}</em>
-                <strong>{club.shortName}</strong>
-              </span>
+          <article key={club.key} className="tt-tbox" style={tint(club.color)} {...(i >= cols ? { "data-tt-flow": "" } : {})}>
+            <header className="tt-tbox-head">
+              <TeamLogo src={club.logo} size="sm" />
+              <h3>{club.shortName}</h3>
               <b>{club.record || "—"}</b>
+              <p>
+                {club.standing || "—"}
+                {club.odds ? ` · playoff odds ${club.odds}` : ""}
+              </p>
             </header>
-            {club.odds ? <p className="wsj-club-odds">Playoff odds {club.odds}</p> : null}
-            <div className="wsj-form-card-body">
-              {stats.length ? (
-                <section className="wsj-form-sec stats">
-                  <h4>{sheet?.season ? `${sheet.season} by the numbers` : "By the numbers"}</h4>
-                  <dl className="wsj-form-stats" style={{ ["--stat-cols" as string]: String(formStatColumns(Math.min(stats.length, 6))) }}>
-                    {stats.filter(printableFormStat).slice(0, 6).map((s) => (
-                      <div key={`${s.label}-${s.value}`}>
-                        <dd>{s.value}</dd>
-                        <dt>
-                          {s.label}
-                          <StatRank stat={s} />
-                        </dt>
-                      </div>
-                    ))}
-                  </dl>
-                </section>
-              ) : null}
-              {leaders.length ? (
-                <section className="wsj-form-sec leaders">
-                  <h4>Team leaders</h4>
-                  <ul className="wsj-form-leaders">
-                    {leaders.slice(0, 4).map((l) => (
-                      <li key={l.key}>
-                        {l.headshot ? <img src={l.headshot} alt="" loading="lazy" className="tt-face md" /> : null}
-                        <span>
-                          {l.label ? <em>{l.label}</em> : null}
-                          <strong>
-                            <PlayerName name={l.name} href={l.href} />
-                          </strong>
-                          <i>{l.line}</i>
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              ) : null}
-              {club.division.length ? (
-                <AgateBox
-                  color={club.color}
-                  title={tableTitle(club.standing)}
-                  rows={club.division.map((row) => ({
-                    left: (
-                      <span className="wsj-club-inline">
-                        <TeamLogo src={row.logo} size="xs" />
-                        <span>
-                          {row.rank} {row.team}
-                        </span>
-                      </span>
-                    ),
-                    right: row.gb && row.gb !== "-" && row.gb !== "0" ? `${row.record} · ${row.gb} GB` : row.record,
-                    me: row.me,
-                  }))}
-                />
-              ) : null}
-              {club.upcoming.length ? (
-                <AgateBox
-                  color={club.color}
-                  title="Next up"
-                  rows={club.upcoming.map((game) => ({ left: game.label, right: game.when || "TBD" }))}
-                />
-              ) : (
-                <p className="wsj-brief-dek">Nothing left on the calendar.</p>
-              )}
-            </div>
+            {stats.length ? (
+              <dl className="tt-tbox-stats">
+                {stats.map((s) => (
+                  <div key={`${s.label}-${s.value}`}>
+                    <dd>{s.value}</dd>
+                    <dt>
+                      {s.label}
+                      <StatRank stat={s} />
+                    </dt>
+                  </div>
+                ))}
+              </dl>
+            ) : null}
+            {leaders.length ? (
+              <table className="tt-tbox-table leaders">
+                <caption>{sheet?.season ? `${sheet.season} leaders` : "Leaders"}</caption>
+                <tbody>
+                  {leaders.slice(0, 4).map((l) => (
+                    <tr key={l.key}>
+                      {l.label ? <th>{l.label}</th> : null}
+                      <td>
+                        <strong>
+                          <PlayerName name={l.name} href={l.href} />
+                        </strong>{" "}
+                        <i>{l.line}</i>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : null}
+            {club.division.length ? (
+              <table className="tt-tbox-table">
+                <caption>{tableTitle(club.standing)}</caption>
+                <tbody>
+                  {club.division.slice(0, 8).map((row) => (
+                    <tr key={`${row.rank}-${row.team}`} className={cn(row.me && "me")}>
+                      <th>
+                        {row.rank} {row.team}
+                      </th>
+                      <td>{row.record}</td>
+                      <td>{row.gb && row.gb !== "-" && row.gb !== "0" ? row.gb : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : null}
+            <table className="tt-tbox-table">
+              <caption>Next up</caption>
+              <tbody>
+                {club.upcoming.length ? (
+                  club.upcoming.slice(0, 4).map((game) => (
+                    <tr key={game.id}>
+                      <th>{game.label}</th>
+                      <td colSpan={2}>{game.when || "TBD"}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <th>Nothing left on the calendar</th>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </article>
         );
       })}
@@ -6182,7 +5993,7 @@ function NewspaperDesk() {
                   comingUp={a1ComingUp(comingUp)}
                   sections={edition.sections}
                   folios={edition.favoriteFolioByStory}
-                  clubsFolio={pages.find((p) => p.kind === "favorites-clubs" && p.weatherPart === "outlook")?.folio ?? "A3"}
+                  clubsFolio={pages.find((p) => p.kind === "favorites-form")?.folio ?? weatherFolio ?? "A2"}
                   editionDay={day}
                   onTurn={goFolio}
                   leadContinue={page.leadContinue}
@@ -6195,24 +6006,8 @@ function NewspaperDesk() {
                 />
               ) : page.kind === "favorites-clubs" ? (
                 <>
-                  <WeatherReport
-                    weather={weatherQ.data}
-                    part={page.weatherPart === "outlook" ? "outlook" : page.weatherPart === "today" ? "today" : "all"}
-                  />
-                  {page.weatherPart === "today" ? (
-                    <DeskBoard teams={teams} title="Your Clubs" onTurn={goFolio} />
-                  ) : (page.clubLimit ?? 0) > 0 ? (
-                    <ClubsDesk teams={teams} offset={page.clubOffset ?? 3} limit={page.clubLimit} />
-                  ) : null}
-                  {page.formClubs?.length ? (
-                    <div className="wsj-clubs-desk">
-                      <header className="wsj-desk-head">
-                        <h2>Club Form</h2>
-                        <p>{page.formClubs.length} clubs · standings, numbers, leaders and what’s next</p>
-                      </header>
-                      <ClubFormGrid clubs={page.formClubs} sheets={sheetsQ.data ?? {}} columns={2} />
-                    </div>
-                  ) : null}
+                  <WeatherReport weather={weatherQ.data} part="all" />
+                  <DeskBoard teams={teams} title="Your Clubs" onTurn={goFolio} />
                 </>
               ) : page.kind === "favorites-form" ? (
                 <div className="wsj-clubs-desk">
@@ -6220,7 +6015,7 @@ function NewspaperDesk() {
                     <h2>Club Form</h2>
                     <p>{page.clubs.length} clubs · standings, numbers, leaders and what’s next</p>
                   </header>
-                  <ClubFormGrid clubs={page.clubs} sheets={sheetsQ.data ?? {}} columns={2} />
+                  <ClubFormGrid clubs={page.clubs} sheets={sheetsQ.data ?? {}} columns={3} />
                   {pages.findLast((p) => p.kind === "favorites-form") === page ? (
                     <DeskBoard
                       teams={teams.filter((t) => !formInSectionA.has(t.fav.key))}

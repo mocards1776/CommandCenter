@@ -101,6 +101,34 @@ export function estimateStandingsHeight(groups: { rows: unknown[] }[]): number {
   return h;
 }
 
+/** Design px of standings one column of a page holds, at the shortest page (landscape). */
+export const STAND_COLUMN_BUDGET_PX = 1060;
+export const STAND_COLUMNS_PRO = 2;
+export const STAND_COLUMNS_COLLEGE = 3;
+
+/**
+ * Standings pages by height: tables set in balanced columns, so a page takes
+ * as many tables as its columns hold rather than a fixed count.
+ */
+export function planStandingsByRows(rowCounts: number[], columns: number): { offset: number; count: number }[] {
+  if (!rowCounts.length) return [{ offset: 0, count: 0 }];
+  const budget = STAND_COLUMN_BUDGET_PX * Math.max(columns, 1);
+  const pages: { offset: number; count: number }[] = [];
+  let offset = 0;
+  let used = 0;
+  rowCounts.forEach((rows, i) => {
+    const h = STAND_TABLE_HEAD_PX + Math.max(rows, 1) * STAND_ROW_PX + STAND_TABLE_GAP_PX;
+    if (i > offset && used + h > budget) {
+      pages.push({ offset, count: i - offset });
+      offset = i;
+      used = 0;
+    }
+    used += h;
+  });
+  pages.push({ offset, count: rowCounts.length - offset });
+  return pages;
+}
+
 export function planStandingsPages(
   groupCount: number,
   tablesPerPage = STAND_TABLES_PER_PAGE_PRO,
@@ -210,43 +238,24 @@ export function formStatColumns(count: number): number {
 
 /** A2 keeps this many club cards under today's weather. */
 export const A2_CLUB_CARDS = 3;
+/** Club-form boxes on one page: two rows of three. */
+export const FORM_CLUBS_PER_PAGE = 6;
 /**
- * Club-form cards on one fixed page: a full card runs most of the page's
- * height, so a page sets one row of two (A3 sets its row under the outlook).
+ * Section A runs club form on at most this many pages. It is the digest of the
+ * top clubs; every club keeps its box in its own section.
  */
-export const FORM_CLUBS_PER_PACKED_PAGE = 2;
-/**
- * Section A runs club form on at most this many pages after A3. It is the
- * digest of the top clubs; every club keeps its card in its own section.
- */
-export const FORM_PAGES_MAX = 2;
+export const FORM_PAGES_MAX = 1;
 
-export type OutlookFormPlan = {
-  leftoverOffset: number;
-  leftoverCount: number;
-  formOnOutlook: number;
-  formContinue: { offset: number; count: number }[];
-};
-
-/**
- * Pack club form onto the outlook folio, then continue a full row per page,
- * up to FORM_PAGES_MAX. Never emit a half-empty form page to pad Section A.
- */
-export function planOutlookAndForm(clubCount: number): OutlookFormPlan {
+/** Section A's club-form pages: full pages of six, never a stub page of one or two. */
+export function planClubForm(clubCount: number): { offset: number; count: number }[] {
   const n = Math.max(clubCount, 0);
-  const leftoverOffset = A2_CLUB_CARDS;
-  // Leftover club cards reprint as form on A3 — a 1–4 card row is empty cream.
-  const leftoverCount = 0;
-  const formOnOutlook = Math.min(n, FORM_CLUBS_PER_PACKED_PAGE);
-  const formContinue: { offset: number; count: number }[] = [];
-  for (
-    let offset = formOnOutlook;
-    offset + FORM_CLUBS_PER_PACKED_PAGE <= n && formContinue.length < FORM_PAGES_MAX;
-    offset += FORM_CLUBS_PER_PACKED_PAGE
-  ) {
-    formContinue.push({ offset, count: FORM_CLUBS_PER_PACKED_PAGE });
+  const pages: { offset: number; count: number }[] = [];
+  for (let offset = 0; offset < n && pages.length < FORM_PAGES_MAX; offset += FORM_CLUBS_PER_PAGE) {
+    const count = Math.min(FORM_CLUBS_PER_PAGE, n - offset);
+    if (pages.length && count < 3) break;
+    pages.push({ offset, count });
   }
-  return { leftoverOffset, leftoverCount, formOnOutlook, formContinue };
+  return pages;
 }
 
 export function pageExceedsCanvas(heightPx: number): boolean {

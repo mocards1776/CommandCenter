@@ -237,10 +237,27 @@
 
 .tt-races[data-tt-races="continued"] .tt-races-head h2 { font-size: 34px; }
 
-/* Hug the copy. A shorter race sheet is fine; never pad to --tt-page-min. */
-.newspaper-root .wsj-sheet:has(.tt-races) {
-  min-height: 0;
-  height: auto;
+/* Every race sheet is a full page. A long spend table takes the spare depth as
+   leading, so a single race reads as a full-page agate report rather than a
+   short sheet. */
+.newspaper-root .wsj-sheet .tt-races {
+  flex: 1 1 auto;
+}
+.newspaper-root .wsj-sheet .tt-races-stack,
+.newspaper-root .wsj-sheet .tt-races-block:has(.tt-races-spend tbody tr:nth-child(8)) {
+  flex: 1 1 auto;
+}
+.newspaper-root .wsj-sheet .tt-races-block:has(.tt-races-spend tbody tr:nth-child(8)) .tt-races-spend {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+}
+.newspaper-root .wsj-sheet .tt-races-block:has(.tt-races-spend tbody tr:nth-child(8)) .tt-races-spend table {
+  flex: 1 1 auto;
+  font-size: 15.5px;
+}
+.newspaper-root .wsj-sheet .tt-races-block:has(.tt-races-spend tbody tr:nth-child(8)) .tt-races-spend tbody th.sponsor {
+  font-size: 16px;
 }
 
 .tt-races-preview-rail {

@@ -42,6 +42,7 @@ import { storySource } from "./newspaper-source.ts";
 import type { GameWrapCard } from "./newspaper-sports";
 import { favoriteKeyFitsPath, storyMatchesFavorite } from "./newspaper-favorite-match.ts";
 import {
+  alreadyOnSectionA,
   isInjuryNote,
   isSportFiller,
   orderSportRecaps,
@@ -58,12 +59,20 @@ import { printsFavoriteCoaches } from "./newspaper-favorite-coaches.ts";
 import {
   A2_CLUB_CARDS,
   clubFormIsThin,
+  planClubForm,
   planNewsPages,
-  planOutlookAndForm,
-  planStandingsPages,
-  STAND_TABLES_PER_PAGE_COLLEGE,
-  STAND_TABLES_PER_PAGE_PRO,
+  planStandingsByRows,
+  STAND_COLUMNS_COLLEGE,
+  STAND_COLUMNS_PRO,
 } from "./newspaper-page.ts";
+
+/** Rows assumed for a table whose rows are not on file yet: a college conference. */
+const STAND_ROWS_UNKNOWN = 14;
+
+/** Columns a standings page sets its tables in. College tables are narrower. */
+export function standColumns(path: string): number {
+  return path.includes("college") ? STAND_COLUMNS_COLLEGE : STAND_COLUMNS_PRO;
+}
 
 /** Front-page teaser budgets — rest jumps to a real continuation folio. */
 const LEAD_TEASER = 1050;
@@ -1690,10 +1699,9 @@ function favoritePages(
     if (card) favoriteFolioByStory[card.id] = "A1";
   }
 
-  // Every front jump lands on one page after weather today (A2) and the
-  // outlook / clubs desk (A3). A2 used to hold both and ran past 1650.
+  // Every front jump lands on one page, right after the weather page (A2).
   const jumps: { card: GameWrapCard; rest: string }[] = [];
-  const jumpFolio = "A4";
+  const jumpFolio = "A3";
   const maybeContinue = (
     card: GameWrapCard | null,
     budget: number,
@@ -1715,7 +1723,7 @@ function favoritePages(
           folio: jumpFolio,
           section: "A",
           sectionTitle: SECTION_A_TITLE,
-          sectionPage: 4,
+          sectionPage: 3,
           sectionCount: 0,
           continuedFrom: "A1",
           jumps,
@@ -1723,7 +1731,7 @@ function favoritePages(
         },
       ]
     : [];
-  let n = 4 + continues.length;
+  let n = 3 + continues.length;
 
   const inside: FavoritesInsidePage[] = [];
   const frontIds = new Set(
@@ -1792,9 +1800,7 @@ function favoritePages(
   const orderedClubs = [...clubs]
     .filter((club) => !clubFormIsThin(club))
     .sort((a, b) => favoriteDeskWeight(b.key) - favoriteDeskWeight(a.key));
-  const packed = planOutlookAndForm(orderedClubs.length);
-
-  const weatherToday: FavoritesClubsPage = {
+  const weather: FavoritesClubsPage = {
     kind: "favorites-clubs",
     folio: "A2",
     section: "A",
@@ -1806,19 +1812,6 @@ function favoritePages(
     clubLimit: A2_CLUB_CARDS,
   };
 
-  const weatherOutlook: FavoritesClubsPage = {
-    kind: "favorites-clubs",
-    folio: "A3",
-    section: "A",
-    sectionTitle: SECTION_A_TITLE,
-    sectionPage: 3,
-    sectionCount: 0,
-    weatherPart: "outlook",
-    clubOffset: packed.leftoverOffset,
-    clubLimit: packed.leftoverCount,
-    formClubs: orderedClubs.slice(0, packed.formOnOutlook),
-  };
-
   const pages: (
     | FavoritesFrontPage
     | FavoritesClubsPage
@@ -1826,10 +1819,9 @@ function favoritePages(
     | FavoritesInsidePage
     | FavoritesContinuePage
     | FavoritesWatchPage
-  )[] = [front, weatherToday, weatherOutlook, ...continues, ...inside];
+  )[] = [front, weather, ...continues, ...inside];
 
-  // Remaining club form only — never repeat a short page just to pad to 5.
-  for (const slice of packed.formContinue) {
+  for (const slice of planClubForm(orderedClubs.length)) {
     const chunk = orderedClubs.slice(slice.offset, slice.offset + slice.count);
     if (!chunk.length) continue;
     const pageN = pages.length + 1;
@@ -1877,9 +1869,15 @@ export function sportSectionFocuses(opts: {
   const players = opts.withPlayers ? (["players"] as const) : [];
   const isMlb = opts.path === "baseball/mlb";
   if (opts.offseason) return ["front", "opener", "news", "teams", ...leaders, ...players];
+  // Club form prints on the standings page; it takes a folio of its own only when there are no standings.
+  // A short slate prints there too (or under the bracket); NFL, college and regular-season MLB keep a schedule page.
   const reference: SportFocus[] = [];
-  if (!opts.postseason) reference.push("teams");
-  reference.push(isMlb ? "playoffs" : "form", ...leaders, "schedule", ...players);
+  const teams = !opts.postseason;
+  if (teams) reference.push("teams");
+  if (isMlb) reference.push("playoffs");
+  else if (opts.postseason) reference.push("form");
+  const ownSchedule = opts.path === "football/nfl" || opts.path.includes("college") || (isMlb ? teams : !teams);
+  reference.push(...leaders, ...(ownSchedule ? (["schedule"] as const) : []), ...players);
   return ["front", "recaps", "news", ...reference];
 }
 
@@ -1908,6 +1906,8 @@ function sportPages(
   postseason = false,
   withCoaches = false,
   alreadyOnA1: GameWrapCard[] = [],
+  /** Section A's front stories, printed whole there (A1 and its jump page). */
+  inSectionA: GameWrapCard[] = [],
 ): {
   pages: (SportFrontPage | SportInsidePage)[];
   sportFolioByStory: Record<string, string>;
@@ -1985,7 +1985,7 @@ function sportPages(
     : [
         ...recapPool.filter(hasStoryCopy),
         ...newsPool.filter(hasStoryCopy).slice(0, NEWS_INSIDE_CAP),
-      ];
+      ].filter((card) => !alreadyOnSectionA(card, inSectionA));
   for (let i = 0; i < full.length; i += 2) {
     const primary = full[i]!;
     const secondary = full[i + 1];
@@ -2247,6 +2247,7 @@ export function buildEdition(opts: {
       id.path.includes("college-football")
         ? a1Ran.filter((card) => card.leaguePath === id.path)
         : [],
+      a1Ran,
     ),
   }));
   const sportFolioByStory: Record<string, string> = {};
@@ -2423,18 +2424,21 @@ export function dropEmptyFolios(edition: Edition): Edition {
  */
 export function paginateEditionDesks(
   edition: Edition,
-  standingsByPath: Record<string, { length: number } | undefined> | null | undefined,
+  standingsByPath: Record<string, ArrayLike<{ rows?: ArrayLike<unknown> }> | undefined> | null | undefined,
 ): Edition {
   const pages: EditionPage[] = [];
   for (const page of edition.pages) {
     if (page.kind === "sport-front" && page.focus === "teams") {
-      const n = standingsByPath?.[page.path]?.length ?? 0;
+      const tables = standingsByPath?.[page.path];
       // A count of 0 is not a folio. Callers pass the tables the desk will
       // actually draw (offseason desks pass only the followed conferences),
       // so a slice past that list is never filed as a blank page.
-      if (!n) continue;
-      const per = page.path.includes("college-football") ? STAND_TABLES_PER_PAGE_COLLEGE : STAND_TABLES_PER_PAGE_PRO;
-      const slices = planStandingsPages(n, per);
+      if (!tables?.length) {
+        if (page.clubs.length) pages.push({ ...page, standSlice: { offset: 0, count: 0 } });
+        continue;
+      }
+      const rows = Array.from(tables, (t) => t.rows?.length ?? STAND_ROWS_UNKNOWN);
+      const slices = planStandingsByRows(rows, standColumns(page.path));
       for (const standSlice of slices) pages.push({ ...page, standSlice });
       continue;
     }

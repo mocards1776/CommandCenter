@@ -25,11 +25,12 @@ import {
   pageExceedsSoftCap,
   pageHasBlankBand,
   planNewsPages,
-  planOutlookAndForm,
+  planClubForm,
   planSchedulePages,
+  planStandingsByRows,
   planStandingsPages,
   A2_CLUB_CARDS,
-  FORM_CLUBS_PER_PACKED_PAGE,
+  FORM_CLUBS_PER_PAGE,
   FORM_PAGES_MAX,
   clubFormIsThin,
   clubOpensLabel,
@@ -169,24 +170,24 @@ try {
 }
 
 assert(A2_CLUB_CARDS === 3, "A2 still prints three club cards under today's weather");
-assert(FORM_CLUBS_PER_PACKED_PAGE === 2, "a fixed page sets one row of two full form cards");
-const sixClubs = planOutlookAndForm(6);
-assert(sixClubs.leftoverCount === 0, "leftover club cards merge into A3 form — no sparse cards row");
-assert(sixClubs.formOnOutlook === 2, "A3 sets one row of form under the outlook");
+assert(FORM_CLUBS_PER_PAGE === 6, "a club-form page sets two rows of three team boxes");
 assert(
-  sixClubs.formContinue.length === 2 && sixClubs.formContinue.every((s) => s.count === 2),
-  "six clubs run two full form pages after A3",
+  JSON.stringify(planClubForm(6)) === JSON.stringify([{ offset: 0, count: 6 }]),
+  "six clubs fill one form page",
 );
-const twoClubs = planOutlookAndForm(2);
-assert(twoClubs.formOnOutlook === 2 && twoClubs.formContinue.length === 0, "two clubs stay on A3");
-const threeClubs = planOutlookAndForm(3);
-assert(threeClubs.formContinue.length === 0, "a lone third club does not open a half-empty form page");
-const thirteen = planOutlookAndForm(13);
+assert(planClubForm(13).length === FORM_PAGES_MAX, "Section A runs one form page; the rest keep their boxes in their sections");
+assert(JSON.stringify(planClubForm(2)) === JSON.stringify([{ offset: 0, count: 2 }]), "two clubs still get their page");
+assert(planClubForm(0).length === 0, "no clubs means no form page");
+
+const cfbRows = [2, 13, 10, 14, 12, 16, 14, 12, 10, 14, 12, 10];
+const cfbPages = planStandingsByRows(cfbRows, 3);
+assert(cfbPages.length === 2, `twelve college conferences in three columns fill two pages (got ${cfbPages.length})`);
 assert(
-  thirteen.formContinue.length === FORM_PAGES_MAX && thirteen.formContinue[1]!.offset === 4,
-  "Section A runs at most two form pages; the rest keep their cards in their own sections",
+  cfbPages.reduce((n, p) => n + p.count, 0) === cfbRows.length && cfbPages[1]!.offset === cfbPages[0]!.count,
+  "standings pages cover every table once, in order",
 );
-assert(planOutlookAndForm(0).formOnOutlook === 0, "no clubs means no form cards");
+assert(planStandingsByRows([4, 4, 4, 4, 4, 4, 4, 4], 2).length === 1, "eight NFL divisions share one page");
+assert(planStandingsByRows([20], 2).length === 1, "one long league table is one page");
 assert(
   clubFormIsThin({ stats: [], leaders: [], division: [] }),
   "a card with only a future slate is thin",
