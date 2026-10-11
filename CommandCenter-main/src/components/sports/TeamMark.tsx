@@ -15,12 +15,15 @@ export default function TeamMark({
   className,
   imgClassName,
   surface = "dark",
+  washAnchor,
 }: {
   teamId: number | string;
   size?: "xs" | "sm" | "md" | "lg" | "xl";
   className?: string;
   imgClassName?: string;
   surface?: "dark" | "light";
+  /** Marks this logo as the center of its side's TeamHalfWash. */
+  washAnchor?: "away" | "home";
 }) {
   const primary = mlbTeamLogoFor(teamId, surface);
   const [failed, setFailed] = useState<string | null>(null);
@@ -38,7 +41,10 @@ export default function TeamMark({
             : "h-16 w-16 sm:h-20 sm:w-20";
 
   return (
-    <span className={cn("inline-grid shrink-0 place-items-center", dim, className)}>
+    <span
+      data-wash-anchor={washAnchor}
+      className={cn("inline-grid shrink-0 place-items-center", dim, className)}
+    >
       <img
         src={src}
         alt=""

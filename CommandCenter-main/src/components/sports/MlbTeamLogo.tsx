@@ -13,11 +13,14 @@ export default function MlbTeamLogo({
   className,
   alt = "",
   loading,
+  washAnchor,
 }: {
   teamId: number | string;
   className?: string;
   alt?: string;
   loading?: "eager" | "lazy";
+  /** Marks this logo as the center of its side's TeamHalfWash. */
+  washAnchor?: "away" | "home";
 }) {
   const primary = mlbTeamLogoOnDark(teamId);
   const [failed, setFailed] = useState<string | null>(null);
@@ -27,6 +30,7 @@ export default function MlbTeamLogo({
       alt={alt}
       loading={loading}
       onError={() => setFailed(primary)}
+      data-wash-anchor={washAnchor}
       className={cn(
         "shrink-0 object-contain drop-shadow-[0_6px_18px_rgba(0,0,0,0.45)]",
         className,

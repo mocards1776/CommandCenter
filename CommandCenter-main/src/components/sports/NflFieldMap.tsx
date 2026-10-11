@@ -6,12 +6,11 @@ import {
 } from "@/lib/cfb-drive";
 import type { NflScoreGame } from "@/lib/nfl";
 import { footballMarks } from "@heat/field.ts";
-import LogoPlate from "@/components/sports/LogoPlate";
 import { NflScoreboardCard } from "@/components/sports/ScoreboardCard";
 import { isBreakStatus } from "@/lib/apple-score";
 import { cn } from "@/lib/utils";
 import PossessionFootball from "@/components/sports/PossessionFootball";
-import { teamGlowColor } from "@/lib/team-logo-glow";
+import { endZoneOutlineColor, espnDarkVariant, teamGlowColor, wantsDarkMark } from "@/lib/team-logo-glow";
 
 /** Minimal shape for NFL / CFB live field maps on RUWT cards. */
 export type FootballFieldGame = {
@@ -71,29 +70,41 @@ function CircularLosFootball({ className }: { className?: string }) {
 function EndZoneMark({
   abbrev,
   color,
+  outline,
   logo,
+  darkLogo = false,
   branded,
   side,
 }: {
   abbrev: string;
   color: string;
+  /** Second real team color drawn as an inset rule when the fill is near-black. */
+  outline?: string | null;
   logo?: string | null;
+  /** Use ESPN's dark-background mark when the fill is the logo's own color. */
+  darkLogo?: boolean;
   branded: boolean;
   side: "away" | "home";
 }) {
   const [failed, setFailed] = useState(false);
+  const dark = darkLogo && logo ? espnDarkVariant(logo) : null;
+  const [darkFailed, setDarkFailed] = useState(false);
+  const src = dark && !darkFailed ? dark : logo;
   return (
     <div
       className="relative flex items-center justify-center overflow-hidden"
-      style={{ background: color, boxShadow: "inset 0 0 0 1px rgba(0,0,0,0.22)" }}
+      style={{
+        background: color,
+        boxShadow: outline ? `inset 0 0 0 2px #${outline}` : "inset 0 0 0 1px rgba(0,0,0,0.22)",
+      }}
       aria-hidden
     >
-      {branded && logo && !failed ? (
+      {branded && src && !failed ? (
         <img
-          src={logo}
+          src={src}
           alt=""
           className="size-7 object-contain drop-shadow-[0_1px_2px_rgba(0,0,0,0.65)] @md:size-10 @lg:size-12"
-          onError={() => setFailed(true)}
+          onError={() => (src === dark ? setDarkFailed(true) : setFailed(true))}
         />
       ) : (
         <span
@@ -168,6 +179,8 @@ export default function NflFieldMap({
   const homeChip = teamHex(game.home.color, "7a1f1f");
   const awayZone = teamHex(teamGlowColor(game.away.color, game.away.alternateColor), "1e3a5f");
   const homeZone = teamHex(teamGlowColor(game.home.color, game.home.alternateColor), "7a1f1f");
+  const awayZoneOutline = endZoneOutlineColor(game.away.color, game.away.alternateColor);
+  const homeZoneOutline = endZoneOutlineColor(game.home.color, game.home.alternateColor);
 
   const ddText = downDistanceText || game.situation?.downDistanceText || null;
   const ticks = [10, 20, 30, 40, 50, 40, 30, 20, 10];
@@ -232,6 +245,8 @@ export default function NflFieldMap({
         <EndZoneMark
           abbrev={game.away.abbrev}
           color={awayZone}
+          outline={awayZoneOutline}
+          darkLogo={wantsDarkMark(game.away.color, game.away.alternateColor)}
           logo={game.away.logo}
           branded={branded}
           side="away"
@@ -283,6 +298,8 @@ export default function NflFieldMap({
         <EndZoneMark
           abbrev={game.home.abbrev}
           color={homeZone}
+          outline={homeZoneOutline}
+          darkLogo={wantsDarkMark(game.home.color, game.home.alternateColor)}
           logo={game.home.logo}
           branded={branded}
           side="home"

@@ -7,8 +7,10 @@ import { liveScoreHeader } from "@/lib/apple-score";
 import AppleScoreCluster from "@/components/sports/AppleScoreCluster";
 import PlayoffSeriesLine from "@/components/sports/PlayoffSeriesLine";
 import LogoPlate from "@/components/sports/LogoPlate";
-import { teamGlowColor } from "@/lib/team-logo-glow";
+import { markOnTeamColor, teamWashColor } from "@/lib/team-logo-glow";
+import TeamHalfWash from "@/components/sports/TeamHalfWash";
 import TeamStatsLogos from "@/components/sports/TeamStatsLogos";
+import GameMoreInfo from "@/components/sports/GameMoreInfo";
 import NflFieldMap from "@/components/sports/NflFieldMap";
 import CfbWinProbability from "@/components/sports/CfbWinProbability";
 import EspnVideoEmbed from "@/components/sports/EspnVideoEmbed";
@@ -241,23 +243,11 @@ export function NflGameDetailView({
     <div className="space-y-5">
       <GameMomentLayer snapshot={toNflMomentSnapshot(g)} />
       <header className="relative overflow-hidden rounded-xl border border-white/[0.1] bg-[#07101d] shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
-        <div
-          className={cn(
-            "pointer-events-none absolute inset-y-0 left-0 w-1/2",
-            homeWins ? "opacity-40" : "opacity-90",
-          )}
-          style={{
-            background: `radial-gradient(ellipse at 20% 45%, #${teamGlowColor(g.away.color, g.away.alternateColor)}88, transparent 58%)`,
-          }}
-        />
-        <div
-          className={cn(
-            "pointer-events-none absolute inset-y-0 right-0 w-1/2",
-            awayWins ? "opacity-40" : "opacity-90",
-          )}
-          style={{
-            background: `radial-gradient(ellipse at 80% 45%, #${teamGlowColor(g.home.color, g.home.alternateColor)}88, transparent 58%)`,
-          }}
+        <TeamHalfWash
+          awayHex={teamWashColor(g.away.color, g.away.alternateColor)}
+          homeHex={teamWashColor(g.home.color, g.home.alternateColor)}
+          awayDim={homeWins}
+          homeDim={awayWins}
         />
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(255,255,255,0.06),transparent_45%)]" />
 
@@ -453,75 +443,6 @@ export function NflGameDetailView({
       ) : null}
 
       {articleSection}
-
-      {pregame && (g.oddsLine || g.predictor || g.lastFive.length > 0 || g.venueDetail) ? (
-        <section className="bg-panel space-y-3 overflow-hidden rounded-xl border border-white/[0.08] px-4 py-3.5">
-          <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
-            Preview
-          </h2>
-          {g.venueDetail ? (
-            <p className="text-[13px] text-[#c8cdd8]">{g.venueDetail}</p>
-          ) : null}
-          {g.oddsLine ? (
-            <p className="text-cream text-[14px] font-medium">{g.oddsLine}</p>
-          ) : null}
-          {g.predictor &&
-          (g.predictor.awayWinPct != null || g.predictor.homeWinPct != null) ? (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <p className="text-[10px] uppercase tracking-[0.14em] text-[#8b93a7]">
-                  {g.away.abbrev} win%
-                </p>
-                <p className="numeral text-cream text-[22px] font-semibold">
-                  {g.predictor.awayWinPct != null ? `${g.predictor.awayWinPct}%` : "—"}
-                </p>
-              </div>
-              <div className="text-right">
-                <p className="text-[10px] uppercase tracking-[0.14em] text-[#8b93a7]">
-                  {g.home.abbrev} win%
-                </p>
-                <p className="numeral text-cream text-[22px] font-semibold">
-                  {g.predictor.homeWinPct != null ? `${g.predictor.homeWinPct}%` : "—"}
-                </p>
-              </div>
-            </div>
-          ) : null}
-          {g.lastFive.length > 0 ? (
-            <div className="grid gap-3 sm:grid-cols-2">
-              {g.lastFive.map((side) => (
-                <div key={side.teamAbbrev}>
-                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
-                    {side.teamAbbrev} last 5
-                  </p>
-                  <ul className="space-y-1">
-                    {side.results.map((r, i) => (
-                      <li
-                        key={`${side.teamAbbrev}-${i}`}
-                        className="flex items-center justify-between gap-2 text-[12px]"
-                      >
-                        <span className="text-[#c8cdd8]">vs {r.label}</span>
-                        <span
-                          className={cn(
-                            "numeral font-semibold",
-                            /^W/i.test(r.result)
-                              ? "text-emerald-300"
-                              : /^L/i.test(r.result)
-                                ? "text-alert"
-                                : "text-cream",
-                          )}
-                        >
-                          {r.result}
-                          {r.score ? ` ${r.score}` : ""}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </section>
-      ) : null}
 
       {pregame &&
       !g.article &&
@@ -740,6 +661,14 @@ export function NflGameDetailView({
         </section>
       )}
 
+      <GameMoreInfo
+        sport="nfl"
+        eventId={eventId}
+        live={g.live}
+        teamHref={(id) => `/sports/nfl/team/${id}`}
+        playerHref={(id) => `/sports/nfl/player/${id}`}
+      />
+
       {g.final && g.winProbability.length > 0 ? (
         <CfbWinProbability away={g.away} home={g.home} points={g.winProbability} />
       ) : null}
@@ -838,7 +767,9 @@ function NflMatchupSide({
     >
       {side.logo ? (
         <LogoPlate
-          src={side.logo}
+          src={markOnTeamColor(side.logo, side.color, side.alternateColor) ?? side.logo}
+          fallbackSrc={side.logo}
+          washAnchor={align === "left" ? "away" : "home"}
           className={cn("h-16 w-16 sm:h-[4.5rem] sm:w-[4.5rem]", loser && "opacity-40")}
           imgClassName={winner ? "drop-shadow-[0_0_12px_rgba(255,255,255,0.35)]" : undefined}
         />

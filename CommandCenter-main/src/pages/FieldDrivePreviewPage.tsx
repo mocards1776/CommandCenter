@@ -67,8 +67,20 @@ export default function FieldDrivePreviewPage() {
         <NflFieldMap
           branded
           game={{
-            away: { teamId: "142", abbrev: "MIZ", color: "f1b82d" },
-            home: { teamId: "57", abbrev: "FLA", color: "0021a5" },
+            away: {
+              teamId: "142",
+              abbrev: "MIZ",
+              color: "f1b82d",
+              alternateColor: "000000",
+              logo: "https://a.espncdn.com/i/teamlogos/ncaa/500/142.png",
+            },
+            home: {
+              teamId: "57",
+              abbrev: "FLA",
+              color: "0021a5",
+              alternateColor: "fa4616",
+              logo: "https://a.espncdn.com/i/teamlogos/ncaa/500/57.png",
+            },
             situation: {
               downDistanceText: "3rd & 3 at FLA 17",
               lastPlayText: "Moss pass complete to Cooper for 12 yards",
@@ -78,6 +90,36 @@ export default function FieldDrivePreviewPage() {
           possessionTeamId="142"
           downDistanceText="3rd & 3 at FLA 17"
           drive={cfbDrive}
+          omitLastPlay
+        />
+      </section>
+
+      <section className="space-y-3" data-testid="cfb-field-preview-colors">
+        <h2 className="text-[12px] font-semibold uppercase tracking-[0.14em] text-[#e8e4d9]">
+          CFB · TA&amp;M at IOWA · end-zone colors
+        </h2>
+        <NflFieldMap
+          branded
+          game={{
+            away: {
+              teamId: "245",
+              abbrev: "TA&M",
+              color: "500000",
+              alternateColor: "ffffff",
+              logo: "https://a.espncdn.com/i/teamlogos/ncaa/500/245.png",
+            },
+            home: {
+              teamId: "2294",
+              abbrev: "IOWA",
+              color: "231f20",
+              alternateColor: "fcd116",
+              logo: "https://a.espncdn.com/i/teamlogos/ncaa/500/2294.png",
+            },
+            situation: { downDistanceText: "1st & 10 at IOWA 35" },
+          }}
+          homeYardLine={35}
+          possessionTeamId="245"
+          downDistanceText="1st & 10 at IOWA 35"
           omitLastPlay
         />
       </section>

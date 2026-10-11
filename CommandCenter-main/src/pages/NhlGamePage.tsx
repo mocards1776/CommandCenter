@@ -9,9 +9,11 @@ import AppleScoreCluster from "@/components/sports/AppleScoreCluster";
 import PlayoffSeriesLine from "@/components/sports/PlayoffSeriesLine";
 import LogoPlate from "@/components/sports/LogoPlate";
 import NhlWinProbability from "@/components/sports/NhlWinProbability";
-import { teamGlowColor } from "@/lib/team-logo-glow";
+import { markOnTeamColor, teamWashColor } from "@/lib/team-logo-glow";
+import TeamHalfWash from "@/components/sports/TeamHalfWash";
 import HighlightReel, { type ReelHighlight } from "@/components/sports/HighlightReel";
 import NhlBoxScore from "@/components/sports/NhlBoxScore";
+import GameMoreInfo from "@/components/sports/GameMoreInfo";
 import NhlGameLeaders from "@/components/sports/NhlGameLeaders";
 import NhlIceRink, { type NhlIceGoalieBadge } from "@/components/sports/NhlIceRink";
 import NhlScoringSummary from "@/components/sports/NhlScoringSummary";
@@ -167,23 +169,11 @@ export default function NhlGamePage() {
         <>
           <GameMomentLayer snapshot={toNhlMomentSnapshot(g)} />
           <header className="relative overflow-hidden rounded-xl border border-white/[0.1] bg-[#07101d] shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
-            <div
-              className={cn(
-                "pointer-events-none absolute inset-y-0 left-0 w-1/2",
-                winner === "home" ? "opacity-40" : "opacity-90",
-              )}
-              style={{
-                background: `radial-gradient(ellipse at 20% 45%, #${teamGlowColor(g.away.color, g.away.alternateColor)}88, transparent 58%)`,
-              }}
-            />
-            <div
-              className={cn(
-                "pointer-events-none absolute inset-y-0 right-0 w-1/2",
-                winner === "away" ? "opacity-40" : "opacity-90",
-              )}
-              style={{
-                background: `radial-gradient(ellipse at 80% 45%, #${teamGlowColor(g.home.color, g.home.alternateColor)}88, transparent 58%)`,
-              }}
+            <TeamHalfWash
+              awayHex={teamWashColor(g.away.color, g.away.alternateColor)}
+              homeHex={teamWashColor(g.home.color, g.home.alternateColor)}
+              awayDim={winner === "home"}
+              homeDim={winner === "away"}
             />
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(255,255,255,0.06),transparent_45%)]" />
 
@@ -346,6 +336,14 @@ export default function NhlGamePage() {
                 />
               )}
 
+              <GameMoreInfo
+                sport="nhl"
+                eventId={eventId}
+                exclude={["leaders"]}
+                teamHref={(id) => `/sports/nhl/team/${id}`}
+                playerHref={(id) => `/sports/nhl/player/${id}`}
+              />
+
               {g.ice ? (
                 <details className="group bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 [&::-webkit-details-marker]:hidden">
@@ -430,6 +428,15 @@ export default function NhlGamePage() {
                   shiftsPending={nhlGameId != null && shiftLines.isPending}
                 />
               )}
+
+              <GameMoreInfo
+                sport="nhl"
+                eventId={eventId}
+                live={g.live}
+                exclude={g.lastFive.length > 0 ? ["leaders", "form"] : ["leaders"]}
+                teamHref={(id) => `/sports/nhl/team/${id}`}
+                playerHref={(id) => `/sports/nhl/player/${id}`}
+              />
             </>
           )}
         </>
@@ -462,7 +469,12 @@ function TeamBlock({
       )}
     >
       {side.logo ? (
-        <LogoPlate src={side.logo} className={cn("h-14 w-14 sm:h-20 sm:w-20", dim && "opacity-40")} />
+        <LogoPlate
+          src={markOnTeamColor(side.logo, side.color, side.alternateColor) ?? side.logo}
+          fallbackSrc={side.logo}
+          washAnchor={align === "left" ? "away" : "home"}
+          className={cn("h-14 w-14 sm:h-20 sm:w-20", dim && "opacity-40")}
+        />
       ) : null}
       <div className="min-w-0">
         <p

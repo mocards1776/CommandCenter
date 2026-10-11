@@ -141,6 +141,103 @@ export function teamGlowColor(
   return toHex(options[0]!);
 }
 
+/** Below this contrast with the dark card a fill disappears (black, near-black navy). */
+const CARD_VISIBLE_CONTRAST = 1.35;
+
+function visibleOnCard(color: Rgb): boolean {
+  return contrastRatio(color, parseHex(CARD_BG)!) >= CARD_VISIBLE_CONTRAST;
+}
+
+/**
+ * Wide header / card wash hex (no #). Starts from the glow pick, but a wash that
+ * would vanish into the navy card (Missouri black) takes the team's other real
+ * ESPN color instead (Missouri gold). Plates stay out.
+ */
+export function teamWashColor(
+  primaryHex: string | null | undefined,
+  alternateHex?: string | null,
+): string {
+  const pick = teamGlowColor(primaryHex, alternateHex);
+  const picked = parseHex(pick);
+  if (picked && visibleOnCard(picked)) return pick;
+  for (const other of [parseHex(primaryHex), parseHex(alternateHex)]) {
+    if (!other || toHex(other) === pick) continue;
+    if (!isPlateColor(other) && visibleOnCard(other)) return toHex(other);
+  }
+  return pick;
+}
+
+/**
+ * Thin data marks (comparison bars, series bars) — not a background behind a
+ * logo, so a white or cream alternate is allowed. The wash color when it reads
+ * on the navy card, else whichever real ESPN color does (Texas A&M maroon
+ * falls back to its white alternate).
+ */
+export function teamAccentColor(
+  primaryHex: string | null | undefined,
+  alternateHex?: string | null,
+): string {
+  const wash = teamWashColor(primaryHex, alternateHex);
+  const washRgb = parseHex(wash);
+  if (washRgb && visibleOnCard(washRgb)) return wash;
+  for (const other of [parseHex(primaryHex), parseHex(alternateHex)]) {
+    if (other && visibleOnCard(other)) return toHex(other);
+  }
+  return wash;
+}
+
+/**
+ * Football end-zone outline hex (no #) or null. A near-black end zone loses its
+ * edge on the dark card, so it is outlined in the team's other real color:
+ * Missouri reads as a black end zone with a gold rule.
+ */
+export function endZoneOutlineColor(
+  primaryHex: string | null | undefined,
+  alternateHex?: string | null,
+): string | null {
+  const zone = parseHex(teamGlowColor(primaryHex, alternateHex));
+  if (!zone || visibleOnCard(zone)) return null;
+  for (const other of [parseHex(primaryHex), parseHex(alternateHex)]) {
+    if (!other || toHex(other) === toHex(zone)) continue;
+    if (!isPlateColor(other) && visibleOnCard(other)) return toHex(other);
+  }
+  return null;
+}
+
+/**
+ * True when the team color behind the mark (wash or end zone) ends up the
+ * team's own dark primary — the mark's color — because the alternate is a
+ * white plate (Texas A&M maroon / white). Those spots show ESPN's
+ * dark-background logo (white ATM) so the mark separates from the color.
+ * Iowa and Missouri keep their regular marks.
+ */
+export function wantsDarkMark(
+  primaryHex: string | null | undefined,
+  alternateHex?: string | null,
+): boolean {
+  const primary = parseHex(primaryHex);
+  if (!primary) return false;
+  if (teamGlowColor(primaryHex, alternateHex) !== toHex(primary)) return false;
+  return rgbToHsl(primary)[2] < 0.35;
+}
+
+/** ESPN's dark-background variant of a /500/ team logo URL, or null. */
+export function espnDarkVariant(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const dark = url.replace(/(\/i\/teamlogos\/[a-z]+)\/500\//, "$1/500-dark/");
+  return dark === url ? null : dark;
+}
+
+/** The logo to draw on the team's own color: the dark variant when `wantsDarkMark`. */
+export function markOnTeamColor(
+  logo: string | null | undefined,
+  primaryHex: string | null | undefined,
+  alternateHex?: string | null,
+): string | null {
+  if (!logo) return null;
+  return wantsDarkMark(primaryHex, alternateHex) ? (espnDarkVariant(logo) ?? logo) : logo;
+}
+
 /** ESPN team `color` / `alternateColor`, hashes stripped. Invalid values drop out. */
 export function readEspnTeamColors(
   color: string | null | undefined,
@@ -163,10 +260,28 @@ export function readEspnTeamColors(
  * Wide per-half wash used on game-detail headers.
  * One ellipse on the left or right half, fading out — not a logo disc.
  */
-export function halfWashBackground(hex: string, side: "left" | "right"): string {
+export function halfWashBackground(hex: string, side: "left" | "right", alpha = "88"): string {
   const clean = hex.replace(/^#/, "");
   const at = side === "left" ? "20% 45%" : "80% 45%";
-  return `radial-gradient(ellipse at ${at}, #${clean}88, transparent 58%)`;
+  return `radial-gradient(ellipse at ${at}, #${clean}${alpha}, transparent 58%)`;
+}
+
+/**
+ * The same wide wash, centered on a measured logo center (px, relative to the
+ * half it is drawn in). Radii follow the card width so the ellipse reads the
+ * same on a phone card and an iPad header.
+ */
+export function anchoredWashBackground(
+  hex: string,
+  anchor: { x: number; y: number },
+  cardWidth: number,
+  soft = false,
+): string {
+  const clean = hex.replace(/^#/, "");
+  const rx = Math.round(Math.min(Math.max(cardWidth * 0.36, 120), 300));
+  const ry = Math.round(Math.min(Math.max(rx * 0.72, 86), 210));
+  const [core, mid] = soft ? ["40", "1c"] : ["88", "3a"];
+  return `radial-gradient(${rx}px ${ry}px at ${Math.round(anchor.x)}px ${Math.round(anchor.y)}px, #${clean}${core}, #${clean}${mid} 55%, transparent 100%)`;
 }
 
 /**

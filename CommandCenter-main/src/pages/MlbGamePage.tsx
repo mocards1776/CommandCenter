@@ -20,6 +20,8 @@ import TeamMark from "@/components/sports/TeamMark";
 import { WsChampPct } from "@/components/sports/MlbWorldSeriesOdds";
 import { useMlbWorldSeriesOdds, wsPctFor } from "@/lib/mlb-ws-odds";
 import MlbTeamLogo from "@/components/sports/MlbTeamLogo";
+import TeamHalfWash from "@/components/sports/TeamHalfWash";
+import GameMoreInfo, { type MoreInfoSection } from "@/components/sports/GameMoreInfo";
 import { mlbGlowColor } from "@/lib/mlb-team-glow";
 import { TeamFormChips, TeamStandingLine } from "@/components/sports/TeamFormChips";
 import { fetchMlbTeamForm, type TeamFormStrip } from "@/lib/team-form";
@@ -59,6 +61,9 @@ import {
 } from "@/lib/mlb";
 import { contentHidePhrases, fetchRssFilters } from "@/lib/rss";
 import { cn, dispatchReaderColumnClass, formatSportsDateLong } from "@/lib/utils";
+
+/** ESPN extras above already cover these for MLB. */
+const MLB_MORE_INFO_EXCLUDE: MoreInfoSection[] = ["predictor", "series", "form", "injuries", "stats", "leaders"];
 
 export function MlbGameDetail({
   gamePk,
@@ -279,6 +284,12 @@ export function MlbGameDetail({
             data={espnExtras.data}
             loading={espnExtras.isPending}
           />
+          <GameMoreInfo
+            sport="mlb"
+            eventId={espnExtras.data?.espnEventId}
+            live={g.live}
+            exclude={MLB_MORE_INFO_EXCLUDE}
+          />
           <BbrefPreviewStack
             awayAbbrev={g.away.abbrev}
             homeAbbrev={g.home.abbrev}
@@ -368,6 +379,12 @@ export function MlbGameDetail({
             homeTeamId={g.home.teamId}
             data={espnExtras.data}
             loading={espnExtras.isPending}
+          />
+          <GameMoreInfo
+            sport="mlb"
+            eventId={espnExtras.data?.espnEventId}
+            live={g.live}
+            exclude={MLB_MORE_INFO_EXCLUDE}
           />
           <BbrefPreviewStack
             awayAbbrev={g.away.abbrev}
@@ -1205,24 +1222,13 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
       : g.status;
   return (
     <header className="relative w-full max-w-full min-w-0 overflow-hidden rounded-xl border border-white/[0.1] bg-[#07101d] shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
-      {/* Soft team tint over the score row only (not the tall live panel below). */}
-      <div
-        className={cn(
-          "pointer-events-none absolute left-0 top-0 h-60 w-1/2",
-          homeWins ? "opacity-40" : "opacity-90",
-        )}
-        style={{
-          background: `radial-gradient(ellipse at 18% 55%, #${mlbGlowColor(g.away.teamId, g.away.primaryColor)}40, transparent 62%)`,
-        }}
-      />
-      <div
-        className={cn(
-          "pointer-events-none absolute right-0 top-0 h-60 w-1/2",
-          awayWins ? "opacity-40" : "opacity-90",
-        )}
-        style={{
-          background: `radial-gradient(ellipse at 82% 55%, #${mlbGlowColor(g.home.teamId, g.home.primaryColor)}40, transparent 62%)`,
-        }}
+      {/* Soft team tint centered on each logo (not the tall live panel below). */}
+      <TeamHalfWash
+        awayHex={mlbGlowColor(g.away.teamId, g.away.primaryColor)}
+        homeHex={mlbGlowColor(g.home.teamId, g.home.primaryColor)}
+        awayDim={homeWins}
+        homeDim={awayWins}
+        soft
       />
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(255,255,255,0.06),transparent_45%)]" />
 
@@ -1339,6 +1345,7 @@ function EspnTeam({
       {side.teamId > 0 ? (
         <MlbTeamLogo
           teamId={side.teamId}
+          washAnchor={align === "left" ? "away" : "home"}
           className={cn("h-14 w-14 sm:h-20 sm:w-20", loser && "opacity-40")}
         />
       ) : null}
@@ -2831,6 +2838,7 @@ function TeamBoxSection({
         <TeamFormChips form={form} className="w-[13rem] shrink-0" />
       </div>
 
+      <BoxSectionHead teamId={side.teamId} abbrev={side.abbrev} label="Batting" />
       <div className="overflow-x-auto">
         <table className="w-full min-w-[620px] text-left text-[12px]">
           <thead>
@@ -2891,7 +2899,10 @@ function TeamBoxSection({
       )}
 
       {side.pitchers.length > 0 && (
-        <div className="overflow-x-auto border-t border-white/[0.06]">
+        <BoxSectionHead teamId={side.teamId} abbrev={side.abbrev} label="Pitching" divided />
+      )}
+      {side.pitchers.length > 0 && (
+        <div className="overflow-x-auto">
           <table className="w-full min-w-[520px] text-left text-[12px]">
             <thead>
               <tr className="text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
@@ -2918,6 +2929,29 @@ function TeamBoxSection({
         </div>
       )}
     </section>
+  );
+}
+
+function BoxSectionHead({
+  teamId,
+  abbrev,
+  label,
+  divided = false,
+}: {
+  teamId: number;
+  abbrev: string;
+  label: string;
+  divided?: boolean;
+}) {
+  return (
+    <div className={cn("border-b border-white/[0.06] px-3 py-2", divided && "border-t")}>
+      <p className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-white">
+        {teamId > 0 ? <TeamMark teamId={teamId} size="xs" /> : null}
+        <span>
+          {abbrev} · {label}
+        </span>
+      </p>
+    </div>
   );
 }
 
