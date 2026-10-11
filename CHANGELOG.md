@@ -2,6 +2,27 @@
 
 ---
 
+## Finals Telegram: every NFL and Power 4 final, no CPU-kill false "sent" — October 11, 2026
+
+- Every NFL final and every college final with a Power 4 team (ACC, Big 12,
+  Big Ten, SEC) or Notre Dame now sends, whatever `TELEGRAM_FINALS_SCOPE`
+  says. MLB, NHL, and other college games still follow the scope.
+- Power 4 games come from ESPN `groups=80` (all FBS) for Chicago today and
+  yesterday. The plain college scoreboard the sweep used before is the
+  Top 25 / featured view (19 games on Oct 10), so 10 Power 4 finals on
+  Oct 9–10 never reached the sweep. sports-push keeps its own board.
+- The sweep no longer renders. It posts each final to the function's own
+  `deliver` action, one request at a time (up to 6 per sweep, 40s budget),
+  so every card gets its own 2s CPU budget. On Oct 11 three sweeps that
+  rendered two cards each hit `CPU Time exceeded` (HTTP 546).
+- `deliver` renders and JPEG-encodes before it claims `sports_finals_sent`.
+  The old order claimed first, so a CPU kill mid-render left the game marked
+  sent with no photo. A failed send still releases the claim.
+- Redeploy `sports-finals`. The first sweep baselines the newly visible
+  Power 4 games, so nothing already final is re-sent.
+
+---
+
 ## Times press: morning extract-file hop + stuck recovery — October 7, 2026
 
 - Stage-14 extract-file takes **6 cards per hop** (was a `mo=20` loop under
