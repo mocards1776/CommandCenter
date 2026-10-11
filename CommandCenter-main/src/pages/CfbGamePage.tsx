@@ -5,7 +5,8 @@ import { Loader2 } from "lucide-react";
 import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
 import AppleScoreCluster from "@/components/sports/AppleScoreCluster";
 import LogoPlate from "@/components/sports/LogoPlate";
-import { teamGlowColor } from "@/lib/team-logo-glow";
+import { teamWashColor } from "@/lib/team-logo-glow";
+import TeamHalfWash from "@/components/sports/TeamHalfWash";
 import TeamStatsLogos from "@/components/sports/TeamStatsLogos";
 import NflFieldMap from "@/components/sports/NflFieldMap";
 import CfbWinProbability from "@/components/sports/CfbWinProbability";
@@ -265,23 +266,11 @@ export function CfbGameDetailView({
     <div className="space-y-3">
       <GameMomentLayer snapshot={toCfbMomentSnapshot(g)} />
       <header className="relative overflow-hidden rounded-xl border border-white/[0.1] bg-[#07101d] shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
-        <div
-          className={cn(
-            "pointer-events-none absolute inset-y-0 left-0 w-1/2",
-            homeWins ? "opacity-40" : "opacity-90",
-          )}
-          style={{
-            background: `radial-gradient(ellipse at 20% 45%, #${teamGlowColor(g.away.color, g.away.alternateColor)}88, transparent 58%)`,
-          }}
-        />
-        <div
-          className={cn(
-            "pointer-events-none absolute inset-y-0 right-0 w-1/2",
-            awayWins ? "opacity-40" : "opacity-90",
-          )}
-          style={{
-            background: `radial-gradient(ellipse at 80% 45%, #${teamGlowColor(g.home.color, g.home.alternateColor)}88, transparent 58%)`,
-          }}
+        <TeamHalfWash
+          awayHex={teamWashColor(g.away.color, g.away.alternateColor)}
+          homeHex={teamWashColor(g.home.color, g.home.alternateColor)}
+          awayDim={homeWins}
+          homeDim={awayWins}
         />
         <div className="relative z-10 flex items-center justify-between gap-2 border-b border-white/[0.07] px-3 py-2 sm:px-4">
           <p
@@ -830,7 +819,11 @@ function MatchupSide({
       )}
     >
       {side.logo ? (
-        <LogoPlate src={side.logo} className={cn("h-12 w-12 sm:h-14 sm:w-14", loser && "opacity-40")} />
+        <LogoPlate
+          src={side.logo}
+          washAnchor={align === "left" ? "away" : "home"}
+          className={cn("h-12 w-12 sm:h-14 sm:w-14", loser && "opacity-40")}
+        />
       ) : null}
       <div className="min-w-0">
         <p

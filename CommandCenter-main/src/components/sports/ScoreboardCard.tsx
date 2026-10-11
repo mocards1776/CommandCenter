@@ -18,7 +18,7 @@ import type { NhlScoreGame } from "@/lib/nhl";
 import { ruwtWhyReasons } from "@/lib/ruwt-slate";
 import { mlbGlowColor } from "@/lib/mlb-team-glow";
 import { espnDarkLogo, RUWT_SPORT_LABEL } from "@/lib/ruwt-score-tab";
-import { teamGlowColor } from "@/lib/team-logo-glow";
+import { teamWashColor } from "@/lib/team-logo-glow";
 import type { SoccerScoreGame } from "@/lib/soccer";
 import { cn } from "@/lib/utils";
 
@@ -80,7 +80,7 @@ export type ScoreboardSide = {
   caption?: ReactNode;
   hasBall?: boolean;
   muted?: boolean;
-  /** ESPN primary. The card wash uses teamGlowColor unless `wash` is set. */
+  /** ESPN primary. The card wash uses teamWashColor unless `wash` is set. */
   color?: string | null;
   alternateColor?: string | null;
   /** Resolved wash hex (no #). MLB club overrides go here so they win. */
@@ -118,7 +118,11 @@ function SideColumn({ side, align }: { side: ScoreboardSide; align: "left" | "ri
         side.muted && "opacity-60",
       )}
     >
-      {side.logo}
+      {side.logo ? (
+        <span data-wash-anchor={align === "left" ? "away" : "home"} className="inline-flex shrink-0">
+          {side.logo}
+        </span>
+      ) : null}
       <p className="relative z-10 inline-flex max-w-full items-center gap-1 text-[15px] font-bold tracking-wide text-white">
         {align === "right" ? ball : null}
         <span className="min-w-0 truncate">
@@ -164,8 +168,8 @@ function ScoreboardCardInner({
   const body = (
     <>
       <TeamHalfWash
-        awayHex={away.wash || (away.color || away.alternateColor ? teamGlowColor(away.color, away.alternateColor) : null)}
-        homeHex={home.wash || (home.color || home.alternateColor ? teamGlowColor(home.color, home.alternateColor) : null)}
+        awayHex={away.wash || (away.color || away.alternateColor ? teamWashColor(away.color, away.alternateColor) : null)}
+        homeHex={home.wash || (home.color || home.alternateColor ? teamWashColor(home.color, home.alternateColor) : null)}
         awayDim={away.muted}
         homeDim={home.muted}
       />

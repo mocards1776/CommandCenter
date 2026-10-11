@@ -20,6 +20,7 @@ import TeamMark from "@/components/sports/TeamMark";
 import { WsChampPct } from "@/components/sports/MlbWorldSeriesOdds";
 import { useMlbWorldSeriesOdds, wsPctFor } from "@/lib/mlb-ws-odds";
 import MlbTeamLogo from "@/components/sports/MlbTeamLogo";
+import TeamHalfWash from "@/components/sports/TeamHalfWash";
 import { mlbGlowColor } from "@/lib/mlb-team-glow";
 import { TeamFormChips, TeamStandingLine } from "@/components/sports/TeamFormChips";
 import { fetchMlbTeamForm, type TeamFormStrip } from "@/lib/team-form";
@@ -1205,24 +1206,13 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
       : g.status;
   return (
     <header className="relative w-full max-w-full min-w-0 overflow-hidden rounded-xl border border-white/[0.1] bg-[#07101d] shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
-      {/* Soft team tint over the score row only (not the tall live panel below). */}
-      <div
-        className={cn(
-          "pointer-events-none absolute left-0 top-0 h-60 w-1/2",
-          homeWins ? "opacity-40" : "opacity-90",
-        )}
-        style={{
-          background: `radial-gradient(ellipse at 18% 55%, #${mlbGlowColor(g.away.teamId, g.away.primaryColor)}40, transparent 62%)`,
-        }}
-      />
-      <div
-        className={cn(
-          "pointer-events-none absolute right-0 top-0 h-60 w-1/2",
-          awayWins ? "opacity-40" : "opacity-90",
-        )}
-        style={{
-          background: `radial-gradient(ellipse at 82% 55%, #${mlbGlowColor(g.home.teamId, g.home.primaryColor)}40, transparent 62%)`,
-        }}
+      {/* Soft team tint centered on each logo (not the tall live panel below). */}
+      <TeamHalfWash
+        awayHex={mlbGlowColor(g.away.teamId, g.away.primaryColor)}
+        homeHex={mlbGlowColor(g.home.teamId, g.home.primaryColor)}
+        awayDim={homeWins}
+        homeDim={awayWins}
+        soft
       />
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(255,255,255,0.06),transparent_45%)]" />
 
@@ -1339,6 +1329,7 @@ function EspnTeam({
       {side.teamId > 0 ? (
         <MlbTeamLogo
           teamId={side.teamId}
+          washAnchor={align === "left" ? "away" : "home"}
           className={cn("h-14 w-14 sm:h-20 sm:w-20", loser && "opacity-40")}
         />
       ) : null}

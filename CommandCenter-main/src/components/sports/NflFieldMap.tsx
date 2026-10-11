@@ -11,7 +11,7 @@ import { NflScoreboardCard } from "@/components/sports/ScoreboardCard";
 import { isBreakStatus } from "@/lib/apple-score";
 import { cn } from "@/lib/utils";
 import PossessionFootball from "@/components/sports/PossessionFootball";
-import { teamGlowColor } from "@/lib/team-logo-glow";
+import { endZoneOutlineColor, teamGlowColor } from "@/lib/team-logo-glow";
 
 /** Minimal shape for NFL / CFB live field maps on RUWT cards. */
 export type FootballFieldGame = {
@@ -71,12 +71,15 @@ function CircularLosFootball({ className }: { className?: string }) {
 function EndZoneMark({
   abbrev,
   color,
+  outline,
   logo,
   branded,
   side,
 }: {
   abbrev: string;
   color: string;
+  /** Second real team color drawn as an inset rule when the fill is near-black. */
+  outline?: string | null;
   logo?: string | null;
   branded: boolean;
   side: "away" | "home";
@@ -85,7 +88,10 @@ function EndZoneMark({
   return (
     <div
       className="relative flex items-center justify-center overflow-hidden"
-      style={{ background: color, boxShadow: "inset 0 0 0 1px rgba(0,0,0,0.22)" }}
+      style={{
+        background: color,
+        boxShadow: outline ? `inset 0 0 0 2px #${outline}` : "inset 0 0 0 1px rgba(0,0,0,0.22)",
+      }}
       aria-hidden
     >
       {branded && logo && !failed ? (
@@ -168,6 +174,8 @@ export default function NflFieldMap({
   const homeChip = teamHex(game.home.color, "7a1f1f");
   const awayZone = teamHex(teamGlowColor(game.away.color, game.away.alternateColor), "1e3a5f");
   const homeZone = teamHex(teamGlowColor(game.home.color, game.home.alternateColor), "7a1f1f");
+  const awayZoneOutline = endZoneOutlineColor(game.away.color, game.away.alternateColor);
+  const homeZoneOutline = endZoneOutlineColor(game.home.color, game.home.alternateColor);
 
   const ddText = downDistanceText || game.situation?.downDistanceText || null;
   const ticks = [10, 20, 30, 40, 50, 40, 30, 20, 10];
@@ -232,6 +240,7 @@ export default function NflFieldMap({
         <EndZoneMark
           abbrev={game.away.abbrev}
           color={awayZone}
+          outline={awayZoneOutline}
           logo={game.away.logo}
           branded={branded}
           side="away"
@@ -283,6 +292,7 @@ export default function NflFieldMap({
         <EndZoneMark
           abbrev={game.home.abbrev}
           color={homeZone}
+          outline={homeZoneOutline}
           logo={game.home.logo}
           branded={branded}
           side="home"

@@ -45,7 +45,7 @@ import {
 } from "@/lib/cfb-win-probability";
 import { nhlWinProbFromScoreboard } from "@/lib/nhl-win-probability";
 import { mlbGlowColor } from "@/lib/mlb-team-glow";
-import { teamGlowColor } from "@/lib/team-logo-glow";
+import { teamGlowColor, teamWashColor } from "@/lib/team-logo-glow";
 import CfbRankLabel, { CfbFpiCaption } from "@/components/sports/CfbRankLabel";
 import type { GameBroadcast } from "@/lib/game-broadcasts";
 import {
@@ -99,8 +99,8 @@ function CardHalves({
 }) {
   return (
     <TeamHalfWash
-      awayHex={awayHex ?? (away ? teamGlowColor(away.color, away.alternateColor) : null)}
-      homeHex={homeHex ?? (home ? teamGlowColor(home.color, home.alternateColor) : null)}
+      awayHex={awayHex ?? (away ? teamWashColor(away.color, away.alternateColor) : null)}
+      homeHex={homeHex ?? (home ? teamWashColor(home.color, home.alternateColor) : null)}
       awayDim={awayDim}
       homeDim={homeDim}
     />
@@ -846,7 +846,7 @@ function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
       <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-3.5">
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-start">
           {game.away.logo ? (
-            <LogoPlate src={game.away.logo} className="h-8 w-8" />
+            <LogoPlate src={game.away.logo} className="h-8 w-8" washAnchor="away" />
           ) : null}
           <p className="relative z-10 inline-flex items-center gap-1 text-[15px] font-bold text-white">
             <CfbRankLabel pollRank={game.away.rank} fpiRank={null} />
@@ -873,7 +873,7 @@ function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
         </div>
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-end">
           {game.home.logo ? (
-            <LogoPlate src={game.home.logo} className="h-8 w-8" />
+            <LogoPlate src={game.home.logo} className="h-8 w-8" washAnchor="home" />
           ) : null}
           <p className="relative z-10 inline-flex items-center gap-1 text-[15px] font-bold text-white">
             {game.live && homeHasBall ? (
@@ -983,7 +983,7 @@ function NflRuwtCard({ game, rank }: { game: NflScoredGame; rank: number }) {
       <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-3.5">
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-start">
           {game.away.logo ? (
-            <LogoPlate src={game.away.logo} className="h-8 w-8" />
+            <LogoPlate src={game.away.logo} className="h-8 w-8" washAnchor="away" />
           ) : null}
           <p className="relative z-10 inline-flex items-center gap-1 text-[15px] font-bold text-white">
             {game.away.abbrev}
@@ -1003,7 +1003,7 @@ function NflRuwtCard({ game, rank }: { game: NflScoredGame; rank: number }) {
         />
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-end">
           {game.home.logo ? (
-            <LogoPlate src={game.home.logo} className="h-8 w-8" />
+            <LogoPlate src={game.home.logo} className="h-8 w-8" washAnchor="home" />
           ) : null}
           <p className="relative z-10 inline-flex items-center gap-1 text-[15px] font-bold text-white">
             {game.live && homeHasBall ? (
@@ -1094,7 +1094,7 @@ function NhlRuwtCard({ game, rank }: { game: NhlScoredGame; rank: number }) {
       <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-3.5">
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-start">
           {game.away.logo ? (
-            <LogoPlate src={game.away.logo} className="h-8 w-8" />
+            <LogoPlate src={game.away.logo} className="h-8 w-8" washAnchor="away" />
           ) : null}
           <p className="relative z-10 text-[15px] font-bold text-white">{game.away.abbrev}</p>
         </div>
@@ -1109,7 +1109,7 @@ function NhlRuwtCard({ game, rank }: { game: NhlScoredGame; rank: number }) {
         />
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-end">
           {game.home.logo ? (
-            <LogoPlate src={game.home.logo} className="h-8 w-8" />
+            <LogoPlate src={game.home.logo} className="h-8 w-8" washAnchor="home" />
           ) : null}
           <p className="relative z-10 text-[15px] font-bold text-white">{game.home.abbrev}</p>
         </div>
@@ -1184,7 +1184,7 @@ function SoccerRuwtCard({ game, rank }: { game: SoccerScoredGame; rank: number }
       <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-3.5">
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-start">
           {game.away.logo ? (
-            <LogoPlate src={game.away.logo} className="h-8 w-8" />
+            <LogoPlate src={game.away.logo} className="h-8 w-8" washAnchor="away" />
           ) : null}
           <p className="relative z-10 text-[15px] font-bold text-white">{game.away.abbrev}</p>
         </div>
@@ -1199,7 +1199,7 @@ function SoccerRuwtCard({ game, rank }: { game: SoccerScoredGame; rank: number }
         />
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-end">
           {game.home.logo ? (
-            <LogoPlate src={game.home.logo} className="h-8 w-8" />
+            <LogoPlate src={game.home.logo} className="h-8 w-8" washAnchor="home" />
           ) : null}
           <p className="relative z-10 text-[15px] font-bold text-white">{game.home.abbrev}</p>
         </div>
@@ -1459,7 +1459,9 @@ function Side({
         muted && "opacity-60",
       )}
     >
-      {side.teamId ? <TeamMark teamId={side.teamId} size="md" /> : null}
+      {side.teamId ? (
+        <TeamMark teamId={side.teamId} size="md" washAnchor={align === "left" ? "away" : "home"} />
+      ) : null}
       <p className="text-[15px] font-bold tracking-wide text-white">{side.abbrev}</p>
       {side.record && (
         <p className="numeral text-[12px] font-medium text-white/70">{side.record}</p>
