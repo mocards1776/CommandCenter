@@ -2381,8 +2381,7 @@ export async function fetchOnDeck(): Promise<Book[]> {
     .from("books")
     .select("*")
     .eq("on_deck", true)
-    .order("on_deck_order")
-    .limit(12);
+    .order("on_deck_order");
   if (error) throw error;
   return data ?? [];
 }
