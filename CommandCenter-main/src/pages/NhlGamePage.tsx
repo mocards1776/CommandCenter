@@ -13,6 +13,7 @@ import { teamWashColor } from "@/lib/team-logo-glow";
 import TeamHalfWash from "@/components/sports/TeamHalfWash";
 import HighlightReel, { type ReelHighlight } from "@/components/sports/HighlightReel";
 import NhlBoxScore from "@/components/sports/NhlBoxScore";
+import GameMoreInfo from "@/components/sports/GameMoreInfo";
 import NhlGameLeaders from "@/components/sports/NhlGameLeaders";
 import NhlIceRink, { type NhlIceGoalieBadge } from "@/components/sports/NhlIceRink";
 import NhlScoringSummary from "@/components/sports/NhlScoringSummary";
@@ -335,6 +336,14 @@ export default function NhlGamePage() {
                 />
               )}
 
+              <GameMoreInfo
+                sport="nhl"
+                eventId={eventId}
+                exclude={["leaders"]}
+                teamHref={(id) => `/sports/nhl/team/${id}`}
+                playerHref={(id) => `/sports/nhl/player/${id}`}
+              />
+
               {g.ice ? (
                 <details className="group bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 [&::-webkit-details-marker]:hidden">
@@ -419,6 +428,15 @@ export default function NhlGamePage() {
                   shiftsPending={nhlGameId != null && shiftLines.isPending}
                 />
               )}
+
+              <GameMoreInfo
+                sport="nhl"
+                eventId={eventId}
+                live={g.live}
+                exclude={g.lastFive.length > 0 ? ["leaders", "form"] : ["leaders"]}
+                teamHref={(id) => `/sports/nhl/team/${id}`}
+                playerHref={(id) => `/sports/nhl/player/${id}`}
+              />
             </>
           )}
         </>

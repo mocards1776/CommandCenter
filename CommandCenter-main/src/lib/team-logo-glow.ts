@@ -168,6 +168,25 @@ export function teamWashColor(
 }
 
 /**
+ * Thin data marks (comparison bars, series bars) — not a background behind a
+ * logo, so a white or cream alternate is allowed. The wash color when it reads
+ * on the navy card, else whichever real ESPN color does (Texas A&M maroon
+ * falls back to its white alternate).
+ */
+export function teamAccentColor(
+  primaryHex: string | null | undefined,
+  alternateHex?: string | null,
+): string {
+  const wash = teamWashColor(primaryHex, alternateHex);
+  const washRgb = parseHex(wash);
+  if (washRgb && visibleOnCard(washRgb)) return wash;
+  for (const other of [parseHex(primaryHex), parseHex(alternateHex)]) {
+    if (other && visibleOnCard(other)) return toHex(other);
+  }
+  return wash;
+}
+
+/**
  * Football end-zone outline hex (no #) or null. A near-black end zone loses its
  * edge on the dark card, so it is outlined in the team's other real color:
  * Missouri reads as a black end zone with a gold rule.

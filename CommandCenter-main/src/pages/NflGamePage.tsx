@@ -10,6 +10,7 @@ import LogoPlate from "@/components/sports/LogoPlate";
 import { teamWashColor } from "@/lib/team-logo-glow";
 import TeamHalfWash from "@/components/sports/TeamHalfWash";
 import TeamStatsLogos from "@/components/sports/TeamStatsLogos";
+import GameMoreInfo from "@/components/sports/GameMoreInfo";
 import NflFieldMap from "@/components/sports/NflFieldMap";
 import CfbWinProbability from "@/components/sports/CfbWinProbability";
 import EspnVideoEmbed from "@/components/sports/EspnVideoEmbed";
@@ -443,75 +444,6 @@ export function NflGameDetailView({
 
       {articleSection}
 
-      {pregame && (g.oddsLine || g.predictor || g.lastFive.length > 0 || g.venueDetail) ? (
-        <section className="bg-panel space-y-3 overflow-hidden rounded-xl border border-white/[0.08] px-4 py-3.5">
-          <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
-            Preview
-          </h2>
-          {g.venueDetail ? (
-            <p className="text-[13px] text-[#c8cdd8]">{g.venueDetail}</p>
-          ) : null}
-          {g.oddsLine ? (
-            <p className="text-cream text-[14px] font-medium">{g.oddsLine}</p>
-          ) : null}
-          {g.predictor &&
-          (g.predictor.awayWinPct != null || g.predictor.homeWinPct != null) ? (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <p className="text-[10px] uppercase tracking-[0.14em] text-[#8b93a7]">
-                  {g.away.abbrev} win%
-                </p>
-                <p className="numeral text-cream text-[22px] font-semibold">
-                  {g.predictor.awayWinPct != null ? `${g.predictor.awayWinPct}%` : "—"}
-                </p>
-              </div>
-              <div className="text-right">
-                <p className="text-[10px] uppercase tracking-[0.14em] text-[#8b93a7]">
-                  {g.home.abbrev} win%
-                </p>
-                <p className="numeral text-cream text-[22px] font-semibold">
-                  {g.predictor.homeWinPct != null ? `${g.predictor.homeWinPct}%` : "—"}
-                </p>
-              </div>
-            </div>
-          ) : null}
-          {g.lastFive.length > 0 ? (
-            <div className="grid gap-3 sm:grid-cols-2">
-              {g.lastFive.map((side) => (
-                <div key={side.teamAbbrev}>
-                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
-                    {side.teamAbbrev} last 5
-                  </p>
-                  <ul className="space-y-1">
-                    {side.results.map((r, i) => (
-                      <li
-                        key={`${side.teamAbbrev}-${i}`}
-                        className="flex items-center justify-between gap-2 text-[12px]"
-                      >
-                        <span className="text-[#c8cdd8]">vs {r.label}</span>
-                        <span
-                          className={cn(
-                            "numeral font-semibold",
-                            /^W/i.test(r.result)
-                              ? "text-emerald-300"
-                              : /^L/i.test(r.result)
-                                ? "text-alert"
-                                : "text-cream",
-                          )}
-                        >
-                          {r.result}
-                          {r.score ? ` ${r.score}` : ""}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </section>
-      ) : null}
-
       {pregame &&
       !g.article &&
       !g.boxGroups.length &&
@@ -728,6 +660,14 @@ export function NflGameDetailView({
           })}
         </section>
       )}
+
+      <GameMoreInfo
+        sport="nfl"
+        eventId={eventId}
+        live={g.live}
+        teamHref={(id) => `/sports/nfl/team/${id}`}
+        playerHref={(id) => `/sports/nfl/player/${id}`}
+      />
 
       {g.final && g.winProbability.length > 0 ? (
         <CfbWinProbability away={g.away} home={g.home} points={g.winProbability} />

@@ -11,6 +11,7 @@ import {
   anchoredWashBackground,
   teamWashColor,
   endZoneOutlineColor,
+  teamAccentColor,
   isPlateColor,
 } from "./team-logo-glow.ts";
 
@@ -92,6 +93,12 @@ test("Iowa, Washington and Texas A&M washes are unchanged", () => {
   assert.equal(teamWashColor("33006f", "e8d3a2"), "e8d3a2", "Washington gold");
   assert.equal(teamWashColor("500000", "ffffff"), "500000", "A&M maroon, never a white plate");
   assert.equal(endZoneOutlineColor("500000", "ffffff"), null, "no white plate outline");
+});
+
+test("data bars use a real color that reads on the card", () => {
+  assert.equal(teamAccentColor("f1b82d", "000000"), "f1b82d", "Missouri gold");
+  assert.equal(teamAccentColor("500000", "ffffff"), "ffffff", "A&M white alternate for thin bars");
+  assert.equal(teamAccentColor("231f20", "fcd116"), "fcd116", "Iowa gold");
 });
 
 test("anchored wash centers on the logo", () => {

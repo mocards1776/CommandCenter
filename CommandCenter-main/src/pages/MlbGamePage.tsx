@@ -21,6 +21,7 @@ import { WsChampPct } from "@/components/sports/MlbWorldSeriesOdds";
 import { useMlbWorldSeriesOdds, wsPctFor } from "@/lib/mlb-ws-odds";
 import MlbTeamLogo from "@/components/sports/MlbTeamLogo";
 import TeamHalfWash from "@/components/sports/TeamHalfWash";
+import GameMoreInfo, { type MoreInfoSection } from "@/components/sports/GameMoreInfo";
 import { mlbGlowColor } from "@/lib/mlb-team-glow";
 import { TeamFormChips, TeamStandingLine } from "@/components/sports/TeamFormChips";
 import { fetchMlbTeamForm, type TeamFormStrip } from "@/lib/team-form";
@@ -60,6 +61,9 @@ import {
 } from "@/lib/mlb";
 import { contentHidePhrases, fetchRssFilters } from "@/lib/rss";
 import { cn, dispatchReaderColumnClass, formatSportsDateLong } from "@/lib/utils";
+
+/** ESPN extras above already cover these for MLB. */
+const MLB_MORE_INFO_EXCLUDE: MoreInfoSection[] = ["predictor", "series", "form", "injuries", "stats", "leaders"];
 
 export function MlbGameDetail({
   gamePk,
@@ -280,6 +284,12 @@ export function MlbGameDetail({
             data={espnExtras.data}
             loading={espnExtras.isPending}
           />
+          <GameMoreInfo
+            sport="mlb"
+            eventId={espnExtras.data?.espnEventId}
+            live={g.live}
+            exclude={MLB_MORE_INFO_EXCLUDE}
+          />
           <BbrefPreviewStack
             awayAbbrev={g.away.abbrev}
             homeAbbrev={g.home.abbrev}
@@ -369,6 +379,12 @@ export function MlbGameDetail({
             homeTeamId={g.home.teamId}
             data={espnExtras.data}
             loading={espnExtras.isPending}
+          />
+          <GameMoreInfo
+            sport="mlb"
+            eventId={espnExtras.data?.espnEventId}
+            live={g.live}
+            exclude={MLB_MORE_INFO_EXCLUDE}
           />
           <BbrefPreviewStack
             awayAbbrev={g.away.abbrev}
