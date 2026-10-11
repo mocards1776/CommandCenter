@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { fetchPushBoards } from "../sports-push/boards.ts";
-import { dramaInput, gameKey, gamePhase, liveDrama, type PushGame } from "../sports-push/live-drama.ts";
+import { dramaInput, liveDrama, type PushGame } from "../sports-push/live-drama.ts";
 import { alertReplyMarkup } from "../_shared/telegram-markup.ts";
 import { finalCaption, loadFinalCard, SUMMARY_PATH, type FinalCard } from "./card.ts";
 import {
@@ -10,6 +10,7 @@ import {
   loadAlbumFavorites,
   type AlbumFavorites,
 } from "./favorites.ts";
+import { fetchPower4Cfb, mergeFinalsBoards } from "./finals-boards.ts";
 import { rasterizeSvg } from "./png.ts";
 import {
   buildEveningPreview,
@@ -26,12 +27,27 @@ import {
   parseFavoriteTokens,
   parseScope,
   parseSports,
-  shouldSendFinal,
   type FavoriteToken,
   type WatchSnap,
 } from "./select.ts";
 import { renderFinalPage2Svg, renderFinalSvg } from "./svg.ts";
-import { sendTelegramAlbum, sendTelegramPhoto } from "./telegram.ts";
+import {
+  DELIVER_TIMEOUT_MS,
+  deliverOnce,
+  parseDeliverResponse,
+  planSweep,
+  runDeliveries,
+  type DeliverOutcome,
+} from "./sweep.ts";
+import {
+  loadPngToJpeg,
+  prepareTelegramPhoto,
+  sendPreparedAlbum,
+  sendPreparedPhoto,
+  sendTelegramAlbum,
+  sendTelegramPhoto,
+  type TelegramPhotoPayload,
+} from "./telegram.ts";
 
 /**
  * Telegram final-score photos for @FinalsAndStats_bot.
@@ -54,6 +70,10 @@ import { sendTelegramAlbum, sendTelegramPhoto } from "./telegram.ts";
  *   SPORTS_FINALS_ORIGIN          game links; falls back to SPORTS_PUSH_ORIGIN
  *
  * Sweep: POST { "action": "sweep" } with header x-sports-finals-cron.
+ *        Every NFL final and every Power 4 / Notre Dame college final sends;
+ *        MLB, NHL, and other college games follow TELEGRAM_FINALS_SCOPE.
+ *        The sweep posts each final to { "action": "deliver" } (its own
+ *        request and CPU budget), which renders, claims, then sends.
  * Test:  POST { "action": "send", "sport": "nfl", "eventId": "401872964" }.
  * PNG:   POST { "action": "render", "sport": "nfl", "eventId": "401872964" }.
  *        POST { "action": "render", "page": 2, ... } for the album verso.
@@ -69,8 +89,6 @@ const CORS: Record<string, string> = {
     "authorization, x-client-info, apikey, content-type, x-sports-finals-cron, x-sports-push-cron",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
-
-const MAX_SENDS = 2;
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -154,47 +172,102 @@ async function favorites(db: SupabaseClient): Promise<FavoriteToken[]> {
   return out;
 }
 
-async function deliver(
-  game: PushGame,
-  chats: string[],
-  token: string,
-  board: AlbumFavorites,
-): Promise<{ caption: string; bytes: number; pages: number }> {
-  const card = await loadFinalCard(game.sport, game.id, { waitForStars: true });
-  if (!card.final) throw new Error(`${game.sport}:${game.id} is not final`);
-  const sent = await deliverCard(card, chats, token, board);
-  return sent;
-}
+type PreparedFinal = {
+  caption: string;
+  replyMarkup: string | null;
+  photos: TelegramPhotoPayload[];
+  album: boolean;
+  reason: string | null;
+};
 
-async function deliverCard(
-  card: FinalCard,
-  chats: string[],
-  token: string,
-  board: AlbumFavorites,
-  forceAlbum?: boolean | null,
-): Promise<{ caption: string; bytes: number; pages: number; album: boolean; reason: string | null }> {
-  const album = forceAlbum === false ? { album: false, reason: null, teams: [], featured: [], teamPerformers: [] } : decideAlbum(card, board);
-  const wantAlbum = forceAlbum === true || album.album;
+/** All the CPU work for one final (SVG → PNG → JPEG). Nothing is sent or claimed here. */
+async function prepareFinal(card: FinalCard, board: AlbumFavorites): Promise<PreparedFinal> {
+  const album = decideAlbum(card, board);
   const caption = finalCaption(card, origin());
   const replyMarkup = alertReplyMarkup(origin(), card.path);
-  const page1 = await rasterizeSvg(renderFinalSvg(card));
-  if (!wantAlbum) {
-    for (const chatId of chats) {
-      await sendTelegramPhoto(token, chatId, page1, caption, replyMarkup);
-    }
-    return { caption, bytes: page1.byteLength, pages: 1, album: false, reason: album.reason };
-  }
-  const page2 = await rasterizeSvg(renderFinalPage2Svg(card, forceAlbum === true && !album.album ? { ...album, album: true } : album));
-  for (const chatId of chats) {
-    await sendTelegramAlbum(token, chatId, [page1, page2], caption, replyMarkup);
-  }
+  const encode = await loadPngToJpeg();
+  const pages = [await rasterizeSvg(renderFinalSvg(card))];
+  if (album.album) pages.push(await rasterizeSvg(renderFinalPage2Svg(card, album)));
   return {
     caption,
-    bytes: page1.byteLength + page2.byteLength,
-    pages: 2,
-    album: true,
-    reason: album.reason ?? (forceAlbum === true ? "forced" : null),
+    replyMarkup,
+    photos: pages.map((png) => prepareTelegramPhoto(png, encode)),
+    album: album.album,
+    reason: album.reason,
   };
+}
+
+async function sendPrepared(prepared: PreparedFinal, chats: string[], token: string): Promise<void> {
+  for (const chatId of chats) {
+    if (prepared.photos.length > 1) {
+      await sendPreparedAlbum(token, chatId, prepared.photos, prepared.caption, prepared.replyMarkup);
+    } else {
+      await sendPreparedPhoto(token, chatId, prepared.photos[0]!, prepared.caption, prepared.replyMarkup);
+    }
+  }
+}
+
+/**
+ * One sweep final, in its own request. Render first, then claim, then send:
+ * a CPU kill during render leaves no sent row, so the next sweep retries.
+ */
+async function deliverFinal(db: SupabaseClient, sport: string, eventId: string): Promise<Response> {
+  const chats = parseChatIds(Deno.env.get("TELEGRAM_FINALS_CHAT_IDS"));
+  const token = Deno.env.get("TELEGRAM_FINALS_BOT_TOKEN")?.trim() ?? "";
+  if (!token) return json({ status: "error", error: "TELEGRAM_FINALS_BOT_TOKEN is not set" }, 503);
+  if (!chats.length) return json({ status: "error", error: "TELEGRAM_FINALS_CHAT_IDS is empty" }, 503);
+  const key = `${sport}:${eventId}`;
+  let board: AlbumFavorites = emptyAlbumFavorites();
+  const result = await deliverOnce({
+    alreadySent: async () => {
+      const { data, error } = await db.from("sports_finals_sent").select("game_key").eq("game_key", key).maybeSingle();
+      if (error) throw new Error(error.message);
+      return Boolean(data);
+    },
+    load: async () => {
+      const [card, favs] = await Promise.all([
+        loadFinalCard(sport, eventId, { waitForStars: true }),
+        loadAlbumFavorites(db),
+      ]);
+      board = favs;
+      return card;
+    },
+    prepare: (card) => prepareFinal(card, board),
+    claim: () => claim(db, key, sport, eventId),
+    send: async (prepared) => {
+      await sendPrepared(prepared, chats, token);
+      return { pages: prepared.photos.length, album: prepared.album };
+    },
+    release: () => release(db, key),
+  });
+  switch (result.status) {
+    case "sent":
+      return json({ status: "sent", game: key, ...(result.value as object) });
+    case "dup":
+      return json({ status: "dup", game: key });
+    case "not-final":
+      return json({ status: "not-final", game: key }, 409);
+    default:
+      console.error("finals deliver", key, result.stage, result.error);
+      return json({ status: "error", error: result.error }, result.stage === "send" ? 502 : 500);
+  }
+}
+
+async function deliverViaWorker(game: PushGame): Promise<DeliverOutcome> {
+  const base = Deno.env.get("SUPABASE_URL")?.replace(/\/$/, "");
+  if (!base) return { status: "retry", error: "SUPABASE_URL is not set" };
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const service = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")?.trim();
+  if (service) headers.Authorization = `Bearer ${service}`;
+  const cron = (Deno.env.get("TELEGRAM_FINALS_CRON_SECRET") || Deno.env.get("SPORTS_PUSH_CRON_SECRET") || "").trim();
+  if (cron) headers["x-sports-finals-cron"] = cron;
+  const res = await fetch(`${base}/functions/v1/sports-finals`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ action: "deliver", sport: game.sport, eventId: game.id }),
+    signal: AbortSignal.timeout(DELIVER_TIMEOUT_MS),
+  });
+  return parseDeliverResponse(res.status, await res.text());
 }
 
 async function sweep(db: SupabaseClient, dryRun: boolean): Promise<Response> {
@@ -205,9 +278,14 @@ async function sweep(db: SupabaseClient, dryRun: boolean): Promise<Response> {
   if (!dryRun && !token) return json({ error: "TELEGRAM_FINALS_BOT_TOKEN is not set" }, 503);
   if (!dryRun && !chats.length) return json({ error: "TELEGRAM_FINALS_CHAT_IDS is empty" }, 503);
 
-  const [games, favs, board] = await Promise.all([fetchPushBoards(), favorites(db), loadAlbumFavorites(db)]);
-  const tracked = games.filter((game) => sports.includes(game.sport));
-  const keys = tracked.map(gameKey);
+  const [pushGames, power4Games, favs] = await Promise.all([
+    fetchPushBoards(),
+    sports.includes("cfb") ? fetchPower4Cfb() : Promise.resolve([]),
+    favorites(db),
+  ]);
+  const board = mergeFinalsBoards(pushGames, power4Games);
+  const tracked = board.games.filter((game) => sports.includes(game.sport));
+  const keys = tracked.map((game) => `${game.sport}:${game.id}`);
   const prev = new Map<string, WatchSnap>();
   const sent = new Set<string>();
   for (let i = 0; i < keys.length; i += 100) {
@@ -227,101 +305,75 @@ async function sweep(db: SupabaseClient, dryRun: boolean): Promise<Response> {
     for (const row of sentRes.data ?? []) sent.add(String(row.game_key));
   }
 
-  let baselined = 0;
-  let fired = 0;
-  let delivered = 0;
-  let deferred = 0;
-  const preview: { game: string; captionHint: string }[] = [];
-  const errors: { game: string; error: string }[] = [];
-  const nowIso = new Date().toISOString();
+  const rows = planSweep({
+    games: tracked,
+    prev,
+    sent,
+    scope,
+    favorites: favs,
+    power4Cfb: board.power4,
+    hot: (game) => {
+      const input = dramaInput(game);
+      return input ? liveDrama(input).hot : false;
+    },
+  });
+  const baselined = rows.filter((row) => !row.before).length;
+  const wanted = rows.filter((row) => row.want && row.before);
 
-  for (const game of tracked) {
-    const key = gameKey(game);
-    const before = prev.get(key) ?? null;
-    if (!before) baselined += 1;
-    const phase = gamePhase(game);
-    const input = dramaInput(game);
-    const hot = input ? liveDrama(input).hot : false;
-    const everHot = Boolean(before?.everHot) || hot;
-    const want = shouldSendFinal({
+  if (dryRun) {
+    return json({
+      ok: true,
+      games: tracked.length,
+      power4Cfb: board.power4.size,
+      sports,
       scope,
-      favorites: favs,
-      sport: game.sport,
-      away: { id: game.away.id, abbrev: game.away.abbrev },
-      home: { id: game.home.id, abbrev: game.home.abbrev },
-      prev: before,
-      nextPhase: phase,
-      everHot,
-      alreadySent: sent.has(key),
+      favorites: favs.length,
+      chats: chats.length,
+      baselined,
+      fired: wanted.length,
+      dryRun,
+      preview: wanted.slice(0, 20).map((row) => ({
+        game: row.key,
+        always: row.always,
+        captionHint: `${row.game.away.abbrev} ${row.game.away.score ?? "–"}–${row.game.home.abbrev} ${row.game.home.score ?? "–"}`,
+      })),
     });
+  }
 
-    let phaseToStore = phase;
-    const cap = dryRun ? 20 : MAX_SENDS;
-    if (want && before) {
-      if (fired >= cap) {
-        phaseToStore = before.phase;
-        deferred += 1;
-      } else if (dryRun) {
-        fired += 1;
-        preview.push({
-          game: key,
-          captionHint: `${game.away.abbrev} ${game.away.score ?? "–"}–${game.home.abbrev} ${game.home.score ?? "–"}`,
-        });
-      } else {
-        const claimed = await claim(db, key, game.sport, game.id);
-        if (claimed === "error") {
-          phaseToStore = before.phase;
-          errors.push({ game: key, error: "claim failed" });
-        } else if (claimed === "dup") {
-          fired += 1;
-        } else {
-          try {
-            await deliver(game, chats, token, board);
-            fired += 1;
-            delivered += 1;
-          } catch (err) {
-            await release(db, key);
-            phaseToStore = before.phase;
-            const message = err instanceof Error ? err.message : "send failed";
-            errors.push({ game: key, error: message });
-            console.error("finals send", key, message);
-          }
-        }
-      }
-    }
+  const report = await runDeliveries(rows, deliverViaWorker);
+  for (const row of report.errors) console.error("finals deliver", row.game, row.error);
 
-    if (dryRun) continue;
-    const { error } = await db.from("sports_finals_watch").upsert(
-      {
-        game_key: key,
-        phase: phaseToStore,
-        ever_hot: everHot,
-        updated_at: nowIso,
-      },
-      { onConflict: "game_key" },
-    );
+  const nowIso = new Date().toISOString();
+  const watchRows = rows.map((row) => ({
+    game_key: row.key,
+    phase: report.phases.get(row.key) ?? row.phase,
+    ever_hot: row.everHot,
+    updated_at: nowIso,
+  }));
+  for (let i = 0; i < watchRows.length; i += 500) {
+    const { error } = await db
+      .from("sports_finals_watch")
+      .upsert(watchRows.slice(i, i + 500), { onConflict: "game_key" });
     if (error) console.error("finals watch", error.message);
   }
 
-  if (!dryRun) {
-    await db.from("sports_finals_watch").delete().lt("updated_at", daysAgo(4));
-    await db.from("sports_finals_sent").delete().lt("sent_at", daysAgo(21));
-  }
+  await db.from("sports_finals_watch").delete().lt("updated_at", daysAgo(4));
+  await db.from("sports_finals_sent").delete().lt("sent_at", daysAgo(21));
 
   return json({
-    ok: errors.length === 0,
+    ok: report.errors.length === 0,
     games: tracked.length,
+    power4Cfb: board.power4.size,
     sports,
     scope,
     favorites: favs.length,
     chats: chats.length,
     baselined,
-    fired,
-    delivered,
-    deferred,
+    fired: report.delivered.length + report.dup.length,
+    delivered: report.delivered.length,
+    deferred: report.deferred.length,
     dryRun,
-    preview: dryRun ? preview : undefined,
-    errors: errors.length ? errors : undefined,
+    errors: report.errors.length ? report.errors : undefined,
   });
 }
 
@@ -411,6 +463,23 @@ Deno.serve(async (req: Request) => {
       const message = err instanceof Error ? err.message : "render failed";
       console.error("finals", action, message);
       return json({ error: message }, 500);
+    }
+  }
+
+  if (action === "deliver") {
+    const sport = String(body.sport ?? "").toLowerCase();
+    const eventId = String(body.eventId ?? "").replace(/\D/g, "");
+    if (!SUMMARY_PATH[sport] || !eventId) {
+      return json({ status: "error", error: "sport and eventId are required" }, 400);
+    }
+    const db = admin();
+    if (!db) return json({ status: "error", error: "Supabase service role is not available" }, 500);
+    try {
+      return await deliverFinal(db, sport, eventId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "deliver failed";
+      console.error("finals deliver", sport, eventId, message);
+      return json({ status: "error", error: message }, 500);
     }
   }
 
