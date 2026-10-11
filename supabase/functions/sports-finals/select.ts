@@ -7,7 +7,9 @@
  * deploy does not photo every final already on the board.
  *
  * Empty TELEGRAM_FINALS_SPORTS watches nfl, cfb, mlb, and nhl. The claim
- * gate is still favorites+ruwt, not every game on those boards.
+ * gate is still favorites+ruwt for MLB, NHL, and non–Power 4 college games.
+ * Every NFL final and every Power 4 / Notre Dame college final sends
+ * regardless of scope (`alwaysSendsFinal`).
  */
 
 export type FinalsScope = {
@@ -92,6 +94,12 @@ export function teamMatches(sport: string, side: SideId, favorites: FavoriteToke
   return favorites.some((fav) => fav.sport === sport && (fav.token === id || fav.token === abbrev));
 }
 
+/** NFL, and college games with a Power 4 team or Notre Dame (keys from the Power 4 board). */
+export function alwaysSendsFinal(sport: string, key: string, power4Cfb: ReadonlySet<string>): boolean {
+  if (sport === "nfl") return true;
+  return sport === "cfb" && power4Cfb.has(key);
+}
+
 export function shouldSendFinal(opts: {
   scope: FinalsScope;
   favorites: FavoriteToken[];
@@ -102,11 +110,13 @@ export function shouldSendFinal(opts: {
   nextPhase: WatchSnap["phase"];
   everHot: boolean;
   alreadySent: boolean;
+  /** Skip the scope gate (NFL / Power 4). Baseline and dedupe still apply. */
+  always?: boolean;
 }): boolean {
   if (opts.alreadySent) return false;
   if (!opts.prev) return false;
   if (opts.prev.phase === "final" || opts.nextPhase !== "final") return false;
-  if (opts.scope.all) return true;
+  if (opts.always || opts.scope.all) return true;
   const favorite =
     opts.scope.favorites &&
     (teamMatches(opts.sport, opts.away, opts.favorites) ||

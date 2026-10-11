@@ -44,7 +44,7 @@ export function prepareTelegramPhoto(png: Uint8Array, encodeJpeg?: PngToJpeg | n
   throw new Error("graphic exceeds Telegram sendPhoto 10MB limit");
 }
 
-async function loadPngToJpeg(): Promise<PngToJpeg | null> {
+export async function loadPngToJpeg(): Promise<PngToJpeg | null> {
   try {
     const mod = await import("./telegram-jpeg.ts");
     return mod.pngToJpeg;
@@ -82,7 +82,17 @@ export async function sendTelegramPhoto(
   encodeJpeg?: PngToJpeg | null,
 ): Promise<void> {
   const encode = encodeJpeg === undefined ? await loadPngToJpeg() : encodeJpeg;
-  const photo = prepareTelegramPhoto(png, encode);
+  await sendPreparedPhoto(token, chatId, prepareTelegramPhoto(png, encode), caption, replyMarkup);
+}
+
+/** Upload only — the photo is already encoded, so this spends no CPU on pixels. */
+export async function sendPreparedPhoto(
+  token: string,
+  chatId: string,
+  photo: TelegramPhotoPayload,
+  caption: string,
+  replyMarkup?: string | null,
+): Promise<void> {
   const form = new FormData();
   form.set("chat_id", chatId);
   if (caption) form.set("caption", caption.slice(0, 1024));
@@ -112,6 +122,21 @@ export async function sendTelegramAlbum(
   }
   const encode = encodeJpeg === undefined ? await loadPngToJpeg() : encodeJpeg;
   const photos = pages.map((png) => prepareTelegramPhoto(png, encode));
+  return await sendPreparedAlbum(token, chatId, photos, caption, replyMarkup);
+}
+
+export async function sendPreparedAlbum(
+  token: string,
+  chatId: string,
+  photos: TelegramPhotoPayload[],
+  caption: string,
+  replyMarkup?: string | null,
+): Promise<{ method: "sendMediaGroup" | "sendPhoto"; pages: number }> {
+  if (photos.length < 2) {
+    if (!photos[0]) throw new Error("no photo to send");
+    await sendPreparedPhoto(token, chatId, photos[0], caption, replyMarkup);
+    return { method: "sendPhoto", pages: 1 };
+  }
   const form = new FormData();
   form.set("chat_id", chatId);
   const media = photos.map((photo, i) => {
@@ -134,14 +159,7 @@ export async function sendTelegramAlbum(
       /* still fall through — album is preferred but not required */
     }
     for (let i = 0; i < photos.length; i++) {
-      await sendTelegramPhoto(
-        token,
-        chatId,
-        pages[i]!,
-        i === 0 ? caption : "",
-        i === 0 ? replyMarkup : null,
-        encode,
-      );
+      await sendPreparedPhoto(token, chatId, photos[i]!, i === 0 ? caption : "", i === 0 ? replyMarkup : null);
     }
     return { method: "sendPhoto", pages: photos.length };
   }

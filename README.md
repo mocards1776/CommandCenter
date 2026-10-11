@@ -191,7 +191,16 @@ npm run lint
   - `all` — every final in `TELEGRAM_FINALS_SPORTS` (default
     `nfl,cfb,mlb,nhl` when the secret is empty).
 
-  Claim scope stays `favorites,ruwt` unless you set `all`. A favorite
+  Every NFL final and every college final with a Power 4 team (ACC, Big
+  12, Big Ten, SEC) or Notre Dame sends regardless of scope. Power 4 games
+  come from ESPN `groups=80` for Chicago today and yesterday; the plain
+  college scoreboard only lists Top 25 / featured games. The sweep posts
+  each final to the function's own `deliver` action (one request per card,
+  so each gets its own 2s CPU budget), which renders before it claims
+  `sports_finals_sent`.
+
+  For MLB, NHL, and other college games, claim scope stays
+  `favorites,ruwt` unless you set `all`. A favorite
   team only fires when `TELEGRAM_FINALS_FAVORITES` lists it or a
   sports-push subscription has `favorite_alerts` on. Cardinals / Blues
   will not get a finals photo from favorites if `favorite_alerts` is
