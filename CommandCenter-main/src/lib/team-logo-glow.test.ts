@@ -12,6 +12,8 @@ import {
   teamWashColor,
   endZoneOutlineColor,
   teamAccentColor,
+  wantsDarkMark,
+  markOnTeamColor,
   isPlateColor,
 } from "./team-logo-glow.ts";
 
@@ -93,6 +95,20 @@ test("Iowa, Washington and Texas A&M washes are unchanged", () => {
   assert.equal(teamWashColor("33006f", "e8d3a2"), "e8d3a2", "Washington gold");
   assert.equal(teamWashColor("500000", "ffffff"), "500000", "A&M maroon, never a white plate");
   assert.equal(endZoneOutlineColor("500000", "ffffff"), null, "no white plate outline");
+});
+
+test("only a maroon-on-maroon end zone switches to the dark-background mark", () => {
+  assert.equal(wantsDarkMark("500000", "ffffff"), true, "A&M");
+  assert.equal(wantsDarkMark("231f20", "fcd116"), false, "Iowa gold zone keeps the black hawk");
+  assert.equal(wantsDarkMark("f1b82d", "000000"), false, "Missouri");
+  assert.equal(wantsDarkMark("33006f", "e8d3a2"), false, "Washington gold zone");
+});
+
+test("A&M's mark on its maroon wash is the dark-background variant", () => {
+  const am = "https://a.espncdn.com/i/teamlogos/ncaa/500/245.png";
+  assert.equal(markOnTeamColor(am, "500000", "ffffff"), "https://a.espncdn.com/i/teamlogos/ncaa/500-dark/245.png");
+  const miz = "https://a.espncdn.com/i/teamlogos/ncaa/500/142.png";
+  assert.equal(markOnTeamColor(miz, "f1b82d", "000000"), miz);
 });
 
 test("data bars use a real color that reads on the card", () => {

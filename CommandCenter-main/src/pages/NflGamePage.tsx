@@ -7,7 +7,7 @@ import { liveScoreHeader } from "@/lib/apple-score";
 import AppleScoreCluster from "@/components/sports/AppleScoreCluster";
 import PlayoffSeriesLine from "@/components/sports/PlayoffSeriesLine";
 import LogoPlate from "@/components/sports/LogoPlate";
-import { teamWashColor } from "@/lib/team-logo-glow";
+import { markOnTeamColor, teamWashColor } from "@/lib/team-logo-glow";
 import TeamHalfWash from "@/components/sports/TeamHalfWash";
 import TeamStatsLogos from "@/components/sports/TeamStatsLogos";
 import GameMoreInfo from "@/components/sports/GameMoreInfo";
@@ -767,7 +767,8 @@ function NflMatchupSide({
     >
       {side.logo ? (
         <LogoPlate
-          src={side.logo}
+          src={markOnTeamColor(side.logo, side.color, side.alternateColor) ?? side.logo}
+          fallbackSrc={side.logo}
           washAnchor={align === "left" ? "away" : "home"}
           className={cn("h-16 w-16 sm:h-[4.5rem] sm:w-[4.5rem]", loser && "opacity-40")}
           imgClassName={winner ? "drop-shadow-[0_0_12px_rgba(255,255,255,0.35)]" : undefined}

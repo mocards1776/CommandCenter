@@ -204,6 +204,40 @@ export function endZoneOutlineColor(
   return null;
 }
 
+/**
+ * True when the team color behind the mark (wash or end zone) ends up the
+ * team's own dark primary — the mark's color — because the alternate is a
+ * white plate (Texas A&M maroon / white). Those spots show ESPN's
+ * dark-background logo (white ATM) so the mark separates from the color.
+ * Iowa and Missouri keep their regular marks.
+ */
+export function wantsDarkMark(
+  primaryHex: string | null | undefined,
+  alternateHex?: string | null,
+): boolean {
+  const primary = parseHex(primaryHex);
+  if (!primary) return false;
+  if (teamGlowColor(primaryHex, alternateHex) !== toHex(primary)) return false;
+  return rgbToHsl(primary)[2] < 0.35;
+}
+
+/** ESPN's dark-background variant of a /500/ team logo URL, or null. */
+export function espnDarkVariant(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const dark = url.replace(/(\/i\/teamlogos\/[a-z]+)\/500\//, "$1/500-dark/");
+  return dark === url ? null : dark;
+}
+
+/** The logo to draw on the team's own color: the dark variant when `wantsDarkMark`. */
+export function markOnTeamColor(
+  logo: string | null | undefined,
+  primaryHex: string | null | undefined,
+  alternateHex?: string | null,
+): string | null {
+  if (!logo) return null;
+  return wantsDarkMark(primaryHex, alternateHex) ? (espnDarkVariant(logo) ?? logo) : logo;
+}
+
 /** ESPN team `color` / `alternateColor`, hashes stripped. Invalid values drop out. */
 export function readEspnTeamColors(
   color: string | null | undefined,

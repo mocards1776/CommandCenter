@@ -5,7 +5,7 @@ import { Loader2 } from "lucide-react";
 import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
 import AppleScoreCluster from "@/components/sports/AppleScoreCluster";
 import LogoPlate from "@/components/sports/LogoPlate";
-import { teamWashColor } from "@/lib/team-logo-glow";
+import { markOnTeamColor, teamWashColor } from "@/lib/team-logo-glow";
 import TeamHalfWash from "@/components/sports/TeamHalfWash";
 import TeamStatsLogos from "@/components/sports/TeamStatsLogos";
 import GameMoreInfo from "@/components/sports/GameMoreInfo";
@@ -767,7 +767,8 @@ function MatchupSide({
     >
       {side.logo ? (
         <LogoPlate
-          src={side.logo}
+          src={markOnTeamColor(side.logo, side.color, side.alternateColor) ?? side.logo}
+          fallbackSrc={side.logo}
           washAnchor={align === "left" ? "away" : "home"}
           className={cn("h-12 w-12 sm:h-14 sm:w-14", loser && "opacity-40")}
         />

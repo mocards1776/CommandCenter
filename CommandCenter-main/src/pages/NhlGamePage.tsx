@@ -9,7 +9,7 @@ import AppleScoreCluster from "@/components/sports/AppleScoreCluster";
 import PlayoffSeriesLine from "@/components/sports/PlayoffSeriesLine";
 import LogoPlate from "@/components/sports/LogoPlate";
 import NhlWinProbability from "@/components/sports/NhlWinProbability";
-import { teamWashColor } from "@/lib/team-logo-glow";
+import { markOnTeamColor, teamWashColor } from "@/lib/team-logo-glow";
 import TeamHalfWash from "@/components/sports/TeamHalfWash";
 import HighlightReel, { type ReelHighlight } from "@/components/sports/HighlightReel";
 import NhlBoxScore from "@/components/sports/NhlBoxScore";
@@ -470,7 +470,8 @@ function TeamBlock({
     >
       {side.logo ? (
         <LogoPlate
-          src={side.logo}
+          src={markOnTeamColor(side.logo, side.color, side.alternateColor) ?? side.logo}
+          fallbackSrc={side.logo}
           washAnchor={align === "left" ? "away" : "home"}
           className={cn("h-14 w-14 sm:h-20 sm:w-20", dim && "opacity-40")}
         />
