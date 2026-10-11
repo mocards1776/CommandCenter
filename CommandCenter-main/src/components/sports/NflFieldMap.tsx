@@ -6,7 +6,6 @@ import {
 } from "@/lib/cfb-drive";
 import type { NflScoreGame } from "@/lib/nfl";
 import { footballMarks } from "@heat/field.ts";
-import LogoPlate from "@/components/sports/LogoPlate";
 import { NflScoreboardCard } from "@/components/sports/ScoreboardCard";
 import { isBreakStatus } from "@/lib/apple-score";
 import { cn } from "@/lib/utils";
