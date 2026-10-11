@@ -4086,24 +4086,24 @@ function OnDeckStrip({ onOpen }: { onOpen: (b: Book) => void }) {
   return (
     <div>
       <h2 className="rule-head mb-3">On deck</h2>
-      <div className="flex gap-3 overflow-x-auto pb-1">
+      <div className="grid grid-cols-5 gap-x-3 gap-y-4 sm:grid-cols-[repeat(auto-fill,74px)]">
         {data.map((b) => {
           const cover = coverSrc(b);
           return (
             <button
               key={b.id}
               onClick={() => onOpen(b)}
-              className="group w-[74px] shrink-0 text-left"
+              className="group min-w-0 self-start text-left"
               title={b.title}
             >
               {cover ? (
                 <img
                   src={cover}
                   alt=""
-                  className="h-[104px] w-[74px] rounded-sm object-cover shadow-lg transition group-hover:-translate-y-1"
+                  className="aspect-[74/104] w-full rounded-sm object-cover shadow-lg transition group-hover:-translate-y-1"
                 />
               ) : (
-                <div className="bg-panel grid h-[104px] w-[74px] place-items-center rounded-sm transition group-hover:-translate-y-1">
+                <div className="bg-panel grid aspect-[74/104] w-full place-items-center rounded-sm transition group-hover:-translate-y-1">
                   <BookOpen size={16} className="text-chalk-dim" />
                 </div>
               )}
