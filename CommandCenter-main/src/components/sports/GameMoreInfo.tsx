@@ -183,7 +183,9 @@ function OddsCard({ info, links, showPredictor }: { info: MoreInfo; links: Links
     odds && (odds.homeLineOpen != null || odds.totalOpen != null)
       ? [
           odds.homeLineOpen != null && odds.homeLineOpen !== odds.homeLine
-            ? `${odds.homeLineOpen < 0 ? home.abbrev : away.abbrev} ${signedLine(-Math.abs(odds.homeLineOpen))}`
+            ? odds.homeLineOpen === 0
+              ? "PK"
+              : `${odds.homeLineOpen < 0 ? home.abbrev : away.abbrev} ${signedLine(-Math.abs(odds.homeLineOpen))}`
             : null,
           odds.totalOpen != null && odds.totalOpen !== odds.overUnder ? `O/U ${odds.totalOpen}` : null,
         ].filter(Boolean)
