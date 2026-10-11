@@ -656,9 +656,12 @@ export function CfbGameDetailView({
                     key={`${group.teamAbbrev}-${group.name}`}
                     className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]"
                   >
-                    <div className="border-b border-white/[0.06] px-3 py-1.5">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#e8e4d9]">
-                        {group.teamAbbrev} · {group.name}
+                    <div className="border-b border-white/[0.06] px-3 py-2">
+                      <p className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-white">
+                        {side.logo ? <LogoPlate src={side.logo} className="h-5 w-5" /> : null}
+                        <span>
+                          {group.teamAbbrev} · {group.name}
+                        </span>
                       </p>
                     </div>
                     <div className="overflow-x-auto">

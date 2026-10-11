@@ -2822,6 +2822,7 @@ function TeamBoxSection({
         <TeamFormChips form={form} className="w-[13rem] shrink-0" />
       </div>
 
+      <BoxSectionHead teamId={side.teamId} abbrev={side.abbrev} label="Batting" />
       <div className="overflow-x-auto">
         <table className="w-full min-w-[620px] text-left text-[12px]">
           <thead>
@@ -2882,7 +2883,10 @@ function TeamBoxSection({
       )}
 
       {side.pitchers.length > 0 && (
-        <div className="overflow-x-auto border-t border-white/[0.06]">
+        <BoxSectionHead teamId={side.teamId} abbrev={side.abbrev} label="Pitching" divided />
+      )}
+      {side.pitchers.length > 0 && (
+        <div className="overflow-x-auto">
           <table className="w-full min-w-[520px] text-left text-[12px]">
             <thead>
               <tr className="text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
@@ -2909,6 +2913,29 @@ function TeamBoxSection({
         </div>
       )}
     </section>
+  );
+}
+
+function BoxSectionHead({
+  teamId,
+  abbrev,
+  label,
+  divided = false,
+}: {
+  teamId: number;
+  abbrev: string;
+  label: string;
+  divided?: boolean;
+}) {
+  return (
+    <div className={cn("border-b border-white/[0.06] px-3 py-2", divided && "border-t")}>
+      <p className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-white">
+        {teamId > 0 ? <TeamMark teamId={teamId} size="xs" /> : null}
+        <span>
+          {abbrev} · {label}
+        </span>
+      </p>
+    </div>
   );
 }
 
