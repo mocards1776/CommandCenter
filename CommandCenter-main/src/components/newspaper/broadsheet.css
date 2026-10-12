@@ -346,6 +346,138 @@
   max-width: 16ch;
 }
 
+/* ── Postseason ladder (MLB front rail) ─────────────────────────────── */
+.newspaper-root .wsj-sheet .tt-front-ladder {
+  padding-top: 10px;
+  border-top: 3px solid var(--w-ink);
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder {
+  gap: 8px;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-head {
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: baseline;
+  gap: 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--w-rule);
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-head h3 {
+  grid-column: 1;
+  grid-row: 1;
+  font-size: 24px;
+  text-align: left;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-head span:first-child {
+  grid-column: 2;
+  grid-row: 1;
+  font-size: 16px;
+  text-align: right;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-head span:last-child {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  text-align: left;
+  font-size: 9px;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-board {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-half {
+  gap: 6px;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-league {
+  padding: 3px 8px 2px;
+  font-size: 9.5px;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-col {
+  padding: 0 8px;
+  gap: 4px;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-col:first-child {
+  padding-left: 0;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-col:last-child {
+  padding-right: 0;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-stack {
+  gap: 6px;
+  justify-content: space-around;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-club {
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  gap: 5px;
+  padding: 3px 5px;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-disc {
+  width: 22px;
+  height: 22px;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-disc img {
+  width: 16px;
+  height: 16px;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-club b {
+  font-size: 13px;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-club em {
+  min-width: 16px;
+  font-size: 14px;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-node > p {
+  padding: 2px 5px;
+  font-size: 8.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-col:not(.lcs) .tt-br-node::after {
+  width: 8px;
+  right: -9px;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-col.lcs .tt-br-node::after {
+  content: none;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-empty {
+  padding: 10px 4px;
+  font-size: 11px;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-center {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 2px 12px;
+  padding: 8px 10px;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-trophy {
+  grid-row: 1 / span 2;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-trophy svg {
+  width: 34px;
+  height: 34px;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-center > .tt-br-round {
+  font-size: 15px;
+  text-align: left;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-center .tt-br-node {
+  grid-column: 2;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-center .tt-br-empty {
+  grid-column: 2;
+  margin: 0;
+  padding: 6px;
+  text-align: left;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-champ {
+  grid-column: 1 / -1;
+}
+
 .wsj-sheet .wsj-inside-story.feature .wsj-inside-flag {
   margin-bottom: 2px;
 }

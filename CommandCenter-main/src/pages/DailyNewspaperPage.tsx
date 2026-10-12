@@ -2906,6 +2906,7 @@ function SportSectionFront({
                     text={recapDek(card, 3)}
                     size="md"
                     art="top"
+                    yieldArt={Boolean(mlbPost)}
                     readOn
                     chrome={false}
                     jump={folios[card.id] && folios[card.id] !== page.folio ? folios[card.id] : undefined}
@@ -2940,6 +2941,11 @@ function SportSectionFront({
             ) : null}
             {cfb && (poll.length || standings.length) ? (
               <CfbFill poll={poll} standings={standings} heisman={heisman} compact />
+            ) : null}
+            {mlbPost ? (
+              <div className="tt-front-ladder" data-tt-lead="">
+                <PlayoffDesk tree={playoffs} layout="ladder" />
+              </div>
             ) : null}
           </div>
         </div>
@@ -2987,11 +2993,6 @@ function SportSectionFront({
           ) : null}
         </div>
       )}
-      {mlbPost && lead ? (
-        <div className="tt-front-fill">
-          <PlayoffDesk tree={playoffs} compact />
-        </div>
-      ) : null}
       {more.length ? (
         <div data-tt-flow="">
           <BriefGrid
@@ -4407,11 +4408,20 @@ function LeagueFormGrid({ clubs }: { clubs: LeagueClub[] }) {
   );
 }
 
-function PlayoffDesk({ tree, compact }: { tree: MlbPlayoffTree | null; compact?: boolean }) {
+function PlayoffDesk({
+  tree,
+  compact,
+  layout,
+}: {
+  tree: MlbPlayoffTree | null;
+  compact?: boolean;
+  layout?: "board" | "ladder";
+}) {
   if (!tree || !tree.rounds.some((r) => r.series.length)) {
+    if (layout === "ladder") return null;
     return <p className="wsj-empty">Postseason bracket isn’t published yet.</p>;
   }
-  return <PlayoffBracket tree={fillMlbPlayoffPlaceholders(tree)} compact={compact} />;
+  return <PlayoffBracket tree={fillMlbPlayoffPlaceholders(tree)} compact={compact} layout={layout} />;
 }
 
 function ClubFormGrid({

@@ -340,37 +340,77 @@ export function packSheet(sheet: HTMLElement): PackResult {
     }
   };
 
+  /** The lowest [data-tt-lead] block in `box` still running past its foot. */
+  const leadCrossing = (box: HTMLElement, limit: number): HTMLElement | null => {
+    let best: HTMLElement | null = null;
+    let bestTop = -Infinity;
+    for (const el of box.querySelectorAll<HTMLElement>(LEAD)) {
+      if (isHidden(el)) continue;
+      const r = el.getBoundingClientRect();
+      if (r.height < 1 || r.bottom <= limit + 1) continue;
+      if (r.top > bestTop) {
+        best = el;
+        bestTop = r.top;
+      }
+    }
+    return best;
+  };
+
   /**
    * Shortens the copy set above a held story (in its column) by what the
    * story runs past the foot, keeping at least SQUEEZE_KEEP of that copy.
-   * Only a whole story is worth copy; a box or a list is not.
+   * Only a whole story is worth copy; a box or a list is not. A [data-tt-lead]
+   * block past the foot never drops, so for it the copy above gives whatever
+   * it must, down to MIN_CUT_LINES, lowest copy first.
    */
   const squeeze = (box: HTMLElement, limit: number): boolean => {
-    if (!held || !box.contains(held) || isHidden(held)) return false;
-    if (!held.matches("article") && !held.querySelector("article")) return false;
-    const hr = held.getBoundingClientRect();
+    let target: HTMLElement | null = null;
+    let keep = SQUEEZE_KEEP;
+    if (held && box.contains(held) && !isHidden(held)) {
+      if (!held.matches("article") && !held.querySelector("article")) return false;
+      target = held;
+    } else {
+      target = leadCrossing(box, limit);
+      keep = 0;
+    }
+    if (!target) return false;
+    const hr = target.getBoundingClientRect();
     if (hr.bottom <= limit + 1) return false;
-    let above: HTMLElement | null = null;
-    let aboveBottom = -Infinity;
+    const aboves: { el: HTMLElement; bottom: number }[] = [];
     for (const el of copies) {
-      if (!box.contains(el) || held.contains(el) || isHidden(el)) continue;
+      if (!box.contains(el) || target.contains(el) || isHidden(el)) continue;
       const r = el.getBoundingClientRect();
       if (r.height < 1 || r.bottom > hr.top + 1 || r.left >= hr.right || r.right <= hr.left) continue;
-      if (el.dataset[CUT] != null && !natural.has(el)) continue;
-      if (r.bottom > aboveBottom) {
-        above = el;
-        aboveBottom = r.bottom;
+      if (el.dataset[CUT] != null && !natural.has(el) && keep > 0) continue;
+      aboves.push({ el, bottom: r.bottom });
+    }
+    aboves.sort((a, b) => b.bottom - a.bottom);
+    for (const { el: above } of aboves) {
+      const h = above.getBoundingClientRect().height / scale;
+      const full = natural.get(above) ?? h;
+      const lh = lineHeight(above);
+      const lines = linesThatFit(h - (hr.bottom - limit) / scale, lh);
+      if (lines < MIN_CUT_LINES || lines * lh < full * keep) continue;
+      natural.set(above, full);
+      above.style.height = `${lines * lh}px`;
+      above.dataset[CUT] = "";
+      return true;
+    }
+    if (keep > 0) return false;
+    // No copy to give: the lowest furniture above the block goes instead.
+    let furniture: HTMLElement | null = null;
+    let furnitureBottom = -Infinity;
+    for (const el of box.querySelectorAll<HTMLElement>(YIELD)) {
+      if (target.contains(el) || isHidden(el) || kept(el)) continue;
+      const r = el.getBoundingClientRect();
+      if (r.height < 1 || r.bottom > hr.top + 1 || r.left >= hr.right || r.right <= hr.left) continue;
+      if (r.bottom > furnitureBottom) {
+        furniture = el;
+        furnitureBottom = r.bottom;
       }
     }
-    if (!above) return false;
-    const h = above.getBoundingClientRect().height / scale;
-    const full = natural.get(above) ?? h;
-    const lh = lineHeight(above);
-    const lines = linesThatFit(h - (hr.bottom - limit) / scale, lh);
-    if (lines < MIN_CUT_LINES || lines * lh < full * SQUEEZE_KEEP) return false;
-    natural.set(above, full);
-    above.style.height = `${lines * lh}px`;
-    above.dataset[CUT] = "";
+    if (!furniture) return false;
+    drop(furniture);
     return true;
   };
 
