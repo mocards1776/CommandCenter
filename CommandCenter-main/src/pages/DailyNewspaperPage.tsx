@@ -82,7 +82,7 @@ import {
   ScheduleAgate,
 } from "@/components/newspaper/BoxScore";
 import { RecapBar, RecapBox, RecapChrome, RecapPhoto } from "@/components/newspaper/GameRecap";
-import { clubFormIsThin, clubOpensLabel, clubTickerRecord, frontPageLeftover, printableFormStat } from "@/lib/newspaper-page";
+import { clubFormIsThin, clubOpensLabel, clubTickerRecord, formColumns, formDepth, frontPageLeftover, leaderColumns, printableFormStat } from "@/lib/newspaper-page";
 import { ReaderProvider } from "@/components/newspaper/PaperReader";
 import { useReader } from "@/components/newspaper/reader-context";
 import { CfbFill, CfbScheduleDesk } from "@/components/newspaper/CfbScheduleDesk";
@@ -3812,7 +3812,7 @@ function ScheduleDesk({
           {standings.length ? (
             <section className="tt-sched-snap roomy" data-tt-flow="">
               <h3 className="wsj-band-title">The standings</h3>
-              <DeskSnap tables={standings} />
+              <DeskSnap tables={standings} rich />
             </section>
           ) : null}
         </div>
@@ -3970,7 +3970,7 @@ function LeadersDesk({ groups }: { groups: LeagueLeaderGroup[] }) {
   const post = printable.some((g) => g.seasonType === 3);
   return (
     <section className="tt-lleaders tt-lleaders-desk" aria-label={post ? "Postseason leaders" : "League leaders"}>
-      <div className="tt-lleaders-grid">
+      <div className="tt-lleaders-grid" style={{ ["--cols" as string]: String(leaderColumns(printable.length)) }}>
         {printable.map((group) => (
           <div key={group.category} className="tt-lleaders-cat">
             <h4>{leaderCategoryLabel(group.category)}</h4>
@@ -4513,15 +4513,20 @@ function ClubFormGrid({
   clubs,
   sheets = {},
   columns,
+  depth: depthProp,
 }: {
   clubs: ClubDesk[];
   sheets?: Record<string, ClubSheet>;
   columns?: number;
+  /** A band under other matter prints the digest whatever its row count. */
+  depth?: "deep" | "digest";
 }) {
   if (!clubs.length) return <p className="wsj-empty">No clubs filed in this section yet.</p>;
   const thin = clubs.filter((club) => clubFormIsThin(club));
   const full = clubs.filter((club) => !clubFormIsThin(club));
-  const cols = columns ?? Math.min(3, Math.max(full.length, 1));
+  const cols = columns ?? formColumns(full.length);
+  const deep = (depthProp ?? formDepth(full.length, cols)) === "deep";
+  const depth = deep ? { stats: 9, leaders: 8, table: 16, dates: 8 } : { stats: 6, leaders: 4, table: 8, dates: 4 };
   return (
     <>
     {thin.length ? (
@@ -4540,10 +4545,10 @@ function ClubFormGrid({
       </ul>
     ) : null}
     {full.length ? (
-    <div className="tt-tboxes" style={{ ["--cols" as string]: String(cols) }}>
+    <div className={cn("tt-tboxes", deep && "deep")} style={{ ["--cols" as string]: String(cols) }}>
       {full.map((club, i) => {
         const sheet = sheets[club.key];
-        const stats = (sheet?.stats.length ? sheet.stats : club.stats).filter(printableFormStat).slice(0, 6);
+        const stats = (sheet?.stats.length ? sheet.stats : club.stats).filter(printableFormStat).slice(0, depth.stats);
         const leaders = sheet?.leaders.length
           ? sheet.leaders.map((l) => ({
               key: `${l.category}-${l.id}`,
@@ -4587,7 +4592,7 @@ function ClubFormGrid({
               <table className="tt-tbox-table leaders">
                 <caption>{sheet?.season ? `${sheet.season} leaders` : "Leaders"}</caption>
                 <tbody>
-                  {leaders.slice(0, 4).map((l) => (
+                  {leaders.slice(0, depth.leaders).map((l) => (
                     <tr key={l.key}>
                       {l.label ? <th>{l.label}</th> : null}
                       <td>
@@ -4605,7 +4610,7 @@ function ClubFormGrid({
               <table className="tt-tbox-table">
                 <caption>{tableTitle(club.standing)}</caption>
                 <tbody>
-                  {club.division.slice(0, 8).map((row) => (
+                  {club.division.slice(0, depth.table).map((row) => (
                     <tr key={`${row.rank}-${row.team}`} className={cn(row.me && "me")}>
                       <th>
                         {row.rank} {row.team}
@@ -4621,7 +4626,7 @@ function ClubFormGrid({
               <caption>Next up</caption>
               <tbody>
                 {club.upcoming.length ? (
-                  club.upcoming.slice(0, 4).map((game) => (
+                  club.upcoming.slice(0, depth.dates).map((game) => (
                     <tr key={game.id}>
                       <th>{game.label}</th>
                       <td colSpan={2}>{game.when || "TBD"}</td>
@@ -6218,7 +6223,7 @@ function NewspaperDesk() {
                     <h2>Club Form</h2>
                     <p>{page.clubs.length} clubs · standings, numbers, leaders and what’s next</p>
                   </header>
-                  <ClubFormGrid clubs={page.clubs} sheets={sheetsQ.data ?? {}} columns={3} />
+                  <ClubFormGrid clubs={page.clubs} sheets={sheetsQ.data ?? {}} />
                   {pages.findLast((p) => p.kind === "favorites-form") === page ? (
                     <DeskBoard
                       teams={teams.filter((t) => !formInSectionA.has(t.fav.key))}

@@ -35,6 +35,9 @@ import {
   clubFormIsThin,
   clubOpensLabel,
   clubTickerRecord,
+  formColumns,
+  formDepth,
+  leaderColumns,
   formStatColumns,
   printableFormStat,
 } from "./newspaper-page.ts";
@@ -178,6 +181,11 @@ assert(
 assert(planClubForm(13).length === FORM_PAGES_MAX, "Section A runs one form page; the rest keep their boxes in their sections");
 assert(JSON.stringify(planClubForm(2)) === JSON.stringify([{ offset: 0, count: 2 }]), "two clubs still get their page");
 assert(planClubForm(0).length === 0, "no clubs means no form page");
+assert([1, 2, 3, 4, 5, 6, 9].map(formColumns).join() === "1,2,3,2,3,3,3", "form grid never leaves a slot empty when it can help it");
+assert(formDepth(2, 2) === "deep" && formDepth(3, 3) === "deep", "a single row of boxes prints deep");
+assert(formDepth(6, 3) === "digest" && formDepth(4, 2) === "digest", "two rows print the digest");
+assert(formDepth(0, 3) === "digest", "no boxes, no depth");
+assert([4, 5, 6, 7, 8, 9, 10, 12].map(leaderColumns).join() === "4,3,3,4,4,3,4,4", "leader categories avoid an orphan row");
 
 const cfbRows = [2, 13, 10, 14, 12, 16, 14, 12, 10, 14, 12, 10];
 const cfbPages = planStandingsByRows(cfbRows, 3);

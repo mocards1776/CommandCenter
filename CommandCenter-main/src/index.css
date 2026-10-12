@@ -8950,7 +8950,7 @@ li.counting .tt-count.card {
 /* League leaders desk: a full sport-section page, one fixed row grid so names never collide. */
 .tt-lleaders-desk { margin-top: 0; }
 .tt-lleaders-desk .tt-lleaders-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr));
   gap: 14px 14px;
 }
 .tt-lleaders-desk h4 { font-size: 11px; }

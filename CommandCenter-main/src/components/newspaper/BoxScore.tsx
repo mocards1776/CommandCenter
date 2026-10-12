@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import {
   boxLeaderLabel,
   fetchMlbAgate,
@@ -8,6 +8,7 @@ import {
   type BoxPerson,
   type BoxSide,
   type StandGroup,
+  type StandRow,
   gameClock,
   gameDay,
   shortBroadcast,
@@ -816,20 +817,50 @@ export function ScheduleAgate({
 }
 
 /** Compact division snapshot: abbrev + W–L. Packs a remaining band without wrapping a full table. */
-export function DeskSnap({ tables }: { tables: StandGroup[] }) {
+/** W–L(–T) from a standings row, by the group's column names. */
+function snapRecord(group: StandGroup, row: StandRow): string {
+  const at = (name: string) => {
+    const i = group.columns.indexOf(name);
+    return i >= 0 ? row.cells[i] : undefined;
+  };
+  const w = at("W");
+  const l = at("L");
+  if (w == null || l == null) return row.cells.slice(0, 2).join("–");
+  const t = at("T") ?? at("OTL") ?? at("D");
+  return t != null && t !== "0" ? `${w}–${l}–${t}` : `${w}–${l}`;
+}
+
+/** The telling extra on a standings row: the streak, else the differential or points. */
+function snapNote(group: StandGroup, row: StandRow): string | null {
+  for (const name of ["Strk", "Diff", "GD", "Pts", "GB"]) {
+    const i = group.columns.indexOf(name);
+    if (i >= 0 && row.cells[i] && row.cells[i] !== "-") return row.cells[i]!;
+  }
+  return null;
+}
+
+export function DeskSnap({ tables, rich }: { tables: StandGroup[]; rich?: boolean }) {
   if (!tables.length) return null;
   return (
-    <div className={cn("tt-desk-tables", tables.length >= 4 && "cols-4")}>
+    <div className={cn("tt-desk-tables", tables.length >= 4 && "cols-4", rich && "rich")}>
       {tables.map((group) => (
         <section key={group.name} className="tt-desk-div">
           <h4>{group.name}</h4>
           <ol>
-            {group.rows.map((row) => (
-              <li key={row.id || row.abbrev}>
-                <b>{row.abbrev}</b>
-                <em>{row.cells.slice(0, 2).join("–")}</em>
-              </li>
-            ))}
+            {group.rows.map((row) => {
+              const note = rich ? snapNote(group, row) : null;
+              return (
+                <li key={row.id || row.abbrev} style={rich ? ({ ["--bar" as string]: String(Math.round(row.bar * 100)) } as CSSProperties) : undefined}>
+                  {rich && row.logo ? <img src={row.logo} alt="" loading="lazy" decoding="async" /> : null}
+                  <b>{rich ? row.name : row.abbrev}</b>
+                  <em>
+                    {rich ? snapRecord(group, row) : row.cells.slice(0, 2).join("–")}
+                    {row.clinch ? <sup>{row.clinch}</sup> : null}
+                  </em>
+                  {note ? <i className={note.startsWith("W") || note.startsWith("+") ? "up" : note.startsWith("L") || note.startsWith("-") ? "down" : undefined}>{note}</i> : null}
+                </li>
+              );
+            })}
           </ol>
         </section>
       ))}

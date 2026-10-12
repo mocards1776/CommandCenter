@@ -789,3 +789,131 @@
     height: 28px;
   }
 }
+
+/* ── Standings under the schedule: logos, names, the streak, a win bar; the
+      block closes the page, its rows spaced to the foot ─────────────────── */
+.newspaper-root .wsj-sheet .tt-sched-snap.roomy {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.newspaper-root .wsj-sheet .tt-sched-snap.roomy .tt-desk-tables.rich {
+  flex: 1 1 auto;
+  align-content: stretch;
+}
+.newspaper-root .wsj-sheet .tt-desk-tables.rich .tt-desk-div {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.newspaper-root .wsj-sheet .tt-desk-tables.rich .tt-desk-div ol {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+}
+.newspaper-root .wsj-sheet .tt-desk-tables.rich .tt-desk-div li {
+  flex: 1 1 auto;
+}
+.newspaper-root .wsj-sheet .tt-sched-desk {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* ── League leaders desk: the categories share the page to the foot ─── */
+.newspaper-root .wsj-sheet .tt-lleaders-desk {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.newspaper-root .wsj-sheet .tt-lleaders-desk .tt-lleaders-grid {
+  flex: 1 1 auto;
+  align-content: stretch;
+}
+.newspaper-root .wsj-sheet .tt-lleaders-desk .tt-lleaders-cat {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.newspaper-root .wsj-sheet .tt-lleaders-desk .tt-lleaders-cat ol {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+}
+.newspaper-root .wsj-sheet .tt-lleaders-desk .tt-lleaders-cat li {
+  flex: 1 1 auto;
+}
+.newspaper-root .wsj-sheet .tt-desk-tables.rich li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto 38px;
+  align-items: center;
+  column-gap: 8px;
+  padding: 5px 0 6px;
+  font-family: var(--w-label);
+  font-size: 13px;
+  border-bottom: 1px solid var(--w-hair);
+}
+.newspaper-root .wsj-sheet .tt-desk-tables.rich li::after {
+  content: "";
+  position: absolute;
+  left: 30px;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  width: calc((100% - 30px) * var(--bar, 0) / 100);
+  background: var(--w-ink);
+  opacity: 0.55;
+}
+.newspaper-root .wsj-sheet .tt-desk-tables.rich li img {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+}
+.newspaper-root .wsj-sheet .tt-desk-tables.rich li b {
+  font-family: var(--w-cond);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.newspaper-root .wsj-sheet .tt-desk-tables.rich li em {
+  font-style: normal;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.newspaper-root .wsj-sheet .tt-desk-tables.rich li em sup {
+  font-size: 9px;
+  margin-left: 1px;
+}
+.newspaper-root .wsj-sheet .tt-desk-tables.rich li i {
+  font-style: normal;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-align: right;
+  color: var(--w-muted);
+  font-variant-numeric: tabular-nums;
+}
+.newspaper-root .wsj-sheet .tt-desk-tables.rich li i.up { color: var(--w-ink); }
+.newspaper-root .wsj-sheet .tt-desk-tables.rich li i.down { color: var(--w-red); }
+
+/* ── One league table on the page stretches its rows to the band below ── */
+.newspaper-root .wsj-sheet .tt-stand-cols.single {
+  columns: auto;
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+.newspaper-root .wsj-sheet .tt-stand-cols.single > * {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 0;
+}
+.newspaper-root .wsj-sheet .tt-stand-cols.single .tt-stand {
+  flex: 1 1 auto;
+}

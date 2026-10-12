@@ -246,6 +246,37 @@ export const FORM_CLUBS_PER_PAGE = 6;
  */
 export const FORM_PAGES_MAX = 1;
 
+/**
+ * Columns for `n` club-form boxes: no empty slot in the grid when it can be
+ * helped (four boxes run two by two), three across at most.
+ */
+export function formColumns(n: number): number {
+  if (n <= 1) return 1;
+  if (n <= 3) return n;
+  if (n === 4) return 2;
+  return 3;
+}
+
+/**
+ * Boxes on a single row have the whole page to themselves and print deep —
+ * the full table, eight leaders, eight dates — rather than leaving the foot
+ * blank. Two rows or more print the digest.
+ */
+export function formDepth(n: number, cols: number): "deep" | "digest" {
+  return n > 0 && Math.ceil(n / Math.max(cols, 1)) <= 1 ? "deep" : "digest";
+}
+
+/**
+ * Columns for `n` leader categories, four or three across: whichever leaves
+ * fewer empty slots in the last row (nine categories run three by three), four
+ * when it is a tie.
+ */
+export function leaderColumns(n: number): number {
+  if (n <= 0) return 4;
+  const empty = (cols: number) => (cols - (n % cols)) % cols;
+  return empty(3) < empty(4) ? 3 : 4;
+}
+
 /** Section A's club-form pages: full pages of six, never a stub page of one or two. */
 export function planClubForm(clubCount: number): { offset: number; count: number }[] {
   const n = Math.max(clubCount, 0);
