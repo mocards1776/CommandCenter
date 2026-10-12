@@ -49,7 +49,9 @@ export function decodeNewspaperEntities(text: string): string {
     .replace(/&[lr]squo;/gi, "’")
     .replace(/&[lr]dquo;/gi, "”")
     .replace(/&ndash;/gi, "–")
-    .replace(/&mdash;/gi, "—");
+    .replace(/&mdash;/gi, "—")
+    .replace(/&bull;|&middot;/gi, "·")
+    .replace(/&hellip;/gi, "…");
 }
 
 function looksLikeHtml(text: string): boolean {
@@ -380,8 +382,17 @@ function stripLeadingMenu(text: string): string {
   return text;
 }
 
+/**
+ * The Post-Dispatch's paywalled copy ships its italics as a scrambled run,
+ * `k2 9C67lQ>2:=E@ithoughtQmthoughtk^2m` for <em>thought</em>: the word
+ * stands, the wrapper goes.
+ */
+function unscrambleEmphasis(text: string): string {
+  return text.replace(/k2 9C67lQ>2:=E@i(\w+)Qm\w*?k\^2m(\w*)/g, "$1$2");
+}
+
 function prepareCopy(text: string | null | undefined): string {
-  return sanitizeArticleBody(text);
+  return unscrambleEmphasis(sanitizeArticleBody(text));
 }
 
 /** Use a stamped length when the press already cleaned this body. */

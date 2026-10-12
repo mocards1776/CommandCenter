@@ -81,7 +81,7 @@ import {
   DeskSnap,
   ScheduleAgate,
 } from "@/components/newspaper/BoxScore";
-import { RecapBox, RecapChrome, RecapPhoto } from "@/components/newspaper/GameRecap";
+import { RecapBar, RecapBox, RecapChrome, RecapPhoto } from "@/components/newspaper/GameRecap";
 import { clubFormIsThin, clubOpensLabel, clubTickerRecord, frontPageLeftover, printableFormStat } from "@/lib/newspaper-page";
 import { ReaderProvider } from "@/components/newspaper/PaperReader";
 import { useReader } from "@/components/newspaper/reader-context";
@@ -254,6 +254,7 @@ import { cn } from "@/lib/utils";
 import { prefersNewspaperHome } from "@/lib/newspaper-home";
 import { pageGeometry } from "@/lib/newspaper-page-size";
 import { packSheet } from "@/lib/newspaper-pack";
+import "@/components/newspaper/broadsheet.css";
 
 /** Desk data is observed already rewritten to ESPN combiner thumbs. */
 function useQuery<
@@ -836,6 +837,8 @@ function ScoreBug({ card }: { card: GameWrapCard }) {
   );
 }
 
+type ProseCols = 1 | 2 | 3 | 4 | 5;
+
 function Prose({
   card,
   text,
@@ -852,7 +855,7 @@ function Prose({
   text: string;
   /** The rest of the story, set hidden; the page lets it run on when a column has room. */
   more?: string;
-  cols: 1 | 2 | 3;
+  cols: ProseCols;
   drop?: boolean;
   max?: number;
   /** Long inside-page copy: a pull quote and run-in subheads break the gray. */
@@ -867,7 +870,7 @@ function Prose({
   if (!paras.length) return null;
   const length = paras.reduce((n, p) => n + p.length, 0);
   // Short copy never splits into slivers of two-line columns.
-  const fit = Math.max(1, Math.min(cols, Math.floor(length / 360))) as 1 | 2 | 3;
+  const fit = Math.max(1, Math.min(cols, Math.floor(length / 360))) as ProseCols;
   const seen = new Set<string>();
   const quote = dress && length > 1600 ? pullQuote(paras) : null;
   const quoteAt = quote ? Math.max(2, Math.floor(paras.length * 0.45)) : -1;
@@ -1061,7 +1064,12 @@ function StatPoster({
   );
 }
 
-type ArtMode = "top" | "side" | "none";
+/**
+ * `package` is the broadsheet feature layout: headline across the page, then
+ * the photograph beside the score (or the story's facts), then the copy in
+ * columns across the full width, so type runs under the picture.
+ */
+type ArtMode = "top" | "side" | "none" | "package";
 
 /** Photo when the wire has one; the club poster when asked; otherwise type only. */
 function Story({
@@ -1086,13 +1094,22 @@ function Story({
   compactBox,
   showDek = true,
   yieldArt,
+  lead,
+  side,
+  photo = true,
 }: {
   card: GameWrapCard;
   team?: TeamInfobox | null;
   text?: string;
   size: "xl" | "lg" | "md" | "sm";
-  cols?: 1 | 2 | 3;
+  cols?: ProseCols;
   art?: ArtMode;
+  /** Never leaves the page, whatever else the packer drops. */
+  lead?: boolean;
+  /** False leaves the wire photo off (a jump whose front already ran it). */
+  photo?: boolean;
+  /** Set beside the photograph in the `package` layout when no score runs there. */
+  side?: ReactNode;
   /** The club poster stands in for a missing photo; "band" sets it full width over the story. */
   poster?: boolean | "band";
   drop?: boolean;
@@ -1136,7 +1153,7 @@ function Story({
   const artNode =
     art === "none"
       ? null
-      : card.photo
+      : card.photo && photo
         ? recap
           ? <RecapPhoto url={card.photo} width={card.photoWidth} caption={card.caption} />
           : <Cut card={card} shape={art === "side" && copy.length > 450 ? "square" : "wide"} />
@@ -1144,7 +1161,79 @@ function Story({
           ? <StatPoster team={team ?? null} card={card} layout={poster === "band" ? "band" : "block"} />
           : null;
   const artMode =
-    !artNode ? "none" : narrowArt && !className?.includes("lead") ? "side" : art;
+    !artNode ? "none" : art === "package" ? "package" : narrowArt && !className?.includes("lead") ? "side" : art;
+  const isLead = Boolean(lead) || Boolean(className?.split(" ").includes("lead"));
+  const chromeNode =
+    recap && chrome !== false ? <RecapChrome card={card} game={game ?? null} compact={compactBox} /> : null;
+  // The package row carries the picture and, beside it, the score — or the story's facts when there is no game.
+  const packaged = art === "package" && Boolean(artNode || chromeNode || side);
+  const sideNode = packaged ? (chromeNode ?? side ?? (artNode ? inset : null) ?? null) : null;
+  const insetNode = packaged && sideNode != null && sideNode === inset ? null : inset;
+  const dekNode =
+    showDek && dek && (!recap || chrome === false) ? (
+      <p className="wsj-dek">
+        {dek}
+      </p>
+    ) : null;
+  const proseNode = storyCopy ? (
+    <Prose
+      card={card}
+      text={storyCopy}
+      cols={cols}
+      drop={useDrop}
+      max={max}
+      dress={dress}
+      color={teamColor(team)}
+      inset={insetNode}
+      ended={!partial}
+      more={partial && !continues ? restOfCopy(full, storyCopy) : undefined}
+    />
+  ) : (
+    insetNode
+  );
+  const tailNode = continues ? (
+    <p className="wsj-jump wsj-cont">
+      <button type="button" className="wsj-jump-btn" onClick={() => onTurn!(jump!)}>
+        Continued on page {jump} <span aria-hidden="true">→</span>
+      </button>
+    </p>
+  ) : storyCopy || jump ? (
+    <ReadOn card={card} game={game} label="Click for full story" whenCut={!partial} />
+  ) : null;
+  const rootProps = {
+    style: tint(teamColor(team)),
+    "data-tt-keys": storyReadKeys(card).join("|"),
+    "data-tt-title": card.headline,
+    ...(isLead ? { "data-tt-lead": "" } : {}),
+    ...(trim != null ? { "data-tt-trim": trim } : {}),
+  };
+  if (packaged) {
+    return (
+      <article
+        className={cn("wsj-story", "art-package", artNode && !copy && !dek && "bare", className)}
+        {...rootProps}
+      >
+        <div className="wsj-story-head">
+          <Headline card={card} size={size} game={game} />
+          {dekNode}
+          {recap ? null : <ScoreBug card={card} />}
+          <Byline card={card} />
+        </div>
+        <div className={cn("wsj-story-package", !artNode && "no-art", !sideNode && "no-side")}>
+          {artNode ? (
+            <div className="wsj-story-art" {...(yieldArt ? { "data-tt-yield": "" } : {})}>
+              {artNode}
+            </div>
+          ) : null}
+          {sideNode ? <div className="wsj-story-side">{sideNode}</div> : null}
+        </div>
+        <div className="wsj-story-copy">
+          {proseNode}
+          {tailNode}
+        </div>
+      </article>
+    );
+  }
   return (
     <article
       className={cn(
@@ -1153,11 +1242,7 @@ function Story({
         artNode && !copy && !dek && "bare",
         className,
       )}
-      style={tint(teamColor(team))}
-      data-tt-keys={storyReadKeys(card).join("|")}
-      data-tt-title={card.headline}
-      {...(className?.split(" ").includes("lead") ? { "data-tt-lead": "" } : {})}
-      {...(trim != null ? { "data-tt-trim": trim } : {})}
+      {...rootProps}
     >
       {artNode ? (
         <div className="wsj-story-art" {...(yieldArt ? { "data-tt-yield": "" } : {})}>
@@ -1166,39 +1251,12 @@ function Story({
       ) : null}
       <div className="wsj-story-copy">
         <Headline card={card} size={size} game={game} />
-        {showDek && dek && (!recap || chrome === false) ? (
-          <p className="wsj-dek">
-            {dek}
-          </p>
-        ) : null}
+        {dekNode}
         {recap ? null : <ScoreBug card={card} />}
         <Byline card={card} />
-        {recap && chrome !== false ? <RecapChrome card={card} game={game ?? null} compact={compactBox} /> : null}
-        {storyCopy ? (
-          <Prose
-            card={card}
-            text={storyCopy}
-            cols={cols}
-            drop={useDrop}
-            max={max}
-            dress={dress}
-            color={teamColor(team)}
-            inset={inset}
-            ended={!partial}
-            more={partial && !continues ? restOfCopy(full, storyCopy) : undefined}
-          />
-        ) : (
-          inset
-        )}
-        {continues ? (
-          <p className="wsj-jump wsj-cont">
-            <button type="button" className="wsj-jump-btn" onClick={() => onTurn!(jump!)}>
-              Continued on page {jump} <span aria-hidden="true">→</span>
-            </button>
-          </p>
-        ) : storyCopy || jump ? (
-          <ReadOn card={card} game={game} label="Click for full story" whenCut={!partial} />
-        ) : null}
+        {chromeNode}
+        {proseNode}
+        {tailNode}
       </div>
     </article>
   );
@@ -1214,7 +1272,7 @@ function restOfCopy(full: string, shown: string): string | undefined {
 }
 
 /** Wide photo for long copy; photo beside the type when the copy is short. */
-function artFor(card: GameWrapCard, text: string): { art: ArtMode; cols: 1 | 2 | 3 } {
+function artFor(card: GameWrapCard, text: string): { art: ArtMode; cols: ProseCols } {
   const len = text.length;
   if (!card.photo) return { art: "top", cols: len > 1400 ? 3 : len > 500 ? 2 : 1 };
   if (isNarrowStoryImage(card.photo)) return { art: "side", cols: len > 700 ? 2 : 1 };
@@ -2023,30 +2081,54 @@ function InsidePage({
         const text = cardCopy(card);
         const { art, cols } = artFor(card, text);
         const game = isSingleGameRecap(card) ? lookup(card) : null;
+        const boxed = Boolean(game || (isSingleGameRecap(card) && card.recapGame));
         // No photograph: the club's poster carries the art, unless its notebook already runs here.
         const poster = !card.photo && Boolean(team) && !noted.has(team!.fav.key);
+        if (i === 0) {
+          // The page's feature: headline across the sheet, picture beside the score, copy in five columns under both.
+          return (
+            <div key={card.id} className="wsj-inside-story first feature" style={tint(teamColor(team))}>
+              <InsideFlag card={card} team={team} />
+              <Story
+                className={cn("primary", text.length < 2100 && "short")}
+                card={card}
+                team={team}
+                text={text}
+                size="xl"
+                cols={text.length > 2600 ? 5 : text.length < 2100 ? 3 : 4}
+                art="package"
+                poster={poster}
+                drop
+                dress
+                lead
+                game={game}
+                inset={boxed ? null : <StoryNames card={card} />}
+              />
+              {boxed ? (
+                <div data-tt-flow>
+                  <RecapBox card={card} game={game ?? null} compact />
+                </div>
+              ) : null}
+            </div>
+          );
+        }
         return (
-          <div key={card.id} className={cn("wsj-inside-story", i === 0 && "first")} style={tint(teamColor(team))}>
-            {i === 0 && !poster ? <InsideFlag card={card} team={team} /> : null}
+          <div key={card.id} className="wsj-inside-story second" style={tint(teamColor(team))} data-tt-flow="">
             <Story
-              className={cn(i === 0 ? "primary" : "secondary", poster && "postered")}
+              className={cn("secondary", poster && "postered")}
               card={card}
               team={team}
               text={text}
-              size={i === 0 ? "xl" : "lg"}
+              size="lg"
               cols={poster ? (text.length > 2400 ? 3 : text.length > 700 ? 2 : 1) : cols}
               art={poster ? "top" : art}
               poster={poster ? "band" : false}
               drop
               dress
               game={game}
+              compactBox
               inset={game ? null : <StoryNames card={card} />}
             />
-            {game || (isSingleGameRecap(card) && card.recapGame) ? (
-              <div data-tt-flow>
-                <RecapBox card={card} game={game ?? null} compact />
-              </div>
-            ) : null}
           </div>
         );
       })}
@@ -2161,35 +2243,61 @@ function ContinuePage({
 }) {
   const lookup = useContext(GameLookup);
   // Every promised continuation sets before the club bands, so a full page gives those up first.
+  // The jump page is type: a slim turn tab, the jump head, the score as one strip, then the copy
+  // in columns across the sheet with the box as agate under it.
+  const set = jumps.map(({ card, rest }) => {
+    const game = isSingleGameRecap(card) ? lookup(card) : null;
+    return { card, rest, game, boxed: Boolean(game || (isSingleGameRecap(card) && card.recapGame)) };
+  });
+  const boxes = set.filter((j) => j.boxed);
   return (
     <div className="wsj-continue">
-      {jumps.map(({ card, rest }, i) => {
-        const game = isSingleGameRecap(card) ? lookup(card) : null;
-        const boxed = Boolean(game || (isSingleGameRecap(card) && card.recapGame));
+      {set.map(({ card, rest, game, boxed }, i) => {
+        const team = teamForCard(teams, card);
+        const bar = boxed ? <RecapBar card={card} game={game ?? null} /> : null;
         return (
-          <div key={card.id} className="wsj-inside-story">
+          <div
+            key={card.id}
+            className={cn("wsj-inside-story wsj-jump-story", i === 0 ? "first" : "second")}
+            style={tint(teamColor(team))}
+          >
             <p className="wsj-continued-from">
               <button type="button" className="wsj-jump-btn" onClick={() => onTurn(continuedFrom)}>
                 <span aria-hidden="true">←</span> Continued from page {continuedFrom}
               </button>
             </p>
             <Story
-              className={i === 0 ? "primary" : "secondary"}
+              className={cn("jump", i === 0 ? "primary" : "secondary")}
               card={card}
-              team={teamForCard(teams, card)}
+              team={team}
               text={rest}
               size={i === 0 ? "xl" : "lg"}
-              cols={rest.length > 1400 ? 3 : rest.length > 500 ? 2 : 1}
-              art="none"
+              cols={rest.length > 2600 ? 5 : rest.length > 1200 ? 4 : 3}
+              art={bar ? "package" : "none"}
+              photo={false}
+              side={bar}
+              chrome={false}
               dress
+              drop={false}
               readOn={false}
+              lead={i === 0}
               game={game}
-              compactBox
               inset={boxed ? null : <StoryNames card={card} />}
             />
           </div>
         );
       })}
+      {/* The agate sets after every jump has its copy, so a full page gives up a box before a story. */}
+      {boxes.map(({ card, game }) => (
+        <div key={`box-${card.id}`} className="wsj-jump-box" data-tt-flow="">
+          <RecapBox
+            card={card}
+            game={game ?? null}
+            compact
+            title={boxes.length > 1 && card.scoreLine ? `Box score · ${card.scoreLine}` : "Box score"}
+          />
+        </div>
+      ))}
       {notebooks.map((team) => (
         <div key={team.fav.key} data-tt-flow="">
           <StatPoster team={team} layout="band" />

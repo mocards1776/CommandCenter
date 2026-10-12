@@ -74,6 +74,24 @@ function lineHeight(el: HTMLElement): number {
   return (Number.parseFloat(cs.fontSize) || 14) * 1.4;
 }
 
+/**
+ * Lifts a cut's height again. WebKit keeps a multicol's balanced column
+ * height from the constrained layout once the constraint goes, reporting a
+ * short box with its copy spilling into columns off the page (and painting
+ * something else again), so a copy set in columns is rebuilt from scratch.
+ */
+function uncut(el: HTMLElement) {
+  delete el.dataset[CUT];
+  el.style.removeProperty("height");
+  const cs = getComputedStyle(el);
+  if (cs.columnCount === "auto" && cs.columnWidth === "auto") return;
+  const shown = el.style.display;
+  el.style.display = "none";
+  void el.offsetHeight;
+  if (shown) el.style.display = shown;
+  else el.style.removeProperty("display");
+}
+
 function holdsLead(el: HTMLElement): boolean {
   return el.matches(LEAD) || el.querySelector(LEAD) != null;
 }
@@ -112,10 +130,7 @@ function spillBoxes(sheet: HTMLElement): HTMLElement[] {
 export function packSheet(sheet: HTMLElement): PackResult {
   for (const el of sheet.querySelectorAll<HTMLElement>("[data-tt-packed]")) delete el.dataset[PACKED];
   for (const el of sheet.querySelectorAll<HTMLElement>("[data-tt-grown]")) delete el.dataset[GROWN];
-  for (const el of sheet.querySelectorAll<HTMLElement>("[data-tt-cut]")) {
-    delete el.dataset[CUT];
-    el.style.removeProperty("height");
-  }
+  for (const el of sheet.querySelectorAll<HTMLElement>("[data-tt-cut]")) uncut(el);
 
   const scale = sheet.getBoundingClientRect().height / (sheet.offsetHeight || 1) || 1;
   const pageH = sheet.clientHeight;
@@ -282,7 +297,8 @@ export function packSheet(sheet: HTMLElement): PackResult {
     return crossing;
   };
 
-  const shows = (n: Element) => n instanceof HTMLElement && !isHidden(n) && n.getClientRects().length > 0;
+  const shows = (n: Element) =>
+    n instanceof HTMLElement && !isHidden(n) && n.getClientRects().length > 0 && n.getBoundingClientRect().height >= 1;
 
   /**
    * Drops what packing left meaningless, until nothing more goes: a story
@@ -390,9 +406,10 @@ export function packSheet(sheet: HTMLElement): PackResult {
     natural.clear();
     for (const [el, h] of snap.natural) natural.set(el, h);
     for (const el of sheet.querySelectorAll<HTMLElement>("[data-tt-packed]")) delete el.dataset[PACKED];
+    const cutAgain = new Set(snap.cut.map(([el]) => el));
     for (const el of sheet.querySelectorAll<HTMLElement>("[data-tt-cut]")) {
-      delete el.dataset[CUT];
-      el.style.removeProperty("height");
+      if (cutAgain.has(el)) continue;
+      uncut(el);
     }
     for (const el of snap.packed) el.dataset[PACKED] = "";
     for (const [el, h] of snap.cut) {
@@ -467,8 +484,7 @@ export function packSheet(sheet: HTMLElement): PackResult {
     }
     if (lo < 1) {
       delete el.dataset[GROWN];
-      delete el.dataset[CUT];
-      el.style.removeProperty("height");
+      uncut(el);
     } else fits(lo);
   }
 

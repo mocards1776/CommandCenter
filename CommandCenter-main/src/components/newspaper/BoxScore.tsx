@@ -450,7 +450,18 @@ export function KeyStats({ box }: { box: EspnBox }) {
 }
 
 /** Sport box: scoring by period, team stats, and every club's agate. */
-export function EspnAgate({ box, path, condensed }: { box: EspnBox; path: string; condensed?: boolean }) {
+export function EspnAgate({
+  box,
+  path,
+  condensed,
+  mast = true,
+}: {
+  box: EspnBox;
+  path: string;
+  condensed?: boolean;
+  /** False leaves the score banner off, where the page already carries the score. */
+  mast?: boolean;
+}) {
   const { game } = box;
   const stat = (rows: EspnBox["teamStats"], title: string): AgateTable => ({
     title,
@@ -483,7 +494,7 @@ export function EspnAgate({ box, path, condensed }: { box: EspnBox; path: string
     : null;
   return (
     <div className="tt-agate-box">
-      <ScoreMast game={game} />
+      {mast ? <ScoreMast game={game} /> : null}
       <ScoringTable periods={box.scoring} game={game} path={path} />
       {hockey ? (
         <div className="tt-agate-cols">
@@ -537,6 +548,40 @@ export function ScoreMast({ game, shortNames }: { game: BoxGame; shortNames?: bo
         </div>
       ))}
       <span className="tt-score-mast-state">{gameClock(game)}</span>
+    </div>
+  );
+}
+
+/**
+ * The final on one line, for a jump page or a rail: marks and names set
+ * either side of the score, the winner's side carrying the club's color.
+ */
+export function ScoreBar({ game }: { game: BoxGame }) {
+  const side = (s: BoxSide, home: boolean) => (
+    <div
+      className={cn("tt-score-bar-side", home ? "home" : "away", s.winner && "won", game.final && !s.winner && "lost")}
+      style={{ ["--side" as string]: sidePaint(s.color, s.abbrev, game.path) }}
+    >
+      <Mark src={s.logo} size="md" />
+      <span>
+        <em>
+          {home ? "Home" : "Away"}
+          {s.record ? ` · ${s.record}` : ""}
+        </em>
+        <strong>{s.short}</strong>
+      </span>
+      <b>{s.score ?? "–"}</b>
+    </div>
+  );
+  const head = headOf(game);
+  return (
+    <div className="tt-score-bar">
+      {side(game.away, false)}
+      <span className="tt-score-bar-state">
+        <b>{gameClock(game)}</b>
+        {head ? <i>{head}</i> : null}
+      </span>
+      {side(game.home, true)}
     </div>
   );
 }
