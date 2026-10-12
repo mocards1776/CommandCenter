@@ -1030,3 +1030,45 @@
 .newspaper-root .wsj-sheet .tt-bs-snap .tt-desk-tables.rich li:last-child {
   border-bottom: 0;
 }
+
+/* ── Missouri inside pages: the briefs take the sheet's depth ─────────── */
+/* Rows stretch into spare depth, so a light page spreads its briefs down
+   the sheet rather than ending in a blank foot. */
+.newspaper-root .wsj-sheet .tt-mo-briefs {
+  flex: 1 1 auto;
+  min-height: 0;
+  align-content: stretch;
+  grid-auto-flow: dense;
+}
+
+/* ── A story set whole takes the depth with its picture ──────────────── */
+/* When the copy ends on the page (nothing left to run on), the package
+   grows into the spare depth and the picture with it; cut copy keeps the
+   picture at its natural size so the lines come first. */
+.newspaper-root .wsj-sheet .wsj-inside > .wsj-inside-story.feature:has(> .wsj-story.art-package > .wsj-story-copy > .wsj-prose.ended),
+.newspaper-root .wsj-sheet .wsj-inside-story > .wsj-story.art-package:has(> .wsj-story-copy > .wsj-prose.ended) {
+  flex: 1 0 auto;
+  min-height: 0;
+}
+.newspaper-root .wsj-sheet .wsj-inside-story > .wsj-story.art-package:has(> .wsj-story-copy > .wsj-prose.ended) > .wsj-story-package {
+  flex: 1 0 auto;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+}
+.newspaper-root .wsj-sheet .wsj-story.art-package:has(> .wsj-story-copy > .wsj-prose.ended) .wsj-story-package > .wsj-story-art {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.newspaper-root .wsj-sheet .wsj-story.art-package:has(> .wsj-story-copy > .wsj-prose.ended) .wsj-story-package > .wsj-story-art > :is(.tt-recap-photo, .wsj-cut) {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.newspaper-root .wsj-sheet .wsj-story.art-package:has(> .wsj-story-copy > .wsj-prose.ended) .wsj-story-package > .wsj-story-art > :is(.tt-recap-photo, .wsj-cut) img {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+  max-height: 560px;
+}

@@ -790,3 +790,67 @@
 .tt-watch[data-density="light"] .tt-tv-timeline.roomy .tt-tv-game-why {
   font-size: 15px;
 }
+
+/* On the broadsheet the game of the day takes whatever depth the clock
+   leaves, set as a poster in the middle of its box, and its type grows with
+   the box; the legend sits on the foot. Size containment keeps the box from
+   asking for its content's height, so the minimums below are its floor. */
+.newspaper-root .wsj-sheet .tt-tv-feature {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 150px;
+  container: tt-tv-feature / size;
+}
+.newspaper-root .wsj-sheet .tt-watch[data-density="light"] .tt-tv-feature {
+  min-height: 240px;
+}
+.newspaper-root .wsj-sheet .tt-tv-feature .tt-tv-flag {
+  margin-bottom: auto;
+}
+.newspaper-root .wsj-sheet .tt-tv-feature > :last-child {
+  margin-bottom: auto;
+}
+.newspaper-root .wsj-sheet .tt-tv-timeline {
+  flex: none;
+}
+.newspaper-root .wsj-sheet .tt-watch-legend {
+  margin-top: auto;
+}
+@container tt-tv-feature (min-height: 230px) {
+  .newspaper-root .wsj-sheet .tt-tv-feature-side strong {
+    font-size: 58px;
+  }
+  .newspaper-root .wsj-sheet .tt-tv-feature-side em {
+    margin-top: 4px;
+    font-size: 13px;
+  }
+  .newspaper-root .wsj-sheet .tt-tv-feature-side .tt-watch-crest.lg {
+    width: 84px;
+    height: 84px;
+  }
+  .newspaper-root .wsj-sheet .tt-tv-at {
+    font-size: 30px;
+  }
+  .newspaper-root .wsj-sheet .tt-tv-feature-meta {
+    margin-top: 16px;
+    font-size: 13px;
+  }
+  .newspaper-root .wsj-sheet .tt-tv-feature-why {
+    margin-top: 6px;
+    font-size: 19px;
+  }
+}
+@container tt-tv-feature (min-height: 330px) {
+  .newspaper-root .wsj-sheet .tt-tv-feature-side strong {
+    font-size: 72px;
+  }
+  .newspaper-root .wsj-sheet .tt-tv-feature-side .tt-watch-crest.lg {
+    width: 110px;
+    height: 110px;
+  }
+  .newspaper-root .wsj-sheet .tt-tv-feature-why {
+    font-size: 22px;
+  }
+}

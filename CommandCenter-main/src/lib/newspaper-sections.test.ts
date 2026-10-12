@@ -28,6 +28,7 @@ import {
   essentialsFromDesks,
   HISTORIC_NATIONAL_STATUS,
   insertCoachesFocus,
+  missouriChunks,
   isColumnStory,
   isDeskStory,
   isGameRecapCopy,
@@ -2844,5 +2845,12 @@ assert(
   ]).map((g) => g.id).join(",") === "blues,cowboys,mizzou-sat",
   "A1 Coming Up keeps tonight's Blues and Thursday's Cowboys",
 );
+
+const moCounts = (n: number) => missouriChunks(Array.from({ length: n }, (_, i) => i)).map((c) => c.length).join(",");
+assert(moCounts(30) === "11,10,9", `Missouri 30 balances the inside pages (got ${moCounts(30)})`);
+assert(moCounts(16) === "16", `Missouri 16 folds five leftovers onto the front (got ${moCounts(16)})`);
+assert(moCounts(27) === "11,16", `Missouri 27 fills one inside page (got ${moCounts(27)})`);
+assert(moCounts(50) === "11,16,16", `Missouri 50 caps at two full inside pages (got ${moCounts(50)})`);
+assert(moCounts(8) === "8", `Missouri 8 is one page (got ${moCounts(8)})`);
 
 console.log("newspaper-sections ok");
