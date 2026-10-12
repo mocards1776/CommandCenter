@@ -40,7 +40,12 @@ portrait and landscape, against the Oct 9 midday and Oct 11 evening issues.
   furniture goes; a lead's linescore and chips go before its copy is cut
   under eight lines; a box squeezed to nothing whose children still paint
   is walked, not skipped; a multicol's layout is rebuilt when a cut lifts
-  (WebKit kept the constrained column height).
+  (WebKit kept the constrained column height); a refill that leaves an
+  already-spilling box worse is refused, not just one that adds a box.
+- **Landscape.** The Recaps desk's wrap grid can shrink again (a percentage
+  `min-height` kept it at its tallest). On the short sheet the jump page's
+  club band sets its leaders two abreast and the Missouri front crops its
+  pictures wider, so both close above the foot.
 - No edge functions change. Deploys with the next push to `main`.
 
 ---
