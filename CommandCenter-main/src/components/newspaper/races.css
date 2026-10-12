@@ -1,7 +1,11 @@
 /* Races We're Tracking — Section A, immediately before The Day Ahead.
-   Scoped to .tt-races. Does not touch --tt-page-w or --tt-fit.
-   Content flows top-down and never stretches to a floor. */
+   Scoped to .tt-races. A money page: the two sides as one bar, the flights
+   on a calendar, who is buying and where it runs as bar charts, then the
+   agate. Support is navy, oppose is red, throughout. */
 .tt-races {
+  --support: var(--w-navy);
+  --oppose: var(--w-red);
+  --other: #8a8f99;
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
@@ -10,10 +14,20 @@
   height: auto;
   min-height: 0;
 }
+
+/* ── Page head: the book at left, the title, the countdown at right ──── */
 .tt-races-head {
-  text-align: center;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 18px;
   border-bottom: 3px double var(--w-rule);
   padding-bottom: 10px;
+}
+.tt-races-head-book {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 .tt-races-kicker {
   margin: 0;
@@ -24,7 +38,8 @@
   color: var(--w-red);
 }
 .tt-races-head h2 {
-  margin: 6px 0 4px;
+  margin: 0;
+  text-align: center;
   font-family: var(--w-head);
   font-size: 40px;
   font-weight: 900;
@@ -40,6 +55,44 @@
   line-height: 1.35;
   color: var(--w-ink);
 }
+.tt-races-count {
+  justify-self: end;
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-rows: auto auto;
+  column-gap: 10px;
+  align-items: center;
+  padding: 4px 0 4px 12px;
+  border-left: 3px solid var(--w-red);
+}
+.tt-races-count b {
+  grid-row: 1 / span 2;
+  font-family: var(--w-cond);
+  font-size: 44px;
+  font-weight: 700;
+  line-height: 0.9;
+  letter-spacing: -0.02em;
+  color: var(--w-red);
+  font-variant-numeric: tabular-nums;
+}
+.tt-races-count span {
+  align-self: end;
+  font-family: var(--w-label);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--w-ink);
+}
+.tt-races-count em {
+  align-self: start;
+  font-family: var(--w-cond);
+  font-style: normal;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--w-muted);
+  white-space: nowrap;
+}
 
 .tt-races-stack {
   display: flex;
@@ -53,7 +106,7 @@
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
-  gap: 10px;
+  gap: 12px;
   flex: 0 0 auto;
   min-height: 0;
   padding-bottom: 12px;
@@ -65,49 +118,374 @@
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 12px 16px;
-  align-items: baseline;
+  align-items: center;
 }
 .tt-races-code {
   margin: 0;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  padding: 2px 10px;
   font-family: var(--w-cond);
   font-size: 22px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--w-navy);
+  color: #fff;
+  background: var(--w-navy);
   white-space: nowrap;
 }
 .tt-races-racehead h3 {
   margin: 0;
   font-family: var(--w-head);
-  font-size: 26px;
+  font-size: 27px;
   font-weight: 800;
-  line-height: 1.12;
+  line-height: 1.1;
   letter-spacing: -0.015em;
 }
 
-.tt-races-whatsnew { min-width: 0; }
-.tt-races-whatsnew .wsj-band-title { margin-bottom: 4px; }
+/* Shared chart titles */
+.tt-races .wsj-band-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.tt-races .wsj-band-title small {
+  margin-left: auto;
+  font-family: var(--w-cond);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: var(--w-muted);
+}
 
+/* ── The sides as one bar ────────────────────────────────────────────── */
+.tt-races-sides {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0 18px;
+  padding: 8px 0 10px;
+  border-top: 1px solid var(--w-rule);
+  border-bottom: 1px solid var(--w-hair);
+}
+.tt-races-side {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 150px;
+}
+.tt-races-side.oppose {
+  align-items: flex-end;
+  text-align: right;
+}
+.tt-races-side em {
+  font-family: var(--w-label);
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.tt-races-side.support em { color: var(--support); }
+.tt-races-side.oppose em { color: var(--oppose); }
+.tt-races-side b {
+  font-family: var(--w-cond);
+  font-size: 34px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--w-ink);
+}
+.tt-races-side span {
+  font-family: var(--w-cond);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--w-muted);
+}
+.tt-races-sides-bar {
+  position: relative;
+  display: flex;
+  height: 22px;
+  background: var(--w-paper-2);
+}
+.tt-races-sides-bar i {
+  display: block;
+  height: 100%;
+}
+.tt-races-sides-bar i.support { background: var(--support); }
+.tt-races-sides-bar i.oppose { background: var(--oppose); margin-left: auto; }
+.tt-races-sides-bar i.other { background: var(--other); }
+.tt-races-sides-bar u {
+  position: absolute;
+  top: -5px;
+  bottom: -5px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--w-ink);
+}
+
+/* ── What's new beside the flight calendar ───────────────────────────── */
+.tt-races-lead {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: 0 var(--w-gutter, 24px);
+  align-items: start;
+}
+.tt-races-block:not(.charted) .tt-races-lead {
+  grid-template-columns: minmax(0, 1fr);
+}
+.tt-races-lead > .tt-races-chart {
+  padding-left: var(--w-gutter, 24px);
+  border-left: 1px solid var(--w-hair);
+}
+.tt-races-whatsnew { min-width: 0; }
+.tt-races-whatsnew .wsj-band-title { margin-bottom: 6px; }
+.tt-races-bullets {
+  margin: 0;
+  padding: 0 0 0 1.1em;
+}
+.tt-races-bullets li {
+  margin: 0 0 6px;
+  font-family: var(--w-body);
+  font-size: 15px;
+  line-height: 1.38;
+  color: var(--w-ink);
+}
+.tt-races-bullets li::marker { color: var(--w-red); }
+.tt-races-bullets li:last-child { margin-bottom: 0; }
+
+/* ── Bar charts ──────────────────────────────────────────────────────── */
+.tt-races-chart {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.tt-races-chart .wsj-band-title { margin-bottom: 6px; }
+.tt-races-chart ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.tt-races-chart li {
+  display: grid;
+  grid-template-columns: minmax(0, 170px) minmax(0, 1fr);
+  align-items: center;
+  column-gap: 10px;
+  min-width: 0;
+}
+.tt-races-chart.sponsors li {
+  grid-template-columns: minmax(0, 200px) minmax(0, 1fr);
+}
+.tt-races-bar-label {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.15;
+}
+.tt-races-bar-label b {
+  font-family: var(--w-cond);
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tt-races-bar-label b .tt-races-new {
+  vertical-align: 2px;
+}
+.tt-races-bar-label em {
+  font-family: var(--w-cond);
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--w-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tt-races-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 18px;
+  min-width: 0;
+  background: var(--w-paper-2);
+}
+.tt-races-bar i {
+  display: block;
+  height: 100%;
+  background: var(--other);
+}
+.tt-races-bar i.support,
+.tt-races-chart li.support .tt-races-bar i { background: var(--support); }
+.tt-races-bar i.oppose,
+.tt-races-chart li.oppose .tt-races-bar i { background: var(--oppose); }
+.tt-races-bar i.other { background: var(--other); }
+.tt-races-bar > b {
+  margin-left: 6px;
+  font-family: var(--w-cond);
+  font-size: 12.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--w-ink);
+}
+.tt-races-charts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0 var(--w-gutter, 24px);
+  padding-top: 10px;
+  border-top: 1px solid var(--w-rule);
+}
+.tt-races-charts > .tt-races-chart + .tt-races-chart {
+  padding-left: var(--w-gutter, 24px);
+  border-left: 1px solid var(--w-hair);
+}
+
+/* ── The flight calendar ─────────────────────────────────────────────── */
+.tt-races-flights {
+  --lane-left: 156px;
+  position: relative;
+  padding-top: 14px;
+  padding-bottom: 12px;
+}
+.tt-races-flight-ticks {
+  position: absolute;
+  top: 0;
+  left: var(--lane-left);
+  right: 0;
+  height: 12px;
+}
+.tt-races-flight-ticks span {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-family: var(--w-label);
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+  white-space: nowrap;
+}
+.tt-races-flight-ticks span:first-child { transform: none; }
+.tt-races-flights ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tt-races-flights li {
+  display: grid;
+  grid-template-columns: var(--lane-left) minmax(0, 1fr);
+  align-items: center;
+  min-width: 0;
+}
+.tt-races-flight-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding-right: 8px;
+  line-height: 1.1;
+}
+.tt-races-flight-name b {
+  font-family: var(--w-cond);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tt-races-flight-name em {
+  font-family: var(--w-cond);
+  font-style: normal;
+  font-size: 10px;
+  color: var(--w-muted);
+}
+.tt-races-flight-lane {
+  position: relative;
+  height: 18px;
+  background: var(--w-paper-2);
+  overflow: hidden;
+}
+.tt-races-flight-lane u {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--w-hair);
+}
+.tt-races-flight-lane i {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 5px;
+  min-width: 0;
+  background: var(--other);
+  overflow: hidden;
+}
+.tt-races-flights li.support .tt-races-flight-lane i { background: var(--support); }
+.tt-races-flights li.oppose .tt-races-flight-lane i { background: var(--oppose); }
+.tt-races-flight-lane i b {
+  font-family: var(--w-cond);
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.tt-races-flight-today {
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  width: 0;
+  border-left: 2px dashed var(--w-ink);
+}
+.tt-races-flight-today em {
+  position: absolute;
+  bottom: -12px;
+  left: -2px;
+  font-family: var(--w-label);
+  font-style: normal;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--w-ink);
+  background: var(--w-paper, #fff);
+  padding: 0 2px;
+}
+
+/* ── Agate ───────────────────────────────────────────────────────────── */
 .tt-races-spend { min-width: 0; }
-.tt-races-spend .wsj-band-title { margin-bottom: 6px; }
+.tt-races-spend .wsj-band-title { margin-bottom: 4px; }
 .tt-races-spend table {
   width: 100%;
   border-collapse: collapse;
   font-family: var(--w-cond);
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.2;
   color: var(--w-ink);
 }
 .tt-races-spend th,
 .tt-races-spend td {
-  padding: 5px 8px;
+  padding: 4px 8px;
   border-bottom: 1px solid var(--w-hair);
   text-align: left;
   vertical-align: middle;
 }
 .tt-races-spend thead th {
-  font-size: 12px;
+  font-size: 10.5px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -116,42 +494,58 @@
 }
 .tt-races-spend th.sponsor { padding-left: 0; }
 .tt-races-spend .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.tt-races-spend .flight { white-space: nowrap; }
+.tt-races-spend .flight { white-space: nowrap; padding-right: 0; }
 .tt-races-spend .mkt { color: var(--w-ink); }
+.tt-races-spend .bar { width: 18%; padding-left: 4px; padding-right: 4px; }
+.tt-races-spend td.bar i {
+  display: block;
+  height: 9px;
+  background: var(--other);
+}
+.tt-races-spend tr.support td.bar i { background: var(--support); }
+.tt-races-spend tr.oppose td.bar i { background: var(--oppose); }
 .tt-races-spend tbody tr:last-child > * { border-bottom: 0; }
 .tt-races-spend tbody th.sponsor {
   font-family: var(--w-body);
-  font-size: 14.5px;
+  font-size: 13.5px;
   font-weight: 700;
 }
-.tt-races-spend td.side { font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; font-size: 12.5px; }
-.tt-races-spend td.side.support { color: var(--w-navy); }
-.tt-races-spend td.side.oppose { color: var(--w-red); }
+.tt-races-spend tr.rest > * {
+  color: var(--w-muted);
+  font-style: italic;
+}
+.tt-races-spend tr.rest th.sponsor {
+  font-weight: 600;
+}
+.tt-races-spend td.side { font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; font-size: 11px; }
+.tt-races-spend td.side.support { color: var(--support); }
+.tt-races-spend td.side.oppose { color: var(--oppose); }
 
 .tt-races-new {
   display: inline-block;
   margin-left: 8px;
-  padding: 1px 6px 0;
+  padding: 1px 5px 0;
   border: 1px solid var(--w-red);
   font-family: var(--w-cond);
-  font-size: 11px;
+  font-size: 10px;
   font-style: normal;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--w-red);
   vertical-align: 1px;
+  line-height: 1.2;
 }
 
 .tt-races-totals {
   display: flex;
   flex-wrap: wrap;
   gap: 6px 22px;
-  margin: 8px 0 0;
+  margin: 6px 0 0;
   padding-top: 6px;
   border-top: 1px solid var(--w-rule);
   font-family: var(--w-cond);
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--w-ink);
 }
@@ -161,19 +555,7 @@
   text-transform: uppercase;
   color: var(--w-navy);
 }
-
-.tt-races-bullets {
-  margin: 0;
-  padding: 0 0 0 1.15em;
-}
-.tt-races-bullets li {
-  margin: 0 0 4px;
-  font-family: var(--w-body);
-  font-size: 16px;
-  line-height: 1.35;
-  color: var(--w-ink);
-}
-.tt-races-bullets li:last-child { margin-bottom: 0; }
+.tt-races-totals .oppose b { color: var(--w-red); }
 
 .tt-races-notes {
   list-style: none;
@@ -182,11 +564,11 @@
   border-top: 1px solid var(--w-hair);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
 }
 .tt-races-notes li {
   font-family: var(--w-body);
-  font-size: 14.5px;
+  font-size: 14px;
   line-height: 1.35;
   color: var(--w-ink);
 }
@@ -194,7 +576,7 @@
   display: inline-block;
   margin-right: 8px;
   font-family: var(--w-cond);
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -225,6 +607,9 @@
 }
 
 .tt-races-credit {
+  display: flex;
+  align-items: center;
+  gap: 18px;
   margin: 2px 0 0;
   padding-top: 8px;
   border-top: 1px solid var(--w-hair);
@@ -234,30 +619,48 @@
   letter-spacing: 0.06em;
   color: var(--w-ink);
 }
+.tt-races-key {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+}
+.tt-races-key i {
+  display: inline-block;
+  width: 14px;
+  height: 9px;
+  margin-left: 8px;
+}
+.tt-races-key i:first-child { margin-left: 0; }
+.tt-races-key i.support { background: var(--support); }
+.tt-races-key i.oppose { background: var(--oppose); }
 
 .tt-races[data-tt-races="continued"] .tt-races-head h2 { font-size: 34px; }
 
-/* Every race sheet is a full page. A long spend table takes the spare depth as
-   leading, so a single race reads as a full-page agate report rather than a
-   short sheet. */
-.newspaper-root .wsj-sheet .tt-races {
-  flex: 1 1 auto;
+/* A race sheet fills its page: the charts take the spare depth, their bars
+   spaced out, so a single race never leaves a blank foot. */
+.newspaper-root .wsj-sheet .tt-races > *,
+.newspaper-root .wsj-sheet .tt-races-stack > *,
+.newspaper-root .wsj-sheet .tt-races-block > * {
+  flex: 0 0 auto;
+  min-height: auto;
 }
+.newspaper-root .wsj-sheet .tt-races,
 .newspaper-root .wsj-sheet .tt-races-stack,
-.newspaper-root .wsj-sheet .tt-races-block:has(.tt-races-spend tbody tr:nth-child(8)) {
-  flex: 1 1 auto;
+.newspaper-root .wsj-sheet .tt-races-block.charted {
+  flex: 1 0 auto;
 }
-.newspaper-root .wsj-sheet .tt-races-block:has(.tt-races-spend tbody tr:nth-child(8)) .tt-races-spend {
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
+.newspaper-root .wsj-sheet .tt-races-block.charted .tt-races-charts {
+  flex: 1 0 auto;
+  max-height: 340px;
 }
-.newspaper-root .wsj-sheet .tt-races-block:has(.tt-races-spend tbody tr:nth-child(8)) .tt-races-spend table {
+.newspaper-root .wsj-sheet .tt-races-block.charted .tt-races-charts .tt-races-chart ol {
   flex: 1 1 auto;
-  font-size: 15.5px;
-}
-.newspaper-root .wsj-sheet .tt-races-block:has(.tt-races-spend tbody tr:nth-child(8)) .tt-races-spend tbody th.sponsor {
-  font-size: 16px;
+  justify-content: space-evenly;
 }
 
 .tt-races-preview-rail {
