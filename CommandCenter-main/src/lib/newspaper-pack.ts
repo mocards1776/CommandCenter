@@ -508,7 +508,9 @@ export function packSheet(sheet: HTMLElement): PackResult {
     held = next;
     settle();
     held = null;
-    if (over() > 0 || settled.size > before.settled.size || stories() < told || !substantive(next)) {
+    // A box that already could not be fixed may not be left spilling more than it was.
+    const worse = [...settled].some(([box, s]) => s > (before.settled.get(box) ?? 0) + 1);
+    if (over() > 0 || worse || stories() < told || !substantive(next)) {
       restore(before);
       // WebKit can lay the restored page out taller than it measured before the try.
       if (over() > 0) settle();
