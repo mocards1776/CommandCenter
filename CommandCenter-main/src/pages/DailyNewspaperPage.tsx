@@ -1398,10 +1398,13 @@ function Broadsheet({
   cards,
   games,
   label,
+  fill,
 }: {
   cards: GameWrapCard[];
   games?: Map<string, BoxGame>;
   label?: string;
+  /** Agate that closes the rail under its stories — trimmed by the row, never printed over copy. */
+  fill?: ReactNode;
 }) {
   if (!cards.length) return null;
   const [lead, ...rest] = cards;
@@ -1444,6 +1447,7 @@ function Broadsheet({
               trim={10 + i}
             />
           ))}
+          {fill ? <div className="tt-bs-rail-fill">{fill}</div> : null}
         </div>
       ) : null}
       {band.length ? (
@@ -1459,7 +1463,7 @@ function Broadsheet({
                     text={teaser(card, 600)}
                     size="sm"
                     cols={2}
-                    art={i === 0 ? "top" : "none"}
+                    art="none"
                     readOn
                     showDek={false}
                     yieldArt
@@ -3197,12 +3201,15 @@ function SportSectionFront({
 function SportNewsDesk({
   page,
   board,
+  leagueClubs,
+  standings,
   edition,
   onTurn,
 }: {
   page: SportFrontPage;
   board: SectionBoard | null;
   leagueClubs: LeagueClub[];
+  standings: StandGroup[];
   edition: string;
   onTurn: (folio: string) => void;
 }) {
@@ -3246,11 +3253,35 @@ function SportNewsDesk({
   const lead = withArt[0] ?? stories[0] ?? null;
 
   const showStrip = !page.path.includes("college-football");
+  // Tonight and tomorrow close the rail under the stories; a club's own game leads the list.
+  const onDeck = (board?.slate ?? [])
+    .filter((g) => !g.final)
+    .sort((a, b) => Number(involvesClub(b, page.clubs)) - Number(involvesClub(a, page.clubs)))
+    .slice(0, 8)
+    .sort((a, b) => (a.startIso ?? "").localeCompare(b.startIso ?? ""));
+  // Your club's table stretches to whatever the stories leave; the slate under it goes by the day.
+  const snap = offseasonTables(standings, page, leagueClubs).slice(0, 1);
+  const fill = (
+    <>
+      {snap.length ? (
+        <section className="tt-bs-fill tt-bs-snap" aria-label="Where they stand">
+          <h3 className="wsj-band-title">{page.offseason ? "How it ended" : "Where they stand"}</h3>
+          <DeskSnap tables={snap} rich />
+        </section>
+      ) : null}
+      {onDeck.length ? (
+        <section className="tt-bs-fill" data-tt-rows="" aria-label="On deck">
+          <h3 className="wsj-band-title">On deck</h3>
+          <ScheduleAgate games={onDeck} dayLabel={(day) => dayHeading(day, edition)} columns={1} />
+        </section>
+      ) : null}
+    </>
+  );
   return (
     <div className="wsj-sport-news">
       {showStrip && strips.map((strip) =>
         strip.games.length ? (
-          <section className="tt-strip-wrap" key={strip.title}>
+          <section className={cn("tt-strip-wrap", strip.games.length <= 3 && "few")} key={strip.title}>
             <h3 className="wsj-band-title">
               {strip.title}
               <button type="button" className="tt-band-link" onClick={() => onTurn(deskFolio(page, "recaps", `${page.section}2`))}>
@@ -3269,7 +3300,7 @@ function SportNewsDesk({
         ) : null,
       )}
       {lead ? (
-        <Broadsheet cards={[lead, ...stories.filter((c) => c !== lead)]} games={gameById} label="Around the league" />
+        <Broadsheet cards={[lead, ...stories.filter((c) => c !== lead)]} games={gameById} label="Around the league" fill={fill} />
       ) : (
         <p className="wsj-empty">The league wire is quiet. Scores, tables and the slate follow.</p>
       )}
@@ -4127,7 +4158,7 @@ function SportFront({
             onTurn={onTurn}
           />
         ) : page.focus === "news" ? (
-          <SportNewsDesk page={page} board={board} leagueClubs={leagueClubs} edition={edition} onTurn={onTurn} />
+          <SportNewsDesk page={page} board={board} leagueClubs={leagueClubs} standings={standings} edition={edition} onTurn={onTurn} />
         ) : page.focus === "opener" ? (
           <OpenerDesk page={page} onTurn={onTurn} />
         ) : page.focus === "recaps" ? (

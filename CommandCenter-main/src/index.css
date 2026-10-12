@@ -10707,7 +10707,7 @@ body:has(.tt-phone-shot) {
   min-height: 0;
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  grid-template-rows: minmax(0, 1fr) fit-content(40%);
+  grid-template-rows: minmax(0, 1fr) fit-content(30%);
   column-gap: 0;
   row-gap: 12px;
 }
@@ -10797,6 +10797,8 @@ body:has(.tt-phone-shot) {
   object-fit: cover;
 }
 .newspaper-root .wsj-sheet .tt-bs-lead :is(.wsj-cut, .tt-recap-photo) img { height: calc(var(--tt-page-h) * 0.22); }
+/* With briefs under it, the lead's picture gives the copy its lines back. */
+.newspaper-root .wsj-sheet .tt-bs:not(.no-band) .tt-bs-lead :is(.wsj-cut, .tt-recap-photo) img { height: calc(var(--tt-page-h) * 0.17); }
 .newspaper-root .wsj-sheet .tt-bs-rail :is(.wsj-cut, .tt-recap-photo) img { height: calc(var(--tt-page-h) * 0.12); }
 .newspaper-root .wsj-sheet .tt-bs-col :is(.wsj-cut, .tt-recap-photo) img { height: calc(var(--tt-page-h) * 0.085); }
 .newspaper-root .wsj-sheet .tt-bs-col :is(.wsj-cut, .tt-recap-photo) figcaption { display: none; }

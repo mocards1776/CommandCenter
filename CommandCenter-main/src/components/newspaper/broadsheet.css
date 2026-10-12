@@ -917,3 +917,116 @@
 .newspaper-root .wsj-sheet .tt-stand-cols.single .tt-stand {
   flex: 1 1 auto;
 }
+
+/* ── Scores strip with a game or three: one ruled line, not a row of cards ── */
+.newspaper-root .wsj-sheet .tt-strip-wrap.few {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--w-rule);
+}
+.newspaper-root .wsj-sheet .tt-strip-wrap.few .wsj-band-title {
+  display: contents;
+}
+.newspaper-root .wsj-sheet .tt-strip-wrap.few .wsj-band-title::after {
+  display: none;
+}
+.newspaper-root .wsj-sheet .tt-strip-wrap.few .tt-band-link {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: end;
+  order: 0;
+}
+.newspaper-root .wsj-sheet .tt-strip-wrap.few .tt-strip {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+}
+.newspaper-root .wsj-sheet .tt-strip-wrap.few .tt-strip li {
+  flex: 0 0 auto;
+}
+.newspaper-root .wsj-sheet .tt-strip-wrap.few .tt-strip button {
+  flex-direction: row;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 14px 6px 10px;
+}
+.newspaper-root .wsj-sheet .tt-strip-wrap.few .tt-strip-st {
+  order: 0;
+  padding-right: 10px;
+  border-right: 1px solid var(--w-hair);
+  font-size: 9px;
+}
+.newspaper-root .wsj-sheet .tt-strip-wrap.few .tt-strip-row {
+  gap: 6px;
+  font-size: 16px;
+}
+.newspaper-root .wsj-sheet .tt-strip-wrap.few .tt-strip-row i {
+  margin-left: 4px;
+  font-size: 18px;
+}
+
+/* ── The table and the slate close the news rail ─────────────────────── */
+/* The wrapper takes only what the stories leave (basis 0, so it never sets
+   the row's height); what does not fit inside it is trimmed, lowest first. */
+.newspaper-root .wsj-sheet .tt-bs-rail-fill {
+  flex: 1 1 0px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin-top: 12px;
+  container: tt-rail-fill / size;
+}
+/* Too little room for even a day of the slate: print nothing rather than a sliver. */
+@container tt-rail-fill (max-height: 119px) {
+  .newspaper-root .wsj-sheet .tt-bs-fill {
+    display: none;
+  }
+}
+.newspaper-root .wsj-sheet .tt-bs-fill {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 2px solid var(--w-rule);
+}
+.newspaper-root .wsj-sheet .tt-bs-fill + .tt-bs-fill {
+  margin-top: 12px;
+}
+.newspaper-root .wsj-sheet .tt-bs-fill .tt-sched {
+  columns: auto;
+}
+.newspaper-root .wsj-sheet .tt-bs-fill .tt-sched section + section {
+  margin-top: 8px;
+}
+/* The table stretches its rows into spare room; it goes whole when there is none. */
+.newspaper-root .wsj-sheet .tt-bs-snap {
+  flex: 1 1 auto;
+}
+.newspaper-root .wsj-sheet .tt-bs-snap .tt-desk-tables {
+  flex: 1 1 auto;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: stretch;
+  gap: 10px;
+}
+.newspaper-root .wsj-sheet .tt-bs-snap .tt-desk-div h4 {
+  font-family: var(--w-cond);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding-bottom: 3px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--w-ink);
+}
+.newspaper-root .wsj-sheet .tt-bs-snap .tt-desk-tables.rich li {
+  padding: 3px 0;
+  border-bottom: 1px solid var(--w-hair);
+}
+.newspaper-root .wsj-sheet .tt-bs-snap .tt-desk-tables.rich li:last-child {
+  border-bottom: 0;
+}

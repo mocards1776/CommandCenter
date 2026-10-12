@@ -36,6 +36,8 @@ const CUT = "ttCut";
 const GROWN = "ttGrown";
 /** A cut that leaves fewer lines than this drops the block instead. */
 export const MIN_CUT_LINES = 3;
+/** A lead's copy keeps at least this many lines while the story still has furniture to give. */
+const LEAD_MIN_LINES = 8;
 /** A marked block this share of the page or more is cut inside, never dropped whole. */
 const MAX_DROP_SHARE = 0.55;
 /** The general fallback only drops units smaller than this share of the page. */
@@ -262,7 +264,11 @@ export function packSheet(sheet: HTMLElement): PackResult {
       for (const kid of el.children) {
         if (!(kid instanceof HTMLElement) || kid.dataset[PACKED] != null || kid.dataset[CUT] != null) continue;
         const r = kid.getBoundingClientRect();
-        if (r.height < 1) continue;
+        if (r.height < 1) {
+          // A box squeezed to nothing whose children still paint past it is walked, not skipped.
+          if (kid.scrollHeight > SPILL_SLACK && getComputedStyle(kid).display !== "none") walk(kid);
+          continue;
+        }
         if (r.top >= limit - 1) {
           if (!kept(kid)) drop(kid);
           continue;
@@ -421,6 +427,15 @@ export function packSheet(sheet: HTMLElement): PackResult {
       const limit = footOf(box);
       const next = firstTier(box, limit) ?? keepTier(box, limit);
       if (next) {
+        // The lead's furniture (score band, stat line) goes before its copy is cut to a few lines.
+        if (next.copy && next.el.closest(LEAD)) {
+          const fit = copyFit(next.el, limit);
+          const furniture = fit && fit.lines < LEAD_MIN_LINES ? furnitureAbove(next.el) : null;
+          if (furniture) {
+            drop(furniture);
+            continue;
+          }
+        }
         if (next.copy && cutTo(next.el, limit)) continue;
         drop((next.copy && furnitureAbove(next.el)) || next.el);
         continue;

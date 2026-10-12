@@ -795,7 +795,7 @@ export function ScheduleAgate({
   return (
     <div className={cn("tt-sched", roomy && "roomy")} style={{ ["--sched-cols" as string]: String(columns) }}>
       {days.map(([day, list]) => (
-        <section key={day}>
+        <section key={day} data-tt-rows="">
           {list.map((g, i) => (
             <ScheduleEntry
               key={g.id}
