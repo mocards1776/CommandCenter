@@ -1,0 +1,1092 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   Thompson Times — broadsheet page templates
+
+   The sheet is 1280 design px wide (see newspaper-page-size.ts). Every rule
+   here is scoped to .wsj-sheet and layered over index.css. Templates:
+     • .art-package — the inside-page feature: headline across the sheet,
+       the picture beside the score, copy in four or five columns under both
+     • .wsj-continue — the jump page: a slim turn tab, a one-line scorebar,
+       type across the sheet, the box as agate in the last columns
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── Feature story (inside pages) ───────────────────────────────────── */
+/* A fixed count, never `columns: auto <width>`: WebKit balances an
+   auto-count multicol inside a column flexbox against the wrong height and
+   paints columns its layout never reported. */
+.newspaper-root .wsj-sheet .art-package .wsj-prose.c3,
+.newspaper-root .wsj-sheet .art-package .wsj-prose.c4,
+.newspaper-root .wsj-sheet .art-package .wsj-prose.c5 {
+  column-count: 4;
+  column-width: auto;
+  column-gap: 22px;
+  flex: none;
+}
+.newspaper-root .wsj-sheet .art-package .wsj-prose.c3 {
+  column-count: 3;
+  column-gap: 26px;
+}
+.newspaper-root .wsj-sheet .art-package .wsj-prose.c5 {
+  column-count: 5;
+}
+
+/* Nothing on an inside page shrinks to the sheet: the packer measures real
+   overflow and cuts copy on lines, so every block keeps its natural height. */
+.newspaper-root .wsj-sheet .wsj-inside > *,
+.newspaper-root .wsj-sheet .wsj-inside-story > *,
+.newspaper-root .wsj-sheet .wsj-story.art-package > * {
+  flex: none;
+  min-height: auto;
+}
+.wsj-sheet .wsj-story.art-package {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.wsj-sheet .wsj-story.art-package > .wsj-story-head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.wsj-sheet .wsj-story.art-package > .wsj-story-head .wsj-hl.xl {
+  font-size: 50px;
+  line-height: 1;
+  letter-spacing: -0.025em;
+  max-width: 24ch;
+}
+.wsj-sheet .wsj-story.art-package > .wsj-story-head .wsj-dek {
+  font-size: 18px;
+  max-width: 70ch;
+}
+.wsj-sheet .wsj-story.art-package > .wsj-story-head .wsj-byline {
+  margin-top: 2px;
+}
+.wsj-sheet .wsj-story-package {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: 0 var(--w-gutter);
+  align-items: stretch;
+  min-width: 0;
+}
+.wsj-sheet .wsj-story-package.no-side {
+  grid-template-columns: minmax(0, 1fr);
+}
+.wsj-sheet .wsj-story-package.no-art {
+  grid-template-columns: minmax(0, 1fr);
+}
+.wsj-sheet .wsj-story-package > .wsj-story-art {
+  min-width: 0;
+}
+.wsj-sheet .wsj-story-package .tt-recap-photo,
+.wsj-sheet .wsj-story-package .wsj-cut {
+  margin: 0;
+}
+.wsj-sheet .wsj-story-package .tt-recap-photo.wide img,
+.wsj-sheet .wsj-story-package .wsj-cut img {
+  aspect-ratio: 16 / 10;
+  max-height: 390px;
+  width: 100%;
+  object-fit: cover;
+  object-position: center 20%;
+}
+/* Short copy: the picture runs deeper and the type sets wider, in three columns. */
+.wsj-sheet .wsj-story.art-package.short .wsj-story-package .tt-recap-photo.wide img,
+.wsj-sheet .wsj-story.art-package.short .wsj-story-package .wsj-cut img {
+  aspect-ratio: 4 / 3;
+  max-height: 470px;
+}
+.newspaper-root .wsj-sheet .art-package.short .wsj-prose.c3 {
+  column-count: 3;
+  column-width: auto;
+  column-gap: 26px;
+  font-size: 14.6px;
+  line-height: 1.55;
+}
+.wsj-sheet .wsj-story-package .tt-recap-photo.inset {
+  float: none;
+  width: 100%;
+  margin: 0;
+}
+.wsj-sheet .wsj-story-package .tt-recap-photo.fit img {
+  max-height: 390px;
+  margin: 0 auto;
+}
+.wsj-sheet .wsj-story-package > .wsj-story-side {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding-left: var(--w-gutter);
+  border-left: 1px solid var(--w-hair);
+}
+.wsj-sheet .wsj-story-package > .wsj-story-side .tt-recap-chrome {
+  margin: 0;
+  gap: 8px;
+  flex: 1;
+}
+.wsj-sheet .wsj-story-package > .wsj-story-side .tt-recap-chips {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+}
+.wsj-sheet .wsj-story-package > .wsj-story-side .wsj-story-facts {
+  margin: 0;
+}
+/* The club poster stands in for the picture: a full-height colored panel. */
+.wsj-sheet .wsj-story-package > .wsj-story-art > .wsj-poster {
+  height: 100%;
+  box-sizing: border-box;
+}
+.wsj-sheet .wsj-story.art-package > .wsj-story-copy {
+  display: block;
+  padding-top: 10px;
+  border-top: 1px solid var(--w-rule);
+}
+.wsj-sheet .wsj-story.art-package > .wsj-story-copy > * + * {
+  margin-top: 6px;
+}
+.wsj-sheet .wsj-story.art-package .wsj-prose {
+  font-size: 14.2px;
+  line-height: 1.52;
+}
+.wsj-sheet .wsj-story.art-package .wsj-prose.drop > p:first-child .wsj-drop {
+  font-size: 4.6em;
+}
+/* A side with no picture beside it (the jump page's score strip) runs the full measure. */
+.wsj-sheet .wsj-story-package.no-art > .wsj-story-side {
+  padding-left: 0;
+  border-left: 0;
+}
+
+/* ── Jump page ──────────────────────────────────────────────────────── */
+.newspaper-root .wsj-sheet .wsj-continue {
+  gap: 18px;
+}
+.newspaper-root .wsj-sheet .wsj-continue > * {
+  flex: none;
+  min-height: auto;
+}
+.wsj-sheet .wsj-jump-story {
+  gap: 10px;
+}
+.wsj-sheet .wsj-jump-story.second {
+  padding-top: 16px;
+  border-top: 4px double var(--w-rule);
+}
+.wsj-sheet .wsj-jump-story .wsj-continued-from {
+  margin: 0 0 -4px;
+}
+.wsj-sheet .wsj-jump-story .wsj-continued-from .wsj-jump-btn {
+  padding: 3px 8px 2px 0;
+  color: var(--tt-team, var(--w-navy));
+}
+.newspaper-root .wsj-sheet .wsj-jump-story .wsj-hl.xl {
+  font-size: 40px;
+  line-height: 1.02;
+  max-width: 30ch;
+}
+.newspaper-root .wsj-sheet .wsj-jump-story .wsj-hl.lg {
+  font-size: 30px;
+  max-width: 46ch;
+}
+.wsj-sheet .wsj-jump-story .wsj-story.art-package > .wsj-story-copy {
+  padding-top: 8px;
+}
+.wsj-sheet .wsj-jump-box {
+  padding-top: 10px;
+  border-top: 1px solid var(--w-rule);
+}
+
+/* The score strip: the final on one line, the linescore and names as agate beside it. */
+.wsj-sheet .tt-recap-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  grid-template-rows: auto auto;
+  column-gap: var(--w-gutter);
+  row-gap: 6px;
+  align-items: start;
+  padding: 8px 0 10px;
+  border-top: 3px solid var(--tt-team, var(--w-ink));
+  border-bottom: 1px solid var(--w-rule);
+}
+.wsj-sheet .tt-recap-bar-score {
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.wsj-sheet .tt-recap-bar-venue {
+  font-family: var(--w-label);
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+}
+.wsj-sheet .tt-recap-bar-line {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  min-width: 0;
+  padding-left: var(--w-gutter);
+  border-left: 1px solid var(--w-hair);
+}
+.wsj-sheet .tt-recap-bar-names {
+  grid-row: 2;
+  grid-column: 1;
+  min-width: 0;
+}
+.wsj-sheet .tt-recap-bar-names .tt-recap-chips {
+  padding-top: 0;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 6px 12px;
+}
+.wsj-sheet .tt-recap-bar-names .tt-recap-chips b {
+  font-size: 12.5px;
+}
+.wsj-sheet .tt-recap-bar-names .tt-recap-chips i {
+  font-size: 11px;
+}
+.wsj-sheet .tt-score-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 14px;
+  min-width: 0;
+}
+.wsj-sheet .tt-score-bar-side {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 4px 0;
+  border-left: 5px solid var(--side, var(--w-rule));
+  padding-left: 10px;
+}
+.wsj-sheet .tt-score-bar-side.home {
+  flex-direction: row-reverse;
+  border-left: 0;
+  padding-left: 0;
+  border-right: 5px solid var(--side, var(--w-rule));
+  padding-right: 10px;
+  text-align: right;
+}
+.wsj-sheet .tt-score-bar-side .tt-mark {
+  width: 36px;
+  height: 36px;
+}
+.wsj-sheet .tt-score-bar-side > span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.1;
+}
+.wsj-sheet .tt-score-bar-side em {
+  font-family: var(--w-label);
+  font-style: normal;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+}
+.wsj-sheet .tt-score-bar-side strong {
+  font-family: var(--w-cond);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wsj-sheet .tt-score-bar-side.lost strong {
+  color: var(--w-ink-soft);
+}
+.wsj-sheet .tt-score-bar-side b {
+  margin-left: auto;
+  font-family: var(--w-cond);
+  font-size: 40px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--side, var(--w-ink));
+}
+.wsj-sheet .tt-score-bar-side.home b {
+  margin-left: 0;
+  margin-right: auto;
+}
+.wsj-sheet .tt-score-bar-side.lost b {
+  color: var(--w-ink-soft);
+}
+.wsj-sheet .tt-score-bar-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 3px;
+  padding: 0 6px;
+}
+.wsj-sheet .tt-score-bar-state b {
+  font-family: var(--w-label);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  padding: 3px 7px;
+  color: #fff;
+  background: var(--w-ink);
+}
+.wsj-sheet .tt-score-bar-state i {
+  font-family: var(--w-label);
+  font-style: normal;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+  max-width: 16ch;
+}
+
+/* ── Postseason ladder (MLB front rail) ─────────────────────────────── */
+.newspaper-root .wsj-sheet .tt-front-ladder {
+  padding-top: 10px;
+  border-top: 3px solid var(--w-ink);
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder {
+  gap: 8px;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-head {
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: baseline;
+  gap: 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--w-rule);
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-head h3 {
+  grid-column: 1;
+  grid-row: 1;
+  font-size: 24px;
+  text-align: left;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-head span:first-child {
+  grid-column: 2;
+  grid-row: 1;
+  font-size: 16px;
+  text-align: right;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-head span:last-child {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  text-align: left;
+  font-size: 9px;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-board {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-half {
+  gap: 6px;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-league {
+  padding: 3px 8px 2px;
+  font-size: 9.5px;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-col {
+  padding: 0 8px;
+  gap: 4px;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-col:first-child {
+  padding-left: 0;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-col:last-child {
+  padding-right: 0;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-stack {
+  gap: 6px;
+  justify-content: space-around;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-club {
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  gap: 5px;
+  padding: 3px 5px;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-disc {
+  width: 22px;
+  height: 22px;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-disc img {
+  width: 16px;
+  height: 16px;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-club b {
+  font-size: 13px;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-club em {
+  min-width: 16px;
+  font-size: 14px;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-node > p {
+  padding: 2px 5px;
+  font-size: 8.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-col:not(.lcs) .tt-br-node::after {
+  width: 8px;
+  right: -9px;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-col.lcs .tt-br-node::after {
+  content: none;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-empty {
+  padding: 10px 4px;
+  font-size: 11px;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-center {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 2px 12px;
+  padding: 8px 10px;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-trophy {
+  grid-row: 1 / span 2;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-trophy svg {
+  width: 34px;
+  height: 34px;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-center > .tt-br-round {
+  font-size: 15px;
+  text-align: left;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-center .tt-br-node {
+  grid-column: 2;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-center .tt-br-empty {
+  grid-column: 2;
+  margin: 0;
+  padding: 6px;
+  text-align: left;
+}
+.newspaper-root .wsj-sheet .tt-bracket.ladder .tt-br-champ {
+  grid-column: 1 / -1;
+}
+
+.wsj-sheet .wsj-inside-story.feature .wsj-inside-flag {
+  margin-bottom: 2px;
+}
+/* The second story on the page sets smaller, under a double rule. */
+.wsj-sheet .wsj-inside-story.second {
+  padding-top: 14px;
+  border-top: 4px double var(--w-rule);
+}
+.wsj-sheet .wsj-inside-story.second .wsj-hl.lg {
+  font-size: 30px;
+}
+
+/* ── Club ledger (Essentials page: every club, the week ahead) ───────── */
+.newspaper-root .wsj-sheet .tt-ledger {
+  display: flex;
+  flex-direction: column;
+  flex: 1 0 auto;
+  min-height: 0;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 4px double var(--w-rule);
+}
+.newspaper-root .wsj-sheet .tt-ledger-head {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--w-rule);
+}
+.newspaper-root .wsj-sheet .tt-ledger-head h3 {
+  margin: 0;
+  font-family: var(--w-head);
+  font-style: italic;
+  font-weight: 900;
+  font-size: 26px;
+  line-height: 1;
+}
+.newspaper-root .wsj-sheet .tt-ledger-head p {
+  margin: 0;
+  font-family: var(--w-label);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+}
+.newspaper-root .wsj-sheet .tt-ledger-key {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px 6px;
+}
+.newspaper-root .wsj-sheet .tt-ledger-key i,
+.newspaper-root .wsj-sheet .tt-ledger-dots i {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1.5px solid var(--tt-team, var(--w-ink));
+  background: var(--tt-team, var(--w-ink));
+  box-sizing: border-box;
+}
+.newspaper-root .wsj-sheet .tt-ledger-key i.l,
+.newspaper-root .wsj-sheet .tt-ledger-dots i.l {
+  background: transparent;
+}
+.newspaper-root .wsj-sheet .tt-ledger-key i.d,
+.newspaper-root .wsj-sheet .tt-ledger-dots i.d {
+  background: linear-gradient(90deg, var(--tt-team, var(--w-ink)) 50%, transparent 50%);
+}
+.newspaper-root .wsj-sheet .tt-ledger-key i + i {
+  margin-left: 6px;
+}
+.newspaper-root .wsj-sheet .tt-ledger table {
+  flex: 1 1 auto;
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-family: var(--w-label);
+  font-size: 11px;
+}
+.newspaper-root .wsj-sheet .tt-ledger thead th {
+  padding: 0 6px 5px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+  text-align: left;
+  border-bottom: 2px solid var(--w-rule);
+  vertical-align: bottom;
+}
+.newspaper-root .wsj-sheet .tt-ledger th.club { width: 200px; }
+.newspaper-root .wsj-sheet .tt-ledger th.rec { width: 120px; }
+.newspaper-root .wsj-sheet .tt-ledger th.form { width: 86px; }
+.newspaper-root .wsj-sheet .tt-ledger th.day {
+  text-align: center;
+  border-left: 1px solid var(--w-hair);
+}
+.newspaper-root .wsj-sheet .tt-ledger th.day b {
+  display: block;
+  font-size: 11px;
+  color: var(--w-ink);
+  letter-spacing: 0.1em;
+}
+.newspaper-root .wsj-sheet .tt-ledger th.day span {
+  display: block;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+.newspaper-root .wsj-sheet .tt-ledger th.day.today b {
+  color: var(--w-red);
+}
+.newspaper-root .wsj-sheet .tt-ledger tbody tr {
+  height: 32px;
+  border-bottom: 1px solid var(--w-hair);
+}
+.newspaper-root .wsj-sheet .tt-ledger tbody tr:last-child {
+  border-bottom: 2px solid var(--w-rule);
+}
+.newspaper-root .wsj-sheet .tt-ledger td {
+  padding: 2px 6px;
+  vertical-align: middle;
+  min-width: 0;
+  line-height: 1.2;
+}
+.newspaper-root .wsj-sheet .tt-ledger td.club {
+  box-shadow: inset 4px 0 0 var(--tt-team, var(--w-ink));
+  padding-left: 10px;
+}
+.newspaper-root .wsj-sheet .tt-ledger td.club a {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    "logo name"
+    "logo lg";
+  align-items: center;
+  column-gap: 8px;
+  color: inherit;
+  text-decoration: none;
+}
+.newspaper-root .wsj-sheet .tt-ledger td.club a > :first-child {
+  grid-area: logo;
+}
+.newspaper-root .wsj-sheet .tt-ledger td.club strong {
+  grid-area: name;
+  font-family: var(--w-cond);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.05;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.newspaper-root .wsj-sheet .tt-ledger td.club em {
+  grid-area: lg;
+  font-style: normal;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+}
+.newspaper-root .wsj-sheet .tt-ledger td.rec b {
+  display: block;
+  font-family: var(--w-cond);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+.newspaper-root .wsj-sheet .tt-ledger td.rec em {
+  display: block;
+  font-style: normal;
+  font-size: 9.5px;
+  color: var(--w-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.newspaper-root .wsj-sheet .tt-ledger-dots {
+  display: inline-flex;
+  gap: 4px;
+}
+.newspaper-root .wsj-sheet .tt-ledger td.form .none {
+  color: var(--w-muted);
+}
+.newspaper-root .wsj-sheet .tt-ledger td.day {
+  text-align: center;
+  border-left: 1px solid var(--w-hair);
+  line-height: 1.15;
+}
+.newspaper-root .wsj-sheet .tt-ledger td.day.today,
+.newspaper-root .wsj-sheet .tt-ledger th.day.today {
+  background: var(--w-paper-2);
+}
+.newspaper-root .wsj-sheet .tt-ledger td.day b {
+  display: block;
+  font-family: var(--w-cond);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.newspaper-root .wsj-sheet .tt-ledger td.day span {
+  display: block;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--w-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.newspaper-root .wsj-sheet .tt-ledger td.day.game {
+  background: color-mix(in srgb, var(--tt-team, var(--w-ink)) 7%, transparent);
+}
+.newspaper-root .wsj-sheet .tt-ledger td.day.game.today {
+  background: color-mix(in srgb, var(--tt-team, var(--w-ink)) 12%, var(--w-paper-2));
+}
+.newspaper-root .wsj-sheet .tt-ledger td.day.w span { color: var(--w-ink); }
+.newspaper-root .wsj-sheet .tt-ledger td.day.l span { color: var(--w-red); }
+.newspaper-root .wsj-sheet .tt-ledger td.day.live span { color: var(--w-red); }
+.newspaper-root .wsj-sheet .tt-ledger td.idle {
+  border-left: 1px solid var(--w-hair);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--w-muted);
+  padding-left: 12px;
+}
+
+/* ── Weather, set tighter on the sheet so the ledger gets its half ───── */
+.newspaper-root .wsj-sheet {
+  container: tt-sheet / size;
+}
+.newspaper-root .wsj-sheet .wx {
+  flex: 0 0 auto;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+.newspaper-root .wsj-sheet .wx-now {
+  padding: 10px 14px 12px;
+}
+.newspaper-root .wsj-sheet .wx-outlook li {
+  padding: 6px 4px 8px;
+  gap: 2px;
+}
+.newspaper-root .wsj-sheet .wx-outlook .wx-icon {
+  width: 40px;
+  height: 40px;
+}
+.newspaper-root .wsj-sheet .wx-word {
+  min-height: 1.2em;
+}
+.newspaper-root .wsj-sheet .wx-bottom {
+  gap: 18px;
+}
+.newspaper-root .wsj-sheet .wx-almanac {
+  gap: 6px;
+}
+.newspaper-root .wsj-sheet .wx-sunline,
+.newspaper-root .wsj-sheet .wx-moonline {
+  padding-bottom: 6px;
+}
+/* The ten-day chart runs wide and short; its type keeps the hourly chart's size. */
+.newspaper-root .wsj-sheet .wx-tenday .wx-t {
+  font-size: 19px;
+}
+.newspaper-root .wsj-sheet .wx-tenday .wx-h {
+  font-size: 15px;
+}
+.newspaper-root .wsj-sheet .wx-tenday .wx-hi,
+.newspaper-root .wsj-sheet .wx-tenday .wx-lo {
+  stroke-width: 3;
+}
+/* A short sheet (landscape) loses the ten-day chart — the cards above carry
+   the same highs and lows — and runs the almanac as one strip. */
+@container tt-sheet (max-height: 1450px) {
+  .newspaper-root .wsj-sheet .wx-tenday {
+    display: none;
+  }
+  .newspaper-root .wsj-sheet .wx-bottom {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .newspaper-root .wsj-sheet .wx-almanac {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.4fr);
+    align-items: center;
+    gap: 0 22px;
+  }
+  .newspaper-root .wsj-sheet .wx-almanac h3 {
+    margin: 0;
+  }
+  .newspaper-root .wsj-sheet .wx-sunline,
+  .newspaper-root .wsj-sheet .wx-moonline {
+    padding-bottom: 0;
+    border-bottom: 0;
+  }
+  .newspaper-root .wsj-sheet .wx-yday caption {
+    text-align: left;
+  }
+  .newspaper-root .wsj-sheet .tt-ledger tbody tr {
+    height: 28px;
+  }
+  /* The club band on a jump page runs its leaders two abreast and sits
+     tighter, so it still closes above the foot of the short sheet. */
+  .newspaper-root .wsj-sheet .wsj-poster.band {
+    padding: 13px 20px;
+    gap: 12px 28px;
+  }
+  .newspaper-root .wsj-sheet .wsj-poster.band .wsj-poster-names {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px 14px;
+  }
+  /* The Missouri front crops its pictures wider so the two second stories
+     still land under the lead. */
+  .newspaper-root .wsj-sheet .tt-mo-main > .tt-mo-story.xl .tt-mo-photo img {
+    aspect-ratio: 2 / 1;
+  }
+  .newspaper-root .wsj-sheet .tt-mo-seconds .tt-mo-story.md .tt-mo-photo img {
+    aspect-ratio: 2 / 1;
+  }
+}
+
+/* ── Standings under the schedule: logos, names, the streak, a win bar; the
+      block closes the page, its rows spaced to the foot ─────────────────── */
+.newspaper-root .wsj-sheet .tt-sched-snap.roomy {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.newspaper-root .wsj-sheet .tt-sched-snap.roomy .tt-desk-tables.rich {
+  flex: 1 1 auto;
+  align-content: stretch;
+}
+.newspaper-root .wsj-sheet .tt-desk-tables.rich .tt-desk-div {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.newspaper-root .wsj-sheet .tt-desk-tables.rich .tt-desk-div ol {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+}
+.newspaper-root .wsj-sheet .tt-desk-tables.rich .tt-desk-div li {
+  flex: 1 1 auto;
+}
+.newspaper-root .wsj-sheet .tt-sched-desk {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* ── League leaders desk: the categories share the page to the foot ─── */
+.newspaper-root .wsj-sheet .tt-lleaders-desk {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.newspaper-root .wsj-sheet .tt-lleaders-desk .tt-lleaders-grid {
+  flex: 1 1 auto;
+  align-content: stretch;
+}
+.newspaper-root .wsj-sheet .tt-lleaders-desk .tt-lleaders-cat {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.newspaper-root .wsj-sheet .tt-lleaders-desk .tt-lleaders-cat ol {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+}
+.newspaper-root .wsj-sheet .tt-lleaders-desk .tt-lleaders-cat li {
+  flex: 1 1 auto;
+}
+.newspaper-root .wsj-sheet .tt-desk-tables.rich li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto 38px;
+  align-items: center;
+  column-gap: 8px;
+  padding: 5px 0 6px;
+  font-family: var(--w-label);
+  font-size: 13px;
+  border-bottom: 1px solid var(--w-hair);
+}
+.newspaper-root .wsj-sheet .tt-desk-tables.rich li::after {
+  content: "";
+  position: absolute;
+  left: 30px;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  width: calc((100% - 30px) * var(--bar, 0) / 100);
+  background: var(--w-ink);
+  opacity: 0.55;
+}
+.newspaper-root .wsj-sheet .tt-desk-tables.rich li img {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+}
+.newspaper-root .wsj-sheet .tt-desk-tables.rich li b {
+  font-family: var(--w-cond);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.newspaper-root .wsj-sheet .tt-desk-tables.rich li em {
+  font-style: normal;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.newspaper-root .wsj-sheet .tt-desk-tables.rich li em sup {
+  font-size: 9px;
+  margin-left: 1px;
+}
+.newspaper-root .wsj-sheet .tt-desk-tables.rich li i {
+  font-style: normal;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-align: right;
+  color: var(--w-muted);
+  font-variant-numeric: tabular-nums;
+}
+.newspaper-root .wsj-sheet .tt-desk-tables.rich li i.up { color: var(--w-ink); }
+.newspaper-root .wsj-sheet .tt-desk-tables.rich li i.down { color: var(--w-red); }
+
+/* ── One league table on the page stretches its rows to the band below ── */
+.newspaper-root .wsj-sheet .tt-stand-cols.single {
+  columns: auto;
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+.newspaper-root .wsj-sheet .tt-stand-cols.single > * {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 0;
+}
+.newspaper-root .wsj-sheet .tt-stand-cols.single .tt-stand {
+  flex: 1 1 auto;
+}
+
+/* ── Scores strip with a game or three: one ruled line, not a row of cards ── */
+.newspaper-root .wsj-sheet .tt-strip-wrap.few {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--w-rule);
+}
+.newspaper-root .wsj-sheet .tt-strip-wrap.few .wsj-band-title {
+  display: contents;
+}
+.newspaper-root .wsj-sheet .tt-strip-wrap.few .wsj-band-title::after {
+  display: none;
+}
+.newspaper-root .wsj-sheet .tt-strip-wrap.few .tt-band-link {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: end;
+  order: 0;
+}
+.newspaper-root .wsj-sheet .tt-strip-wrap.few .tt-strip {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+}
+.newspaper-root .wsj-sheet .tt-strip-wrap.few .tt-strip li {
+  flex: 0 0 auto;
+}
+.newspaper-root .wsj-sheet .tt-strip-wrap.few .tt-strip button {
+  flex-direction: row;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 14px 6px 10px;
+}
+.newspaper-root .wsj-sheet .tt-strip-wrap.few .tt-strip-st {
+  order: 0;
+  padding-right: 10px;
+  border-right: 1px solid var(--w-hair);
+  font-size: 9px;
+}
+.newspaper-root .wsj-sheet .tt-strip-wrap.few .tt-strip-row {
+  gap: 6px;
+  font-size: 16px;
+}
+.newspaper-root .wsj-sheet .tt-strip-wrap.few .tt-strip-row i {
+  margin-left: 4px;
+  font-size: 18px;
+}
+
+/* ── The table and the slate close the news rail ─────────────────────── */
+/* The wrapper takes only what the stories leave (basis 0, so it never sets
+   the row's height); what does not fit inside it is trimmed, lowest first. */
+.newspaper-root .wsj-sheet .tt-bs-rail-fill {
+  flex: 1 1 0px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin-top: 12px;
+  container: tt-rail-fill / size;
+}
+/* Too little room for even a day of the slate: print nothing rather than a sliver. */
+@container tt-rail-fill (max-height: 119px) {
+  .newspaper-root .wsj-sheet .tt-bs-fill {
+    display: none;
+  }
+}
+.newspaper-root .wsj-sheet .tt-bs-fill {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 2px solid var(--w-rule);
+}
+.newspaper-root .wsj-sheet .tt-bs-fill + .tt-bs-fill {
+  margin-top: 12px;
+}
+.newspaper-root .wsj-sheet .tt-bs-fill .tt-sched {
+  columns: auto;
+}
+.newspaper-root .wsj-sheet .tt-bs-fill .tt-sched section + section {
+  margin-top: 8px;
+}
+/* The table stretches its rows into spare room; it goes whole when there is none. */
+.newspaper-root .wsj-sheet .tt-bs-snap {
+  flex: 1 1 auto;
+}
+.newspaper-root .wsj-sheet .tt-bs-snap .tt-desk-tables {
+  flex: 1 1 auto;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: stretch;
+  gap: 10px;
+}
+.newspaper-root .wsj-sheet .tt-bs-snap .tt-desk-div h4 {
+  font-family: var(--w-cond);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding-bottom: 3px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--w-ink);
+}
+.newspaper-root .wsj-sheet .tt-bs-snap .tt-desk-tables.rich li {
+  padding: 3px 0;
+  border-bottom: 1px solid var(--w-hair);
+}
+.newspaper-root .wsj-sheet .tt-bs-snap .tt-desk-tables.rich li:last-child {
+  border-bottom: 0;
+}
+
+/* ── Missouri inside pages: the briefs take the sheet's depth ─────────── */
+/* Rows stretch into spare depth, so a light page spreads its briefs down
+   the sheet rather than ending in a blank foot. */
+.newspaper-root .wsj-sheet .tt-mo-briefs {
+  flex: 1 1 auto;
+  min-height: 0;
+  align-content: stretch;
+  grid-auto-flow: dense;
+}
+
+/* ── A story set whole takes the depth with its picture ──────────────── */
+/* When the copy ends on the page (nothing left to run on), the package
+   grows into the spare depth and the picture with it; cut copy keeps the
+   picture at its natural size so the lines come first. */
+.newspaper-root .wsj-sheet .wsj-inside > .wsj-inside-story.feature:has(> .wsj-story.art-package > .wsj-story-copy > .wsj-prose.ended),
+.newspaper-root .wsj-sheet .wsj-inside-story > .wsj-story.art-package:has(> .wsj-story-copy > .wsj-prose.ended) {
+  flex: 1 0 auto;
+  min-height: 0;
+}
+.newspaper-root .wsj-sheet .wsj-inside-story > .wsj-story.art-package:has(> .wsj-story-copy > .wsj-prose.ended) > .wsj-story-package {
+  flex: 1 0 auto;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+}
+.newspaper-root .wsj-sheet .wsj-story.art-package:has(> .wsj-story-copy > .wsj-prose.ended) .wsj-story-package > .wsj-story-art {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.newspaper-root .wsj-sheet .wsj-story.art-package:has(> .wsj-story-copy > .wsj-prose.ended) .wsj-story-package > .wsj-story-art > :is(.tt-recap-photo, .wsj-cut) {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.newspaper-root .wsj-sheet .wsj-story.art-package:has(> .wsj-story-copy > .wsj-prose.ended) .wsj-story-package > .wsj-story-art > :is(.tt-recap-photo, .wsj-cut) img {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+  max-height: 560px;
+}

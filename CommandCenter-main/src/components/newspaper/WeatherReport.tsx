@@ -246,10 +246,10 @@ function HourlyChart({ hours }: { hours: WxHour[] }) {
 
 function TenDayChart({ days }: { days: WxDay[] }) {
   if (days.length < 3) return null;
-  const W = 600;
-  const H = 190;
+  const W = 900;
+  const H = 172;
   const top = 26;
-  const bottom = 150;
+  const bottom = 134;
   const lo = Math.min(...days.map((d) => d.lowF)) - 3;
   const hi = Math.max(...days.map((d) => d.highF)) + 3;
   const step = (W - 40) / (days.length - 1);
@@ -307,7 +307,7 @@ export function WeatherReport({
           <span>The</span> {part === "outlook" ? "Outlook" : "Weather"}
         </h2>
         <p>
-          <b>{MARSHFIELD.place}</b> · {MARSHFIELD.county} · Observed {clock(weather.observedAt)}
+          <b>{MARSHFIELD.place}</b> · {MARSHFIELD.county} · Observed {clock(weather.observedAt)} · Forecast data: Open-Meteo
         </p>
       </header>
 
@@ -432,7 +432,6 @@ export function WeatherReport({
         </aside>
         ) : null}
       </div>
-      <p className="wx-credit">Forecast data: Open-Meteo</p>
     </section>
   );
 }

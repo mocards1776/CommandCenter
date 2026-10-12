@@ -8231,7 +8231,8 @@ li.counting .tt-count.card {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  min-height: 100%;
+  /* Stretched by the grid row; a percentage min-height here resolves against
+     the row's last height and keeps the grid from ever shrinking. */
 }
 .newspaper-root .tt-wrap-col > .tt-wrap-related {
   margin-top: auto;
@@ -8950,7 +8951,7 @@ li.counting .tt-count.card {
 /* League leaders desk: a full sport-section page, one fixed row grid so names never collide. */
 .tt-lleaders-desk { margin-top: 0; }
 .tt-lleaders-desk .tt-lleaders-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr));
   gap: 14px 14px;
 }
 .tt-lleaders-desk h4 { font-size: 11px; }
@@ -10707,7 +10708,7 @@ body:has(.tt-phone-shot) {
   min-height: 0;
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  grid-template-rows: minmax(0, 1fr) fit-content(40%);
+  grid-template-rows: minmax(0, 1fr) fit-content(30%);
   column-gap: 0;
   row-gap: 12px;
 }
@@ -10797,6 +10798,8 @@ body:has(.tt-phone-shot) {
   object-fit: cover;
 }
 .newspaper-root .wsj-sheet .tt-bs-lead :is(.wsj-cut, .tt-recap-photo) img { height: calc(var(--tt-page-h) * 0.22); }
+/* With briefs under it, the lead's picture gives the copy its lines back. */
+.newspaper-root .wsj-sheet .tt-bs:not(.no-band) .tt-bs-lead :is(.wsj-cut, .tt-recap-photo) img { height: calc(var(--tt-page-h) * 0.17); }
 .newspaper-root .wsj-sheet .tt-bs-rail :is(.wsj-cut, .tt-recap-photo) img { height: calc(var(--tt-page-h) * 0.12); }
 .newspaper-root .wsj-sheet .tt-bs-col :is(.wsj-cut, .tt-recap-photo) img { height: calc(var(--tt-page-h) * 0.085); }
 .newspaper-root .wsj-sheet .tt-bs-col :is(.wsj-cut, .tt-recap-photo) figcaption { display: none; }

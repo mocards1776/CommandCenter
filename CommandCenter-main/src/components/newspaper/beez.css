@@ -265,3 +265,7 @@ table.tt-beez-line tbody tr:last-child > * { border-bottom: 0; }
   text-transform: uppercase;
   color: var(--w-muted);
 }
+
+/* On the broadsheet the ledger takes the sheet's depth: spare room goes
+   between its blocks, and the credit sits on the foot. */
+.newspaper-root .wsj-sheet .tt-beez { flex: 1 1 auto; min-height: 0; justify-content: space-between; }

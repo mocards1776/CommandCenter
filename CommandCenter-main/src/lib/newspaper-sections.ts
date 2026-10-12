@@ -2092,15 +2092,31 @@ function sportPages(
 
 const MO_FRONT = 11;
 const MO_PAGE = 16;
+/** Fewer leftovers than this ride the front's headline list rather than open a thin page. */
+const MO_FOLD = 6;
+const MO_INSIDE_PAGES = 2;
+
+/**
+ * The front takes its eleven; what is left sets on up to two inside pages of
+ * about the same count, so the section never ends on a page holding three
+ * briefs over a blank foot.
+ */
+export function missouriChunks<T>(items: T[]): T[][] {
+  if (!items.length) return [];
+  const rest = items.slice(MO_FRONT, MO_FRONT + MO_INSIDE_PAGES * MO_PAGE);
+  if (rest.length <= MO_FOLD) return [items.slice(0, MO_FRONT + rest.length)];
+  const pages = Math.ceil(rest.length / MO_PAGE);
+  const per = Math.ceil(rest.length / pages);
+  const chunks: T[][] = [items.slice(0, MO_FRONT)];
+  for (let i = 0; i < rest.length; i += per) chunks.push(rest.slice(i, i + per));
+  return chunks;
+}
 
 function missouriPages(desk: MissouriDesk | null, code = "B"): MissouriPage[] {
   if (!desk?.items.length) return [];
   const clean = desk.items.filter((item) => !isPromoMissouriItem(item));
   if (!clean.length) return [];
-  const chunks: MoItem[][] = [clean.slice(0, MO_FRONT)];
-  for (let i = MO_FRONT; i < clean.length && chunks.length < 3; i += MO_PAGE) {
-    chunks.push(clean.slice(i, i + MO_PAGE));
-  }
+  const chunks = missouriChunks(clean);
   return stampCounts(
     chunks.map((items, i) => ({
       kind: "missouri" as const,

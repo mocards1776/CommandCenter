@@ -2,6 +2,54 @@
 
 ---
 
+## Times broadsheet: every page closes on the foot — October 12, 2026
+
+The in-browser reader (`/newspaper`), proofed on a 13" iPad Pro in Safari,
+portrait and landscape, against the Oct 9 midday and Oct 11 evening issues.
+
+- **Inside and jump pages.** An inside story sets its headline across the
+  sheet, the picture beside the score, and the copy in columns under both.
+  The jump page is type: a slim turn tab, a one-line score strip, copy
+  across the sheet, agate after every jump. No more giant score hero or
+  duplicated box score.
+- **Races We're Tracking.** The money is drawn: the sides as one bar with the
+  totals at its ends, every flight on a calendar ruled at today, buyers and
+  markets as bar charts by side, then the agate capped at twelve buys with
+  the rest summed. The charts take the spare depth.
+- **Club Form.** Column count and depth follow the club count (one club sets
+  one deep box; two set two; four set 2×2), so the page fills whatever is
+  followed.
+- **A2 Essentials.** The Outlook is tightened and the page closes on a
+  club ledger: every followed club's record, last five and the week ahead
+  on one ruled board, today's column tinted (`newspaper-ledger.ts`). On a
+  short (landscape) sheet the ten-day chart folds away and the almanac
+  sets as a strip.
+- **MLB section front.** The Postseason Picture is a rail ladder marked
+  `data-tt-lead`, so it always prints whole; the rail story's copy and
+  photo give way instead.
+- **Desk pages.** Leaders set in three or four columns to fit the count;
+  a lone league table stretches its rows to the band under it; the
+  schedule page's standings snapshot is rich (logo, record, note, win bar)
+  and fills to the foot.
+- **News desk pages.** The rail under the stories closes on the followed
+  club's table and the slate, taking only what the stories leave. The band
+  under the lead sets as briefs so the lead keeps its copy. Three or fewer
+  finals set on one line.
+- **Packer (`newspaper-pack.ts`).** Copy above a `[data-tt-lead]` block that
+  crosses the foot is cut for it, then the lowest `[data-tt-yield]`
+  furniture goes; a lead's linescore and chips go before its copy is cut
+  under eight lines; a box squeezed to nothing whose children still paint
+  is walked, not skipped; a multicol's layout is rebuilt when a cut lifts
+  (WebKit kept the constrained column height); a refill that leaves an
+  already-spilling box worse is refused, not just one that adds a box.
+- **Landscape.** The Recaps desk's wrap grid can shrink again (a percentage
+  `min-height` kept it at its tallest). On the short sheet the jump page's
+  club band sets its leaders two abreast and the Missouri front crops its
+  pictures wider, so both close above the foot.
+- No edge functions change. Deploys with the next push to `main`.
+
+---
+
 ## Finals Telegram: every NFL and Power 4 final, no CPU-kill false "sent" — October 11, 2026
 
 - Every NFL final and every college final with a Power 4 team (ACC, Big 12,

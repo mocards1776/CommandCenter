@@ -156,15 +156,56 @@ function SeriesLog({ tree }: { tree: MlbPlayoffTree }) {
   );
 }
 
-export function PlayoffBracket({ tree, compact }: { tree: MlbPlayoffTree; compact?: boolean }) {
+/**
+ * `board` is the full-width bracket, both leagues meeting at the trophy.
+ * `ladder` stacks the leagues for a rail: each reads left to right, Wild Card
+ * to the pennant, with the World Series as a strip under them.
+ */
+export function PlayoffBracket({
+  tree,
+  compact,
+  layout = "board",
+}: {
+  tree: MlbPlayoffTree;
+  compact?: boolean;
+  layout?: "board" | "ladder";
+}) {
   const ws = tree.rounds.find((r) => r.id === "ws")?.series[0] ?? null;
   const champ = ws?.completed ? ws[leader(ws) ?? "home"] : null;
+  const state = tree.active ? "Series in progress" : champ ? `${champ.name}, champions` : "Bracket";
+  if (layout === "ladder") {
+    return (
+      <div className="tt-bracket ladder">
+        <header className="tt-br-head">
+          <span>{tree.season}</span>
+          <h3>Postseason Picture</h3>
+          <span>{state}</span>
+        </header>
+        <div className="tt-br-board">
+          <LeagueHalf tree={tree} league="AL" side="l" />
+          <LeagueHalf tree={tree} league="NL" side="l" />
+          <div className="tt-br-center">
+            <span className="tt-br-trophy" aria-hidden="true">
+              <svg viewBox="0 0 64 64">
+                <path d="M18 8h28v10a14 14 0 0 1-28 0V8Z" />
+                <path d="M18 12H9v4a9 9 0 0 0 9 9M46 12h9v4a9 9 0 0 1-9 9" fill="none" strokeWidth="3" />
+                <path d="M28 32h8v10h-8zM20 46h24v6H20zM16 52h32v4H16z" />
+              </svg>
+            </span>
+            <span className="tt-br-round">World Series</span>
+            {ws ? <SeriesNode series={ws} /> : <p className="tt-br-empty">AL champion vs. NL champion</p>}
+            {champ ? <p className="tt-br-champ">{champ.name}</p> : null}
+          </div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className={cn("tt-bracket", compact && "compact")}>
       <header className="tt-br-head">
         <span>{tree.season}</span>
         <h3>Postseason Picture</h3>
-        <span>{tree.active ? "Series in progress" : champ ? `${champ.name}, champions` : "Bracket"}</span>
+        <span>{state}</span>
       </header>
       <div className="tt-br-scroll">
         <div className="tt-br-board">

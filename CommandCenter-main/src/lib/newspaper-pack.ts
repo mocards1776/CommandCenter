@@ -36,6 +36,8 @@ const CUT = "ttCut";
 const GROWN = "ttGrown";
 /** A cut that leaves fewer lines than this drops the block instead. */
 export const MIN_CUT_LINES = 3;
+/** A lead's copy keeps at least this many lines while the story still has furniture to give. */
+const LEAD_MIN_LINES = 8;
 /** A marked block this share of the page or more is cut inside, never dropped whole. */
 const MAX_DROP_SHARE = 0.55;
 /** The general fallback only drops units smaller than this share of the page. */
@@ -72,6 +74,24 @@ function lineHeight(el: HTMLElement): number {
   const lh = Number.parseFloat(cs.lineHeight);
   if (Number.isFinite(lh) && lh > 0) return lh;
   return (Number.parseFloat(cs.fontSize) || 14) * 1.4;
+}
+
+/**
+ * Lifts a cut's height again. WebKit keeps a multicol's balanced column
+ * height from the constrained layout once the constraint goes, reporting a
+ * short box with its copy spilling into columns off the page (and painting
+ * something else again), so a copy set in columns is rebuilt from scratch.
+ */
+function uncut(el: HTMLElement) {
+  delete el.dataset[CUT];
+  el.style.removeProperty("height");
+  const cs = getComputedStyle(el);
+  if (cs.columnCount === "auto" && cs.columnWidth === "auto") return;
+  const shown = el.style.display;
+  el.style.display = "none";
+  void el.offsetHeight;
+  if (shown) el.style.display = shown;
+  else el.style.removeProperty("display");
 }
 
 function holdsLead(el: HTMLElement): boolean {
@@ -112,10 +132,7 @@ function spillBoxes(sheet: HTMLElement): HTMLElement[] {
 export function packSheet(sheet: HTMLElement): PackResult {
   for (const el of sheet.querySelectorAll<HTMLElement>("[data-tt-packed]")) delete el.dataset[PACKED];
   for (const el of sheet.querySelectorAll<HTMLElement>("[data-tt-grown]")) delete el.dataset[GROWN];
-  for (const el of sheet.querySelectorAll<HTMLElement>("[data-tt-cut]")) {
-    delete el.dataset[CUT];
-    el.style.removeProperty("height");
-  }
+  for (const el of sheet.querySelectorAll<HTMLElement>("[data-tt-cut]")) uncut(el);
 
   const scale = sheet.getBoundingClientRect().height / (sheet.offsetHeight || 1) || 1;
   const pageH = sheet.clientHeight;
@@ -247,7 +264,11 @@ export function packSheet(sheet: HTMLElement): PackResult {
       for (const kid of el.children) {
         if (!(kid instanceof HTMLElement) || kid.dataset[PACKED] != null || kid.dataset[CUT] != null) continue;
         const r = kid.getBoundingClientRect();
-        if (r.height < 1) continue;
+        if (r.height < 1) {
+          // A box squeezed to nothing whose children still paint past it is walked, not skipped.
+          if (kid.scrollHeight > SPILL_SLACK && getComputedStyle(kid).display !== "none") walk(kid);
+          continue;
+        }
         if (r.top >= limit - 1) {
           if (!kept(kid)) drop(kid);
           continue;
@@ -282,7 +303,8 @@ export function packSheet(sheet: HTMLElement): PackResult {
     return crossing;
   };
 
-  const shows = (n: Element) => n instanceof HTMLElement && !isHidden(n) && n.getClientRects().length > 0;
+  const shows = (n: Element) =>
+    n instanceof HTMLElement && !isHidden(n) && n.getClientRects().length > 0 && n.getBoundingClientRect().height >= 1;
 
   /**
    * Drops what packing left meaningless, until nothing more goes: a story
@@ -324,37 +346,77 @@ export function packSheet(sheet: HTMLElement): PackResult {
     }
   };
 
+  /** The lowest [data-tt-lead] block in `box` still running past its foot. */
+  const leadCrossing = (box: HTMLElement, limit: number): HTMLElement | null => {
+    let best: HTMLElement | null = null;
+    let bestTop = -Infinity;
+    for (const el of box.querySelectorAll<HTMLElement>(LEAD)) {
+      if (isHidden(el)) continue;
+      const r = el.getBoundingClientRect();
+      if (r.height < 1 || r.bottom <= limit + 1) continue;
+      if (r.top > bestTop) {
+        best = el;
+        bestTop = r.top;
+      }
+    }
+    return best;
+  };
+
   /**
    * Shortens the copy set above a held story (in its column) by what the
    * story runs past the foot, keeping at least SQUEEZE_KEEP of that copy.
-   * Only a whole story is worth copy; a box or a list is not.
+   * Only a whole story is worth copy; a box or a list is not. A [data-tt-lead]
+   * block past the foot never drops, so for it the copy above gives whatever
+   * it must, down to MIN_CUT_LINES, lowest copy first.
    */
   const squeeze = (box: HTMLElement, limit: number): boolean => {
-    if (!held || !box.contains(held) || isHidden(held)) return false;
-    if (!held.matches("article") && !held.querySelector("article")) return false;
-    const hr = held.getBoundingClientRect();
+    let target: HTMLElement | null = null;
+    let keep = SQUEEZE_KEEP;
+    if (held && box.contains(held) && !isHidden(held)) {
+      if (!held.matches("article") && !held.querySelector("article")) return false;
+      target = held;
+    } else {
+      target = leadCrossing(box, limit);
+      keep = 0;
+    }
+    if (!target) return false;
+    const hr = target.getBoundingClientRect();
     if (hr.bottom <= limit + 1) return false;
-    let above: HTMLElement | null = null;
-    let aboveBottom = -Infinity;
+    const aboves: { el: HTMLElement; bottom: number }[] = [];
     for (const el of copies) {
-      if (!box.contains(el) || held.contains(el) || isHidden(el)) continue;
+      if (!box.contains(el) || target.contains(el) || isHidden(el)) continue;
       const r = el.getBoundingClientRect();
       if (r.height < 1 || r.bottom > hr.top + 1 || r.left >= hr.right || r.right <= hr.left) continue;
-      if (el.dataset[CUT] != null && !natural.has(el)) continue;
-      if (r.bottom > aboveBottom) {
-        above = el;
-        aboveBottom = r.bottom;
+      if (el.dataset[CUT] != null && !natural.has(el) && keep > 0) continue;
+      aboves.push({ el, bottom: r.bottom });
+    }
+    aboves.sort((a, b) => b.bottom - a.bottom);
+    for (const { el: above } of aboves) {
+      const h = above.getBoundingClientRect().height / scale;
+      const full = natural.get(above) ?? h;
+      const lh = lineHeight(above);
+      const lines = linesThatFit(h - (hr.bottom - limit) / scale, lh);
+      if (lines < MIN_CUT_LINES || lines * lh < full * keep) continue;
+      natural.set(above, full);
+      above.style.height = `${lines * lh}px`;
+      above.dataset[CUT] = "";
+      return true;
+    }
+    if (keep > 0) return false;
+    // No copy to give: the lowest furniture above the block goes instead.
+    let furniture: HTMLElement | null = null;
+    let furnitureBottom = -Infinity;
+    for (const el of box.querySelectorAll<HTMLElement>(YIELD)) {
+      if (target.contains(el) || isHidden(el) || kept(el)) continue;
+      const r = el.getBoundingClientRect();
+      if (r.height < 1 || r.bottom > hr.top + 1 || r.left >= hr.right || r.right <= hr.left) continue;
+      if (r.bottom > furnitureBottom) {
+        furniture = el;
+        furnitureBottom = r.bottom;
       }
     }
-    if (!above) return false;
-    const h = above.getBoundingClientRect().height / scale;
-    const full = natural.get(above) ?? h;
-    const lh = lineHeight(above);
-    const lines = linesThatFit(h - (hr.bottom - limit) / scale, lh);
-    if (lines < MIN_CUT_LINES || lines * lh < full * SQUEEZE_KEEP) return false;
-    natural.set(above, full);
-    above.style.height = `${lines * lh}px`;
-    above.dataset[CUT] = "";
+    if (!furniture) return false;
+    drop(furniture);
     return true;
   };
 
@@ -365,6 +427,15 @@ export function packSheet(sheet: HTMLElement): PackResult {
       const limit = footOf(box);
       const next = firstTier(box, limit) ?? keepTier(box, limit);
       if (next) {
+        // The lead's furniture (score band, stat line) goes before its copy is cut to a few lines.
+        if (next.copy && next.el.closest(LEAD)) {
+          const fit = copyFit(next.el, limit);
+          const furniture = fit && fit.lines < LEAD_MIN_LINES ? furnitureAbove(next.el) : null;
+          if (furniture) {
+            drop(furniture);
+            continue;
+          }
+        }
         if (next.copy && cutTo(next.el, limit)) continue;
         drop((next.copy && furnitureAbove(next.el)) || next.el);
         continue;
@@ -390,9 +461,10 @@ export function packSheet(sheet: HTMLElement): PackResult {
     natural.clear();
     for (const [el, h] of snap.natural) natural.set(el, h);
     for (const el of sheet.querySelectorAll<HTMLElement>("[data-tt-packed]")) delete el.dataset[PACKED];
+    const cutAgain = new Set(snap.cut.map(([el]) => el));
     for (const el of sheet.querySelectorAll<HTMLElement>("[data-tt-cut]")) {
-      delete el.dataset[CUT];
-      el.style.removeProperty("height");
+      if (cutAgain.has(el)) continue;
+      uncut(el);
     }
     for (const el of snap.packed) el.dataset[PACKED] = "";
     for (const [el, h] of snap.cut) {
@@ -436,7 +508,9 @@ export function packSheet(sheet: HTMLElement): PackResult {
     held = next;
     settle();
     held = null;
-    if (over() > 0 || settled.size > before.settled.size || stories() < told || !substantive(next)) {
+    // A box that already could not be fixed may not be left spilling more than it was.
+    const worse = [...settled].some(([box, s]) => s > (before.settled.get(box) ?? 0) + 1);
+    if (over() > 0 || worse || stories() < told || !substantive(next)) {
       restore(before);
       // WebKit can lay the restored page out taller than it measured before the try.
       if (over() > 0) settle();
@@ -467,8 +541,7 @@ export function packSheet(sheet: HTMLElement): PackResult {
     }
     if (lo < 1) {
       delete el.dataset[GROWN];
-      delete el.dataset[CUT];
-      el.style.removeProperty("height");
+      uncut(el);
     } else fits(lo);
   }
 

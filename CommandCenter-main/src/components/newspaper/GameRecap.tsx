@@ -4,7 +4,7 @@
  */
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { EspnAgate, Face, Leaders, Linescore, MlbAgate, ScoreMast } from "@/components/newspaper/BoxScore";
+import { EspnAgate, Face, Leaders, Linescore, MlbAgate, ScoreBar, ScoreMast } from "@/components/newspaper/BoxScore";
 import { ESPN_BOX_PATHS, fetchEspnBox } from "@/lib/newspaper-agate";
 import { gameClock, type BoxGame } from "@/lib/newspaper-box";
 import {
@@ -159,16 +159,46 @@ export function RecapChrome({
   );
 }
 
+/**
+ * The score as a strip across the page — the final on one line, the
+ * linescore and the decisions as agate beside it — for a jump page, where
+ * the front already carried the banner.
+ */
+export function RecapBar({ card, game }: { card: RecapCardBits; game?: BoxGame | null }) {
+  const pack = recapPackFor(card, game ?? null);
+  const box = recapBoxGame(card, game);
+  if (!box || (!box.final && !box.live)) return null;
+  // The bar's state cell already names the venue when no round or series does.
+  const venue = box.round || box.series ? pack?.venue || box.venue : null;
+  return (
+    <section className="tt-recap-bar">
+      <div className="tt-recap-bar-score">
+        <ScoreBar game={box} />
+        {venue ? <span className="tt-recap-bar-venue">{venue}</span> : null}
+      </div>
+      <div className="tt-recap-bar-line" data-tt-yield="">
+        <Linescore game={box} compact />
+      </div>
+      <div className="tt-recap-bar-names" data-tt-yield="">
+        {pack ? <RecapChips pack={pack} path={box.path} compact /> : <Leaders game={box} max={3} />}
+      </div>
+    </section>
+  );
+}
+
 export function RecapBox({
   card,
   game,
   compact,
   forceFull,
+  title = "Box score",
 }: {
   card: RecapCardBits & { gameId?: string | null; leaguePath?: string | null };
   game?: BoxGame | null;
   compact?: boolean;
   forceFull?: boolean;
+  /** The label over the agate; names the game when a page carries more than one box. */
+  title?: string;
 }) {
   const show = forceFull || recapIsFull(card);
   const path = game?.path ?? card.leaguePath ?? null;
@@ -182,17 +212,16 @@ export function RecapBox({
   });
   const showMlb = Boolean(show && game?.path === "baseball/mlb" && game.gamePk && !espnBox.data);
   if (!show) return null;
-  if (!espnBoxed && !showMlb) return null;
+  // Nothing prints until the box is in: a label over a wait line is not a box score.
+  if (!espnBox.data && !(showMlb && game)) return null;
   return (
     <section className={cn("tt-recap-box", compact && "condensed")}>
-      <h3>Box score</h3>
+      <h3>{title}</h3>
       {espnBox.data ? (
-        <EspnAgate box={espnBox.data} path={espnBox.data.game.path} condensed={compact} />
-      ) : showMlb && game ? (
-        <MlbAgate game={game} />
-      ) : espnBox.isLoading ? (
-        <p className="tt-agate-wait">Setting the box…</p>
-      ) : null}
+        <EspnAgate box={espnBox.data} path={espnBox.data.game.path} condensed={compact} mast={false} />
+      ) : (
+        <MlbAgate game={game!} />
+      )}
     </section>
   );
 }

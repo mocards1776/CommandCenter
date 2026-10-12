@@ -192,6 +192,153 @@ export function sortSpend(rows: RaceSpend[]): RaceSpend[] {
   return [...rows].sort((a, b) => b.amount - a.amount || a.sponsor.localeCompare(b.sponsor));
 }
 
+/** "support" / "oppose" / "other" — the side a buy is on, however the desk spelled it. */
+export function sideKey(side: string): "support" | "oppose" | "other" {
+  if (/oppose/i.test(side)) return "oppose";
+  if (/support/i.test(side)) return "support";
+  return "other";
+}
+
+export type SponsorTotal = {
+  sponsor: string;
+  side: string;
+  key: ReturnType<typeof sideKey>;
+  amount: number;
+  grps: number;
+  buys: number;
+  stations: string[];
+  isNew: boolean;
+};
+
+/** One line per sponsor (and side): the money it has on the air, across every station. */
+export function sponsorTotals(rows: RaceSpend[]): SponsorTotal[] {
+  const by = new Map<string, SponsorTotal>();
+  for (const row of rows) {
+    const id = `${row.sponsor}\u0000${sideKey(row.side)}`;
+    const cur = by.get(id) ?? {
+      sponsor: row.sponsor,
+      side: row.side,
+      key: sideKey(row.side),
+      amount: 0,
+      grps: 0,
+      buys: 0,
+      stations: [],
+      isNew: false,
+    };
+    cur.amount += row.amount;
+    cur.grps += row.grps ?? 0;
+    cur.buys += 1;
+    if (row.station && !cur.stations.includes(row.station)) cur.stations.push(row.station);
+    cur.isNew = cur.isNew || row.is_new;
+    by.set(id, cur);
+  }
+  return [...by.values()].sort((a, b) => b.amount - a.amount || a.sponsor.localeCompare(b.sponsor));
+}
+
+export type StationTotal = {
+  station: string;
+  market: string;
+  support: number;
+  oppose: number;
+  other: number;
+  total: number;
+  buys: number;
+};
+
+/** One line per station: how the money splits between the sides there. */
+export function stationTotals(rows: RaceSpend[]): StationTotal[] {
+  const by = new Map<string, StationTotal>();
+  for (const row of rows) {
+    const station = row.station || row.market || "—";
+    const cur = by.get(station) ?? { station, market: row.market, support: 0, oppose: 0, other: 0, total: 0, buys: 0 };
+    cur[sideKey(row.side)] += row.amount;
+    cur.total += row.amount;
+    cur.buys += 1;
+    by.set(station, cur);
+  }
+  return [...by.values()].sort((a, b) => b.total - a.total || a.station.localeCompare(b.station));
+}
+
+export type FlightBar = {
+  sponsor: string;
+  key: ReturnType<typeof sideKey>;
+  station: string;
+  amount: number;
+  isNew: boolean;
+  /** Position and width along the span, in [0, 1]. */
+  from: number;
+  to: number;
+};
+
+export type FlightChart = {
+  start: string;
+  end: string;
+  /** Days in the span, at least one. */
+  days: number;
+  bars: FlightBar[];
+  /** Week ticks along the span: position in [0, 1] and the day label. */
+  ticks: { at: number; label: string }[];
+  /** Position of the edition's date in the span, when it falls inside. */
+  today: number | null;
+};
+
+function dayIndex(date: string): number {
+  const m = YMD.exec(date)!;
+  return Math.floor(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) / 86_400_000);
+}
+
+/** Every dated flight laid along one timeline, the biggest buys first. */
+export function flightChart(rows: RaceSpend[], editionDate: string, maxBars = 8): FlightChart | null {
+  const dated = rows.filter((r) => ymd(r.flight_start) && ymd(r.flight_end) && r.flight_end! >= r.flight_start!);
+  if (!dated.length) return null;
+  const starts = dated.map((r) => dayIndex(r.flight_start!));
+  const ends = dated.map((r) => dayIndex(r.flight_end!));
+  const first = Math.min(...starts);
+  const last = Math.max(...ends);
+  const span = Math.max(1, last - first + 1);
+  const at = (day: number) => Math.max(0, Math.min(1, (day - first) / span));
+  const bars: FlightBar[] = sortSpend(dated)
+    .slice(0, maxBars)
+    .map((r) => ({
+      sponsor: r.sponsor,
+      key: sideKey(r.side),
+      station: r.station || r.market,
+      amount: r.amount,
+      isNew: r.is_new,
+      from: at(dayIndex(r.flight_start!)),
+      to: at(dayIndex(r.flight_end!) + 1),
+    }));
+  const ticks: FlightChart["ticks"] = [];
+  const step = span > 42 ? 14 : 7;
+  for (let d = first; d <= last; d += step) {
+    ticks.push({ at: at(d), label: printDay(new Date(d * 86_400_000).toISOString().slice(0, 10)) });
+  }
+  const edition = ymd(editionDate);
+  const todayAt = edition ? dayIndex(edition) : null;
+  const iso = (day: number) => new Date(day * 86_400_000).toISOString().slice(0, 10);
+  return {
+    start: iso(first),
+    end: iso(last),
+    days: span,
+    bars,
+    ticks,
+    today: todayAt != null && todayAt >= first && todayAt <= last ? at(todayAt) + 0.5 / span : null,
+  };
+}
+
+/** "$149k" — money the way a chart labels it. */
+export function moneyShort(amount: number): string {
+  const n = Math.round(amount);
+  const abs = Math.abs(n);
+  const body =
+    abs >= 1_000_000
+      ? `${(abs / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1).replace(/\.0$/, "")}M`
+      : abs >= 1_000
+        ? `${Math.round(abs / 1_000)}k`
+        : abs.toLocaleString("en-US");
+  return `${n < 0 ? "−" : ""}$${body}`;
+}
+
 function asSpend(raw: unknown): RaceSpend | null {
   const row = asRecord(raw);
   if (!row) return null;
@@ -315,14 +462,34 @@ export function asRaceBriefsDesk(raw: unknown, editionDate: string): RaceBriefsD
   };
 }
 
-/** Rough printed height of one race block on the 1032px sheet. Content-only — no min-height pad. */
+/** The agate table prints this many buys at most; the rest is one summed line. */
+export const SPEND_TABLE_ROWS = 12;
+/** A race with this many buys on file gets the full set of money graphics. */
+export const CHARTED_SPEND_ROWS = 7;
+
+/** Whether a race prints the sponsor, station and flight charts over its table. */
+export function raceCharted(race: Pick<RaceBrief, "spend">): boolean {
+  return race.spend.length >= CHARTED_SPEND_ROWS;
+}
+
+/** Rough printed height of one race block on the sheet. Content-only — no min-height pad. */
 export function estimateRaceHeight(race: RaceBrief): number {
   const hed = race.headline.length > 70 ? 78 : 58;
   const bullets = race.bullets.length ? 40 + race.bullets.length * 28 : 0;
-  const spend = race.spend.length ? 78 + race.spend.length * 30 + (spendTotals(race.spend).length ? 34 : 0) : 0;
+  const rows = Math.min(race.spend.length, SPEND_TABLE_ROWS);
+  // The sides' bar over every table; sponsors, stations and flights side by side over a charted race.
+  const charts = race.spend.length
+    ? 36 +
+      (raceCharted(race)
+        ? 80 + Math.max(sponsorTotals(race.spend).length, stationTotals(race.spend).length, 1) * 30
+        : 0)
+    : 0;
+  const spend = race.spend.length
+    ? 78 + rows * 30 + (spendTotals(race.spend).length ? 34 : 0) + (race.spend.length > rows ? 25 : 0)
+    : 0;
   const notes = race.notes.length ? 16 + race.notes.length * 28 : 0;
   const links = race.links.length ? 10 + race.links.length * 20 : 0;
-  return 36 + hed + bullets + spend + notes + links;
+  return 36 + hed + bullets + charts + spend + notes + links;
 }
 
 /** Estimated sheet height for a packed folio: chrome + page head + each race. */
