@@ -170,6 +170,7 @@ import BeezPage from "@/components/newspaper/BeezPage";
 import { asBeezDesk, insertBeez, type BeezDesk } from "@/lib/newspaper-beez";
 import { readTimesBeez } from "@/lib/newspaper-beez-fetch";
 import RacesPage from "@/components/newspaper/RacesPage";
+import { buildClubLedger } from "@/lib/newspaper-ledger";
 import { insertRaceBriefs, sampleRaceBriefs, type RaceBriefsDesk } from "@/lib/newspaper-races";
 import { fetchRaceBriefs } from "@/lib/newspaper-races-fetch";
 import {
@@ -1590,6 +1591,90 @@ function DeskBoard({
           </li>
         ))}
       </ul>
+    </section>
+  );
+}
+
+/**
+ * The Essentials ledger: every club on one agate table — record, place, the
+ * last five as dots, and the week ahead as a calendar. Rows stretch to close
+ * the page; the packer drops rows from the end when the board runs long.
+ */
+function ClubLedgerBoard({ teams, day }: { teams: TeamInfobox[]; day: string }) {
+  const ledger = useMemo(() => buildClubLedger(teams, day), [teams, day]);
+  if (!ledger.rows.length) return null;
+  const playing = ledger.rows.filter((r) => r.cells.some(Boolean)).length;
+  return (
+    <section className="tt-ledger" aria-label="Your clubs this week" data-tt-rows="">
+      <header className="tt-ledger-head">
+        <h3>Your Clubs</h3>
+        <p>
+          The week ahead · {playing} of {ledger.rows.length} {ledger.rows.length === 1 ? "club plays" : "clubs play"} through{" "}
+          {ledger.days[ledger.days.length - 1]!.weekday}
+        </p>
+        <p className="tt-ledger-key">
+          <i className="w" /> Win <i className="l" /> Loss <i className="d" /> Draw
+        </p>
+      </header>
+      <table data-tt-rows="">
+        <thead>
+          <tr>
+            <th className="club">Club</th>
+            <th className="rec">Record</th>
+            <th className="form">Last five</th>
+            {ledger.days.map((d) => (
+              <th key={d.date} className={cn("day", d.today && "today")}>
+                <b>{d.weekday}</b>
+                <span>{d.monthDay}</span>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody data-tt-rows="">
+          {ledger.rows.map((r) => (
+            <tr key={r.key} style={tint(hexColor(r.color))}>
+              <td className="club">
+                <ExternalOrLink href={r.href} className="wsj-a">
+                  <TeamLogo src={r.logo} size="sm" />
+                  <strong>{r.name}</strong>
+                  <em>{r.league}</em>
+                </ExternalOrLink>
+              </td>
+              <td className="rec">
+                <b>{r.record ?? "—"}</b>
+                {r.standing ? <em>{r.standing}</em> : null}
+              </td>
+              <td className="form">
+                {r.form.length ? (
+                  <span className="tt-ledger-dots">
+                    {r.form.map((f, i) => (
+                      <i key={i} className={f.won === true ? "w" : f.won === false ? "l" : "d"} title={f.title} />
+                    ))}
+                  </span>
+                ) : (
+                  <span className="none">—</span>
+                )}
+              </td>
+              {r.cells.some(Boolean) ? (
+                r.cells.map((c, i) => (
+                  <td key={ledger.days[i]!.date} className={cn("day", ledger.days[i]!.today && "today", c && "game", c?.done && (c.won === true ? "w" : c.won === false ? "l" : "d"), c?.live && "live")}>
+                    {c ? (
+                      <>
+                        <b>{c.label}</b>
+                        <span>{c.when}</span>
+                      </>
+                    ) : null}
+                  </td>
+                ))
+              ) : (
+                <td className="idle" colSpan={ledger.days.length}>
+                  {r.next}
+                </td>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </section>
   );
 }
@@ -6125,7 +6210,7 @@ function NewspaperDesk() {
               ) : page.kind === "favorites-clubs" ? (
                 <>
                   <WeatherReport weather={weatherQ.data} part="all" />
-                  <DeskBoard teams={teams} title="Your Clubs" onTurn={goFolio} />
+                  <ClubLedgerBoard teams={teams} day={day} />
                 </>
               ) : page.kind === "favorites-form" ? (
                 <div className="wsj-clubs-desk">

@@ -489,3 +489,303 @@
 .wsj-sheet .wsj-inside-story.second .wsj-hl.lg {
   font-size: 30px;
 }
+
+/* ── Club ledger (Essentials page: every club, the week ahead) ───────── */
+.newspaper-root .wsj-sheet .tt-ledger {
+  display: flex;
+  flex-direction: column;
+  flex: 1 0 auto;
+  min-height: 0;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 4px double var(--w-rule);
+}
+.newspaper-root .wsj-sheet .tt-ledger-head {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--w-rule);
+}
+.newspaper-root .wsj-sheet .tt-ledger-head h3 {
+  margin: 0;
+  font-family: var(--w-head);
+  font-style: italic;
+  font-weight: 900;
+  font-size: 26px;
+  line-height: 1;
+}
+.newspaper-root .wsj-sheet .tt-ledger-head p {
+  margin: 0;
+  font-family: var(--w-label);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+}
+.newspaper-root .wsj-sheet .tt-ledger-key {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px 6px;
+}
+.newspaper-root .wsj-sheet .tt-ledger-key i,
+.newspaper-root .wsj-sheet .tt-ledger-dots i {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1.5px solid var(--tt-team, var(--w-ink));
+  background: var(--tt-team, var(--w-ink));
+  box-sizing: border-box;
+}
+.newspaper-root .wsj-sheet .tt-ledger-key i.l,
+.newspaper-root .wsj-sheet .tt-ledger-dots i.l {
+  background: transparent;
+}
+.newspaper-root .wsj-sheet .tt-ledger-key i.d,
+.newspaper-root .wsj-sheet .tt-ledger-dots i.d {
+  background: linear-gradient(90deg, var(--tt-team, var(--w-ink)) 50%, transparent 50%);
+}
+.newspaper-root .wsj-sheet .tt-ledger-key i + i {
+  margin-left: 6px;
+}
+.newspaper-root .wsj-sheet .tt-ledger table {
+  flex: 1 1 auto;
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-family: var(--w-label);
+  font-size: 11px;
+}
+.newspaper-root .wsj-sheet .tt-ledger thead th {
+  padding: 0 6px 5px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+  text-align: left;
+  border-bottom: 2px solid var(--w-rule);
+  vertical-align: bottom;
+}
+.newspaper-root .wsj-sheet .tt-ledger th.club { width: 200px; }
+.newspaper-root .wsj-sheet .tt-ledger th.rec { width: 120px; }
+.newspaper-root .wsj-sheet .tt-ledger th.form { width: 86px; }
+.newspaper-root .wsj-sheet .tt-ledger th.day {
+  text-align: center;
+  border-left: 1px solid var(--w-hair);
+}
+.newspaper-root .wsj-sheet .tt-ledger th.day b {
+  display: block;
+  font-size: 11px;
+  color: var(--w-ink);
+  letter-spacing: 0.1em;
+}
+.newspaper-root .wsj-sheet .tt-ledger th.day span {
+  display: block;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+.newspaper-root .wsj-sheet .tt-ledger th.day.today b {
+  color: var(--w-red);
+}
+.newspaper-root .wsj-sheet .tt-ledger tbody tr {
+  height: 32px;
+  border-bottom: 1px solid var(--w-hair);
+}
+.newspaper-root .wsj-sheet .tt-ledger tbody tr:last-child {
+  border-bottom: 2px solid var(--w-rule);
+}
+.newspaper-root .wsj-sheet .tt-ledger td {
+  padding: 2px 6px;
+  vertical-align: middle;
+  min-width: 0;
+  line-height: 1.2;
+}
+.newspaper-root .wsj-sheet .tt-ledger td.club {
+  box-shadow: inset 4px 0 0 var(--tt-team, var(--w-ink));
+  padding-left: 10px;
+}
+.newspaper-root .wsj-sheet .tt-ledger td.club a {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    "logo name"
+    "logo lg";
+  align-items: center;
+  column-gap: 8px;
+  color: inherit;
+  text-decoration: none;
+}
+.newspaper-root .wsj-sheet .tt-ledger td.club a > :first-child {
+  grid-area: logo;
+}
+.newspaper-root .wsj-sheet .tt-ledger td.club strong {
+  grid-area: name;
+  font-family: var(--w-cond);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.05;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.newspaper-root .wsj-sheet .tt-ledger td.club em {
+  grid-area: lg;
+  font-style: normal;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+}
+.newspaper-root .wsj-sheet .tt-ledger td.rec b {
+  display: block;
+  font-family: var(--w-cond);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+.newspaper-root .wsj-sheet .tt-ledger td.rec em {
+  display: block;
+  font-style: normal;
+  font-size: 9.5px;
+  color: var(--w-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.newspaper-root .wsj-sheet .tt-ledger-dots {
+  display: inline-flex;
+  gap: 4px;
+}
+.newspaper-root .wsj-sheet .tt-ledger td.form .none {
+  color: var(--w-muted);
+}
+.newspaper-root .wsj-sheet .tt-ledger td.day {
+  text-align: center;
+  border-left: 1px solid var(--w-hair);
+  line-height: 1.15;
+}
+.newspaper-root .wsj-sheet .tt-ledger td.day.today,
+.newspaper-root .wsj-sheet .tt-ledger th.day.today {
+  background: var(--w-paper-2);
+}
+.newspaper-root .wsj-sheet .tt-ledger td.day b {
+  display: block;
+  font-family: var(--w-cond);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.newspaper-root .wsj-sheet .tt-ledger td.day span {
+  display: block;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--w-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.newspaper-root .wsj-sheet .tt-ledger td.day.game {
+  background: color-mix(in srgb, var(--tt-team, var(--w-ink)) 7%, transparent);
+}
+.newspaper-root .wsj-sheet .tt-ledger td.day.game.today {
+  background: color-mix(in srgb, var(--tt-team, var(--w-ink)) 12%, var(--w-paper-2));
+}
+.newspaper-root .wsj-sheet .tt-ledger td.day.w span { color: var(--w-ink); }
+.newspaper-root .wsj-sheet .tt-ledger td.day.l span { color: var(--w-red); }
+.newspaper-root .wsj-sheet .tt-ledger td.day.live span { color: var(--w-red); }
+.newspaper-root .wsj-sheet .tt-ledger td.idle {
+  border-left: 1px solid var(--w-hair);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--w-muted);
+  padding-left: 12px;
+}
+
+/* ── Weather, set tighter on the sheet so the ledger gets its half ───── */
+.newspaper-root .wsj-sheet {
+  container: tt-sheet / size;
+}
+.newspaper-root .wsj-sheet .wx {
+  flex: 0 0 auto;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+.newspaper-root .wsj-sheet .wx-now {
+  padding: 10px 14px 12px;
+}
+.newspaper-root .wsj-sheet .wx-outlook li {
+  padding: 6px 4px 8px;
+  gap: 2px;
+}
+.newspaper-root .wsj-sheet .wx-outlook .wx-icon {
+  width: 40px;
+  height: 40px;
+}
+.newspaper-root .wsj-sheet .wx-word {
+  min-height: 1.2em;
+}
+.newspaper-root .wsj-sheet .wx-bottom {
+  gap: 18px;
+}
+.newspaper-root .wsj-sheet .wx-almanac {
+  gap: 6px;
+}
+.newspaper-root .wsj-sheet .wx-sunline,
+.newspaper-root .wsj-sheet .wx-moonline {
+  padding-bottom: 6px;
+}
+/* The ten-day chart runs wide and short; its type keeps the hourly chart's size. */
+.newspaper-root .wsj-sheet .wx-tenday .wx-t {
+  font-size: 19px;
+}
+.newspaper-root .wsj-sheet .wx-tenday .wx-h {
+  font-size: 15px;
+}
+.newspaper-root .wsj-sheet .wx-tenday .wx-hi,
+.newspaper-root .wsj-sheet .wx-tenday .wx-lo {
+  stroke-width: 3;
+}
+/* A short sheet (landscape) loses the ten-day chart — the cards above carry
+   the same highs and lows — and runs the almanac as one strip. */
+@container tt-sheet (max-height: 1450px) {
+  .newspaper-root .wsj-sheet .wx-tenday {
+    display: none;
+  }
+  .newspaper-root .wsj-sheet .wx-bottom {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .newspaper-root .wsj-sheet .wx-almanac {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.4fr);
+    align-items: center;
+    gap: 0 22px;
+  }
+  .newspaper-root .wsj-sheet .wx-almanac h3 {
+    margin: 0;
+  }
+  .newspaper-root .wsj-sheet .wx-sunline,
+  .newspaper-root .wsj-sheet .wx-moonline {
+    padding-bottom: 0;
+    border-bottom: 0;
+  }
+  .newspaper-root .wsj-sheet .wx-yday caption {
+    text-align: left;
+  }
+  .newspaper-root .wsj-sheet .tt-ledger tbody tr {
+    height: 28px;
+  }
+}
