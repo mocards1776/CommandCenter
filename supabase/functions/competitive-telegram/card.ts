@@ -283,9 +283,14 @@ export function formatJustInCaptionNote(buy: JustInBuy): string {
   return calls || group;
 }
 
+/** " for 274.8 GRP", or "" when GRP is 0 / null (cable, radio). Never prints `0 GRP`. */
+export function justInGrpClause(grp: number | null | undefined): string {
+  return typeof grp === "number" && Number.isFinite(grp) && grp > 0 ? ` for ${formatGrp(grp)} GRP` : "";
+}
+
 /** "Missouri Senate Campaign Committee added $47,440 in Springfield TV for 274.8 GRP (Gray Media · KYTV)" */
 export function formatJustInLine(buy: JustInBuy): string {
-  const base = `${buy.sponsor} added ${formatSpendExact(buy.amount)} in ${buy.market} ${displayMedia(buy.media)} for ${formatGrp(buy.grp)} GRP`;
+  const base = `${buy.sponsor} added ${formatSpendExact(buy.amount)} in ${buy.market} ${displayMedia(buy.media)}${justInGrpClause(buy.grp)}`;
   const note = formatJustInCaptionNote(buy);
   return note ? `${base} (${note})` : base;
 }

@@ -14,6 +14,7 @@ import {
   barWidth,
   displayMedia,
   formatGrp,
+  justInGrpClause,
   formatJustInNote,
   formatSpendExact,
   formatSpendShort,
@@ -209,7 +210,7 @@ function justInHero(buys: readonly JustInBuy[], y: number): string {
     parts.push(text("added", cx, tileY + 98, { size: 14, fill: MUTED, anchor: "middle" }));
     parts.push(text(formatSpendExact(buy.amount), cx, tileY + 150, { size: 40, fill: INK, anchor: "middle", weight: 700 }));
     parts.push(
-      text(`in ${buy.market} ${displayMedia(buy.media)} for ${formatGrp(buy.grp)} GRP`, cx, tileY + 186, {
+      text(`in ${buy.market} ${displayMedia(buy.media)}${justInGrpClause(buy.grp)}`, cx, tileY + 186, {
         size: 15,
         fill: MUTED,
         anchor: "middle",

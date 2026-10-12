@@ -1008,3 +1008,12 @@ function almanacRow(partial: Partial<AlmanacBuyRow> & Pick<AlmanacBuyRow, "id" |
 }
 
 console.log("competitive-telegram tests ok");
+
+// Just In: zero / null GRP drops the "for X GRP" clause (caption + tile).
+{
+  const zero = { sponsor: "MAPAC", amount: 161187, market: "Kansas City", media: "Cable", station: "", grp: 0, color: "#0A84FF" } as any;
+  assert.equal(formatJustInLine(zero), "MAPAC added $161,187 in Kansas City cable");
+  assert.doesNotMatch(formatJustInLine({ ...zero, grp: null }), /GRP/);
+  assert.match(formatJustInLine({ ...zero, grp: 12.5 }), /for 12\.5 GRP$/);
+}
+console.log("zero-GRP just-in ok");
