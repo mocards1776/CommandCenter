@@ -157,6 +157,7 @@ export default function AppleScoreCluster({
   awayTimeouts = null,
   homeTimeouts = null,
   preview,
+  previewNote = null,
   awayDim = false,
   homeDim = false,
   mlb = null,
@@ -172,6 +173,8 @@ export default function AppleScoreCluster({
   awayTimeouts?: number | null;
   homeTimeouts?: number | null;
   preview?: string | null;
+  /** Small line under a pre-game start time, e.g. "Tomorrow" or "Oct 21" when not today. */
+  previewNote?: string | null;
   /** Fade the away numeral (losing side on a final). */
   awayDim?: boolean;
   homeDim?: boolean;
@@ -189,7 +192,12 @@ export default function AppleScoreCluster({
             : cn("score-tight", size === "header" ? "text-[40px] sm:text-[52px]" : "text-[22px]"),
         )}
       >
-        {preview || "TBD"}
+        <span className="block">{preview || "TBD"}</span>
+        {previewNote ? (
+          <span className="mt-0.5 block text-[10px] font-semibold uppercase tracking-[0.14em] text-white/55">
+            {previewNote}
+          </span>
+        ) : null}
       </p>
     );
   }

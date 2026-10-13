@@ -20,6 +20,7 @@ import { mlbGlowColor } from "@/lib/mlb-team-glow";
 import { espnDarkLogo, RUWT_SPORT_LABEL } from "@/lib/ruwt-score-tab";
 import { teamWashColor } from "@/lib/team-logo-glow";
 import type { SoccerScoreGame } from "@/lib/soccer";
+import { centralStartParts } from "@/lib/start-label";
 import { cn } from "@/lib/utils";
 
 /**
@@ -28,22 +29,6 @@ import { cn } from "@/lib/utils";
  * cards so heat order and ranking stay untouched.
  * Logos sit on the card surface — no cream disc or filled plate.
  */
-
-export function centralStartLabel(iso: string | null | undefined, fallback?: string | null): string {
-  if (iso) {
-    const d = new Date(iso);
-    if (!Number.isNaN(d.getTime())) {
-      const time = d.toLocaleTimeString("en-US", {
-        timeZone: "America/Chicago",
-        hour: "numeric",
-        minute: "2-digit",
-      });
-      return `${time} CT`;
-    }
-  }
-  const text = (fallback ?? "").replace(/\s+[A-Z]{2,4}T$/, "").trim();
-  return text || "TBD";
-}
 
 export function TeamLogo({
   src,
@@ -98,6 +83,8 @@ export type ScoreboardCardProps = {
   homeScore: number | string | null;
   detail?: string | null;
   preview?: string | null;
+  /** Date note under a pre-game start time when the game is not today. */
+  previewNote?: string | null;
   mlb?: MlbScoreNest | null;
   emphasis?: "redzone" | "close" | null;
   headerExtra?: ReactNode;
@@ -150,6 +137,7 @@ function ScoreboardCardInner({
   homeScore,
   detail,
   preview,
+  previewNote,
   mlb,
   emphasis,
   headerExtra,
@@ -206,6 +194,7 @@ function ScoreboardCardInner({
             final={final}
             face="sans"
             preview={preview}
+            previewNote={previewNote}
             awayDim={away.muted}
             homeDim={home.muted}
             mlb={mlb}
@@ -413,6 +402,7 @@ export const MlbScoreboardCard = memo(function MlbScoreboardCard({
     game.away.hits != null || game.home.hits != null
       ? `H ${game.away.hits ?? "–"}–${game.home.hits ?? "–"}`
       : null;
+  const start = pregame ? centralStartParts(game.gameDate, game.whenShort) : null;
   return (
     <ScoreboardCard
       to={`/sports/mlb/game/${game.id}`}
@@ -424,7 +414,8 @@ export const MlbScoreboardCard = memo(function MlbScoreboardCard({
       awayScore={pregame ? null : game.away.score}
       homeScore={pregame ? null : game.home.score}
       detail={game.live ? game.inning : game.final ? "Final" : null}
-      preview={pregame ? centralStartLabel(game.gameDate, game.whenShort) : null}
+      preview={start?.label ?? null}
+      previewNote={start?.date ?? null}
       mlb={
         sit
           ? {
@@ -493,6 +484,7 @@ export const NflScoreboardCard = memo(function NflScoreboardCard({
   const detail = `${game.shortDetail ?? ""} ${game.status ?? ""}`;
   const poss = game.situation?.possessionTeamId;
   const why = reasons?.filter(Boolean).join(" · ");
+  const start = pregame ? centralStartParts(game.startIso, game.whenShort) : null;
   return (
     <ScoreboardCard
       to={to === undefined ? `/sports/nfl/game/${game.id}` : to}
@@ -527,7 +519,8 @@ export const NflScoreboardCard = memo(function NflScoreboardCard({
       awayScore={pregame ? null : game.away.score}
       homeScore={pregame ? null : game.home.score}
       detail={pregame ? null : game.shortDetail}
-      preview={pregame ? centralStartLabel(game.startIso, game.whenShort) : null}
+      preview={start?.label ?? null}
+      previewNote={start?.date ?? null}
       headerExtra={<HeatMeta heat={heat} extra={headerExtra} />}
     >
       {game.live && (game.situation?.downDistanceText || game.situation?.possessionText) ? (
@@ -578,6 +571,7 @@ export const NhlScoreboardCard = memo(function NhlScoreboardCard({
   const inOt = /\bot\b|overtime|shootout|\bso\b/i.test(detail);
   const close = Boolean(game.live && diff != null && diff <= 1 && (/\b3rd\b/i.test(detail) || inOt));
   const periods = Math.max(game.away.linescores.length, game.home.linescores.length);
+  const start = pregame ? centralStartParts(game.startIso, game.whenShort) : null;
   return (
     <ScoreboardCard
       to={`/sports/nhl/game/${game.id}`}
@@ -605,7 +599,8 @@ export const NhlScoreboardCard = memo(function NhlScoreboardCard({
       awayScore={pregame ? null : game.away.score}
       homeScore={pregame ? null : game.home.score}
       detail={pregame ? null : game.shortDetail}
-      preview={pregame ? centralStartLabel(game.startIso, game.whenShort) : null}
+      preview={start?.label ?? null}
+      previewNote={start?.date ?? null}
       headerExtra={<HeatMeta heat={heat} extra={headerExtra} />}
     >
       {periods > 0 ? (
@@ -654,6 +649,7 @@ export const CfbScoreboardCard = memo(function CfbScoreboardCard({
   const line =
     game.odds?.details ||
     (game.odds?.overUnder != null ? `O/U ${game.odds.overUnder}` : null);
+  const start = pregame ? centralStartParts(game.startIso, game.whenShort) : null;
   return (
     <ScoreboardCard
       to={`/sports/cfb/game/${game.id}`}
@@ -693,7 +689,8 @@ export const CfbScoreboardCard = memo(function CfbScoreboardCard({
       awayScore={pregame ? null : game.away.score}
       homeScore={pregame ? null : game.home.score}
       detail={pregame ? null : game.shortDetail}
-      preview={pregame ? centralStartLabel(game.startIso, game.whenShort) : null}
+      preview={start?.label ?? null}
+      previewNote={start?.date ?? null}
       headerExtra={<HeatMeta heat={heat} extra={headerExtra} />}
     >
       {game.live && (game.situation?.downDistanceText || game.situation?.possessionText) ? (
@@ -728,6 +725,7 @@ export const SoccerScoreboardCard = memo(function SoccerScoreboardCard({
   const pregame = !game.live && !game.final;
   const awayN = game.away.score == null ? null : Number(game.away.score);
   const homeN = game.home.score == null ? null : Number(game.home.score);
+  const start = pregame ? centralStartParts(game.startIso, game.shortDetail || game.status) : null;
   return (
     <ScoreboardCard
       to={`/sports/soccer/game/${game.id}`}
@@ -759,7 +757,8 @@ export const SoccerScoreboardCard = memo(function SoccerScoreboardCard({
       awayScore={pregame ? null : game.away.score}
       homeScore={pregame ? null : game.home.score}
       detail={pregame ? null : game.shortDetail || game.status}
-      preview={pregame ? centralStartLabel(game.startIso, game.shortDetail || game.status) : null}
+      preview={start?.label ?? null}
+      previewNote={start?.date ?? null}
       headerExtra={
         <HeatMeta
           heat={heat}
