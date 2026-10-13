@@ -68,5 +68,14 @@ Applied to Supabase project `esdgrgulaxnewmhjuyzh`, in order:
     `anon` and `authenticated`. No write policy; the `player-ask` edge
     function inserts with the service role.
 
+17. `books_series_name_position` — makes `books.series` (series name) and
+    `books.series_position` (numeric volume number) reproducible from the
+    repo; both were already live from the original `books` migration, so
+    every statement is idempotent. Trims blank/whitespace series names to
+    `NULL`, clears orphan positions, adds `series_position >= 0`, and
+    replaces `books_series_idx` with `(user_id, series, series_position)`
+    so "every volume of this series, in order" is one index read. Backs the
+    series strip on each book's view.
+
 Run `get_advisors` after any schema change; it catches missing RLS and
 mutable-search_path functions.
