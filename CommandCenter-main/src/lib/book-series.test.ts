@@ -117,6 +117,16 @@ assertEqual(
   "0.5 before 1 is not a gap",
 );
 
+const misfiled = [
+  book({ id: "m1", series: "Scot Harvath", title: "Shadow of Doubt", series_position: 23 }),
+  book({ id: "m2", series: "Scot Harvath", title: "Code of Conduct", series_position: 23 }),
+  book({ id: "m3", series: "Scot Harvath", title: "Full Black, Volume 10: A Thriller", series_position: 10 }),
+  book({ id: "m4", series: "Scot Harvath", title: "Full Black", series_position: 10 }),
+];
+const misfiledStrip = buildSeriesStrip(misfiled[0], misfiled)!;
+assertEqual(misfiledStrip.volumes.length, 3, "two different titles at #23 stay two cards; subtitle variants fold");
+assertEqual(misfiledStrip.volumes[0].editions.length, 2, "Full Black editions fold despite the subtitle");
+
 assertEqual(
   librarySeriesNames(library).join("|"),
   "Mickey Haller|Joe Pickett",

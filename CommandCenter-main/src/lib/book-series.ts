@@ -78,11 +78,16 @@ export function normalizeSeriesName(raw: string | null | undefined): string | nu
   return s.length > 0 ? s : null;
 }
 
+/** Title without subtitle / edition tails, so "Full Black, Volume 10: A Thriller" folds with "Full Black". */
 function titleKey(title: string): string {
   return title
     .toLowerCase()
+    .split(/[:\u2014\u2013]|\s-\s/)[0]
     .replace(/\([^)]*\)/g, " ")
+    .replace(/,?\s*(volume|vol\.?|book)\s+[0-9ivxlc]+\s*$/i, " ")
+    .replace(/&/g, "and")
     .replace(/[^a-z0-9]+/g, " ")
+    .replace(/^(the|a|an) /, "")
     .trim();
 }
 
@@ -123,10 +128,12 @@ export function buildSeriesStrip<B extends SeriesBook>(
   );
   if (members.length === 0) return null;
 
+  // Editions of one work share position *and* title. Two different titles at
+  // the same number (a mis-filed row) stay two cards rather than hiding one.
   const groups = new Map<string, { position: number | null; editions: B[] }>();
   for (const b of members) {
     const pos = seriesPositionNumber(b.series_position);
-    const key = pos !== null ? `p:${pos}` : `t:${titleKey(b.title)}`;
+    const key = `${pos !== null ? `p:${pos}` : "p:-"}|${titleKey(b.title)}`;
     const g = groups.get(key);
     if (g) g.editions.push(b);
     else groups.set(key, { position: pos, editions: [b] });
