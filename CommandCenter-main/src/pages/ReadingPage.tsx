@@ -119,6 +119,7 @@ import {
 } from "@/lib/similar-books";
 import RatingPicker from "@/components/RatingPicker";
 import ReadingYearChart from "@/components/ReadingYearChart";
+import SeriesStrip from "@/components/SeriesStrip";
 import { useCelebration } from "@/components/celebration-context";
 import { cn, todayStr, fmtLongDate } from "@/lib/utils";
 import type { Book, BookHighlight, ContentType, ReadStatus } from "@/types";
@@ -2085,25 +2086,25 @@ function BookDetail({
                   <Sparkles size={13} className="opacity-60" />
                   Find similar
                 </button>
-                {book.series && (
-                  <button
-                    onClick={() => {
-                      onFilter({ type: "series", value: book.series! });
-                      onClose();
-                    }}
-                    className="text-cream/90 hover:text-cream inline-flex items-center gap-1.5 text-[13px] tracking-[-0.01em] transition"
-                  >
-                    <Layers size={13} className="opacity-60" />
-                    {book.series}
-                    {book.series_position ? ` #${book.series_position}` : ""}
-                  </button>
-                )}
               </div>
             </div>
           </div>
         </div>
 
         <div className="px-6">
+        {/* Series first: where this volume sits, and the way to the next one. */}
+        <SeriesStrip
+          book={book}
+          books={books}
+          onOpenBook={onOpenBook}
+          onBrowse={(series) => {
+            onFilter({ type: "series", value: series });
+            onClose();
+          }}
+          onSave={(p) => patch.mutate(p)}
+          saving={patch.isPending}
+        />
+
         {(about || subjects.length > 0) && (
           <div className="mb-7">
             <span className="label-caps">About</span>
