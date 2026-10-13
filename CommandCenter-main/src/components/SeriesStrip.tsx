@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { BookOpen, Check, Layers, Pencil, X } from "lucide-react";
 import toast from "react-hot-toast";
-import { coverSrc, isMagazine } from "@/lib/books";
+import { coverCandidates, isMagazine } from "@/lib/books";
 import {
   buildSeriesStrip,
   librarySeriesNames,
@@ -200,6 +200,33 @@ export default function SeriesStrip({
   );
 }
 
+/** Walks the cover candidates like the hero jacket does; a dead URL falls to the placeholder. */
+function StripCover({ book }: { book: Book }) {
+  const candidates = useMemo(() => coverCandidates(book), [book]);
+  const [idx, setIdx] = useState(0);
+  useEffect(() => {
+    setIdx(0);
+  }, [book.id, book.cover_path, book.cover_url]);
+  const src = candidates[idx] ?? null;
+  if (!src) {
+    return (
+      <div className="bg-panel grid h-full w-full place-items-center">
+        <BookOpen size={14} className="text-chalk-dim" />
+      </div>
+    );
+  }
+  return (
+    <img
+      src={src}
+      alt=""
+      loading="lazy"
+      decoding="async"
+      onError={() => setIdx((i) => i + 1)}
+      className="h-full w-full object-cover"
+    />
+  );
+}
+
 function SeriesCard({
   item,
   onOpen,
@@ -222,7 +249,6 @@ function SeriesCard({
   }
 
   const b = item.book;
-  const cover = coverSrc(b);
   const pos = seriesPositionLabel(item.position);
 
   return (
@@ -249,13 +275,7 @@ function SeriesCard({
           !item.isCurrent && !item.isRead && !item.isReading && "opacity-60 saturate-[.7]",
         )}
       >
-        {cover ? (
-          <img src={cover} alt="" loading="lazy" className="h-full w-full object-cover" />
-        ) : (
-          <div className="bg-panel grid h-full w-full place-items-center">
-            <BookOpen size={14} className="text-chalk-dim" />
-          </div>
-        )}
+        <StripCover book={b} />
         {pos && (
           <span className="numeral text-cream absolute left-1 top-1 rounded-[3px] bg-black/55 px-1 py-px text-[9.5px] leading-[14px] tracking-[0.02em] backdrop-blur-sm">
             {pos}
