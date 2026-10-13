@@ -16,6 +16,7 @@ import type { UnifiedRuwtItem } from "@/hooks/useRuwtSlate";
 import { useRuwtSlateSplit } from "@/hooks/useRuwtSlateSplit";
 import { kickoffLabel, ruwtStartIso } from "@/lib/ruwt-score-tab";
 import { ruwtCardReasons, ruwtTodaysTop, withoutClosestUpset } from "@/lib/ruwt-slate";
+import { centralStartParts } from "@/lib/start-label";
 import {
   fetchPitcherSeasonLines,
   mlbHeadshot,
@@ -807,6 +808,7 @@ function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
       diff <= 8 &&
       (period === 4 || inOt || /\b4th\b/.test(detail)),
   );
+  const start = !game.live && !game.final ? centralStartParts(game.startIso, game.whenShort) : null;
 
   return (
     <Link
@@ -873,7 +875,8 @@ function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
             live={game.live}
             final={game.final}
             face="sans"
-            preview={game.whenShort}
+            preview={start?.label ?? null}
+            previewNote={start?.date ?? null}
           />
         </div>
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-end">
@@ -954,6 +957,7 @@ function NflRuwtCard({ game, rank }: { game: NflScoredGame; rank: number }) {
   const closeAndLate = Boolean(
     game.live && diff != null && diff <= 8 && (/\b4th\b/.test(detail) || /\bot\b|overtime/.test(detail)),
   );
+  const start = !game.live && !game.final ? centralStartParts(game.startIso, game.whenShort) : null;
 
   return (
     <Link
@@ -1014,7 +1018,8 @@ function NflRuwtCard({ game, rank }: { game: NflScoredGame; rank: number }) {
           live={game.live}
           final={game.final}
           face="sans"
-          preview={game.whenShort}
+          preview={start?.label ?? null}
+          previewNote={start?.date ?? null}
         />
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-end">
           {game.home.logo ? (
@@ -1078,6 +1083,7 @@ function NhlRuwtCard({ game, rank }: { game: NhlScoredGame; rank: number }) {
   const closeAndLate = Boolean(
     game.live && diff != null && diff <= 1 && (/\b3rd\b/.test(detail) || inOt),
   );
+  const start = !game.live && !game.final ? centralStartParts(game.startIso, game.whenShort) : null;
 
   return (
     <Link
@@ -1130,7 +1136,8 @@ function NhlRuwtCard({ game, rank }: { game: NhlScoredGame; rank: number }) {
           live={game.live}
           final={game.final}
           face="sans"
-          preview={game.whenShort}
+          preview={start?.label ?? null}
+          previewNote={start?.date ?? null}
         />
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-end">
           {game.home.logo ? (
@@ -1167,6 +1174,7 @@ function NhlRuwtCard({ game, rank }: { game: NhlScoredGame; rank: number }) {
 
 function SoccerRuwtCard({ game, rank }: { game: SoccerScoredGame; rank: number }) {
   const kickoff = game.shortDetail || game.status;
+  const start = !game.live && !game.final ? centralStartParts(game.startIso, kickoff) : null;
   return (
     <a
       href={`https://www.espn.com/soccer/match/_/gameId/${game.id}`}
@@ -1230,7 +1238,8 @@ function SoccerRuwtCard({ game, rank }: { game: SoccerScoredGame; rank: number }
           live={game.live}
           final={game.final}
           face="sans"
-          preview={kickoff}
+          preview={start?.label ?? null}
+          previewNote={start?.date ?? null}
         />
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-end">
           {game.home.logo ? (
@@ -1267,6 +1276,7 @@ function RuwtCard({
   const pitcherIds = [game.away.probablePitcherId, game.home.probablePitcherId].filter(
     (id): id is number => id != null,
   );
+  const start = pregame ? centralStartParts(game.gameDate, game.whenShort) : null;
 
   const pitcherLines = useQuery({
     queryKey: ["ruwt-pitcher-lines", game.id, pitcherIds.join(",")],
@@ -1340,7 +1350,8 @@ function RuwtCard({
             live={false}
             final={false}
             face="sans"
-            preview={game.whenShort}
+            preview={start?.label ?? null}
+            previewNote={start?.date ?? null}
           />
           <Side
             side={game.home}
