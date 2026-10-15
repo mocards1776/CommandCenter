@@ -91,4 +91,18 @@ assertEqual(csv[0]?.fat, 40.1, "fat");
 assertEqual(csv[1]?.day, "2026-10-07", "us day");
 assertEqual(csv[1]?.muscle, null, "blank muscle");
 
+const withings = parseWithingsCsv(
+  [
+    'Date,"Weight (lb)","Fat mass (lb)","Bone mass (lb)","Muscle mass (lb)","Hydration (lb)",Comments',
+    '"2026-04-22 07:41:27",180.1,40,7,120,90,',
+    '"2026-04-22 13:19:38",179.4,39.5,7.1,121,91,',
+    '"2026-08-18 09:26:36",173.8,37.3,6.8,129.6,92.8,',
+  ].join("\n"),
+);
+assertEqual(withings.length, 2, "duplicate day collapses");
+assertEqual(withings[0]?.day, "2026-04-22", "earlier day first");
+assertEqual(withings[0]?.weightLb, 179.4, "later stamp wins");
+assertEqual(withings[0]?.fat, 39.5, "fat mass header");
+assertEqual(withings[1]?.weightLb, 173.8, "datetime day");
+
 console.log("health-math tests ok");

@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 /**
  * Print SQL upserts for data/health/withings_weight.csv.
- * Columns: Date, Weight lb, Fat, Bone, Muscle, Hydration.
+ * Columns: Date, Weight (lb) / Weight lb, Fat mass (lb) / Fat, and the same
+ * for bone, muscle, and hydration. Date cells may include a time.
+ * One row per calendar day; the latest timestamp on that day wins.
  *
  *   node scripts/health-weight-seed.mjs
  *   node scripts/health-weight-seed.mjs path/to/withings_weight.csv
@@ -22,7 +24,9 @@ if (!existsSync(file)) {
 
 const text = readFileSync(file, "utf8").replace(/^\uFEFF/, "");
 const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-const header = split(lines[0] ?? "").map((h) => h.trim().toLowerCase().replace(/[()]/g, " ").replace(/\s+/g, " "));
+const header = split(lines[0] ?? "").map((h) =>
+  h.trim().toLowerCase().replace(/[()]/g, " ").replace(/\s+/g, " ").trim(),
+);
 const at = (name) => header.findIndex((h) => h === name || h.startsWith(`${name} `));
 const dateIdx = at("date");
 const weightIdx = header.findIndex((h) => h === "weight lb" || h === "weight");
@@ -35,17 +39,23 @@ if (dateIdx < 0 || weightIdx < 0) {
   process.exit(1);
 }
 
-const values = [];
+const byDay = new Map();
 for (const line of lines.slice(1)) {
   const cells = split(line);
-  const day = dayOf(cells[dateIdx] ?? "");
+  const rawDate = cells[dateIdx] ?? "";
+  const day = dayOf(rawDate);
   const weight = num(cells[weightIdx]);
   if (!day || weight == null) continue;
   if (day === "2026-10-14") continue;
-  values.push(
-    `(date '${day}', ${sqlNum(weight)}, ${sqlNum(cell(cells, fatIdx))}, ${sqlNum(cell(cells, boneIdx))}, ${sqlNum(cell(cells, muscleIdx))}, ${sqlNum(cell(cells, hydrationIdx))})`,
-  );
+  const stamp = stampOf(rawDate);
+  const prev = byDay.get(day);
+  if (prev && prev.stamp > stamp) continue;
+  byDay.set(day, {
+    stamp,
+    sql: `(date '${day}', ${sqlNum(weight)}, ${sqlNum(num(cell(cells, fatIdx)))}, ${sqlNum(num(cell(cells, boneIdx)))}, ${sqlNum(num(cell(cells, muscleIdx)))}, ${sqlNum(num(cell(cells, hydrationIdx)))})`,
+  });
 }
+const values = [...byDay.values()].map((row) => row.sql);
 
 if (!values.length) {
   console.error("CSV had no weigh-ins besides the 2026-10-14 anchor");
@@ -80,12 +90,19 @@ function sqlNum(n) {
   return n == null ? "null::numeric" : String(n);
 }
 function dayOf(raw) {
-  const text = raw.trim();
-  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  const text = raw.trim().replace(/^"|"$/g, "");
+  const iso = /^(\d{4})-(\d{2})-(\d{2})(?:[ T]\d{2}:\d{2}(?::\d{2})?)?$/.exec(text);
   if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
   const us = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(text);
   if (us) return `${us[3]}-${us[1].padStart(2, "0")}-${us[2].padStart(2, "0")}`;
   return null;
+}
+function stampOf(raw) {
+  const text = raw.trim().replace(/^"|"$/g, "");
+  const iso = /^(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2}(?::\d{2})?))?/.exec(text);
+  if (iso) return `${iso[1]}T${iso[2] ?? "00:00:00"}`;
+  const day = dayOf(text);
+  return day ? `${day}T00:00:00` : "";
 }
 function split(line) {
   const out = [];

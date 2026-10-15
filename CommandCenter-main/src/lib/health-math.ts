@@ -152,13 +152,17 @@ function normalizeHeader(cell: string): string {
     .trim()
     .toLowerCase()
     .replace(/[()]/g, " ")
-    .replace(/\s+/g, " ");
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-/** Accept YYYY-MM-DD and M/D/YYYY (Withings export variants). */
+/**
+ * Calendar day from a Withings cell.
+ * Accepts YYYY-MM-DD, YYYY-MM-DD HH:MM:SS, and M/D/YYYY.
+ */
 export function parseWeightDay(raw: string): string | null {
-  const text = raw.trim();
-  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  const text = raw.trim().replace(/^"|"$/g, "");
+  const iso = /^(\d{4})-(\d{2})-(\d{2})(?:[ T]\d{2}:\d{2}(?::\d{2})?)?$/.exec(text);
   if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
   const us = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(text);
   if (us) {
@@ -167,9 +171,19 @@ export function parseWeightDay(raw: string): string | null {
   return null;
 }
 
+/** Sort key for a Withings timestamp. Date-only cells sort as midnight. */
+function weightStampKey(raw: string): string {
+  const text = raw.trim().replace(/^"|"$/g, "");
+  const iso = /^(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2}(?::\d{2})?))?$/.exec(text);
+  if (iso) return `${iso[1]}T${iso[2] ?? "00:00:00"}`;
+  const day = parseWeightDay(text);
+  return day ? `${day}T00:00:00` : "";
+}
+
 /**
  * Parse `data/health/withings_weight.csv`.
- * Expected columns: Date, Weight lb, Fat, Bone, Muscle, Hydration.
+ * Headers may be `Weight (lb)` / `Fat mass (lb)` or the shorter names.
+ * One row per calendar day: when a day has several stamps, the latest wins.
  */
 export function parseWithingsCsv(csv: string): WithingsRow[] {
   const lines = csv
@@ -189,23 +203,28 @@ export function parseWithingsCsv(csv: string): WithingsRow[] {
   if (dateIdx < 0 || weightIdx < 0) {
     throw new Error("Withings CSV needs Date and Weight lb columns");
   }
-  const rows: WithingsRow[] = [];
+  const byDay = new Map<string, { stamp: string; row: WithingsRow }>();
   for (const line of lines.slice(1)) {
     const cells = splitCsvLine(line);
-    const day = parseWeightDay(cells[dateIdx] ?? "");
+    const rawDate = cells[dateIdx] ?? "";
+    const day = parseWeightDay(rawDate);
     const weightLb = numOrNull(cells[weightIdx]);
     if (!day || weightLb == null) continue;
-    rows.push({
+    const row: WithingsRow = {
       day,
       weightLb,
       fat: fatIdx >= 0 ? numOrNull(cells[fatIdx]) : null,
       bone: boneIdx >= 0 ? numOrNull(cells[boneIdx]) : null,
       muscle: muscleIdx >= 0 ? numOrNull(cells[muscleIdx]) : null,
       hydration: hydrationIdx >= 0 ? numOrNull(cells[hydrationIdx]) : null,
-    });
+    };
+    const stamp = weightStampKey(rawDate);
+    const prev = byDay.get(day);
+    if (!prev || stamp >= prev.stamp) byDay.set(day, { stamp, row });
   }
-  rows.sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0));
-  return rows;
+  return [...byDay.values()]
+    .map((entry) => entry.row)
+    .sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0));
 }
 
 function splitCsvLine(line: string): string[] {

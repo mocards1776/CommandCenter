@@ -42,16 +42,19 @@ Pushes to `main` that touch `supabase/functions/**` also deploy `health` via
 `.github/workflows/deploy-edge.yml` (same `--no-verify-jwt` flag). The secret
 still has to be set once; the workflow does not create it.
 
-`data/health/withings_weight.csv` (columns `Date`, `Weight lb`, `Fat`, `Bone`,
-`Muscle`, `Hydration`) was not in the repo when the migration was added. The
-2026-10-14 anchor of 175.0 lb is seeded. After the CSV is added:
+`data/health/withings_weight.csv` is the Withings export (`Date`, `Weight (lb)`,
+`Fat mass (lb)`, `Bone mass (lb)`, `Muscle mass (lb)`, `Hydration (lb)`).
+Date cells include a time. The table keeps one row per Chicago calendar day,
+and the latest stamp on a day wins. The 2026-10-14 anchor of 175.0 lb is not
+in that file and is left as seeded by the migration.
 
 ```bash
 node scripts/health-weight-seed.mjs
 ```
 
-Run the printed SQL against the project. It upserts every other day and leaves
-the 175.0 lb anchor in place.
+Run the printed SQL against the project to reload those days. That SQL was
+applied to `esdgrgulaxnewmhjuyzh` on 2026-10-15: 663 calendar days from the
+CSV, plus the 175.0 lb anchor, for 664 `health_weights` rows.
 
 ## Request
 
