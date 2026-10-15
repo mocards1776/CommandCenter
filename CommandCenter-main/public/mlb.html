@@ -21,6 +21,8 @@
           sessionStorage.setItem("sports-solo", "1");
           localStorage.removeItem("reading-solo");
           sessionStorage.removeItem("reading-solo");
+          localStorage.removeItem("health-solo");
+          sessionStorage.removeItem("health-solo");
         } catch (e) {}
         var standalone =
           (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) ||

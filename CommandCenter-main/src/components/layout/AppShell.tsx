@@ -19,6 +19,7 @@ import {
   Shield,
   Disc,
   GraduationCap,
+  HeartPulse,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuth } from "@/lib/auth-context";
@@ -48,6 +49,11 @@ import {
   prefersNewspaperHome,
 } from "@/lib/newspaper-home";
 import {
+  clearHealthSolo,
+  markHealthSolo,
+  prefersHealthHome,
+} from "@/lib/health-home";
+import {
   getRssReaderBrand,
   subscribeRssReaderBrand,
 } from "@/lib/rss-brand";
@@ -62,6 +68,7 @@ const NAV = [
   { to: "/todos", label: "Todos", short: "Todos", Icon: ListChecks },
   { to: "/habits", label: "Habits", short: "Habits", Icon: Repeat },
   { to: "/reading", label: "Reading", short: "Reading", Icon: BookOpen },
+  { to: "/health", label: "Health", short: "Health", Icon: HeartPulse },
   { to: "/finance", label: "Finance", short: "Finance", Icon: Wallet },
   { to: "/rss", label: "News", short: "News", Icon: Newspaper },
   { to: "/sports", label: "Sports", short: "Sports", Icon: Trophy },
@@ -165,6 +172,7 @@ export default function AppShell() {
   const onSports = pathname.startsWith("/sports");
   const onRss = pathname.startsWith("/rss");
   const onNewspaper = pathname.startsWith("/newspaper");
+  const onHealth = pathname.startsWith("/health");
 
   const [soloSession, setSoloSession] = useState(
     () =>
@@ -172,7 +180,8 @@ export default function AppShell() {
       (onSports && prefersSportsHome()) ||
       (onRss && prefersRssHome()) ||
       (onNewspaper && prefersNewspaperHome()) ||
-      (onReading && prefersReadingHome()),
+      (onReading && prefersReadingHome()) ||
+      (onHealth && prefersHealthHome()),
   );
 
   useEffect(() => {
@@ -186,6 +195,7 @@ export default function AppShell() {
         clearSportsSolo();
         clearRssSolo();
         clearNewspaperSolo();
+        clearHealthSolo();
         setSoloSession(true);
       }
       return;
@@ -203,6 +213,7 @@ export default function AppShell() {
         clearReadingSolo();
         clearRssSolo();
         clearNewspaperSolo();
+        clearHealthSolo();
         setSoloSession(true);
       }
       return;
@@ -218,6 +229,7 @@ export default function AppShell() {
         clearReadingSolo();
         clearSportsSolo();
         clearNewspaperSolo();
+        clearHealthSolo();
         setSoloSession(true);
       }
       return;
@@ -233,6 +245,23 @@ export default function AppShell() {
         clearReadingSolo();
         clearSportsSolo();
         clearRssSolo();
+        clearHealthSolo();
+        setSoloSession(true);
+      }
+      return;
+    }
+
+    if (onHealth) {
+      const healthManifest = document
+        .querySelector('link[rel="manifest"]')
+        ?.getAttribute("href")
+        ?.includes("health.webmanifest");
+      if (soloParam || (isStandaloneApp() && healthManifest)) {
+        markHealthSolo();
+        clearReadingSolo();
+        clearSportsSolo();
+        clearRssSolo();
+        clearNewspaperSolo();
         setSoloSession(true);
       }
       return;
@@ -250,9 +279,10 @@ export default function AppShell() {
       clearSportsSolo();
       clearRssSolo();
       clearNewspaperSolo();
+      clearHealthSolo();
       setSoloSession(false);
     }
-  }, [soloParam, onReading, onSports, onRss, onNewspaper, pathname]);
+  }, [soloParam, onReading, onSports, onRss, onNewspaper, onHealth, pathname]);
 
   const readingOnly = useMemo(
     () => onReading && (soloParam || soloSession),
@@ -266,7 +296,11 @@ export default function AppShell() {
     () => onRss && (soloParam || soloSession),
     [onRss, soloParam, soloSession],
   );
-  const hideMainChrome = readingOnly || sportsOnly || rssOnly;
+  const healthOnly = useMemo(
+    () => onHealth && (soloParam || soloSession),
+    [onHealth, soloParam, soloSession],
+  );
+  const hideMainChrome = readingOnly || sportsOnly || rssOnly || healthOnly;
 
   const today = (() => {
     if (onSports || sportsOnly) {
@@ -289,6 +323,8 @@ export default function AppShell() {
     <span className="text-accent">Sports</span>
   ) : rssOnly || onRss ? (
     <span className="text-accent">{rssBrand || "News"}</span>
+  ) : onHealth ? (
+    <span className="text-accent">Health</span>
   ) : (
     <>
       Command <span className="text-accent">Center</span>
@@ -423,7 +459,7 @@ export default function AppShell() {
           className={cn(
             "min-w-0 flex-1 overflow-x-hidden md:pb-0",
             // Reading/Dispatch/Times solo: no bottom bar. Sports solo + full app: pad for tabs.
-            readingOnly || rssOnly ? "pb-0" : "pb-[76px] md:pb-0",
+            readingOnly || rssOnly || healthOnly ? "pb-0" : "pb-[76px] md:pb-0",
           )}
         >
           <Outlet />

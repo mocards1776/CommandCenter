@@ -77,6 +77,12 @@ Nexstar), show one tile per group. Do not collapse those into a DMA tile.
 The caption Just In line uses the same group + call signs in parentheses:
 `…for 25.3 GRP (Gray Media · KSPR)`.
 
+Just In tiles and caption lines drop the `for X GRP` clause when GRP is 0 / null
+(cable, radio): `MAPAC added $161,187 in Kansas City cable`. Never `for 0 GRP`.
+
+`{ action: "render", just_in: [...] }` previews custom Just In tiles on the
+sample card; `format: "caption"` returns the caption JSON. Render never sends.
+
 ## Colors
 
 GOP PAC and **any Missouri Senate Campaign Committee (MSCC)** tile / buyer bar

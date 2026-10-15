@@ -11,6 +11,7 @@ import { TimesHoldShell } from "@/components/newspaper/TimesHold";
 import { homePath, markReadingSolo, safeNextPath } from "@/lib/reading-home";
 import { markSportsSolo, sportsHomeRedirect } from "@/lib/sports-home";
 import { markRssSolo } from "@/lib/rss-home";
+import { markHealthSolo } from "@/lib/health-home";
 
 const DailyNewspaperPage = lazy(() => import("@/pages/DailyNewspaperPage"));
 const NewspaperPhoneCardPage = lazy(() => import("@/pages/NewspaperPhoneCardPage"));
@@ -26,6 +27,7 @@ const DashboardPage = lazy(() => import("@/pages/DashboardPage"));
 const TodosPage = lazy(() => import("@/pages/TodosPage"));
 const HabitsPage = lazy(() => import("@/pages/HabitsPage"));
 const ReadingPage = lazy(() => import("@/pages/ReadingPage"));
+const HealthPage = lazy(() => import("@/pages/HealthPage"));
 const FinancePage = lazy(() => import("@/pages/FinancePage"));
 const BuenaVistaNotebookPage = lazy(() => import("@/pages/BuenaVistaNotebookPage"));
 const SportsPage = lazy(() => import("@/pages/SportsPage"));
@@ -89,6 +91,8 @@ function captureSoloFromUrl() {
     markRssSolo();
   } else if (path.startsWith("/reading")) {
     markReadingSolo();
+  } else if (path.startsWith("/health")) {
+    markHealthSolo();
   }
 }
 
@@ -197,6 +201,7 @@ export default function App() {
               <Route path="/todos" element={<TodosPage />} />
               <Route path="/habits" element={<HabitsPage />} />
               <Route path="/reading" element={<ReadingPage />} />
+              <Route path="/health" element={<HealthPage />} />
               <Route path="/finance" element={<FinancePage />} />
               <Route path="/sports" element={<SportsHome />} />
               <Route path="/sports/mlb" element={<MlbPage />} />

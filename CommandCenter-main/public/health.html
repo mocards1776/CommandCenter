@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Health</title>
+    <!--
+      Static launch page for iOS “Add to Home Screen”.
+      Safari bookmarks the URL of the page you’re on — it won’t let you edit it.
+      Open THIS file, then Add. Do not add from /dashboard.
+    -->
+    <link rel="manifest" href="/health.webmanifest" />
+    <meta name="theme-color" content="#10182A" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Health" />
+    <link rel="apple-touch-icon" href="/icon-health-192.png" />
+    <link rel="apple-touch-icon" sizes="192x192" href="/icon-health-192.png" />
+    <link rel="apple-touch-icon" sizes="512x512" href="/icon-health-512.png" />
+    <link rel="icon" href="/icon-health-192.png" />
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: #10182a;
+        color: #eef2f7;
+        font-family: "Libre Franklin", system-ui, sans-serif;
+        padding: 1.5rem;
+      }
+      .card {
+        max-width: 22rem;
+        text-align: center;
+      }
+      h1 {
+        font-family: "Barlow Condensed", "Oswald", sans-serif;
+        font-size: 2.6rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        color: #ff5c67;
+        margin: 0 0 0.75rem;
+      }
+      p {
+        margin: 0 0 0.85rem;
+        font-size: 0.9rem;
+        line-height: 1.45;
+        color: rgba(238, 242, 247, 0.72);
+      }
+      strong {
+        color: #eef2f7;
+      }
+      .url {
+        font-size: 0.72rem;
+        letter-spacing: 0.04em;
+        color: rgba(238, 242, 247, 0.45);
+        word-break: break-all;
+      }
+      a.btn {
+        display: inline-block;
+        margin-top: 0.75rem;
+        padding: 0.7rem 1.25rem;
+        border-radius: 2px;
+        background: #ff5c67;
+        color: #1a0b0e;
+        text-decoration: none;
+        font-size: 0.7rem;
+        font-weight: 700;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+    </style>
+    <script>
+      (function () {
+        try {
+          localStorage.setItem("health-solo", "1");
+          sessionStorage.setItem("health-solo", "1");
+          localStorage.removeItem("reading-solo");
+          sessionStorage.removeItem("reading-solo");
+          localStorage.removeItem("sports-solo");
+          sessionStorage.removeItem("sports-solo");
+          localStorage.removeItem("rss-solo");
+          sessionStorage.removeItem("rss-solo");
+          localStorage.removeItem("newspaper-solo");
+          sessionStorage.removeItem("newspaper-solo");
+        } catch (e) {}
+        var standalone =
+          (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) ||
+          window.navigator.standalone === true;
+        // Home Screen launch → straight into Health (not Dashboard).
+        // Stay put in Safari so Share → Add captures /health.html.
+        if (standalone) {
+          location.replace("/health?solo=1");
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div class="card">
+      <h1>HEALTH</h1>
+      <p>
+        Tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>.
+        The name should say Health — leave it.
+      </p>
+      <p class="url" id="url"></p>
+      <p>If the URL still says /dashboard, you’re on the wrong page. Stay here.</p>
+      <a class="btn" href="/health?solo=1">Open Health</a>
+    </div>
+    <script>
+      document.getElementById("url").textContent = location.href;
+    </script>
+  </body>
+</html>

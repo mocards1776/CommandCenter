@@ -43,6 +43,12 @@ export function homePath(): string {
     ) {
       return "/rss?solo=1";
     }
+    if (
+      localStorage.getItem("health-solo") === "1" ||
+      sessionStorage.getItem("health-solo") === "1"
+    ) {
+      return "/health?solo=1";
+    }
   } catch {
     // private mode
   }

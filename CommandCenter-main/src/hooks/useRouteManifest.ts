@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useLocation } from "react-router-dom";
 
-type Mode = "reading" | "sports" | "rss" | "newspaper" | "app";
+type Mode = "reading" | "sports" | "rss" | "newspaper" | "health" | "app";
 
 const MODES: Record<Mode, { manifest: string; icon: string; short: string; title: string }> = {
   reading: {
@@ -28,6 +28,12 @@ const MODES: Record<Mode, { manifest: string; icon: string; short: string; title
     short: "Times",
     title: "Thompson Times",
   },
+  health: {
+    manifest: "/health.webmanifest",
+    icon: "/icon-health",
+    short: "Health",
+    title: "Health",
+  },
   app: {
     manifest: "/manifest.webmanifest",
     icon: "/icon",
@@ -41,6 +47,7 @@ function modeFor(pathname: string): Mode {
   if (pathname.startsWith("/sports")) return "sports";
   if (pathname.startsWith("/rss")) return "rss";
   if (pathname.startsWith("/newspaper")) return "newspaper";
+  if (pathname.startsWith("/health")) return "health";
   return "app";
 }
 
