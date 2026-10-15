@@ -3,6 +3,7 @@ import {
   authorized,
   parseIngest,
   pickHealthUserId,
+  resolveIngestSecret,
   type FoodWrite,
   type WeightWrite,
 } from "./ingest.ts";
@@ -11,15 +12,16 @@ import {
  * Bot write path for the Health app.
  *
  * POST JSON food entries and weigh-ins. Auth is header
- * x-health-secret = HEALTH_INGEST_SECRET, or an Authorization bearer equal
- * to the service role key. Deploy with --no-verify-jwt so the secret header
- * is enough (the gateway still wants the anon apikey header).
+ * x-health-secret matches HEALTH_INGEST_SECRET, or the ingest_secret row in
+ * health_config when that env var is unset. An Authorization bearer equal
+ * to the service role key is also accepted. Deploy with --no-verify-jwt so
+ * the secret header is enough (the gateway still wants the anon apikey).
  *
  * Rows are written with the service role and attached to HEALTH_USER_ID,
  * or to the only profile when that secret is unset.
  *
- * Secret (never commit):
- *   HEALTH_INGEST_SECRET
+ * Secret (never commit the value):
+ *   HEALTH_INGEST_SECRET, or public.health_config key ingest_secret
  * Optional:
  *   HEALTH_USER_ID
  */
@@ -56,6 +58,14 @@ async function rest(path: string, init: RequestInit): Promise<Response> {
   headers.set("Authorization", `Bearer ${key}`);
   headers.set("Content-Type", "application/json");
   return fetch(`${url}/rest/v1/${path}`, { ...init, headers });
+}
+
+async function loadStoredIngestSecret(): Promise<string> {
+  const res = await rest("health_config?select=value&key=eq.ingest_secret&limit=1", { method: "GET" });
+  if (!res.ok) return "";
+  const rows = (await res.json()) as { value?: unknown }[];
+  const value = rows[0]?.value;
+  return typeof value === "string" ? value : "";
 }
 
 async function resolveUserId(): Promise<string> {
@@ -108,10 +118,12 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "POST JSON only" }, 405);
 
+  const envSecret = Deno.env.get("HEALTH_INGEST_SECRET") ?? "";
+  const storedSecret = envSecret.trim() ? "" : await loadStoredIngestSecret();
   const ok = authorized({
     secretHeader: req.headers.get("x-health-secret") ?? "",
     bearer: bearer(req),
-    expectedSecret: Deno.env.get("HEALTH_INGEST_SECRET") ?? "",
+    expectedSecret: resolveIngestSecret(envSecret, storedSecret),
     serviceRoleKey: Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
   });
   if (!ok) return json({ error: "Not authorized" }, 401);

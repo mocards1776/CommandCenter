@@ -8,6 +8,7 @@ import {
   chicagoWallTimeToUtc,
   parseIngest,
   pickHealthUserId,
+  resolveIngestSecret,
   secretsMatch,
 } from "./ingest.ts";
 
@@ -42,6 +43,9 @@ assert(authorized({
   expectedSecret: "secret",
   serviceRoleKey: "service",
 }), "service role");
+assertEqual(resolveIngestSecret("from-env", "from-table"), "from-env", "env secret wins");
+assertEqual(resolveIngestSecret("  ", "from-table"), "from-table", "blank env falls back");
+assertEqual(resolveIngestSecret("", null), "", "missing secret stays empty");
 
 assertEqual(pickHealthUserId("user-1", []), "user-1", "pinned user");
 assertEqual(pickHealthUserId(null, ["only"]), "only", "sole profile");

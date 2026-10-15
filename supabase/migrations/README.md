@@ -83,6 +83,10 @@ Applied to Supabase project `esdgrgulaxnewmhjuyzh`, in order:
     service role after `x-health-secret` matches `HEALTH_INGEST_SECRET`.
     Seeds the saved-food list, the 2026-10-14 Chicago food log, and a
     175.0 lb weigh-in on that day. See `docs/health-api.md`.
+19. `health_config` — private ingest secret (`key = ingest_secret`). RLS on,
+    no policies, grants revoked from `anon` and `authenticated`, `select`
+    only for `service_role`. The health function reads it when
+    `HEALTH_INGEST_SECRET` is unset. The secret value is not in the migration.
 
 Run `get_advisors` after any schema change; it catches missing RLS and
 mutable-search_path functions.

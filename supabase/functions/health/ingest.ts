@@ -38,6 +38,16 @@ export function secretsMatch(got: string, expected: string): boolean {
   return diff === 0;
 }
 
+/**
+ * Platform secret wins. Otherwise the value stored in health_config.
+ * Comparison of the request header stays in `authorized` (constant time).
+ */
+export function resolveIngestSecret(envSecret: string, storedSecret: string | null | undefined): string {
+  const fromEnv = envSecret.trim();
+  if (fromEnv) return fromEnv;
+  return (storedSecret ?? "").trim();
+}
+
 export function authorized(opts: {
   secretHeader: string;
   bearer: string;

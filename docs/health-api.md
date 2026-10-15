@@ -21,26 +21,53 @@ supabase db push --project-ref esdgrgulaxnewmhjuyzh
 Or run `supabase/migrations/20261015_health.sql` in the SQL editor for project
 `esdgrgulaxnewmhjuyzh`. The statements are idempotent.
 
-Set the ingest secret (do not commit it) and deploy the function with JWT
-verification off so the secret header is the credential:
+Deploy the function with JWT verification off so the secret header is the
+credential:
 
 ```bash
-supabase secrets set \
-  HEALTH_INGEST_SECRET="$(openssl rand -hex 24)" \
-  --project-ref esdgrgulaxnewmhjuyzh
-
-# Only if more than one profile exists. This project has a single user,
-# and the function uses that profile when HEALTH_USER_ID is unset.
-# supabase secrets set HEALTH_USER_ID="<auth.users id>" --project-ref esdgrgulaxnewmhjuyzh
-
 supabase functions deploy health \
   --project-ref esdgrgulaxnewmhjuyzh \
   --no-verify-jwt
 ```
 
 Pushes to `main` that touch `supabase/functions/**` also deploy `health` via
-`.github/workflows/deploy-edge.yml` (same `--no-verify-jwt` flag). The secret
-still has to be set once; the workflow does not create it.
+`.github/workflows/deploy-edge.yml` (same `--no-verify-jwt` flag).
+
+The function accepts `x-health-secret` when it matches, in order:
+
+1. The platform secret `HEALTH_INGEST_SECRET`, if it is set.
+2. Otherwise the `ingest_secret` row in `public.health_config`.
+
+Comparison is constant-time (`secretsMatch` in `supabase/functions/health/ingest.ts`).
+An empty secret never matches. A bearer token equal to the service role key
+is also accepted; do not give that key to the other bot.
+
+`health_config` has RLS enabled and no policies. `anon` and `authenticated`
+have no grants. Only `service_role` may `select`, and the function reads the
+row with that role. Do not commit the secret.
+
+Platform secret, when you can set one:
+
+```bash
+supabase secrets set \
+  HEALTH_INGEST_SECRET="$(openssl rand -hex 24)" \
+  --project-ref esdgrgulaxnewmhjuyzh
+```
+
+Table fallback (the value is not in git):
+
+```sql
+insert into public.health_config (key, value)
+values ('ingest_secret', '<secret>')
+on conflict (key) do update
+  set value = excluded.value,
+      updated_at = now();
+```
+
+`HEALTH_USER_ID` is optional. This project has a single profile, and the
+function uses it when that secret is unset. The `ingest_secret` row is
+already loaded on `esdgrgulaxnewmhjuyzh`; the value lives only in that row
+and in the bot store, not in this repo.
 
 `data/health/withings_weight.csv` is the Withings export (`Date`, `Weight (lb)`,
 `Fat mass (lb)`, `Bone mass (lb)`, `Muscle mass (lb)`, `Hydration (lb)`).
