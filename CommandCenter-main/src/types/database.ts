@@ -1129,6 +1129,86 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["plaid_items"]["Insert"]>;
         Relationships: [];
       };
+      health_food_log: {
+        Row: {
+          id: string;
+          user_id: string;
+          logged_at: string;
+          log_date: string;
+          item: string;
+          kcal: number;
+          protein_g: number;
+          source_key: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          logged_at: string;
+          log_date: string;
+          item: string;
+          kcal: number;
+          protein_g: number;
+          source_key?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["health_food_log"]["Insert"]>;
+        Relationships: [];
+      };
+      health_saved_foods: {
+        Row: {
+          id: string;
+          user_id: string;
+          name: string;
+          kcal: number;
+          protein_g: number;
+          sort_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          name: string;
+          kcal: number;
+          protein_g: number;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["health_saved_foods"]["Insert"]>;
+        Relationships: [];
+      };
+      health_weights: {
+        Row: {
+          id: string;
+          user_id: string;
+          weighed_on: string;
+          weight_lb: number;
+          fat: number | null;
+          bone: number | null;
+          muscle: number | null;
+          hydration: number | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          weighed_on: string;
+          weight_lb: number;
+          fat?: number | null;
+          bone?: number | null;
+          muscle?: number | null;
+          hydration?: number | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["health_weights"]["Insert"]>;
+        Relationships: [];
+      };
     };
     Views: { [_ in never]: never };
     Functions: {

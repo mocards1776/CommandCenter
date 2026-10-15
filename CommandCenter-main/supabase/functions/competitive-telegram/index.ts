@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { competitiveCaption, loadTciLogoDataUri, sd30SampleCard } from "./card.ts";
 import { rasterizeSvg } from "./png.ts";
 import { planCompetitiveSend } from "./send.ts";
+import { parseJustInPayload } from "./almanac.ts";
 import { renderCompetitiveSvg } from "./svg.ts";
 import { parseChatIds, sendTelegramPhoto } from "./telegram.ts";
 
@@ -82,9 +83,12 @@ Deno.serve(async (req: Request) => {
     const logo = await loadTciLogoDataUri();
 
     if (action === "render") {
-      const card = sd30SampleCard(logo);
+      const sample = sd30SampleCard(logo);
+      // Preview only: optional just_in overrides the sample tiles. Never sends.
+      const card = Array.isArray(body.just_in) ? { ...sample, justIn: parseJustInPayload(body.just_in) } : sample;
       const svg = renderCompetitiveSvg(card);
       const format = String(body.format ?? "jpeg").toLowerCase();
+      if (format === "caption") return json({ ok: true, caption: competitiveCaption(card) });
       if (format === "svg") {
         return new Response(svg, {
           headers: { ...CORS, "Content-Type": "image/svg+xml", "Cache-Control": "no-store" },

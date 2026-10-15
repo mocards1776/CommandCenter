@@ -77,5 +77,12 @@ Applied to Supabase project `esdgrgulaxnewmhjuyzh`, in order:
     so "every volume of this series, in order" is one index read. Backs the
     series strip on each book's view.
 
+18. `health` — food log, saved foods, and weigh-ins (`health_food_log`,
+    `health_saved_foods`, `health_weights`). RLS on; owner-only
+    `auth.uid() = user_id`. The `health` edge function writes with the
+    service role after `x-health-secret` matches `HEALTH_INGEST_SECRET`.
+    Seeds the saved-food list, the 2026-10-14 Chicago food log, and a
+    175.0 lb weigh-in on that day. See `docs/health-api.md`.
+
 Run `get_advisors` after any schema change; it catches missing RLS and
 mutable-search_path functions.
