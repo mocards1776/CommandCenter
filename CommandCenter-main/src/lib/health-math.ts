@@ -58,6 +58,83 @@ export function foodTotals(rows: { kcal: number; protein_g: number }[]): FoodTot
   return { kcal: round1(kcal), protein: round1(protein) };
 }
 
+/** Net calories count only this share of logged exercise kcal_burned. */
+export const EXERCISE_KCAL_CREDIT = 0.5;
+
+export type ExerciseRow = {
+  time: string;
+  exercise: string;
+  sets: number | null;
+  reps: number | null;
+  weight_lb: number | null;
+  duration_min: number | null;
+  kcal_burned: number | null;
+};
+
+export type WorkoutGroup = {
+  exercise: string;
+  /** Total sets. A row with no `sets` counts as one. */
+  sets: number;
+  /** Sum of kcal_burned, or null when none of the rows logged any. */
+  kcal: number | null;
+  /** One short label per row, e.g. `3×10 @ 135 lb` or `25`. */
+  lines: string[];
+};
+
+/** Sum of kcal_burned. Rows with no kcal_burned add nothing. */
+export function exerciseKcal(rows: { kcal_burned: number | null }[]): number {
+  let kcal = 0;
+  for (const row of rows) kcal += Number(row.kcal_burned) || 0;
+  return round1(kcal);
+}
+
+/** Food kcal minus half of exercise kcal_burned. Negative when the burn credit exceeds food. */
+export function netCalories(foodKcal: number, burnedKcal: number): number {
+  return round1(foodKcal - burnedKcal * EXERCISE_KCAL_CREDIT);
+}
+
+function trimNum(n: number): string {
+  return String(round1(n));
+}
+
+/** `3×10 @ 135 lb`, `25`, `10 @ 140 lb`, `12.5 min`. Bodyweight (0 lb) omits the weight. */
+export function formatExerciseRow(row: ExerciseRow): string {
+  const parts: string[] = [];
+  if (row.reps != null) {
+    const reps = row.sets != null && row.sets > 1 ? `${row.sets}×${row.reps}` : `${row.reps}`;
+    parts.push(row.weight_lb != null && row.weight_lb > 0 ? `${reps} @ ${trimNum(row.weight_lb)} lb` : reps);
+  } else if (row.sets != null && row.sets > 1) {
+    parts.push(`${row.sets} sets`);
+  }
+  if (row.duration_min != null) parts.push(`${trimNum(row.duration_min)} min`);
+  return parts.join(" · ") || "done";
+}
+
+/** Group a day's rows by exercise, in order of first appearance. Rows are expected time-sorted. */
+export function workoutGroups(rows: ExerciseRow[]): WorkoutGroup[] {
+  const byName = new Map<string, WorkoutGroup>();
+  for (const row of rows) {
+    let group = byName.get(row.exercise);
+    if (!group) {
+      group = { exercise: row.exercise, sets: 0, kcal: null, lines: [] };
+      byName.set(row.exercise, group);
+    }
+    group.sets += row.sets != null && row.sets > 0 ? row.sets : 1;
+    if (row.kcal_burned != null) group.kcal = round1((group.kcal ?? 0) + row.kcal_burned);
+    group.lines.push(formatExerciseRow(row));
+  }
+  return [...byName.values()];
+}
+
+/** `17:34:36` -> `5:34 PM`. Unparseable input comes back unchanged. */
+export function clockLabel(time: string): string {
+  const match = /^(\d{1,2}):(\d{2})/.exec(time);
+  if (!match) return time;
+  const hour = Number(match[1]);
+  const suffix = hour >= 12 ? "PM" : "AM";
+  return `${hour % 12 === 0 ? 12 : hour % 12}:${match[2]} ${suffix}`;
+}
+
 export function calorieBudget(eaten: number): CalorieBudget {
   const leftToHigh = round1(KCAL_TARGET_HIGH - eaten);
   const leftToLow = round1(KCAL_TARGET_LOW - eaten);
