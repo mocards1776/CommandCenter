@@ -33,6 +33,21 @@ export type HealthWeight = {
   hydration: number | null;
 };
 
+export type HealthExerciseLog = {
+  id: string;
+  user_id: string;
+  date: string;
+  time: string;
+  exercise: string;
+  sets: number | null;
+  reps: number | null;
+  weight_lb: number | null;
+  duration_min: number | null;
+  kcal_burned: number | null;
+  note: string | null;
+  created_at: string;
+};
+
 function num(value: unknown): number {
   const n = typeof value === "number" ? value : Number(value);
   return Number.isFinite(n) ? n : 0;
@@ -54,6 +69,23 @@ function asFood(row: Record<string, unknown>): HealthFoodLog {
     kcal: num(row.kcal),
     protein_g: num(row.protein_g),
     source_key: row.source_key == null ? null : String(row.source_key),
+    created_at: String(row.created_at),
+  };
+}
+
+function asExercise(row: Record<string, unknown>): HealthExerciseLog {
+  return {
+    id: String(row.id),
+    user_id: String(row.user_id),
+    date: String(row.date),
+    time: String(row.time),
+    exercise: String(row.exercise),
+    sets: numOrNull(row.sets),
+    reps: numOrNull(row.reps),
+    weight_lb: numOrNull(row.weight_lb),
+    duration_min: numOrNull(row.duration_min),
+    kcal_burned: numOrNull(row.kcal_burned),
+    note: row.note == null ? null : String(row.note),
     created_at: String(row.created_at),
   };
 }
@@ -90,6 +122,16 @@ export async function fetchFoodLog(day: string): Promise<HealthFoodLog[]> {
     .order("logged_at", { ascending: true });
   if (error) throw error;
   return (data ?? []).map((row) => asFood(row as Record<string, unknown>));
+}
+
+export async function fetchExerciseLog(day: string): Promise<HealthExerciseLog[]> {
+  const { data, error } = await supabase
+    .from("health_exercise_log")
+    .select("id, user_id, date, time, exercise, sets, reps, weight_lb, duration_min, kcal_burned, note, created_at")
+    .eq("date", day)
+    .order("time", { ascending: true });
+  if (error) throw error;
+  return (data ?? []).map((row) => asExercise(row as Record<string, unknown>));
 }
 
 export async function fetchSavedFoods(): Promise<HealthSavedFood[]> {

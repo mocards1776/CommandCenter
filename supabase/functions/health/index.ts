@@ -4,6 +4,7 @@ import {
   parseIngest,
   pickHealthUserId,
   resolveIngestSecret,
+  type ExerciseWrite,
   type FoodWrite,
   type WeightWrite,
 } from "./ingest.ts";
@@ -11,7 +12,7 @@ import {
 /**
  * Bot write path for the Health app.
  *
- * POST JSON food entries and weigh-ins. Auth is header
+ * POST JSON food entries, weigh-ins, and exercise sets. Auth is header
  * x-health-secret matches HEALTH_INGEST_SECRET, or the ingest_secret row in
  * health_config when that env var is unset. An Authorization bearer equal
  * to the service role key is also accepted. Deploy with --no-verify-jwt so
@@ -114,6 +115,20 @@ async function writeWeights(userId: string, weights: WeightWrite[]): Promise<unk
   return (await res.json()) as unknown[];
 }
 
+async function writeExercises(userId: string, exercises: ExerciseWrite[]): Promise<unknown[]> {
+  if (!exercises.length) return [];
+  // One row per (date, time, exercise): Postgres rejects an upsert that hits the same key twice.
+  const byKey = new Map<string, ExerciseWrite>();
+  for (const row of exercises) byKey.set(`${row.date}|${row.time}|${row.exercise}`, row);
+  const res = await rest("health_exercise_log?on_conflict=user_id,date,time,exercise", {
+    method: "POST",
+    headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+    body: JSON.stringify([...byKey.values()].map((row) => ({ ...row, user_id: userId }))),
+  });
+  if (!res.ok) throw new Error(`Exercise upsert failed: ${await res.text()}`);
+  return (await res.json()) as unknown[];
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "POST JSON only" }, 405);
@@ -144,11 +159,12 @@ Deno.serve(async (req: Request) => {
 
   try {
     const userId = await resolveUserId();
-    const [foods, weights] = await Promise.all([
+    const [foods, weights, exercises] = await Promise.all([
       writeFoods(userId, plan.foods),
       writeWeights(userId, plan.weights),
+      writeExercises(userId, plan.exercises),
     ]);
-    return json({ ok: true, user_id: userId, foods, weights });
+    return json({ ok: true, user_id: userId, foods, weights, exercises });
   } catch (err) {
     console.error("health ingest", err);
     return json({ error: err instanceof Error ? err.message : "Write failed" }, 500);

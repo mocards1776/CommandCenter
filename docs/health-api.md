@@ -1,6 +1,6 @@
 # Health write API
 
-Another bot can append food log entries and weigh-ins. The Health app
+Another bot can append food log entries, weigh-ins, and exercise sets. The Health app
 (`/health`) reads the same tables with the signed-in user's session.
 
 Base URL:
@@ -11,8 +11,8 @@ https://esdgrgulaxnewmhjuyzh.supabase.co/functions/v1/health
 
 ## One-time setup
 
-Apply the migration (tables, RLS, saved foods, the 2026-10-14 food log, and
-the 175.0 lb weigh-in):
+Apply the migrations (tables, RLS, saved foods, the 2026-10-14 food log, the
+175.0 lb weigh-in, and `20261016_health_exercise_log.sql` for exercise):
 
 ```bash
 supabase db push --project-ref esdgrgulaxnewmhjuyzh
@@ -159,6 +159,52 @@ curl -sS -X POST \
 
 `date` and `weight` are accepted aliases. Composition fields are optional.
 
+### One exercise set
+
+```bash
+curl -sS -X POST \
+  'https://esdgrgulaxnewmhjuyzh.supabase.co/functions/v1/health' \
+  -H 'Content-Type: application/json' \
+  -H "apikey: $SUPABASE_ANON_KEY" \
+  -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+  -H "x-health-secret: $HEALTH_INGEST_SECRET" \
+  -d '{
+    "type": "exercise",
+    "date": "2026-10-16",
+    "time": "07:30",
+    "exercise": "Bench Press",
+    "sets": 3,
+    "reps": 10,
+    "weight_lb": 135,
+    "duration_min": 12,
+    "kcal_burned": 90,
+    "note": "felt strong"
+  }'
+```
+
+| Field | Required | Notes |
+| --- | --- | --- |
+| `type` | yes | `"exercise"` (`"workout"` is an alias) |
+| `exercise` | yes | Name, up to 120 characters. `name` is an alias. |
+| `date` | yes, unless `logged_at` | `YYYY-MM-DD`, America/Chicago |
+| `time` | no | `HH:MM` or `HH:MM:SS`, America/Chicago. Defaults to `12:00`. |
+| `logged_at` | no | Full ISO timestamp. Replaces `date` and `time`; stored as the Chicago day and wall time of that instant. |
+| `sets` | no | Whole number, 1 or more. A row with no `sets` counts as one set on the page. |
+| `reps` | no | Whole number, 0 or more |
+| `weight_lb` | no | 0 to 5000. Use `0` or omit for bodyweight. `weight` is an alias. |
+| `duration_min` | no | Minutes, 0 to 1440. `duration` is an alias. |
+| `kcal_burned` | no | 0 to 20000. `kcal` and `calories` are aliases. Net calories on `/health` subtract half of this. |
+| `note` | no | Up to 500 characters |
+
+Omitted optional fields are stored as null. The row key is
+`(date, time, exercise)`: posting the same date, time, and exercise again
+updates that row instead of adding another, so a retry is safe. To log several
+sets of one exercise, give each its own `time` (the 2022-2026 import has one
+row per set, `sets` = 1), or use one row with `sets` > 1.
+
+`kcal_burned` is optional because most history has no burn estimate. A day with
+no `kcal_burned` shows net calories equal to food kcal.
+
 ### Batch
 
 ```bash
@@ -179,6 +225,9 @@ curl -sS -X POST \
     ],
     "weights": [
       { "weighed_on": "2026-10-15", "weight_lb": 174.6 }
+    ],
+    "exercises": [
+      { "date": "2026-10-15", "time": "07:30", "exercise": "Push-Up", "reps": 25 }
     ]
   }'
 ```
@@ -186,8 +235,28 @@ curl -sS -X POST \
 Success:
 
 ```json
-{ "ok": true, "user_id": "<profile id>", "foods": [], "weights": [] }
+{ "ok": true, "user_id": "<profile id>", "foods": [], "weights": [], "exercises": [] }
 ```
 
 `401` means the secret header (and service-role bearer) did not match.
+Each array holds the rows that were written. At most 200 rows (food, weights,
+and exercises together) per post.
+
 `400` means the JSON shape was rejected. `500` means the write failed.
+
+## Exercise history import
+
+`data/health/exercise_log.csv` is the workout-app export (`Exercise`, `Date`,
+`Repetitions`, `Weight (lb)`, `Weight (kg)`, `Duration (seconds)`,
+`Duration (formatted)`, `Note`, `Label`): 95 sets of Bench Press, Push-Up,
+Dumbbell Curls, and Pull-Up from 2022-10-04 to 2026-06-11. Each CSV row is one
+set (`sets` = 1). The `Date` cell has no zone and is read as America/Chicago
+wall clock. The kg column is ignored.
+
+```bash
+node scripts/health-exercise-seed.mjs > /tmp/exercise_seed.sql
+```
+
+Run the printed SQL against the project. It inserts with
+`on conflict (user_id, date, time, exercise) do nothing`, so running it again
+adds no rows. Applied to `esdgrgulaxnewmhjuyzh` on 2026-10-16: 95 rows.

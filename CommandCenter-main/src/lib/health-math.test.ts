@@ -7,7 +7,12 @@ import {
   calorieBudget,
   chicagoDay,
   chicagoWallTimeToUtc,
+  clockLabel,
+  exerciseKcal,
   foodTotals,
+  formatExerciseRow,
+  netCalories,
+  workoutGroups,
   goalWeightLb,
   parseWithingsCsv,
   proteinLeft,
@@ -104,5 +109,57 @@ assertEqual(withings[0]?.day, "2026-04-22", "earlier day first");
 assertEqual(withings[0]?.weightLb, 179.4, "later stamp wins");
 assertEqual(withings[0]?.fat, 39.5, "fat mass header");
 assertEqual(withings[1]?.weightLb, 173.8, "datetime day");
+
+assertEqual(exerciseKcal([]), 0, "no workouts burn nothing");
+assertEqual(exerciseKcal([{ kcal_burned: null }, { kcal_burned: 120 }, { kcal_burned: 80.5 }]), 200.5, "null kcal adds nothing");
+assertEqual(netCalories(1515, 300), 1365, "food minus half of burn");
+assertEqual(netCalories(1515, 0), 1515, "no exercise leaves food kcal");
+assertEqual(netCalories(1515, 75), 1477.5, "half of an odd burn");
+assertEqual(netCalories(0, 300), -150, "burn credit can exceed food");
+
+assertEqual(
+  formatExerciseRow({ time: "07:30:00", exercise: "Bench Press", sets: 3, reps: 10, weight_lb: 135, duration_min: null, kcal_burned: null }),
+  "3×10 @ 135 lb",
+  "multi-set row",
+);
+assertEqual(
+  formatExerciseRow({ time: "07:30:00", exercise: "Bench Press", sets: 1, reps: 4, weight_lb: 170, duration_min: null, kcal_burned: null }),
+  "4 @ 170 lb",
+  "single weighted set",
+);
+assertEqual(
+  formatExerciseRow({ time: "07:30:00", exercise: "Push-Up", sets: 1, reps: 25, weight_lb: 0, duration_min: null, kcal_burned: null }),
+  "25",
+  "bodyweight set omits weight",
+);
+assertEqual(
+  formatExerciseRow({ time: "07:30:00", exercise: "Run", sets: null, reps: null, weight_lb: null, duration_min: 12.5, kcal_burned: 120 }),
+  "12.5 min",
+  "timed effort",
+);
+
+const groups = workoutGroups([
+  { time: "17:34:36", exercise: "Bench Press", sets: 1, reps: 4, weight_lb: 170, duration_min: null, kcal_burned: null },
+  { time: "17:35:35", exercise: "Bench Press", sets: 1, reps: 5, weight_lb: 170, duration_min: null, kcal_burned: null },
+  { time: "21:35:00", exercise: "Push-Up", sets: null, reps: 20, weight_lb: 0, duration_min: null, kcal_burned: 20 },
+  { time: "21:40:00", exercise: "Bench Press", sets: 2, reps: 5, weight_lb: 180, duration_min: null, kcal_burned: 30 },
+]);
+assertEqual(groups.length, 2, "two exercises");
+assertEqual(groups[0]?.exercise, "Bench Press", "first appearance order");
+assertEqual(groups[0]?.sets, 4, "sets sum, a row without sets counts one");
+assertEqual(groups[0]?.kcal, 30, "group kcal only from rows that logged it");
+assertEqual(groups[0]?.lines.join(" | "), "4 @ 170 lb | 5 @ 170 lb | 2×5 @ 180 lb", "set lines");
+assertEqual(groups[1]?.sets, 1, "null sets counts one");
+assertEqual(workoutGroups([]).length, 0, "empty day");
+assertEqual(
+  workoutGroups([{ time: "07:00:00", exercise: "Pull-Up", sets: 1, reps: 3, weight_lb: 0, duration_min: null, kcal_burned: null }])[0]?.kcal,
+  null,
+  "no kcal logged stays null",
+);
+
+assertEqual(clockLabel("17:34:36"), "5:34 PM", "afternoon");
+assertEqual(clockLabel("00:05:00"), "12:05 AM", "midnight hour");
+assertEqual(clockLabel("12:00:00"), "12:00 PM", "noon");
+assertEqual(clockLabel("07:40"), "7:40 AM", "no seconds");
 
 console.log("health-math tests ok");

@@ -9,6 +9,7 @@ import {
   addWeight,
   deleteFoodLog,
   deleteSavedFood,
+  fetchExerciseLog,
   fetchFoodLog,
   fetchSavedFoods,
   fetchWeights,
@@ -19,15 +20,20 @@ import {
   KCAL_TARGET_LOW,
   PROTEIN_TARGET_G,
   calorieBudget,
+  clockLabel,
+  exerciseKcal,
   foodTotals,
   goalWeightLb,
+  netCalories,
   proteinLeft,
   round1,
+  workoutGroups,
 } from "@/lib/health-math";
 import { fmtTime, shiftDay, todayStr } from "@/lib/utils";
 
 const keys = {
   food: (day: string) => ["health", "food", day] as const,
+  exercise: (day: string) => ["health", "exercise", day] as const,
   saved: ["health", "saved"] as const,
   weights: ["health", "weights"] as const,
 };
@@ -65,6 +71,7 @@ export default function HealthPage() {
   const qc = useQueryClient();
 
   const food = useQuery({ queryKey: keys.food(day), queryFn: () => fetchFoodLog(day) });
+  const exercise = useQuery({ queryKey: keys.exercise(day), queryFn: () => fetchExerciseLog(day) });
   const saved = useQuery({ queryKey: keys.saved, queryFn: fetchSavedFoods });
   const weights = useQuery({ queryKey: keys.weights, queryFn: fetchWeights });
 
@@ -79,6 +86,12 @@ export default function HealthPage() {
 
   const totals = useMemo(() => foodTotals(food.data ?? []), [food.data]);
   const budget = calorieBudget(totals.kcal);
+  const workouts = useMemo(() => workoutGroups(exercise.data ?? []), [exercise.data]);
+  const burned = useMemo(() => exerciseKcal(exercise.data ?? []), [exercise.data]);
+  const setCount = workouts.reduce((sum, group) => sum + group.sets, 0);
+  const net = netCalories(totals.kcal, burned);
+  const firstSet = exercise.data?.at(0);
+  const lastSet = exercise.data?.at(-1);
   const proteinRemaining = proteinLeft(totals.protein);
   const samples = useMemo(
     () => (weights.data ?? []).map((row) => ({ day: row.weighed_on, lb: row.weight_lb })),
@@ -170,7 +183,7 @@ export default function HealthPage() {
     }
   }
 
-  const loadError = food.error ?? saved.error ?? weights.error;
+  const loadError = food.error ?? exercise.error ?? saved.error ?? weights.error;
 
   return (
     <div className="health-app min-h-full bg-[#10182a] text-[#eef2f7]">
@@ -234,7 +247,7 @@ export default function HealthPage() {
           </p>
         ) : null}
 
-        <section className="grid grid-cols-2 gap-3">
+        <section className="grid grid-cols-2 gap-3 md:grid-cols-3">
           <Stat
             kicker="Calories left"
             value={budget.overHigh > 0 ? budget.overHigh : budget.leftToHigh}
@@ -249,6 +262,20 @@ export default function HealthPage() {
             tone={proteinRemaining <= 0 ? "good" : "open"}
             detail={`${round1(totals.protein)} g eaten · ${PROTEIN_TARGET_G} g`}
           />
+          <div className="col-span-2 md:col-span-1">
+            <Stat
+              kicker="Net calories"
+              value={net}
+              unit="kcal"
+              signed
+              tone="open"
+              detail={
+                burned > 0
+                  ? `${round1(totals.kcal)} eaten − ${round1(burned / 2)} (half of ${round1(burned)} burned)`
+                  : `${round1(totals.kcal)} eaten · no burn logged`
+              }
+            />
+          </div>
         </section>
 
         <div className="grid gap-4 md:grid-cols-2">
@@ -406,6 +433,48 @@ export default function HealthPage() {
 
           <section className="flex flex-col gap-3">
             <div className="border border-white/10 bg-[#161f33]">
+              <div className="flex items-baseline justify-between border-b border-white/10 px-4 py-3">
+                <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#8b97ad]">
+                  Workout
+                </h3>
+                <p
+                  className="text-[22px] leading-none font-bold"
+                  style={{ fontFamily: '"Barlow Condensed", Oswald, sans-serif' }}
+                >
+                  {burned > 0 ? round1(burned) : setCount}
+                  <span className="ml-1 text-[12px] font-medium tracking-[0.14em] text-[#8b97ad]">
+                    {burned > 0 ? "KCAL BURNED" : setCount === 1 ? "SET" : "SETS"}
+                  </span>
+                </p>
+              </div>
+              <ul className="divide-y divide-white/10">
+                {workouts.length === 0 && !exercise.isLoading ? (
+                  <li className="px-4 py-6 text-sm text-[#8b97ad]">No workout logged this day.</li>
+                ) : null}
+                {workouts.map((group) => (
+                  <li key={group.exercise} className="px-4 py-3">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <p className="truncate text-[15px] font-medium text-white">{group.exercise}</p>
+                      <p className="shrink-0 font-mono text-[11px] text-[#8b97ad]">
+                        {group.sets} {group.sets === 1 ? "set" : "sets"}
+                        {group.kcal != null ? ` · ${round1(group.kcal)} kcal` : ""}
+                      </p>
+                    </div>
+                    <p className="mt-1 font-mono text-[11px] leading-relaxed text-[#e7c45a]">
+                      {group.lines.join("  ·  ")}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+              {firstSet ? (
+                <p className="border-t border-white/10 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.12em] text-[#8b97ad]">
+                  {clockLabel(firstSet.time)}
+                  {lastSet && lastSet !== firstSet ? ` – ${clockLabel(lastSet.time)}` : ""}
+                </p>
+              ) : null}
+            </div>
+
+            <div className="border border-white/10 bg-[#161f33]">
               <div className="flex items-end justify-between gap-3 border-b border-white/10 px-4 py-3">
                 <div>
                   <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#8b97ad]">
@@ -484,12 +553,14 @@ function Stat({
   unit,
   detail,
   tone,
+  signed = false,
 }: {
   kicker: string;
   value: number;
   unit: string;
   detail: string;
   tone: "open" | "good" | "hot";
+  signed?: boolean;
 }) {
   const color = tone === "hot" ? "#ff5c67" : tone === "good" ? "#7dcea0" : "#f4f7fb";
   return (
@@ -500,7 +571,7 @@ function Stat({
         className="mt-2 text-[52px] leading-none font-bold tracking-tight md:text-[64px]"
         style={{ fontFamily: '"Barlow Condensed", Oswald, sans-serif', color }}
       >
-        {round1(Math.abs(value))}
+        {signed ? round1(value) : round1(Math.abs(value))}
       </p>
       <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.16em]" style={{ color }}>
         {unit}

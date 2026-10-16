@@ -2,6 +2,22 @@
 
 ---
 
+## Health: exercise log and net calories — October 16, 2026
+
+- **Exercise ingest.** The `health` edge function accepts `type: "exercise"`
+  (or an `exercises` array) and upserts into `health_exercise_log` on
+  `(date, time, exercise)`. Auth and food/weight behavior are unchanged.
+  POST format is in `docs/health-api.md`.
+- **Table.** `20261016_health_exercise_log.sql`: `date` and `time` are
+  America/Chicago wall clock; owner-scoped RLS like the other health tables.
+- **`/health`.** A Workout card sits beside the food log for each day, grouped
+  by exercise with each set listed, plus a Net calories stat: food kcal minus
+  half of exercise `kcal_burned`.
+- **History.** `data/health/exercise_log.csv` (95 sets, 2022-2026) is imported
+  without duplicates via `scripts/health-exercise-seed.mjs`.
+
+---
+
 ## Times broadsheet: every page closes on the foot — October 12, 2026
 
 The in-browser reader (`/newspaper`), proofed on a 13" iPad Pro in Safari,

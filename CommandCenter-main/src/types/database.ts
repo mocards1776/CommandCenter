@@ -1157,6 +1157,38 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["health_food_log"]["Insert"]>;
         Relationships: [];
       };
+      health_exercise_log: {
+        Row: {
+          id: string;
+          user_id: string;
+          date: string;
+          time: string;
+          exercise: string;
+          sets: number | null;
+          reps: number | null;
+          weight_lb: number | null;
+          duration_min: number | null;
+          kcal_burned: number | null;
+          note: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          date: string;
+          time?: string;
+          exercise: string;
+          sets?: number | null;
+          reps?: number | null;
+          weight_lb?: number | null;
+          duration_min?: number | null;
+          kcal_burned?: number | null;
+          note?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["health_exercise_log"]["Insert"]>;
+        Relationships: [];
+      };
       health_saved_foods: {
         Row: {
           id: string;
